@@ -1,6 +1,9 @@
+import { rawModelSupportsEndpoint } from './catalog.ts';
 import { copilotRawModelId, stripClaudeDateSuffix } from './model-name.ts';
 import { copilotVariantIndex, type CopilotVariantIndex } from './model-variants.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from './types.ts';
+import { isJsonObject, type ModelEndpointKey } from '@floway-dev/protocols/common';
+import type { ProviderModelFact } from '@floway-dev/provider';
 
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/beta/beta.ts#L622-L635
 export const CONTEXT_1M_BETA = 'context-1m-2025-08-07';
@@ -45,7 +48,7 @@ const firstPreferred = (models: readonly CopilotRawModel[]): CopilotRawModel | u
 // A narrowing filter that rolls back to the original pool when it would empty
 // it. On the OpenAI Responses path that rollback is the feature: OpenAI
 // answers an unavailable Fast mode by serving the standard lane and saying
-// so, and `callOpenAIResponses` mirrors it. `callAnthropicMessages` never
+// so, and the OpenAI Responses stage mirrors it. Anthropic Messages never
 // reaches the rollback because Anthropic makes Fast Mode a hard contract and
 // the entry point pre-checks it.
 const narrow = (pool: readonly CopilotRawModel[], predicate: (model: CopilotRawModel) => boolean): readonly CopilotRawModel[] => {
@@ -98,7 +101,7 @@ export const resolveCopilotRawModel = (models: CopilotModelsResponse, modelId: s
 };
 
 // Whether the family can serve the accelerated lane at all.
-// `callAnthropicMessages` pre-checks this because Anthropic rejects
+// The Anthropic Messages selection stage pre-checks because Anthropic rejects
 // `speed: 'fast'` on a model that cannot serve it, and Copilot never echoes
 // `usage.speed` for us to notice a downgrade afterwards. The OpenAI spelling
 // of the same lane needs no pre-check: that upstream reports the tier it
@@ -106,4 +109,19 @@ export const resolveCopilotRawModel = (models: CopilotModelsResponse, modelId: s
 export const copilotModelSupportsFastVariant = (rawModels: readonly CopilotRawModel[]): boolean => {
   const index = copilotVariantIndex(rawModels);
   return rawModels.some(model => index.suffixOf(model.id) === 'fast');
+};
+
+export const copilotModelVariants = (model: ProviderModelFact): CopilotRawModel[] => {
+  const data = model.providerData;
+  const isRaw = (raw: unknown): raw is CopilotRawModel => isJsonObject(raw) && typeof raw.id === 'string';
+  if (!isJsonObject(data) || !Array.isArray(data.rawModels) || !data.rawModels.every(isRaw)) {
+    throw new TypeError(`Copilot catalog model ${model.id} has no raw variants`);
+  }
+  return data.rawModels;
+};
+
+export const selectCopilotRawModel = (model: ProviderModelFact, endpoint: ModelEndpointKey, hints: ModelSelectionHints = {}): string => {
+  const variants = copilotModelVariants(model).filter(raw => rawModelSupportsEndpoint(raw, endpoint));
+  if (variants.length === 0) throw new Error(`Copilot catalog model ${model.id} has no raw variant for ${endpoint}`);
+  return (resolveCopilotRawModel({ object: 'list', data: variants }, model.upstreamModelId, hints) ?? variants[0]).id;
 };

@@ -1,5 +1,6 @@
 import { normalizeGitHubHost } from './github-host.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import { Secret } from '@floway-dev/pipeline';
+import type { ProviderUpstream, UpstreamRecord } from '@floway-dev/provider';
 
 export interface CopilotUpstreamUser {
   login: string;
@@ -89,4 +90,14 @@ export const assertCopilotUpstreamRecord = (record: UpstreamRecord): CopilotUpst
       user: copilotUserField(record.config.user, malformedConfig),
     },
   };
+};
+
+export type CopilotUpstream = ProviderUpstream<'copilot', {
+  readonly githubHost: string;
+  readonly githubToken: Secret<string>;
+}>;
+
+export const copilotUpstreamFact = (record: UpstreamRecord): CopilotUpstream => {
+  const { id, kind, name, config } = assertCopilotUpstreamRecord(record);
+  return { id, kind, name, config: { githubHost: config.githubHost, githubToken: Secret.from(config.githubToken) } };
 };

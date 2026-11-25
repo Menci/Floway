@@ -1,8 +1,11 @@
-import pRetry, { AbortError as RetryAbortError } from 'p-retry';
+import pRetry from 'p-retry';
 
+import type { CopilotUpstream } from './config.ts';
 import { githubApiOrigin } from './github-host.ts';
-import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
-import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, type Fetcher, type FetchInit, type HttpHeaderLines } from '@floway-dev/provider';
+import type { CopilotTokenEntry } from './state.ts';
+import { isCausedBy, sendHttpRequest, type Fetcher, type HttpBodyError, type HttpHeaders, type HttpResponseFact, type HttpStreamError, type ProviderFetcher } from '@floway-dev/http';
+import type { Result } from '@floway-dev/pipeline';
+import { isJsonObject } from '@floway-dev/protocols/common';
 
 // Version constants pinned to a known-good fingerprint that mirrors what a
 // current VSCode Copilot Chat install sends. The Copilot Chat plugin version,
@@ -29,33 +32,15 @@ const GITHUB_API_VERSION = '2025-04-01';
 // upstream.
 export const CLAUDE_AGENT_USER_AGENT = 'vscode_claude_code/2.1.112 (external, sdk-ts, agent-sdk/0.2.112)';
 
-// Stable per-process device id, like real VSCode generates once per install.
-// Initialized lazily on first use because crypto APIs may be unavailable in
-// module-global scope on some runtimes.
-let editorDeviceId: string | null = null;
-const getEditorDeviceId = (): string => (editorDeviceId ??= crypto.randomUUID());
+export type CopilotWarning = (message: string, error: unknown) => void;
+export type ObserveCopilotHeaders = (headers: HttpHeaders) => void;
 
-// Statuses that indicate the GitHub→Copilot token exchange will not improve
-// on retry. 403 = the GitHub token is unauthorized for Copilot; 429 = the
-// upstream rate-limits the token endpoint, and waiting out the window inside
-// our retry budget burns the dial deadline without changing the verdict. The
-// HTTP-convention 5xx range falls through to the retry path because the
-// selected GitHub API endpoint can return 500/502/503/504 transiently
-// (caozhiyuan/copilot-api retries every refresh failure).
-const isCopilotTokenFetchTerminalStatus = (status: number): boolean => status === 403 || status === 429;
-
-// Two-level Copilot token cache: in-process (60s) memo keyed by upstream id,
-// backed by per-upstream `state_json.copilotToken` for cross-isolate / cold-
-// start sharing. The persisted entry survives a worker eviction; the in-
-// process memo avoids a DB read on every request inside one isolate.
-const IN_PROCESS_TTL_MS = 60_000;
-const inProcessTokenCache = new Map<
-  string,
-  {
-    entry: CopilotTokenEntry;
-    cachedAt: number;
-  }
->();
+type ResponseHead = Omit<HttpResponseFact, 'body'>;
+type ResponseBody = AsyncGenerator<Result<Uint8Array, HttpBodyError>, void, unknown>;
+export type CopilotCredentialFailure =
+  | { kind: 'http'; head: ResponseHead; body: ResponseBody | null }
+  | { kind: 'io'; head: ResponseHead; error: HttpBodyError }
+  | { kind: 'io'; head: null; error: HttpStreamError };
 
 export class CopilotTokenFetchError extends Error {
   constructor(readonly status: number, readonly body: string, readonly headers: Headers) {
@@ -64,241 +49,163 @@ export class CopilotTokenFetchError extends Error {
   }
 }
 
-export const isCopilotTokenFetchError = (error: unknown): error is CopilotTokenFetchError => error instanceof CopilotTokenFetchError;
+// https://github.com/microsoft/vscode/blob/a234109a108ad2ca78b7d0883688b0a84e3fab42/extensions/copilot/src/platform/endpoint/node/chatEndpoint.ts
+export const copilotIdentityHeaders = (deviceId: string): HttpHeaders => {
+  const requestId = crypto.randomUUID();
+  return [
+    ['editor-version', EDITOR_VERSION],
+    ['editor-plugin-version', EDITOR_PLUGIN_VERSION],
+    ['editor-device-id', deviceId],
+    ['user-agent', USER_AGENT],
+    ['x-github-api-version', COPILOT_API_VERSION],
+    ['x-vscode-user-agent-library-version', 'electron-fetch'],
+    ['x-request-id', requestId],
+    ['x-agent-task-id', requestId],
+    ['copilot-integration-id', 'vscode-chat'],
+    ['openai-intent', 'conversation-agent'],
+    ['x-interaction-type', 'conversation-agent'],
+  ];
+};
 
-// Tests use this to drop only the process-local memo between cases — they
-// run against a fresh DB per test so the persisted state needs no separate
-// reset, and some tests deliberately want the next call to hydrate from
-// state_json instead of minting a fresh token.
-export function clearInProcessCopilotTokenCache(): void {
-  inProcessTokenCache.clear();
-}
+// The GitHub management plane uses the REST API version and omits editor
+// headers. Copilot returns the per-tier API origin alongside the bearer.
+// https://github.com/caozhiyuan/copilot-api/blob/b16e01909e747b5ad49ce38137a6c1453e0052a6/src/lib/api-config.ts
+const tokenUrl = (githubHost: string): string => `${githubApiOrigin(githubHost)}/copilot_internal/v2/token`;
 
-class RetryableError extends Error {
-  constructor(readonly originalError: unknown) {
-    super(originalError instanceof Error ? originalError.message : String(originalError), { cause: originalError });
+export const githubHeaders = (githubToken: string): Record<string, string> => ({
+  authorization: `token ${githubToken}`,
+  accept: 'application/json',
+  'user-agent': USER_AGENT,
+  'x-github-api-version': GITHUB_API_VERSION,
+  'x-vscode-user-agent-library-version': 'electron-fetch',
+});
+
+const parseToken = (value: unknown): CopilotTokenEntry => {
+  if (
+    !isJsonObject(value) || typeof value.token !== 'string' || value.token.length === 0
+    || typeof value.expires_at !== 'number' || !Number.isFinite(value.expires_at)
+    || !isJsonObject(value.endpoints) || typeof value.endpoints.api !== 'string' || value.endpoints.api.length === 0
+  ) {
+    throw new TypeError('Invalid Copilot token exchange response');
+  }
+  return { token: value.token, expiresAt: value.expires_at, baseUrl: value.endpoints.api };
+};
+
+export const exchangeCopilotToken = async (
+  githubHost: string,
+  githubToken: string,
+  fetcher: Fetcher,
+  signal?: AbortSignal,
+): Promise<CopilotTokenEntry> => {
+  const response = await fetcher(tokenUrl(githubHost), { method: 'GET', headers: githubHeaders(githubToken), signal });
+  if (!response.ok) throw new CopilotTokenFetchError(response.status, await response.text(), response.headers);
+  return parseToken(await response.json());
+};
+
+class TokenExchangeFailure extends Error {
+  constructor(readonly failure: CopilotCredentialFailure) {
+    super(failure.kind === 'http' ? `Copilot token exchange returned HTTP ${failure.head.status}` : 'Copilot token exchange failed',
+      failure.kind === 'io' ? { cause: failure.error.cause } : undefined);
   }
 }
 
-class NonErrorAbort extends Error {
-  constructor(readonly originalError: unknown) {
-    super(String(originalError), { cause: originalError });
-  }
-}
+const TOKEN_RESPONSE_LIMIT_BYTES = 256 * 1024;
+const TOKEN_EXCHANGE_RETRIES = 3;
 
-const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>, signal: AbortSignal | undefined): Promise<T> => {
+const readToken = async (
+  upstream: CopilotUpstream,
+  fetcher: ProviderFetcher,
+  signal: AbortSignal,
+  observeHeaders: ObserveCopilotHeaders,
+): Promise<CopilotTokenEntry> => {
+  const { githubHost, githubToken } = upstream.config;
+  const authorization = githubToken.map(token => `token ${token}`);
+  const headers: HttpHeaders = [
+    ['authorization', authorization],
+    ['accept', 'application/json'],
+    ['user-agent', USER_AGENT],
+    ['x-github-api-version', GITHUB_API_VERSION],
+    ['x-vscode-user-agent-library-version', 'electron-fetch'],
+  ];
+  const sent = await sendHttpRequest(fetcher, { url: tokenUrl(githubHost), method: 'GET', headers, body: null }, signal);
+  if (!sent.ok) throw new TokenExchangeFailure({ kind: 'io', head: null, error: sent.error });
+  const { body, ...head } = sent.value;
+  observeHeaders(head.headers);
+  if (head.status < 200 || head.status >= 300) throw new TokenExchangeFailure({ kind: 'http', head, body });
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  if (body !== null) {
+    for await (const item of body) {
+      if (!item.ok) throw new TokenExchangeFailure({ kind: 'io', head, error: item.error });
+      size += item.value.byteLength;
+      if (size > TOKEN_RESPONSE_LIMIT_BYTES) throw new RangeError(`Copilot token response exceeds ${TOKEN_RESPONSE_LIMIT_BYTES} bytes`);
+      chunks.push(item.value);
+    }
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return parseToken(JSON.parse(new TextDecoder().decode(bytes)));
+};
+
+// 403 and 429 are terminal; waiting out GitHub's rate-limit window cannot
+// help within the request's retry budget. Other recorded I/O failures use
+// the same 1s, 2s and 4s backoff as the token refresh.
+// https://github.com/caozhiyuan/copilot-api/blob/b16e01909e747b5ad49ce38137a6c1453e0052a6/src/services/copilot/get-copilot-token.ts
+const retryable = (error: Error): boolean => {
+  if (!(error instanceof TokenExchangeFailure)) return false;
+  const { failure } = error;
+  return failure.kind === 'http'
+    ? failure.head.status !== 403 && failure.head.status !== 429
+    : failure.error.kind !== 'abort';
+};
+
+export const resolveCopilotToken = async (
+  upstream: CopilotUpstream,
+  fetcher: ProviderFetcher,
+  signal: AbortSignal,
+  warn: CopilotWarning,
+  observeHeaders: ObserveCopilotHeaders,
+): Promise<Result<CopilotTokenEntry, CopilotCredentialFailure>> => {
+  let terminal: { error: unknown } | undefined;
+  let attempts = 0;
   try {
-    return await pRetry(async () => {
+    const value = await pRetry(async () => {
+      attempts++;
       try {
-        return await fn();
+        return await readToken(upstream, fetcher, signal, observeHeaders);
       } catch (error) {
-        if (isAbortError(error) || (isCopilotTokenFetchError(error) && isCopilotTokenFetchTerminalStatus(error.status))) {
-          throw new RetryAbortError(error instanceof Error ? error : new NonErrorAbort(error));
-        }
-
-        // p-retry rejects non-network TypeErrors immediately and normalizes
-        // non-Error rejections into terminal TypeErrors. The token exchange
-        // previously retried every non-terminal value, so both shapes travel
-        // through a retryable Error and are restored at the boundary.
-        if (!(error instanceof Error) || error instanceof TypeError) throw new RetryableError(error);
+        // p-retry replaces any rejection with the signal's reason if the
+        // signal changed concurrently. Retain the completed I/O failure.
+        if (!(error instanceof Error) || !retryable(error) || attempts > TOKEN_EXCHANGE_RETRIES) terminal = { error };
         throw error;
       }
     }, {
-      retries: 3,
+      retries: TOKEN_EXCHANGE_RETRIES,
       factor: 2,
       minTimeout: 1000,
       signal,
+      async shouldRetry({ error }) {
+        if (!(error instanceof TokenExchangeFailure) || !retryable(error) || signal.aborted) return false;
+        if (error.failure.kind === 'http') await error.failure.body?.return();
+        return true;
+      },
       onFailedAttempt: ({ error, attemptNumber, retryDelay }) => {
-        if (retryDelay === 0) return;
-        const cause = error instanceof RetryableError ? error.originalError : error;
-        console.warn(`Retry ${attemptNumber}/3 after ${retryDelay}ms: ${cause instanceof Error ? cause.message : String(cause)}`);
+        if (retryDelay > 0 && retryable(error) && !signal.aborted) {
+          warn(`Retrying Copilot token exchange after ${retryDelay}ms (attempt ${attemptNumber})`, error);
+        }
       },
     });
-  } catch (error) {
-    if (error instanceof RetryableError) throw error.originalError;
-    if (error instanceof NonErrorAbort) throw error.originalError;
+    return { ok: true, value };
+  } catch (cause) {
+    const error = terminal === undefined ? cause : terminal.error;
+    if (error instanceof TokenExchangeFailure) return { ok: false, error: error.failure };
+    if (terminal === undefined && isCausedBy(error, signal.reason)) {
+      return { ok: false, error: { kind: 'io', head: null, error: { kind: 'abort', cause: error } } };
+    }
     throw error;
   }
 };
-
-function isTokenValid(token: string | null, expiresAt: number): boolean {
-  if (!token) return false;
-  const now = Math.floor(Date.now() / 1000);
-  return expiresAt > now + 60;
-}
-
-async function getCopilotToken(upstreamId: string, githubHost: string, githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<CopilotTokenEntry> {
-  const now = Date.now();
-  const cached = inProcessTokenCache.get(upstreamId);
-  if (cached && isTokenValid(cached.entry.token, cached.entry.expiresAt) && now - cached.cachedAt < IN_PROCESS_TTL_MS) {
-    return cached.entry;
-  }
-
-  const fresh = await getRepo().upstreams.getById(upstreamId);
-  if (!fresh) throw new Error(`Copilot upstream ${upstreamId} disappeared mid-token-refresh`);
-  const state = readCopilotUpstreamState(fresh.state);
-  const persisted = state.copilotToken;
-  if (persisted && isTokenValid(persisted.token, persisted.expiresAt)) {
-    inProcessTokenCache.set(upstreamId, { entry: persisted, cachedAt: now });
-    return persisted;
-  }
-
-  // Routed through the upstream's Fetcher so deployments behind a network
-  // egress restriction (e.g. GFW) keep refreshing tokens through the same
-  // proxy chain that carries the data-plane traffic; without this, a working
-  // Copilot proxy would still see periodic auth-refresh failures every
-  // ~25 minutes per process.
-  return await retryCopilotTokenFetch(async () => {
-    const entry = await exchangeCopilotToken(githubHost, githubToken, fetcher, signal);
-    inProcessTokenCache.set(upstreamId, { entry, cachedAt: Date.now() });
-    // Best-effort: the caller is about to satisfy a live request with this
-    // token, so a storage failure costs the next cold isolate one extra mint
-    // rather than the request. Swallowing here also keeps such a failure out
-    // of retryCopilotTokenFetch, which would otherwise answer it by minting
-    // again.
-    try {
-      await getRepo().upstreams.saveState(upstreamId, current => ({
-        ...readCopilotUpstreamState(current),
-        copilotToken: entry,
-      } satisfies CopilotUpstreamState));
-    } catch (err) {
-      console.warn(`Failed to persist Copilot token for ${upstreamId}:`, err);
-    }
-    return entry;
-  }, signal);
-}
-
-// Pure exchange against /copilot_internal/v2/token — no caching, no
-// persistence, no retry. Callers that want those wrap it (getCopilotToken
-// adds all three; the control-plane import path calls it once to validate
-// the PAT and seed initial state). Method is GET, not POST — POST returns
-// 404 from this endpoint (matches VSCode Copilot Chat and caozhiyuan/copilot-
-// api). `endpoints.api` is the per-tier data-plane host GitHub routes this
-// PAT to — it travels with the token because they share a lifetime
-// (vscode-copilot-chat 5863f5a7 domainServiceImpl.ts L55, refreshes on
-// every onDidStoreUpdate; all four reference implementations agree).
-export async function exchangeCopilotToken(githubHost: string, githubToken: string, fetcher: Fetcher, signal?: AbortSignal): Promise<CopilotTokenEntry> {
-  const resp = await fetcher(`${githubApiOrigin(githubHost)}/copilot_internal/v2/token`, {
-    method: 'GET',
-    headers: githubHeaders(githubToken),
-    signal,
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new CopilotTokenFetchError(resp.status, text, new Headers(resp.headers));
-  }
-
-  const data = (await resp.json()) as {
-    token: string;
-    expires_at: number;
-    refresh_in: number;
-    endpoints?: { api?: string };
-  };
-
-  const baseUrl = data.endpoints?.api;
-  if (typeof baseUrl !== 'string' || baseUrl === '') {
-    throw new Error('Copilot token exchange response missing endpoints.api');
-  }
-
-  return {
-    token: data.token,
-    expiresAt: data.expires_at,
-    baseUrl,
-  };
-}
-
-export interface CopilotFetchOptions {
-  headers?: HttpHeaderLines | undefined;
-  /** Per-request proxy-aware indirection. Used for both the data-plane
-   *  request and the selected GitHub host's token exchange so a single
-   *  fallback chain covers both paths under restricted egress. */
-  fetcher: Fetcher;
-  /** See UpstreamCallOptions.wrapUpstreamCall. Fires on the data-plane
-   *  request only, after any token-exchange round trip. */
-  wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
-}
-
-export interface CopilotAuth {
-  id: string;
-  githubHost: string;
-  githubToken: string;
-}
-
-export async function copilotAuthedFetch(path: string, init: FetchInit, auth: CopilotAuth, options: CopilotFetchOptions): Promise<Response> {
-  const signal = init.signal ?? undefined;
-  let ownedInit: FetchInit | undefined = init;
-  // The token exchange is the only await before the data-plane dispatch. Keep
-  // the body in an explicit owner and replace the generator parameter so the
-  // final network wait cannot retain both copies after ownership transfers.
-  init = { signal };
-  const entry = await getCopilotToken(auth.id, auth.githubHost, auth.githubToken, options.fetcher, signal);
-
-  // x-request-id and x-agent-task-id share a single per-call UUID, mirroring
-  // VSCode Copilot Chat's "one id ties the request to its background task" pattern.
-  const requestId = crypto.randomUUID();
-
-  if (ownedInit === undefined) throw new Error('Copilot request ownership missing before dispatch');
-  const headers = new Headers(ownedInit.headers);
-  headers.set('Authorization', `Bearer ${entry.token}`);
-  // Content-Type follows the body. A `FormData` body has to reach the runtime
-  // untouched so it can generate the multipart boundary itself — pinning
-  // `application/json` over it makes Copilot reject `/v1/images/edits` with
-  // `400 Failed to decode image edit request` before it reads a single part.
-  // A bodyless GET (the catalog) carries no Content-Type, matching VSCode.
-  if (ownedInit.body !== undefined && ownedInit.body !== null && !(ownedInit.body instanceof FormData)) {
-    headers.set('Content-Type', 'application/json');
-  }
-  headers.set('editor-version', EDITOR_VERSION);
-  headers.set('editor-plugin-version', EDITOR_PLUGIN_VERSION);
-  headers.set('editor-device-id', getEditorDeviceId());
-  headers.set('user-agent', USER_AGENT);
-  headers.set('x-github-api-version', COPILOT_API_VERSION);
-  headers.set('x-vscode-user-agent-library-version', 'electron-fetch');
-  headers.set('x-request-id', requestId);
-  headers.set('x-agent-task-id', requestId);
-  headers.set('copilot-integration-id', 'vscode-chat');
-  headers.set('openai-intent', 'conversation-agent');
-  headers.set('x-interaction-type', 'conversation-agent');
-
-  // Provider-attached invocation headers (vision, initiator, anthropic-beta,
-  // ...) flow through unchanged. The provider's boundary interceptors decide
-  // which headers each upstream call needs; this layer only knows how to ship
-  // them. Setting them last lets workaround interceptors override the static
-  // VSCode identification block when a future workaround needs to.
-  //
-  // Convention: an empty-string value from an interceptor means "delete this
-  // base header" — the interceptor wants Copilot to NOT see a default we'd
-  // otherwise pin. An interceptor that wants to clear an arbitrary downstream
-  // header value must do so by name through this sentinel; the layer does not
-  // otherwise expose a per-header delete API.
-  if (options.headers) {
-    for (const [name, value] of options.headers) {
-      if (value === '') headers.delete(name);
-      else headers.set(name, value);
-    }
-  }
-
-  const request = { ...ownedInit, headers };
-  ownedInit = undefined;
-  // Do not await here: the dispatch owner clears its body synchronously, then
-  // this async frame can disappear while the upstream network wait continues.
-  // eslint-disable-next-line @typescript-eslint/return-await
-  return dispatchUpstreamFetch(options, `${entry.baseUrl}${path}`, request);
-}
-
-// Headers for management-plane calls on the selected GitHub API origin — token
-// exchange and /copilot_internal/user.
-// VSCode Copilot Chat (and caozhiyuan/copilot-api) deliberately omit editor-*
-// here: those headers belong on the copilot data plane, not on the GitHub
-// management plane. x-github-api-version uses GitHub's REST date, distinct
-// from the Copilot data-plane version above.
-export function githubHeaders(githubToken: string): Record<string, string> {
-  return {
-    authorization: `token ${githubToken}`,
-    accept: 'application/json',
-    'user-agent': USER_AGENT,
-    'x-github-api-version': GITHUB_API_VERSION,
-    'x-vscode-user-agent-library-version': 'electron-fetch',
-  };
-}
