@@ -1,12 +1,11 @@
-import type { AnthropicMessagesPayloadInterceptor } from './types.ts';
-import { providerModelOf } from '@floway-dev/provider';
+import { anthropicMessagesPayloadStage } from './payload-stage.ts';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 // Opt-in compatibility rewrite for upstreams that reject an active
 // `tool_choice` when the caller explicitly supplies no tools. Anthropic Messages uses
 // an object for its native no-tool choice.
-export const withEmptyToolsToolChoiceNormalized: AnthropicMessagesPayloadInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!providerModelOf(ctx.candidate).enabledFlags.has('empty-tools-tool-choice-none')) return await run();
-  if (!Array.isArray(ctx.payload.tools) || ctx.payload.tools.length !== 0) return await run();
-  ctx.payload = { ...ctx.payload, tool_choice: { type: 'none' } };
-  return await run();
-};
+export const normalizeAnthropicMessagesEmptyToolsToolChoice = <Payload extends Pick<AnthropicMessagesPayload, 'tools' | 'tool_choice'>>(payload: Payload): Payload =>
+  Array.isArray(payload.tools) && payload.tools.length === 0 ? { ...payload, tool_choice: { type: 'none' } } : payload;
+
+export const normalizeEmptyToolsToolChoice = anthropicMessagesPayloadStage('normalize-empty-tools-tool-choice', (payload, flags) =>
+  flags.includes('empty-tools-tool-choice-none') ? normalizeAnthropicMessagesEmptyToolsToolChoice(payload) : payload);

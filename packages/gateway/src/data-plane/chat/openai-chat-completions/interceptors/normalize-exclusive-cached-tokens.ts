@@ -27,12 +27,10 @@
 // convention it already counts the real input, so the rewritten
 // `prompt_tokens + completion_tokens` is what it was equal to all along.
 
-import type { OpenAIChatCompletionsInterceptor } from './types.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../shared/json-helpers.ts';
+import { defineStage } from '../../../pipeline/facts.ts';
 import { foldsExclusiveCacheTokens } from '../../../shared/telemetry/usage.ts';
-import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { providerModelOf } from '@floway-dev/provider';
 
 const rewriteInboundUsage = (
   chunk: OpenAIChatCompletionsStreamEvent,
@@ -63,35 +61,29 @@ const rewriteInboundUsage = (
   return { ...chunk, usage: next as unknown as NonNullable<OpenAIChatCompletionsStreamEvent['usage']> };
 };
 
-export const withExclusiveCachedTokensNormalized: OpenAIChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  // Everything this entry says is about one upstream's OpenAI Chat Completions wire:
-  // the flag it reads describes how that upstream writes its usage there, and
-  // the remedy its errors name is a setting for that upstream. A translated
-  // request re-enters its target's chain, where these events are a projection
-  // of some other wire — the flag answers a question about counts it does not
-  // describe, and telling an operator to set it would be advice that cannot
-  // help. Nothing is lost by standing down: a translator emits the canonical
-  // form, which is the one case the fold has nothing to do with.
-  if (ctx.targetApi !== 'openaiChatCompletions') return await run();
-
-  const model = providerModelOf(ctx.candidate);
-  const declaredExclusive = model.enabledFlags.has('usage-exclusive-cached-tokens');
-  const identity = `${ctx.candidate.provider.upstreamId}/${model.id}`;
-
-  const result = await run();
-  if (result.type !== 'events') return result;
-
-  return {
-    ...result,
-    events: (async function* () {
-      for await (const frame of result.events) {
-        if (frame.type !== 'event') {
-          yield frame;
-          continue;
+export const normalizeExclusiveCachedTokens = defineStage({
+  name: 'openaiChatCompletions.normalize-exclusive-cached-tokens',
+  through: {
+    request: { needs: ['provider.model', 'provider.upstream'], provides: [], consumes: [] },
+    response: { needs: ['response.openaiChatCompletions'], provides: ['response.openaiChatCompletions'], consumes: [] },
+  },
+  async execute(facts, scope) {
+    const model = facts['provider.model'];
+    const declaredExclusive = model.enabledFlags.includes('usage-exclusive-cached-tokens');
+    const identity = `${facts['provider.upstream'].id}/${model.id}`;
+    const answer = await scope.next(facts);
+    const outcome = answer['response.openaiChatCompletions'];
+    if (outcome.kind !== 'stream') return answer;
+    const stream = scope.wrapStream(outcome.stream, async function* (inner, producer) {
+      for await (const item of producer.read(inner)) {
+        if (!item.ok) {
+          producer.discard(inner);
+          yield item;
+          return;
         }
-        const event = rewriteInboundUsage(frame.event, declaredExclusive, identity);
-        yield event === frame.event ? frame : eventFrame(event);
+        yield { ok: true, value: rewriteInboundUsage(item.value, declaredExclusive, identity) };
       }
-    })(),
-  };
-};
+    });
+    return { ...answer, 'response.openaiChatCompletions': { kind: 'stream', stream } };
+  },
+});

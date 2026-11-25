@@ -1,8 +1,9 @@
-import type { AnthropicMessagesInterceptor } from './types.ts';
-import { telemetryModelIdentity } from '../../../shared/telemetry/attribution.ts';
+import { localResponseHead } from '../../../pipeline/encode.ts';
+import { defineStage } from '../../../pipeline/facts.ts';
+import { getHeader, type HttpHeaders } from '@floway-dev/http';
+import type { Result } from '@floway-dev/pipeline';
 import { createAnthropicMessagesUsage, toAnthropicMessagesUsageDelta, generateAnthropicId, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, providerModelOf, type ExecuteResult, type ModelCandidate } from '@floway-dev/provider';
+import type { ProtocolStreamError } from '@floway-dev/provider';
 
 // Claude Code answers "is this model usable?" by generating one token against
 // it. `/model <id>` runs the CLI's `model_validation` side query — a
@@ -74,13 +75,13 @@ const soleUserPromptOf = (payload: AnthropicMessagesPayload): string | null => {
   return block.type === 'text' ? block.text : null;
 };
 
-const isClaudeCodeProbe = (payload: AnthropicMessagesPayload, headers: Headers): boolean => {
+const isClaudeCodeProbe = (payload: AnthropicMessagesPayload, headers: HttpHeaders): boolean => {
   if (payload.max_tokens !== 1) return false;
   // Every real Claude Code turn ships the session's tools; the one-token
   // probes never do.
   if (payload.tools !== undefined) return false;
-  const userAgent = headers.get('user-agent');
-  if (userAgent === null || !CLAUDE_CODE_USER_AGENT.test(userAgent)) return false;
+  const userAgent = getHeader(headers, 'user-agent');
+  if (typeof userAgent !== 'string' || !CLAUDE_CODE_USER_AGENT.test(userAgent)) return false;
   const prompt = soleUserPromptOf(payload);
   return prompt !== null && PROBE_PROMPTS.has(prompt);
 };
@@ -90,36 +91,41 @@ const isClaudeCodeProbe = (payload: AnthropicMessagesPayload, headers: Headers):
 // usage block is load-bearing — the validation path dereferences
 // `usage.input_tokens` / `usage.output_tokens` unconditionally, and a missing
 // `usage` throws inside the CLI and reads as a failed probe.
-const probeFrames = async function* (model: string): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
-  yield eventFrame({
-    type: 'message_start',
-    message: {
-      id: generateAnthropicId('msg'),
-      type: 'message',
-      role: 'assistant',
-      model,
-      content: [],
-      stop_reason: null,
-      stop_details: null,
-      container: null,
-      diagnostics: null,
-      stop_sequence: null,
-      usage: createAnthropicMessagesUsage(0, 0),
+const probeEvents = async function* (model: string): AsyncGenerator<Result<AnthropicMessagesStreamEventEx, ProtocolStreamError>> {
+  yield {
+    ok: true, value: {
+      type: 'message_start',
+      message: {
+        id: generateAnthropicId('msg'),
+        type: 'message',
+        role: 'assistant',
+        model,
+        content: [],
+        stop_reason: null,
+        stop_details: null,
+        container: null,
+        diagnostics: null,
+        stop_sequence: null,
+        usage: createAnthropicMessagesUsage(0, 0),
+      },
     },
-  });
-  yield eventFrame({ type: 'message_delta', delta: { container: null, stop_reason: 'max_tokens', stop_details: null, stop_sequence: null }, usage: toAnthropicMessagesUsageDelta(createAnthropicMessagesUsage(0, 0)) });
-  yield eventFrame({ type: 'message_stop' });
-  yield doneFrame();
+  };
+  yield { ok: true, value: { type: 'message_delta', delta: { container: null, stop_reason: 'max_tokens', stop_details: null, stop_sequence: null }, usage: toAnthropicMessagesUsageDelta(createAnthropicMessagesUsage(0, 0)) } };
+  yield { ok: true, value: { type: 'message_stop' } };
 };
 
-// No `performance` context on the result: `settle` reads it to decide whether
-// the turn contributes a latency sample, and a turn that never dialed the
-// upstream has no latency to report. The usage row still lands, at zero, so
-// the request itself stays visible in the dashboard.
-const probeResult = (candidate: ModelCandidate, model: string): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> =>
-  eventResult(probeFrames(model), telemetryModelIdentity(candidate, providerModelOf(candidate).id));
-
-export const answerClaudeCodeProbe: AnthropicMessagesInterceptor = async (ctx, _gatewayCtx, run) =>
-  isClaudeCodeProbe(ctx.payload, ctx.headers)
-    ? probeResult(ctx.candidate, ctx.payload.model)
-    : await run();
+export const answerClaudeCodeProbe = defineStage({
+  name: 'anthropicMessages.answer-claude-code-probe',
+  through: {
+    request: { needs: ['request.http', 'request.anthropicMessages', 'provider.model'], provides: [], consumes: [] },
+    response: { needs: ['response.http', 'response.anthropicMessages'], provides: [], consumes: [] },
+  },
+  return: { provides: ['response.http', 'response.anthropicMessages'] },
+  async execute(facts, scope) {
+    if (!isClaudeCodeProbe(facts['request.anthropicMessages'], facts['request.http'].headers)) return await scope.next(facts);
+    return {
+      'response.http': { ...localResponseHead(200), body: null },
+      'response.anthropicMessages': { kind: 'stream', stream: scope.createStream(() => probeEvents(facts['provider.model'].id)) },
+    };
+  },
+});

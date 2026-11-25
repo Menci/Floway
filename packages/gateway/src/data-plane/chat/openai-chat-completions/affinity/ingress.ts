@@ -48,29 +48,36 @@ export const analyzeOpenAIChatCompletionsAffinity = async (
       degrades: messages.some(message => message.degrades),
       preferred: messages.every(message => message.preferred),
       materialize: () => {
-        const candidatePayload = structuredClone(payload);
-        for (const { index, opaqueProjection, detailProjections, dropsReasoning } of messages) {
-          const message = candidatePayload.messages[index] as OpenAIChatCompletionsAssistantMessageEx;
-          if (dropsReasoning) {
-            delete message.reasoning_opaque;
-            for (const field of reasoningFields) delete message[field];
-            continue;
-          }
-          if (opaqueProjection?.kind === 'preserve') message.reasoning_opaque = opaqueProjection.value;
-          else if (opaqueProjection?.kind === 'remove') delete message.reasoning_opaque;
-          if (detailProjections.size === 0) continue;
-          if (!Array.isArray(message.reasoning_details)) throw new Error('OpenAI Chat Completions affinity expected reasoning details');
-          const reasoningDetails = message.reasoning_details.flatMap((detail, detailIndex) => {
-            const projection = detailProjections.get(detailIndex);
-            if (projection === undefined) return [detail];
-            if (projection.kind === 'remove') return [];
-            if (!isEncryptedReasoningDetail(detail)) throw new Error(`Recorded encrypted reasoning detail is missing at index ${detailIndex}`);
-            return [{ ...detail, data: projection.value }];
-          });
-          if (reasoningDetails.length === 0) delete message.reasoning_details;
-          else message.reasoning_details = reasoningDetails;
-        }
-        return candidatePayload;
+        if (messages.length === 0) return payload;
+        const byIndex = new Map(messages.map(projection => [projection.index, projection]));
+        return {
+          ...payload, messages: payload.messages.map((source, index) => {
+            const projected = byIndex.get(index);
+            if (projected === undefined) return source;
+            if (source.role !== 'assistant') throw new Error('OpenAI Chat Completions affinity expected an assistant message');
+            const message: OpenAIChatCompletionsAssistantMessageEx = { ...source };
+            const { opaqueProjection, detailProjections, dropsReasoning } = projected;
+            if (dropsReasoning) {
+              delete message.reasoning_opaque;
+              for (const field of reasoningFields) delete message[field];
+              return message;
+            }
+            if (opaqueProjection?.kind === 'preserve') message.reasoning_opaque = opaqueProjection.value;
+            else if (opaqueProjection?.kind === 'remove') delete message.reasoning_opaque;
+            if (detailProjections.size === 0) return message;
+            if (!Array.isArray(message.reasoning_details)) throw new Error('OpenAI Chat Completions affinity expected reasoning details');
+            const reasoningDetails = message.reasoning_details.flatMap((detail, detailIndex) => {
+              const projection = detailProjections.get(detailIndex);
+              if (projection === undefined) return [detail];
+              if (projection.kind === 'remove') return [];
+              if (!isEncryptedReasoningDetail(detail)) throw new Error(`Recorded encrypted reasoning detail is missing at index ${detailIndex}`);
+              return [{ ...detail, data: projection.value }];
+            });
+            if (reasoningDetails.length === 0) delete message.reasoning_details;
+            else message.reasoning_details = reasoningDetails;
+            return message;
+          }),
+        };
       },
     };
   });

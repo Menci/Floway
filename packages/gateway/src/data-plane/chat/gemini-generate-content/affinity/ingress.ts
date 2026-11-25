@@ -39,23 +39,25 @@ export const analyzeGeminiGenerateContentAffinity = async (
       degrades: contents.some(content => content.dropped.size > 0) || projections.some(projection => projection.kind === 'remove' && projection.degrades),
       preferred: projections.every(projection => projection.preferred),
       materialize: () => {
-        const candidatePayload = structuredClone(payload);
-        if (candidatePayload.contents === undefined) return candidatePayload;
-        const emptiedByAffinity = new Set<number>();
-        for (const { contentIndex, projections, dropped } of contents) {
-          const content = candidatePayload.contents[contentIndex];
-          content.parts = content.parts!.flatMap((part, partIndex) => {
-            if (dropped.has(partIndex)) return [];
-            const projection = projections.get(partIndex);
-            if (projection === undefined) return [part];
-            if (projection.kind === 'preserve') return [{ ...part, thoughtSignature: projection.value }];
-            const { thoughtSignature: _signature, ...replacement } = part;
-            return hasPartContent(replacement) ? [replacement] : [];
-          });
-          if (content.parts.length === 0) emptiedByAffinity.add(contentIndex);
-        }
-        candidatePayload.contents = candidatePayload.contents.filter((_content, contentIndex) => !emptiedByAffinity.has(contentIndex));
-        return candidatePayload;
+        if (payload.contents === undefined || contents.length === 0) return payload;
+        const byIndex = new Map(contents.map(projection => [projection.contentIndex, projection]));
+        return {
+          ...payload, contents: payload.contents.flatMap((content, index) => {
+            const projected = byIndex.get(index);
+            if (projected === undefined) return [content];
+            if (content.parts === undefined) throw new Error('Gemini generateContent affinity expected content parts');
+            const { projections, dropped } = projected;
+            const parts = content.parts.flatMap((part, partIndex) => {
+              if (dropped.has(partIndex)) return [];
+              const projection = projections.get(partIndex);
+              if (projection === undefined) return [part];
+              if (projection.kind === 'preserve') return [{ ...part, thoughtSignature: projection.value }];
+              const { thoughtSignature: _signature, ...replacement } = part;
+              return hasPartContent(replacement) ? [replacement] : [];
+            });
+            return parts.length === 0 ? [] : [{ ...content, parts }];
+          }),
+        };
       },
     };
   });

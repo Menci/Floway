@@ -1,4 +1,5 @@
-import type { GeminiGenerateContentShapeCleanup } from './types.ts';
+import { geminiTranslationStage } from './translation-stage.ts';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
 /**
  * A translated target has no matching safety control, so forwarding the
@@ -6,7 +7,9 @@ import type { GeminiGenerateContentShapeCleanup } from './types.ts';
  * end-to-end. A native Gemini upstream enforces them itself and receives them
  * unchanged.
  */
-export const stripSafetySettings: GeminiGenerateContentShapeCleanup = (ctx, _gatewayCtx, run) => {
-  if (ctx.targetApi !== 'geminiGenerateContent') delete ctx.payload.safetySettings;
-  return run();
+export const stripSafetySettingsFromPayload = (payload: GeminiGenerateContentPayload): GeminiGenerateContentPayload => {
+  const { safetySettings: _safetySettings, ...rest } = payload;
+  return rest;
 };
+
+export const stripSafetySettings = geminiTranslationStage('strip-safety-settings', stripSafetySettingsFromPayload);

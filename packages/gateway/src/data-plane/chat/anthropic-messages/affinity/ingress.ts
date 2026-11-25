@@ -1,5 +1,5 @@
 import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, incompatibleReasoningParts, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
-import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesAssistantInputContentBlock, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 interface AnthropicMessagesBlobLocation {
   readonly messageIndex: number;
@@ -7,10 +7,10 @@ interface AnthropicMessagesBlobLocation {
   readonly decoded: DecodedAffinityBlob;
 }
 
-export const analyzeAnthropicMessagesAffinity = async (
-  payload: AnthropicMessagesPayload,
+export const analyzeAnthropicMessagesAffinity = async <Payload extends Pick<AnthropicMessagesPayload, 'messages'>>(
+  payload: Payload,
   codec: AffinityCodec,
-): Promise<AffinityRequestAnalysis<AnthropicMessagesPayload>> => {
+): Promise<AffinityRequestAnalysis<Payload>> => {
   const locations: AnthropicMessagesBlobLocation[] = [];
   for (const [messageIndex, message] of payload.messages.entries()) {
     if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;
@@ -40,25 +40,28 @@ export const analyzeAnthropicMessagesAffinity = async (
       degrades: messages.some(message => message.dropped.size > 0) || projections.some(projection => projection.kind === 'remove' && projection.degrades),
       preferred: projections.every(projection => projection.preferred),
       materialize: () => {
-        const candidatePayload = structuredClone(payload);
-        const emptiedByAffinity = new Set<number>();
-        for (const { messageIndex, projections, dropped } of messages) {
-          const message = candidatePayload.messages[messageIndex] as { role: 'assistant'; content: AnthropicMessagesAssistantContentBlock[] };
-          message.content = message.content.flatMap<AnthropicMessagesAssistantContentBlock>((block, blockIndex) => {
-            if (dropped.has(blockIndex)) return [];
-            const projection = projections.get(blockIndex);
-            if (projection === undefined) return [block];
-            if (block.type === 'redacted_thinking') return projection.kind === 'preserve' ? [{ ...block, data: projection.value }] : [];
-            if (block.type !== 'thinking') throw new Error('Anthropic Messages affinity location no longer points at thinking');
-            if (projection.kind === 'preserve') return [{ ...block, signature: projection.value }];
-            // The wire block may omit a signature the SDK type requires.
-            const { signature: _signature, ...unsigned } = block;
-            return [unsigned as typeof block];
-          });
-          if (message.content.length === 0) emptiedByAffinity.add(messageIndex);
-        }
-        candidatePayload.messages = candidatePayload.messages.filter((_message, messageIndex) => !emptiedByAffinity.has(messageIndex));
-        return candidatePayload;
+        if (messages.length === 0) return payload;
+        const byIndex = new Map(messages.map(projection => [projection.messageIndex, projection]));
+        return {
+          ...payload, messages: payload.messages.flatMap((message, index) => {
+            const projected = byIndex.get(index);
+            if (projected === undefined) return [message];
+            if (message.role !== 'assistant' || !Array.isArray(message.content)) throw new Error('Anthropic Messages affinity expected assistant content blocks');
+            const { projections, dropped } = projected;
+            const content = message.content.flatMap<AnthropicMessagesAssistantInputContentBlock>((block, blockIndex) => {
+              if (dropped.has(blockIndex)) return [];
+              const projection = projections.get(blockIndex);
+              if (projection === undefined) return [block];
+              if (block.type === 'redacted_thinking') return projection.kind === 'preserve' ? [{ ...block, data: projection.value }] : [];
+              if (block.type !== 'thinking') throw new Error('Anthropic Messages affinity location no longer points at thinking');
+              if (projection.kind === 'preserve') return [{ ...block, signature: projection.value }];
+              // The wire block may omit a signature the SDK type requires.
+              const { signature: _signature, ...unsigned } = block;
+              return [unsigned as typeof block];
+            });
+            return content.length === 0 ? [] : [{ ...message, content }];
+          }),
+        };
       },
     };
   });

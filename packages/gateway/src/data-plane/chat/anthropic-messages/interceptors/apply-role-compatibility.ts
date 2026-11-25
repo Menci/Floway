@@ -1,6 +1,6 @@
-import type { AnthropicMessagesPayloadInterceptor } from './types.ts';
-import type { AnthropicMessagesAssistantMessage, AnthropicMessagesMessage, AnthropicMessagesSystemMessage } from '@floway-dev/protocols/anthropic-messages';
-import { providerModelOf } from '@floway-dev/provider';
+import { anthropicMessagesPayloadStage } from './payload-stage.ts';
+import type { AnthropicMessagesAssistantMessage, AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesSystemMessage } from '@floway-dev/protocols/anthropic-messages';
+import type { FlagId } from '@floway-dev/provider';
 
 const SERVER_TOOL_RESULT_TYPES = new Set([
   'advisor_tool_result',
@@ -50,22 +50,21 @@ const disallowedContentSystemMessageIndexes = (messages: readonly AnthropicMessa
   return invalid;
 };
 
-export const withRoleCompatibilityApplied: AnthropicMessagesPayloadInterceptor = (ctx, _gatewayCtx, run) => {
-  if (ctx.targetApi !== 'anthropicMessages') return run();
-  const flags = providerModelOf(ctx.candidate).enabledFlags;
-  const rewriteAllSystem = flags.has('rewrite-mid-conv-system-to-user');
-  const rewriteDisallowedSystem = flags.has('rewrite-disallowed-mid-conv-system-to-user');
-  if (!rewriteAllSystem && !rewriteDisallowedSystem) return run();
+export const applyAnthropicMessagesRoleCompatibility = <Payload extends Pick<AnthropicMessagesPayload, 'messages'>>(payload: Payload, flags: readonly FlagId[]): Payload => {
+  const rewriteAllSystem = flags.includes('rewrite-mid-conv-system-to-user');
+  const rewriteDisallowedSystem = flags.includes('rewrite-disallowed-mid-conv-system-to-user');
+  if (!rewriteAllSystem && !rewriteDisallowedSystem) return payload;
 
-  const disallowedIndexes = rewriteDisallowedSystem ? disallowedContentSystemMessageIndexes(ctx.payload.messages) : new Set<number>();
+  const disallowedIndexes = rewriteDisallowedSystem ? disallowedContentSystemMessageIndexes(payload.messages) : new Set<number>();
 
-  ctx.payload = {
-    ...ctx.payload,
-    messages: ctx.payload.messages.map((message, index) =>
+  return {
+    ...payload,
+    messages: payload.messages.map((message, index) =>
       message.role === 'system' && (rewriteAllSystem || disallowedIndexes.has(index))
         ? { role: 'user' as const, content: message.content }
         : message),
   };
 
-  return run();
 };
+
+export const applyRoleCompatibility = anthropicMessagesPayloadStage('apply-role-compatibility', applyAnthropicMessagesRoleCompatibility);

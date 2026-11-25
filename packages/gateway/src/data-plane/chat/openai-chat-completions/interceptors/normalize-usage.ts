@@ -1,6 +1,5 @@
-import type { OpenAIChatCompletionsInterceptor } from './types.ts';
 import { asJsonObject } from '../../../../shared/json-helpers.ts';
-import { eventFrame } from '@floway-dev/protocols/common';
+import { defineStage } from '../../../pipeline/facts.ts';
 
 // Spec-compliant OpenAI Chat Completions usage chunk shape. The OpenAI spec puts the
 // final `usage` on a `choices: []` carrier chunk
@@ -17,28 +16,33 @@ import { eventFrame } from '@floway-dev/protocols/common';
 // the chunk reaches us its `usage.prompt_tokens_details.cached_tokens` is
 // already in the OpenAI standard shape.
 
-export const withUsageNormalized: OpenAIChatCompletionsInterceptor = async (_ctx, _gatewayCtx, run) => {
-  const result = await run();
-  if (result.type !== 'events') return result;
-  return {
-    ...result,
-    events: (async function* () {
-      for await (const frame of result.events) {
-        if (frame.type !== 'event') {
-          yield frame;
+export const normalizeUsage = defineStage({
+  name: 'openaiChatCompletions.normalize-usage',
+  through: {
+    request: { needs: [], provides: [], consumes: [] },
+    response: { needs: ['response.openaiChatCompletions'], provides: ['response.openaiChatCompletions'], consumes: [] },
+  },
+  async execute(facts, scope) {
+    const answer = await scope.next(facts);
+    const outcome = answer['response.openaiChatCompletions'];
+    if (outcome.kind !== 'stream') return answer;
+    const stream = scope.wrapStream(outcome.stream, async function* (inner, producer) {
+      for await (const item of producer.read(inner)) {
+        if (!item.ok) {
+          producer.discard(inner);
+          yield item;
+          return;
+        }
+        const chunk = item.value;
+        const { usage, ...withoutUsage } = chunk;
+        if (usage == null || !asJsonObject(usage) || chunk.choices.length === 0) {
+          yield item;
           continue;
         }
-
-        const chunk = frame.event;
-        const usage = asJsonObject(chunk.usage);
-        if (!usage || chunk.choices.length === 0) {
-          yield frame;
-          continue;
-        }
-        const { usage: chunkUsage, ...withoutUsage } = chunk;
-        yield eventFrame(withoutUsage);
-        yield eventFrame({ ...withoutUsage, choices: [], usage: chunkUsage });
+        yield { ok: true, value: withoutUsage };
+        yield { ok: true, value: { ...withoutUsage, choices: [], usage } };
       }
-    })(),
-  };
-};
+    });
+    return { ...answer, 'response.openaiChatCompletions': { kind: 'stream', stream } };
+  },
+});

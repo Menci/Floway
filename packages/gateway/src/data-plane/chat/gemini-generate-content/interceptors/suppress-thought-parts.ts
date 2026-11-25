@@ -1,5 +1,4 @@
-import type { GeminiGenerateContentInterceptor } from './types.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { defineStage } from '../../../pipeline/facts.ts';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 
 const hasEventPayload = (event: GeminiGenerateContentStreamEvent): boolean => {
@@ -7,33 +6,23 @@ const hasEventPayload = (event: GeminiGenerateContentStreamEvent): boolean => {
   return (event.candidates?.length ?? 0) > 0 || event.usageMetadata !== undefined || event.modelVersion !== undefined || event.responseId !== undefined || event.promptFeedback !== undefined || event.modelStatus !== undefined;
 };
 
-const suppressThoughtPartsFromFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> {
-  for await (const frame of frames) {
-    if (frame.type !== 'event' || 'error' in frame.event) {
-      yield frame;
-      continue;
-    }
+const stripThoughts = (event: GeminiGenerateContentStreamEvent): GeminiGenerateContentStreamEvent | undefined => {
+  if ('error' in event) return event;
+  const candidates = event.candidates?.flatMap(candidate => {
+    if (candidate.content?.parts === undefined) return [candidate];
+    const parts = candidate.content.parts.filter(part => part.thought !== true);
+    if (!parts.length && candidate.finishReason === undefined) return [];
 
-    const candidates = frame.event.candidates?.flatMap(candidate => {
-      if (candidate.content?.parts === undefined) return [candidate];
-      const parts = candidate.content.parts.filter(part => part.thought !== true);
-      if (!parts.length && candidate.finishReason === undefined) return [];
+    return [
+      {
+        ...candidate,
+        content: { ...candidate.content, parts },
+      },
+    ];
+  });
 
-      return [
-        {
-          ...candidate,
-          content: { ...candidate.content, parts },
-        },
-      ];
-    });
-
-    const event: GeminiGenerateContentStreamEvent = {
-      ...frame.event,
-      ...(candidates !== undefined ? { candidates } : {}),
-    };
-
-    if (hasEventPayload(event)) yield eventFrame(event);
-  }
+  const filtered = { ...event, ...(candidates === undefined ? {} : { candidates }) };
+  return hasEventPayload(filtered) ? filtered : undefined;
 };
 
 /**
@@ -42,13 +31,29 @@ const suppressThoughtPartsFromFrames = async function* (frames: AsyncIterable<Pr
  * native Gemini upstream decides that itself from the same flag, and its own
  * stream reaches the client untouched.
  */
-export const suppressThoughtParts: GeminiGenerateContentInterceptor = async (ctx, _gatewayCtx, run) => {
-  const result = await run();
-  if (result.type !== 'events'
-    || ctx.targetApi === 'geminiGenerateContent'
-    || ctx.payload.generationConfig?.thinkingConfig?.includeThoughts === true) {
-    return result;
-  }
-
-  return { ...result, events: suppressThoughtPartsFromFrames(result.events) };
-};
+export const suppressThoughtParts = defineStage({
+  name: 'geminiGenerateContent.suppress-thought-parts',
+  through: {
+    request: { needs: ['request.geminiGenerateContent', 'provider.model'], provides: [], consumes: [] },
+    response: { needs: ['response.geminiGenerateContent'], provides: ['response.geminiGenerateContent'], consumes: [] },
+  },
+  async execute(facts, scope) {
+    const answer = await scope.next(facts);
+    const outcome = answer['response.geminiGenerateContent'];
+    if (outcome.kind !== 'stream'
+      || facts['provider.model'].endpoints.geminiGenerateContent !== undefined
+      || facts['request.geminiGenerateContent'].generationConfig?.thinkingConfig?.includeThoughts === true) return answer;
+    const stream = scope.wrapStream(outcome.stream, async function* (inner, producer) {
+      for await (const item of producer.read(inner)) {
+        if (!item.ok) {
+          producer.discard(inner);
+          yield item;
+          return;
+        }
+        const event = stripThoughts(item.value);
+        if (event !== undefined) yield { ok: true, value: event };
+      }
+    });
+    return { ...answer, 'response.geminiGenerateContent': { kind: 'stream', stream } };
+  },
+});

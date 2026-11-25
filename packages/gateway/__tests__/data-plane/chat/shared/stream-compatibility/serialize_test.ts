@@ -1,16 +1,19 @@
 import { expect, test } from 'vitest';
 
 import { serializeAnthropicMessagesStream, serializeOpenAIResponsesStream, shouldSerializeStreamItems } from '../../../../../src/data-plane/chat/shared/stream-compatibility/index.ts';
+import type { Result } from '@floway-dev/pipeline';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { FlagId } from '@floway-dev/provider';
+import type { FlagId, ProtocolStreamError } from '@floway-dev/provider';
 
-const frames = async function* <T>(values: ProtocolFrame<T>[]) { yield* values; };
+const frames = async function* <T>(values: T[]) { yield* values; };
 const collect = async <T>(source: AsyncIterable<T>): Promise<T[]> => { const output: T[] = []; for await (const value of source) output.push(value); return output; };
-const start = (index: number) => eventFrame({ type: 'content_block_start', index, content_block: { type: 'text', text: '' } } as AnthropicMessagesStreamEventEx);
-const delta = (index: number, text: string) => eventFrame({ type: 'content_block_delta', index, delta: { type: 'text_delta', text } } as AnthropicMessagesStreamEventEx);
-const stop = (index: number) => eventFrame({ type: 'content_block_stop', index } as AnthropicMessagesStreamEventEx);
+type AnthropicItem = Result<AnthropicMessagesStreamEventEx, ProtocolStreamError>;
+const success = (value: AnthropicMessagesStreamEventEx): AnthropicItem => ({ ok: true, value });
+const start = (index: number) => success({ type: 'content_block_start', index, content_block: { type: 'text', text: '', citations: null } });
+const delta = (index: number, text: string) => success({ type: 'content_block_delta', index, delta: { type: 'text_delta', text } });
+const stop = (index: number) => success({ type: 'content_block_stop', index });
 
 test('disabled mode returns the original iterable and automatic UA handling never changes the flag set', () => {
   const source = frames([start(0), start(1), stop(0), stop(1)]);
@@ -46,14 +49,14 @@ test('current-owner data remains live while later owners wait, then buffered eve
 });
 
 test('late thinking signature and stop target their original block before the following text begins', async () => {
-  const thinking = eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } } as AnthropicMessagesStreamEventEx);
-  const signature = eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'signed' } } as AnthropicMessagesStreamEventEx);
+  const thinking = success({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '', signature: '' } });
+  const signature = success({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'signed' } });
   const source = [thinking, start(1), delta(1, 'answer'), signature, stop(0), stop(1)];
   expect(await collect(serializeAnthropicMessagesStream(frames(source), true))).toEqual([thinking, signature, stop(0), start(1), delta(1, 'answer'), stop(1)]);
 });
 
 test('sidecar crosses an open final block only when item serialization is disabled', async () => {
-  const sidecar = eventFrame({ type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'sidecar' } } as AnthropicMessagesStreamEventEx);
+  const sidecar = success({ type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'sidecar' } });
   const source = [start(0), delta(0, 'answer'), sidecar, stop(1), stop(0)];
   expect(await collect(serializeAnthropicMessagesStream(frames(source), false))).toEqual(source);
   expect(await collect(serializeAnthropicMessagesStream(frames(source), true))).toEqual([
@@ -62,11 +65,25 @@ test('sidecar crosses an open final block only when item serialization is disabl
 });
 
 test('errors discard withheld items and upstream failures retain the original error object', async () => {
-  const error = eventFrame({ type: 'error', error: { type: 'overloaded_error', message: 'failed' } } as AnthropicMessagesStreamEventEx);
+  const error: AnthropicItem = {
+    ok: false, error: {
+      kind: 'protocol', cause: new Error('failed'),
+      event: { type: 'error', error: { type: 'overloaded_error', message: 'failed' } },
+    },
+  };
   expect(await collect(serializeAnthropicMessagesStream(frames([start(0), start(1), error]), true))).toEqual([start(0), error]);
   const failure = new Error('upstream failed');
   await expect(collect(serializeAnthropicMessagesStream((async function* () { yield start(0); yield start(1); throw failure; })(), true))).rejects.toBe(failure);
-  await expect(collect(serializeAnthropicMessagesStream(frames([start(0), start(1)]), true))).rejects.toThrow();
+  const incomplete = await collect(serializeAnthropicMessagesStream(frames([start(0), start(1)]), true));
+  expect(incomplete).toEqual([start(0), { ok: false, error: { kind: 'protocol', cause: new Error('Cannot serialize an interleaved stream whose active item never closed') } }]);
+});
+
+test('an active block cannot buffer arbitrarily many later frames', async () => {
+  const source = (async function* () {
+    yield start(0);
+    for (let index = 1; index < 17_000; index++) yield start(index);
+  })();
+  await expect(collect(serializeAnthropicMessagesStream(source, true))).rejects.toThrow(/buffered frames/);
 });
 
 test('Responses reorder whole item lifecycles and restamp sequence numbers in delivery order', async () => {

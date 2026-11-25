@@ -42,9 +42,8 @@ export const wrapOpenAIChatCompletionsAffinityEgress = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
-  // One choice is one logical assistant element, so its carrier frame before
-  // finish_reason (or DONE when finish_reason is absent) is both the turn
-  // prefix and final opaque snapshot.
+  // The carrier holds the final opaque snapshot of each assistant choice.
+  // An unfinished choice flushes at the bridge's successful native completion.
   const choices = new Map<number, ChoiceState>();
   let lastEvent: OpenAIChatCompletionsStreamEvent | undefined;
   let failed = false;

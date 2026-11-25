@@ -1,6 +1,5 @@
-import type { OpenAIChatCompletionsInterceptor } from './types.ts';
+import { openAIChatCompletionsPayloadStage } from './payload-stage.ts';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
-import { providerModelOf } from '@floway-dev/provider';
 
 // Opt-in workaround for upstreams where forced `tool_choice` and enabled
 // reasoning do not compose. Sets the gateway's canonical "no reasoning"
@@ -15,9 +14,5 @@ const hasForcedToolChoice = (payload: OpenAIChatCompletionsPayloadEx): boolean =
   return true;
 };
 
-export const withReasoningDisabledOnForcedToolChoice: OpenAIChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!providerModelOf(ctx.candidate).enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
-  if (!hasForcedToolChoice(ctx.payload)) return await run();
-  ctx.payload = { ...ctx.payload, reasoning_effort: 'none' };
-  return await run();
-};
+export const disableReasoningOnForcedToolChoice = openAIChatCompletionsPayloadStage('disable-reasoning-on-forced-tool-choice', (payload, flags) =>
+  flags.includes('disable-reasoning-on-forced-tool-choice') && hasForcedToolChoice(payload) ? { ...payload, reasoning_effort: 'none' } : payload);

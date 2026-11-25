@@ -1,20 +1,16 @@
-import type { OpenAIChatCompletionsInterceptor } from './types.ts';
+import { openAIChatCompletionsPayloadStage } from './payload-stage.ts';
 import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
-import { providerModelOf } from '@floway-dev/provider';
 
-export const withRoleCompatibilityApplied: OpenAIChatCompletionsInterceptor = (ctx, _gatewayCtx, run) => {
-  if (ctx.targetApi !== 'openaiChatCompletions') return run();
-
-  const flags = providerModelOf(ctx.candidate).enabledFlags;
-  const rewriteSystemToDeveloper = flags.has('rewrite-system-to-developer');
-  const rewriteDeveloperToSystem = flags.has('rewrite-developer-to-system');
-  const rewriteMidConvSystemToUser = flags.has('rewrite-mid-conv-system-to-user');
-  if (!rewriteSystemToDeveloper && !rewriteDeveloperToSystem && !rewriteMidConvSystemToUser) return run();
+export const applyRoleCompatibility = openAIChatCompletionsPayloadStage('apply-role-compatibility', (payload, flags) => {
+  const rewriteSystemToDeveloper = flags.includes('rewrite-system-to-developer');
+  const rewriteDeveloperToSystem = flags.includes('rewrite-developer-to-system');
+  const rewriteMidConvSystemToUser = flags.includes('rewrite-mid-conv-system-to-user');
+  if (!rewriteSystemToDeveloper && !rewriteDeveloperToSystem && !rewriteMidConvSystemToUser) return payload;
 
   let crossedLeadingSystemRun = false;
-  ctx.payload = {
-    ...ctx.payload,
-    messages: ctx.payload.messages.map(message => {
+  return {
+    ...payload,
+    messages: payload.messages.map(message => {
       let mapped: OpenAIChatCompletionsMessage = message;
       if (rewriteSystemToDeveloper && mapped.role === 'system') mapped = { ...mapped, role: 'developer' };
       if (rewriteDeveloperToSystem && mapped.role === 'developer') mapped = { ...mapped, role: 'system' };
@@ -26,5 +22,4 @@ export const withRoleCompatibilityApplied: OpenAIChatCompletionsInterceptor = (c
     }),
   };
 
-  return run();
-};
+});

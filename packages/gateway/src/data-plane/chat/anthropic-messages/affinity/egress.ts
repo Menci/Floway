@@ -163,7 +163,7 @@ export const wrapAnthropicMessagesAffinityEgress = async function* (
       yield* flushOpenSignatures();
       if (!firstBlockSeen) for (const synthetic of await syntheticEvents()) yield eventFrame(synthetic);
       yield frame;
-      return;
+      continue;
     }
 
     yield frame;
