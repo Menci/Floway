@@ -39,22 +39,21 @@ export const serialize = defineStage({
         const stream = scope.wrapStream(outcome.stream, async function* (source, producer) {
           const restore = createChatGPTResponsesOutputRestore();
           let failed = false;
-          for await (const item of source) {
+          const cursor = source[Symbol.asyncIterator]();
+          for (;;) {
+            const { done, value: item } = await cursor.next();
+            if (done) return;
             if (failed) continue;
             if (!item.ok) {
               yield item;
               continue;
             }
-            let event;
-            try {
-              event = restore(projectLite ? projectChatGPTResponsesEvent(item.value, movedFields) : item.value);
-            } catch (cause) {
+            const event = restore(projectLite ? projectChatGPTResponsesEvent(item.value, movedFields) : item.value);
+            yield event;
+            if (!event.ok) {
               failed = true;
               producer.abort(back);
-              yield { ok: false, error: { kind: 'protocol', cause } } as const;
-              continue;
             }
-            yield { ok: true, value: event };
           }
         });
         return { ...back, 'response.openaiResponses': move({ ...outcome, stream }) };

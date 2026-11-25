@@ -2,6 +2,7 @@ import { assert, beforeEach, expect, test, vi } from 'vitest';
 
 import { CHATGPT_OAUTH_TOKEN_URL, CHATGPT_ORIGINATOR, CHATGPT_RESPONSES_LITE_HEADER } from '../../src/constants.ts';
 import { chatgptPipelines } from '../../src/pipelines/index.ts';
+import * as responsesLite from '../../src/responses-lite.ts';
 import { createChatGPTService, type ChatGPTServices } from '../../src/service.ts';
 import type { ChatGPTAccountCredential, ChatGPTUpstreamState } from '../../src/state.ts';
 import { chatgptUpstreamFact } from '../../src/upstream-fact.ts';
@@ -151,12 +152,34 @@ test('aborts and joins a live upstream when Codex gives conflicting output indic
   }, { services });
   const response = (await exchange.result)['response.openaiResponses'];
   assert(response.kind === 'stream');
-  expect(await Array.fromAsync(response.stream)).toMatchObject([
-    { ok: true, value: { type: 'response.output_item.added' } },
-    { ok: false, error: { kind: 'protocol', cause: expect.objectContaining({ message: expect.stringContaining('conflicting output_index') }) } },
-  ]);
+  const cursor = response.stream[Symbol.asyncIterator]();
+  await expect(cursor.next()).resolves.toMatchObject({ done: false, value: { ok: true, value: { type: 'response.output_item.added' } } });
+  await expect(cursor.next()).resolves.toMatchObject({
+    done: false,
+    value: { ok: false, error: { kind: 'protocol', cause: expect.objectContaining({ message: expect.stringContaining('conflicting output_index') }) } },
+  });
+  await expect(cursor.next()).resolves.toMatchObject({ done: true });
   await exchange.done;
   expect(cancel).toHaveBeenCalledOnce();
+});
+
+test('propagates a Lite projection bug as a pipeline panic', async () => {
+  const bug = new TypeError('Lite projection bug');
+  const project = vi.spyOn(responsesLite, 'projectChatGPTResponsesEvent').mockImplementationOnce(() => { throw bug; });
+  try {
+    const { services } = service(() => new Response(sse({ type: 'response.completed', response: terminal })));
+    const exchange = run(chatgptPipelines.openaiResponses, {
+      ...entry,
+      'provider.model': move({ ...model, providerData: { useResponsesLite: true } }),
+      'request.openaiResponses': move({ model: 'client', input: [], instructions: 'Be brief.' }),
+    }, { services });
+    const response = (await exchange.result)['response.openaiResponses'];
+    assert(response.kind === 'stream');
+    await expect(response.stream[Symbol.asyncIterator]().next()).rejects.toBe(bug);
+    await expect(exchange.done).rejects.toBe(bug);
+  } finally {
+    project.mockRestore();
+  }
 });
 
 test('drains a renewable 401, rotates credentials once, and replays the compact request', async () => {

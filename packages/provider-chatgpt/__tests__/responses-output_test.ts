@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { assert, expect, test } from 'vitest';
 
 import { createChatGPTResponsesOutputRestore } from '../src/responses-output.ts';
 import type { OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -15,7 +15,10 @@ const response = (output: OpenAIResponsesOutputItemEx[], status: OpenAIResponses
 });
 
 const restore = (events: OpenAIResponsesStreamEventEx[]): OpenAIResponsesStreamEventEx[] =>
-  events.map(createChatGPTResponsesOutputRestore());
+  events.map(createChatGPTResponsesOutputRestore()).map(result => {
+    assert(result.ok);
+    return result.value;
+  });
 
 test('restores an empty Codex terminal in output_index order without changing item events or response metadata', () => {
   const terminal = response([]);
@@ -52,16 +55,17 @@ test.each([
 });
 
 test('rejects a terminal-only item whose position cannot be determined during omission repair', () => {
-  expect(() => restore([
-    { type: 'response.output_item.done', output_index: 0, item: reasoning },
-    { type: 'response.completed', response: response([message]) },
-  ])).toThrow();
+  const restore = createChatGPTResponsesOutputRestore();
+  expect(restore({ type: 'response.output_item.done', output_index: 0, item: reasoning }).ok).toBe(true);
+  expect(restore({ type: 'response.completed', response: response([message]) })).toMatchObject({
+    ok: false, error: { kind: 'protocol', cause: expect.objectContaining({ message: expect.stringContaining('has no observed output_index') }) },
+  });
 });
 
 test('rejects an item ID observed at conflicting output indices', () => {
-  expect(() => restore([
-    { type: 'response.output_item.added', output_index: 0, item: reasoning },
-    { type: 'response.output_item.done', output_index: 1, item: reasoning },
-    { type: 'response.completed', response: response([]) },
-  ])).toThrow();
+  const restore = createChatGPTResponsesOutputRestore();
+  expect(restore({ type: 'response.output_item.added', output_index: 0, item: reasoning }).ok).toBe(true);
+  expect(restore({ type: 'response.output_item.done', output_index: 1, item: reasoning })).toMatchObject({
+    ok: false, error: { kind: 'protocol', cause: expect.objectContaining({ message: expect.stringContaining('has conflicting output_index values') }) },
+  });
 });
