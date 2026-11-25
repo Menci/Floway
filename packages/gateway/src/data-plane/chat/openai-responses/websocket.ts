@@ -186,7 +186,8 @@ const createOpenAIResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponses
         // an open socket, so we serialize the error inline as the spec's
         // WebSocket error envelope. (HTTP entries let onError handle the same case.)
         .catch(error => {
-          if (!closed) sendError(socket, 500, serverErrorEnvelope(error));
+          if (closed) throw error;
+          sendError(socket, 500, serverErrorEnvelope(error));
         });
       sessionScheduler(queue);
     },
@@ -198,7 +199,8 @@ const parseControlMessage = (data: unknown): OpenAIResponsesWebSocketClientEvent
     const parsed = JSON.parse(new TextDecoder().decode(wsDataToBytes(data))) as unknown;
     if (!parsed || typeof parsed !== 'object' || (parsed as { type?: unknown }).type !== 'response.interrupt') return undefined;
     return parsed as OpenAIResponsesWebSocketClientEvent;
-  } catch {
+  } catch (error) {
+    if (!(error instanceof SyntaxError) && !(error instanceof WebSocketClientMessageError)) throw error;
     return undefined;
   }
 };
@@ -278,6 +280,7 @@ const handleClientMessage = async (
     try {
       parsed = JSON.parse(new TextDecoder().decode(bytes));
     } catch (cause) {
+      if (!(cause instanceof SyntaxError)) throw cause;
       throw new WebSocketClientMessageError(`WebSocket message must be valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
     eventId = isJsonObject(parsed) && typeof parsed.event_id === 'string' ? parsed.event_id : undefined;
@@ -337,11 +340,11 @@ const handleClientMessage = async (
     });
     if (!delivered) evict();
   } catch (error) {
-    if (signal.aborted && !turn.interrupted || isClosed()) return;
     if (error instanceof WebSocketClientMessageError) {
       fail(400, { type: 'invalid_request_error', code: 'invalid_request_error', message: error.message });
       return;
     }
+    if (isClosed()) throw error;
     fail(500, serverErrorEnvelope(error));
   }
 };
@@ -382,6 +385,7 @@ const deliverOpenAIResponsesWebSocket = async ({
   let terminal: OpenAIResponsesStreamEventEx | undefined;
   let streamed = false;
   let failed = false;
+  let streamFailure: ProtocolStreamError | undefined;
   let abandoned = false;
 
   turn.requestInterrupt = interruptEventId => {
@@ -414,27 +418,21 @@ const deliverOpenAIResponsesWebSocket = async ({
       // heartbeat also rearms Codex's application-level idle timeout.
       // https://github.com/cloudflare/workerd/blob/26b5461b7dcc640bb16072f1ba6f2c6df82572ba/src/workerd/api/web-socket.h#L346-L394
       // https://github.com/openai/codex/blob/e6cfd40c3f444a5eeab01db70f48961a/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L695-L699
-      const next = abandoned || terminal !== undefined ? await pending : await nextFrameOrKeepAlive(pending);
+      const next = abandoned || terminal !== undefined || streamFailure !== undefined ? await pending : await nextFrameOrKeepAlive(pending);
       if (next.type === 'keep-alive') {
         if (streamed && !sendJson(socket, { type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, eventId)) stop();
         continue;
       }
       pending = undefined;
-      if (next.type === 'next-error') {
-        if (abandoned) return false;
-        throw next.error;
-      }
+      if (next.type === 'next-error') throw next.error;
       if (next.result.done) break;
 
       const item = next.result.value;
       pending = pendingWsFrameResult(iterator.next());
-      if (abandoned || terminal !== undefined) continue;
+      if (abandoned || terminal !== undefined || streamFailure !== undefined) continue;
       if (!item.ok) {
-        if (cancelled()) {
-          stop();
-          continue;
-        }
-        throw item.error.cause;
+        streamFailure = item.error;
+        continue;
       }
 
       const event = item.value;
@@ -453,8 +451,12 @@ const deliverOpenAIResponsesWebSocket = async ({
       streamed = true;
     }
     if (abandoned || cancelled()) return false;
+    if (streamFailure !== undefined) {
+      sendError(socket, 502, serverErrorEnvelope(streamFailure.cause), eventId);
+      return false;
+    }
     if (terminal === undefined) {
-      if (!failed) throw new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE);
+      if (!failed) sendError(socket, 502, serverErrorEnvelope(new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE)), eventId);
       turn.terminal = true;
       return false;
     }
@@ -470,6 +472,7 @@ const deliverOpenAIResponsesWebSocket = async ({
       abortRun();
       let next = await pending;
       while (next.type === 'frame' && !next.result.done) next = await pendingWsFrameResult(iterator.next());
+      if (next.type === 'next-error') throw next.error;
     }
   }
 };
@@ -569,10 +572,12 @@ const sendError = (
 const sendJson = (socket: OpenAIResponsesWebSocketSocket, value: unknown, eventId?: string): boolean => {
   if (socket.readyState !== 1) return false;
   const payload = eventId === undefined || !value || typeof value !== 'object' ? value : { ...value, event_id: eventId };
+  const text = JSON.stringify(payload);
   try {
-    socket.send(JSON.stringify(payload));
+    socket.send(text);
     return true;
-  } catch {
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== 'InvalidStateError') throw error;
     return false;
   }
 };

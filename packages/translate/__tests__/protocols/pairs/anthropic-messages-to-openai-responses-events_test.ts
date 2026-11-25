@@ -22,11 +22,13 @@ test('Responses late fixed usage reaches the Messages client through full usage 
   const trip = await routeAnthropicMessagesViaOpenAIResponses({ model: 'gpt-test', max_tokens: 64, stream: true, messages: [] }, { sidecarCodec: createTestSidecarCodec() });
   if (trip.type === 'input-error') throw new Error(trip.message);
   let clientSSE = '';
-  for await (const frame of trip.events(expectParsedProtocolFrames(parseOpenAIResponsesStream(new Response(sourceSSE).body!)))) {
+  for await (const frame of expectParsedProtocolFrames(trip.events(expectParsedProtocolFrames(parseOpenAIResponsesStream(new Response(sourceSSE).body!))))) {
     const sse = anthropicMessagesProtocolFrameToSSEFrame(frame);
     if (sse) clientSSE += `event: ${sse.event}\ndata: ${sse.data}\n\n`;
   }
-  const result = await collectAnthropicMessagesProtocolEventsToResult(expectParsedProtocolFrames(parseAnthropicMessagesStream(new Response(clientSSE).body!)));
+  const resultOutcome = await collectAnthropicMessagesProtocolEventsToResult(expectParsedProtocolFrames(parseAnthropicMessagesStream(new Response(clientSSE).body!)));
+  if (!resultOutcome.ok) throw resultOutcome.error.cause;
+  const result = resultOutcome.value;
   expect(result.usage.service_tier).toBe('priority');
   expect(result.usage.input_tokens).toBe(3);
   expect(result.usage.output_tokens).toBe(4);

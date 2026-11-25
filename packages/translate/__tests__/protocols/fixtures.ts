@@ -22,7 +22,7 @@ interface Fixture { text?: string[]; refusal?: string; thinking?: string[]; sign
 
 export const expectParsedProtocolFrames = async function* <Event>(frames: AsyncIterable<ParsedProtocolFrame<Event>>): AsyncGenerator<ProtocolFrame<Event>> {
   for await (const frame of frames) {
-    if (frame.type === 'error') throw new Error(frame.cause.message, { cause: frame.cause.cause });
+    if (frame.type === 'error') throw frame.cause;
     yield frame;
   }
 };
@@ -73,12 +73,15 @@ export const fixtureFrames = (protocol: IRTestProtocol, fixture: Fixture): Proto
 
 export const nativeResult = async (protocol: IRTestProtocol, frames: ProtocolFrame<any>[]): Promise<Wire> => {
   const source = iterate(frames);
-  switch (protocol) {
-  case 'openai-chat-completions': return await collectOpenAIChatCompletionsProtocolEventsToResult(source);
-  case 'openai-responses': return await collectOpenAIResponsesProtocolEventsToResult(source);
-  case 'anthropic-messages': return await collectAnthropicMessagesProtocolEventsToResult(source);
-  case 'gemini-generate-content': return await collectGeminiGenerateContentProtocolEventsToResult(source);
-  }
+  const collectResult = {
+    'openai-chat-completions': collectOpenAIChatCompletionsProtocolEventsToResult,
+    'openai-responses': collectOpenAIResponsesProtocolEventsToResult,
+    'anthropic-messages': collectAnthropicMessagesProtocolEventsToResult,
+    'gemini-generate-content': collectGeminiGenerateContentProtocolEventsToResult,
+  }[protocol];
+  const result = await collectResult(source);
+  if (!result.ok) throw result.error.cause;
+  return result.value;
 };
 
 const bodyText = (protocol: IRTestProtocol, result: Wire): string => {

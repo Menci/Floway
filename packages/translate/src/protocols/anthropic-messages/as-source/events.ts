@@ -13,6 +13,7 @@ import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
+import { TranslateEventException } from '../../../shared/event-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
 import { parseJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
@@ -90,7 +91,10 @@ export const writeAnthropicMessagesEvents = async function* (
   // before it. Clients that require serial blocks reorder this in the gateway.
   let pendingBlockStop: EventFrame<AnthropicMessagesStreamEventEx> | undefined;
   const emit = (event: AnthropicMessagesStreamEventEx): EventFrame<AnthropicMessagesStreamEventEx> => {
-    if (event.type !== 'error') nativeAccumulator.accept(event);
+    if (event.type !== 'error') {
+      const failure = nativeAccumulator.accept(event);
+      if (failure !== undefined) throw failure.cause;
+    }
     return eventFrame(event);
   };
 
@@ -111,7 +115,7 @@ export const writeAnthropicMessagesEvents = async function* (
       let kind: MessagesUnit['kind'] | undefined;
       if (isIRItemPath(record.path, state)) {
         const itemKind = unitKind(record.value);
-        if (itemKind === 'custom_tool_call') throw new TypeError('Messages cannot represent custom tool calls');
+        if (itemKind === 'custom_tool_call') throw new TranslateEventException('Messages cannot represent custom tool calls');
         if (itemKind === 'reasoning' || itemKind === 'function_call') {
           path = record.path;
           kind = itemKind;
@@ -231,10 +235,10 @@ export const writeAnthropicMessagesEvents = async function* (
       continue;
     }
     if (!started) continue;
-    if (record.type === 'write' && record.path[0] === 'choices' && record.path[1] !== 0) throw new Error('Messages cannot represent multiple choices');
+    if (record.type === 'write' && record.path[0] === 'choices' && record.path[1] !== 0) throw new TranslateEventException('Messages cannot represent multiple choices');
     if (record.type === 'ping') { yield emit({ type: 'ping' }); continue; }
     if (record.type === 'choice_end') {
-      if (record.choice !== 0) throw new Error('Messages cannot represent multiple choices');
+      if (record.choice !== 0) throw new TranslateEventException('Messages cannot represent multiple choices');
       finishReason = record.finish_reason === 'length' ? 'max_tokens'
         : record.finish_reason === 'tool_calls' ? 'tool_use'
           : record.finish_reason === 'content_filter' ? 'refusal' : 'end_turn';
@@ -331,7 +335,9 @@ export const writeAnthropicMessagesEvents = async function* (
       yield emit({ type: 'message_delta', delta: { stop_reason: null, stop_sequence: null, stop_details: null, container: null }, usage: usage(state) });
     }
     if (record.type === 'finish') {
-      const nativeResult = nativeAccumulator.result();
+      const result = nativeAccumulator.result();
+      if (!result.ok) throw result.error.cause;
+      const nativeResult = result.value;
       contentState.length = nativeResult.content.length;
       const targetTurn: AnthropicMessagesInputAssistantTurn = {
         role: 'assistant',

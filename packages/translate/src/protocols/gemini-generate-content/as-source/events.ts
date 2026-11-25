@@ -12,6 +12,7 @@ import { createIRUnitQueue, type IRUnitQueue } from '../../../ir/output/unit-que
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
+import { TranslateEventException } from '../../../shared/event-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
 import { isCompleteJSONObject } from '../../../shared/json/object.ts';
@@ -85,7 +86,8 @@ export const writeGeminiGenerateContentEvents = async function* (
     eventFrame({ responseId: metadata.id, modelVersion: metadata.model, ...event });
   const emit = (event: GeminiGenerateContentResult): EventFrame<GeminiGenerateContentStreamEvent> => {
     const frame = frameOf(event);
-    nativeAccumulator.accept(frame.event);
+    const failure = nativeAccumulator.accept(frame.event);
+    if (failure !== undefined) throw failure.cause;
     return frame;
   };
   const emitPart = (choice: number, part: GeminiGenerateContentPart): EventFrame<GeminiGenerateContentStreamEvent> =>
@@ -93,7 +95,8 @@ export const writeGeminiGenerateContentEvents = async function* (
   const renderPart = (choice: number, part: GeminiGenerateContentPart): EventFrame<GeminiGenerateContentStreamEvent> => {
     if (part.thought !== true || options.includeThoughts === true) return emitPart(choice, part);
     const full = frameOf({ candidates: [{ index: choice, content: { role: 'model', parts: [part] } }] });
-    nativeAccumulator.accept(full.event);
+    const failure = nativeAccumulator.accept(full.event);
+    if (failure !== undefined) throw failure.cause;
     return frameOf({ candidates: [{ index: choice, content: { role: 'model', parts: [{ text: '', thought: true }] } }] });
   };
   const addUnit = (choice: number, unit: GenerateContentUnit): void => {
@@ -196,7 +199,7 @@ export const writeGeminiGenerateContentEvents = async function* (
       if (typeof choice !== 'number') return;
       if (isIRItemPath(record.path, state)) {
         const type = initializedType(record.value);
-        if (type === 'custom_tool_call') throw new TypeError('GenerateContent cannot represent custom tool calls');
+        if (type === 'custom_tool_call') throw new TranslateEventException('GenerateContent cannot represent custom tool calls');
         if (type === 'reasoning' || type === 'function_call') {
           addUnit(choice, { path: record.path, kind: type, opened: false });
         }
@@ -233,7 +236,7 @@ export const writeGeminiGenerateContentEvents = async function* (
           } else if (!closed) wait = true;
           else if (inlineMedia !== undefined) {
             const mime = inlineMedia.mimeType;
-            if (mime === undefined) throw new TypeError('GenerateContent inline data requires a MIME type');
+            if (mime === undefined) throw new TranslateEventException('GenerateContent inline data requires a MIME type');
             part = {
               inlineData: { mimeType: mime, data: inlineMedia.data },
               ...(content.type === 'audio' && content.audio.transcript !== undefined ? { audioTranscription: { text: content.audio.transcript } } : {}),

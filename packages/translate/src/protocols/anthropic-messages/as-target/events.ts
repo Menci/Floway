@@ -7,6 +7,7 @@ import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
+import { TranslateEventException } from '../../../shared/event-error.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
 import {
   type AnthropicMessagesAssistantContentBlock,
@@ -84,7 +85,7 @@ export const readAnthropicMessagesEvents = async function* (
   };
 
   const openBlock = (index: number, block: AnthropicMessagesAssistantContentBlock): void => {
-    if (blocks.has(index)) throw new Error(`Duplicate Messages content_block_start at index ${index}`);
+    if (blocks.has(index)) throw new TranslateEventException(`Duplicate Messages content_block_start at index ${index}`);
     let item: IRItemHandle | undefined;
     let part: IRPartHandle | undefined;
     let annotationCount: number | undefined;
@@ -119,7 +120,7 @@ export const readAnthropicMessagesEvents = async function* (
         ? { type: 'custom_tool_call', call_id: block.id, ...naming, input: '' }
         : { type: 'function_call', call_id: block.id, ...naming, arguments: '' });
     } else if (!UNTRANSLATED_BLOCK_TYPES.includes(block.type)) {
-      throw new TypeError(`Cannot translate Messages content block ${block.type}`);
+      throw new TranslateEventException(`Cannot translate Messages content block ${block.type}`);
     }
     const state: MessagesBlockState = {
       item, part, tool, annotationCount, wrappedInput: '', textField,
@@ -130,14 +131,17 @@ export const readAnthropicMessagesEvents = async function* (
   };
 
   for await (const frame of frames) {
-    if (frame.type === 'done') throw new Error('Messages done arrived without message_stop');
+    if (frame.type === 'done') throw new TranslateEventException('Messages done arrived without message_stop');
     const e = frame.event;
-    if (e.type !== 'error') nativeAccumulator.accept(e);
+    if (e.type !== 'error') {
+      const failure = nativeAccumulator.accept(e);
+      if (failure !== undefined) throw new TranslateEventException(failure.cause.message, { cause: failure.cause });
+    }
     switch (e.type) {
     case 'message_start':
-      if (started) throw new Error('Duplicate Messages message_start');
-      if (typeof e.message.id !== 'string') throw new TypeError('Messages message_start requires an id');
-      if (typeof e.message.model !== 'string') throw new TypeError('Messages message_start requires a model');
+      if (started) throw new TranslateEventException('Duplicate Messages message_start');
+      if (typeof e.message.id !== 'string') throw new TranslateEventException('Messages message_start requires an id');
+      if (typeof e.message.model !== 'string') throw new TranslateEventException('Messages message_start requires a model');
       ir.choice(0);
       ir.assign(['model'], e.message.model);
       assignUsage(e.message.usage);
@@ -145,12 +149,12 @@ export const readAnthropicMessagesEvents = async function* (
       started = true;
       break;
     case 'content_block_start':
-      if (!started) throw new Error('Messages content_block_start arrived before message_start');
+      if (!started) throw new TranslateEventException('Messages content_block_start arrived before message_start');
       openBlock(e.index, e.content_block);
       break;
     case 'content_block_delta': {
       const block = blocks.get(e.index);
-      if (block === undefined) throw new Error('Messages delta arrived before content_block_start');
+      if (block === undefined) throw new TranslateEventException('Messages delta arrived before content_block_start');
       const d = e.delta;
       if (block.item === undefined) break;
       switch (d.type) {
@@ -187,7 +191,7 @@ export const readAnthropicMessagesEvents = async function* (
         }
         break;
       case 'citations_delta': {
-        if (block.part === undefined) throw new TypeError('Messages citation requires a text block');
+        if (block.part === undefined) throw new TranslateEventException('Messages citation requires a text block');
         const annotation = messagesCitationToIR(d.citation);
         if (annotation === undefined) break;
         if (block.annotationCount === undefined) {
@@ -199,13 +203,13 @@ export const readAnthropicMessagesEvents = async function* (
         }
         break;
       }
-      default: throw new TypeError(`Cannot translate Messages delta ${d.type}`);
+      default: throw new TranslateEventException(`Cannot translate Messages delta ${d.type}`);
       }
       break;
     }
     case 'content_block_stop': {
       const block = blocks.get(e.index);
-      if (block === undefined) throw new Error('Messages content_block_stop arrived before content_block_start');
+      if (block === undefined) throw new TranslateEventException('Messages content_block_stop arrived before content_block_start');
       blocks.delete(e.index);
       if (block.item !== undefined) {
         if (block.tool === 'custom') {
@@ -222,9 +226,9 @@ export const readAnthropicMessagesEvents = async function* (
       break;
     }
     case 'message_delta':
-      if (!started) throw new Error('Messages message_delta arrived before message_start');
+      if (!started) throw new TranslateEventException('Messages message_delta arrived before message_start');
       assignUsage(e.usage);
-      if (e.delta.stop_reason === 'compaction') throw new TypeError('Cannot translate Messages compaction stop');
+      if (e.delta.stop_reason === 'compaction') throw new TranslateEventException('Cannot translate Messages compaction stop');
       if (e.delta.stop_reason === 'refusal') {
         ir.choice(0).assign('refusal_details', {
           category: e.delta.stop_details?.category ?? null,
@@ -239,9 +243,11 @@ export const readAnthropicMessagesEvents = async function* (
       }
       break;
     case 'message_stop': {
-      if (!started) throw new Error('Messages message_stop arrived before message_start');
-      if (blocks.size > 0) throw new Error('Messages message_stop arrived with open content blocks');
-      const nativeResult = nativeAccumulator.result();
+      if (!started) throw new TranslateEventException('Messages message_stop arrived before message_start');
+      if (blocks.size > 0) throw new TranslateEventException('Messages message_stop arrived with open content blocks');
+      const result = nativeAccumulator.result();
+      if (!result.ok) throw result.error.cause;
+      const nativeResult = result.value;
       const contentFields: NonNullable<AnthropicMessagesInputAssistantTurnState<ReadFieldStates>['content']> = [];
       contentFields.length = nativeResult.content.length;
       [...blockStates.entries()].toSorted(([left], [right]) => left - right).forEach(([, block], index) => {
@@ -265,5 +271,5 @@ export const readAnthropicMessagesEvents = async function* (
     yield* ir.drain();
     if (finished) return;
   }
-  throw new Error('Messages stream ended without message_stop');
+  throw new TranslateEventException('Messages stream ended without message_stop');
 };

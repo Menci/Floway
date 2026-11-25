@@ -1,23 +1,12 @@
 import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from './index.ts';
-
-export const OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE = 'OpenAI Responses stream ended without a terminal event.';
+import { collectOpenAIResponsesProtocolEventsToResult } from './to-result.ts';
+import { eventFrame } from '../common/sse.ts';
 
 export async function reassembleOpenAIResponsesEvents(events: AsyncIterable<OpenAIResponsesStreamEventEx>): Promise<OpenAIResponsesResultEx> {
-  let error: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }> | undefined;
-  for await (const event of events) {
-    if (event.type === 'error') {
-      error = event;
-    }
-
-    if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
-      if (event.type === 'response.failed' && error !== undefined) throw new Error(errorMessage(error), { cause: error });
-      return event.response;
-    }
-  }
-
-  if (error !== undefined) throw new Error(errorMessage(error), { cause: error });
-  throw new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE);
+  const frames = async function* () {
+    for await (const event of events) yield eventFrame(event);
+  };
+  const result = await collectOpenAIResponsesProtocolEventsToResult(frames());
+  if (!result.ok) throw result.error.cause;
+  return result.value;
 }
-
-const errorMessage = (error: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>): string =>
-  'message' in error ? error.message : error.error.message;

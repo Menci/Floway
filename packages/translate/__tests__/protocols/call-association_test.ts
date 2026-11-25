@@ -106,9 +106,11 @@ test.each<readonly ['chat' | 'messages', 'function' | 'custom']>([['chat', 'cust
   const options = { sidecarCodec: createTestSidecarCodec() };
   const source: OpenAIResponsesRequestPayloadEx = { model: 'm', stream: true, input: 'start', tools: [group(kind)] };
   const args = kind === 'function' ? '{}' : '{"input":"raw"}';
-  const result = target === 'chat'
+  const outcome = target === 'chat'
     ? await collectOpenAIResponsesProtocolEventsToResult(expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(source, options)).events(iterate(chatFrames('web_run', args))))
     : await collectOpenAIResponsesProtocolEventsToResult(expectTrip(await routeOpenAIResponsesViaAnthropicMessages(source, options)).events(iterate(messagesFrames('web_run', args))));
+  if (!outcome.ok) throw outcome.error.cause;
+  const result = outcome.value;
   const call = result.output.find(item => item.type === 'function_call' || item.type === 'custom_tool_call');
   if (call === undefined) throw new Error('Expected the public callable and its replay sidecar.');
   expect(call).toMatchObject({ type: kind === 'function' ? 'function_call' : 'custom_tool_call', name: 'run', namespace: 'web' });
@@ -137,7 +139,9 @@ test.each<readonly ['chat' | 'messages', 'function' | 'custom']>([['chat', 'cust
       const calls = trip.target.messages.flatMap(message => message.role === 'assistant' ? message.tool_calls ?? [] : []);
       expect(calls.map(item => item.type === 'function' ? item.function.name : item.custom.name)).toEqual(['web_run', 'web_run_2']);
       expect(trip.target.messages[0]).toMatchObject({ reasoning_content: 'native reasoning' });
-      const returned = await collectOpenAIResponsesProtocolEventsToResult(trip.events(iterate(chatFrames('web_run_2', args))));
+      const returnedOutcome = await collectOpenAIResponsesProtocolEventsToResult(trip.events(iterate(chatFrames('web_run_2', args))));
+      if (!returnedOutcome.ok) throw returnedOutcome.error.cause;
+      const returned = returnedOutcome.value;
       expect(returned.output.find(item => item.type === 'function_call' || item.type === 'custom_tool_call')).toMatchObject({ type: kind === 'function' ? 'function_call' : 'custom_tool_call', name: 'run', namespace: 'web' });
     } else {
       const trip = expectTrip(await routeOpenAIResponsesViaAnthropicMessages(request, options));
@@ -147,7 +151,9 @@ test.each<readonly ['chat' | 'messages', 'function' | 'custom']>([['chat', 'cust
       expect(calls.map(item => item.name)).toEqual(['web_run', 'web_run_2']);
       expect(trip.target.messages[0].content).toContainEqual({ type: 'thinking', thinking: 'native reasoning', signature: 'native signature' });
       expect(trip.target.messages[0].content).toContainEqual({ type: 'redacted_thinking', data: 'native encrypted blob' });
-      const returned = await collectOpenAIResponsesProtocolEventsToResult(trip.events(iterate(messagesFrames('web_run_2', args))));
+      const returnedOutcome = await collectOpenAIResponsesProtocolEventsToResult(trip.events(iterate(messagesFrames('web_run_2', args))));
+      if (!returnedOutcome.ok) throw returnedOutcome.error.cause;
+      const returned = returnedOutcome.value;
       expect(returned.output.find(item => item.type === 'function_call' || item.type === 'custom_tool_call')).toMatchObject({ type: kind === 'function' ? 'function_call' : 'custom_tool_call', name: 'run', namespace: 'web' });
     }
     expect(toIR).not.toHaveBeenCalled();
@@ -160,11 +166,13 @@ test.each<readonly ['chat' | 'messages', 'function' | 'custom']>([['chat', 'cust
 test.each(['chat', 'messages', 'responses'] as const)('Gemini id-less results answer the complete native and ordinary %s history in FIFO order', async target => {
   const options = { sidecarCodec: createTestSidecarCodec() };
   const source: GeminiGenerateContentRequest = { model: 'm', contents: [{ role: 'user', parts: [{ text: 'start' }] }] };
-  const first = target === 'chat'
+  const outcome = target === 'chat'
     ? await collectGeminiGenerateContentProtocolEventsToResult(expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions(source, options)).events(iterate(chatFrames('same', '{"n":1}'))))
     : target === 'messages'
       ? await collectGeminiGenerateContentProtocolEventsToResult(expectTrip(await routeGeminiGenerateContentViaAnthropicMessages(source, options)).events(iterate(messagesFrames('same', '{"n":1}'))))
       : await collectGeminiGenerateContentProtocolEventsToResult(expectTrip(await routeGeminiGenerateContentViaOpenAIResponses(source, options)).events(iterate(responsesFrames())));
+  if (!outcome.ok) throw outcome.error.cause;
+  const first = outcome.value;
   const native = first.candidates?.[0]?.content;
   if (native === undefined) throw new Error('Expected a public Gemini assistant turn.');
   const request: GeminiGenerateContentRequest = {
@@ -215,7 +223,9 @@ test('Chat source custom identity renames native Messages calls independently fr
     model: 'm', stream: true, messages: [{ role: 'user', content: 'start' }],
     tools: [{ type: 'custom', custom: { name: 'edit' } }],
   }, options));
-  const result = await collectOpenAIChatCompletionsProtocolEventsToResult(first.events(iterate(messagesFrames('edit', '{"input":"raw"}'))));
+  const resultOutcome = await collectOpenAIChatCompletionsProtocolEventsToResult(first.events(iterate(messagesFrames('edit', '{"input":"raw"}'))));
+  if (!resultOutcome.ok) throw resultOutcome.error.cause;
+  const result = resultOutcome.value;
   const replay = expectTrip(await routeOpenAIChatCompletionsViaAnthropicMessages({
     model: 'm', stream: true,
     tools: [{ type: 'function', function: { name: 'edit', parameters: { type: 'object', properties: {} } } }, { type: 'custom', custom: { name: 'edit' } }],

@@ -21,11 +21,16 @@ test('collectOpenAIResponsesProtocolEventsToResult drains response.failed and re
     throw new Error('Read beyond the failed response');
   }
 
-  const caught: unknown = await collectOpenAIResponsesProtocolEventsToResult(events()).catch((caught: unknown) => caught);
+  const result = await collectOpenAIResponsesProtocolEventsToResult(events());
   expect(emittedFailed).toBe(true);
-  expect(caught).toMatchObject({
-    message: 'Limit reached',
-    cause: { type: 'error', code: null, param: 'model', message: 'Limit reached', sequence_number: 1 },
+  expect(result).toMatchObject({
+    ok: false,
+    error: {
+      type: 'error', cause: {
+        message: 'Limit reached',
+        cause: { type: 'error', code: null, param: 'model', message: 'Limit reached', sequence_number: 1 },
+      },
+    },
   });
 });
 
@@ -36,5 +41,7 @@ test('collectOpenAIResponsesProtocolEventsToResult preserves an error notificati
     yield doneFrame();
   }
 
-  await expect(collectOpenAIResponsesProtocolEventsToResult(events())).rejects.toMatchObject({ message: error.message, cause: error });
+  expect(await collectOpenAIResponsesProtocolEventsToResult(events())).toMatchObject({
+    ok: false, error: { type: 'error', cause: { message: error.message, cause: error } },
+  });
 });

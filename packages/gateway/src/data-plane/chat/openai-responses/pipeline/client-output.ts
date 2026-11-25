@@ -1,7 +1,9 @@
 import { openAIResponsesExit, openAIResponsesFactSpace } from './facts.ts';
 import type { OpenAIResponsesServices } from './services.ts';
 import { completeInterruptedOpenAIResponses } from './websocket-interrupt.ts';
-import { readProtocolFrames } from '../../pipeline/protocol-frames.ts';
+import { responseHead } from '../../../pipeline/response.ts';
+import { openaiInternalErrorPayload } from '../../../shared/openai-errors.ts';
+import { transformProtocolFrames } from '../../pipeline/protocol-frames.ts';
 import { affinityIdentityForCandidate } from '../../shared/affinity/index.ts';
 import { wrapOpenAIResponsesAffinityEgress } from '../affinity/egress.ts';
 import { completeOpenAIResponsesCompaction } from '../compaction-resource.ts';
@@ -10,6 +12,7 @@ import { createOpenAIResponsesResponseId } from '../response-id.ts';
 import { wrapResponseResourceCompletion } from '../response-resource.ts';
 import { move } from '@floway-dev/pipeline';
 import { collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
+import { toInternalDebugError } from '@floway-dev/provider';
 
 const { defineStage } = openAIResponsesFactSpace<OpenAIResponsesServices>();
 
@@ -21,7 +24,7 @@ export const completeOpenAIResponsesClientOutput = defineStage({
       provides: [],
       consumes: [],
     },
-    response: { needs: openAIResponsesExit, provides: ['response.openaiResponses'], consumes: [] },
+    response: { needs: openAIResponsesExit, provides: ['response.http', 'response.openaiResponses'], consumes: [] },
   },
   async execute(facts, scope) {
     const call = scope.next(facts);
@@ -43,35 +46,32 @@ export const completeOpenAIResponsesClientOutput = defineStage({
     if (outcome.kind === 'result') {
       if (facts['request.openaiResponsesAction'] !== 'compact') throw new TypeError('OpenAI Responses generation returned a scalar');
       const persisted = await collectOpenAIResponsesProtocolEventsToResult(statefulOutput(syntheticEventsFromCompaction(outcome.result)));
-      const result = completeOpenAIResponsesCompaction(persisted, delivery.createdAt);
+      if (!persisted.ok) {
+        const { cause } = persisted.error;
+        return {
+          ...back,
+          'response.http': move(responseHead(502)),
+          'response.openaiResponses': move({ kind: 'error', source: 'upstream', error: openaiInternalErrorPayload(toInternalDebugError(cause)), cause } as const),
+        };
+      }
+      const result = completeOpenAIResponsesCompaction(persisted.value, delivery.createdAt);
       return { ...back, 'response.openaiResponses': move({ kind: 'result', result } as const) };
     }
 
-    const stream = scope.wrapStream(outcome.stream, async function* (items, producer) {
-      const source = readProtocolFrames(items);
-      let failure;
-      try {
-        const upstream = source.frames();
+    const stream = scope.wrapStream(outcome.stream, (items, producer) => transformProtocolFrames(items,
+      (upstream, failure) => {
         const interrupted = websocketResponseId === undefined ? upstream : completeInterruptedOpenAIResponses(upstream, {
-          signal: producer.signal,
+          failure,
           responseId,
           model: request.model,
         });
-        const frames = wrapResponseResourceCompletion(statefulOutput(interrupted), {
+        return wrapResponseResourceCompletion(statefulOutput(interrupted), {
           request,
           createdAt: delivery.createdAt,
           stored: store.writesState,
         });
-        for await (const frame of frames) {
-          if (frame.type === 'event') yield { ok: true, value: frame.event };
-        }
-      } catch (cause) {
-        failure = cause === source.failure ? source.failure : { kind: 'protocol' as const, cause };
-      }
-      if (!source.done) producer.abort(call);
-      if (failure !== undefined) yield { ok: false, error: failure };
-      await source.drain();
-    });
+      },
+      () => { producer.abort(call); }));
     return { ...back, 'response.openaiResponses': move({ kind: 'stream', stream } as const) };
   },
 });

@@ -128,7 +128,9 @@ test.each([
   const output = await collect(trip.events(iterate(frames)));
   const events = output.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
   expect(events).toContainEqual(expect.objectContaining({ type: 'response.function_call_arguments.done', arguments: args }));
-  const response = await collectOpenAIResponsesProtocolEventsToResult(iterate(output));
+  const responseOutcome = await collectOpenAIResponsesProtocolEventsToResult(iterate(output));
+  if (!responseOutcome.ok) throw responseOutcome.error.cause;
+  const response = responseOutcome.value;
   expect(response.status).toBe('completed');
   expect(response.output).toContainEqual(expect.objectContaining({ type: 'function_call', name: 'f', arguments: args, status: 'completed' }));
 });
@@ -164,16 +166,22 @@ type AssistantTurn =
 const collectAssistantTurn = async (protocol: Protocol, frames: Parameters<typeof nativeResult>[1]): Promise<AssistantTurn> => {
   const events = iterate(frames);
   if (protocol === 'openai-responses') {
-    const result = await collectOpenAIResponsesProtocolEventsToResult(events);
+    const resultOutcome = await collectOpenAIResponsesProtocolEventsToResult(events);
+    if (!resultOutcome.ok) throw resultOutcome.error.cause;
+    const result = resultOutcome.value;
     return { protocol, turn: toOpenAIResponsesInputItems(result.output) };
   }
   if (protocol === 'openai-chat-completions') {
-    const result = await collectOpenAIChatCompletionsProtocolEventsToResult(events);
+    const resultOutcome = await collectOpenAIChatCompletionsProtocolEventsToResult(events);
+    if (!resultOutcome.ok) throw resultOutcome.error.cause;
+    const result = resultOutcome.value;
     assert(result.choices[0] !== undefined);
     return { protocol, turn: toOpenAIChatCompletionsInputAssistantMessage(result.choices[0].message) };
   }
   if (protocol === 'anthropic-messages') {
-    const result = await collectAnthropicMessagesProtocolEventsToResult(events);
+    const resultOutcome = await collectAnthropicMessagesProtocolEventsToResult(events);
+    if (!resultOutcome.ok) throw resultOutcome.error.cause;
+    const result = resultOutcome.value;
     return {
       protocol,
       turn: {
@@ -182,7 +190,9 @@ const collectAssistantTurn = async (protocol: Protocol, frames: Parameters<typeo
       },
     };
   }
-  const result = await collectGeminiGenerateContentProtocolEventsToResult(events);
+  const resultOutcome = await collectGeminiGenerateContentProtocolEventsToResult(events);
+  if (!resultOutcome.ok) throw resultOutcome.error.cause;
+  const result = resultOutcome.value;
   const content = result.candidates?.[0]?.content;
   assert(content !== undefined);
   return { protocol, turn: [content] };

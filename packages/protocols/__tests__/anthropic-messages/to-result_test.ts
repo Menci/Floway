@@ -1,11 +1,10 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import type { AnthropicMessagesStreamEventEx } from '../../src/anthropic-messages/index.ts';
 import { collectAnthropicMessagesProtocolEventsToResult } from '../../src/anthropic-messages/to-result.ts';
 import { eventFrame } from '../../src/common/index.ts';
-import { assertRejects } from '@floway-dev/test-utils';
 
-test('collectAnthropicMessagesProtocolEventsToResult rejects streams without message_stop', async () => {
+test('collectAnthropicMessagesProtocolEventsToResult reports streams without message_stop', async () => {
   async function* events() {
     const payloads: AnthropicMessagesStreamEventEx[] = [
       {
@@ -46,5 +45,7 @@ test('collectAnthropicMessagesProtocolEventsToResult rejects streams without mes
     for (const event of payloads) yield eventFrame(event);
   }
 
-  await assertRejects(async () => await collectAnthropicMessagesProtocolEventsToResult(events()), Error);
+  expect(await collectAnthropicMessagesProtocolEventsToResult(events())).toMatchObject({
+    ok: false, error: { type: 'error', cause: { message: 'Anthropic Messages stream ended without a message_stop event.' } },
+  });
 });

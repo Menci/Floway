@@ -63,7 +63,9 @@ test('Gemini matches ID-less legacy responses by public name and explicit modern
   };
   for (const [index, mode] of (['legacy', 'modern', 'legacy'] as const).entries()) {
     const trip = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions(payload, context));
-    const result = await collectGeminiGenerateContentProtocolEventsToResult(trip.events(iterate(nativeFrames(mode, 'lookup'))));
+    const resultOutcome = await collectGeminiGenerateContentProtocolEventsToResult(trip.events(iterate(nativeFrames(mode, 'lookup'))));
+    if (!resultOutcome.ok) throw resultOutcome.error.cause;
+    const result = resultOutcome.value;
     const content = result.candidates?.[0]?.content;
     const call = content?.parts?.find(part => part.functionCall !== undefined)?.functionCall;
     if (content === undefined || call === undefined || payload.contents === undefined) throw new Error('Expected a public Gemini invocation');
@@ -77,7 +79,9 @@ test('Gemini keeps modern IDs separate when a vendor stream includes both call f
   const context = { sidecarCodec: createTestSidecarCodec() };
   const source: GeminiGenerateContentRequest = { model: 'model', contents: [{ role: 'user', parts: [{ text: 'Call lookup' }] }] };
   const trip = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions(source, context));
-  const result = await collectGeminiGenerateContentProtocolEventsToResult(trip.events(iterate(nativeFrames('mixed', 'lookup'))));
+  const resultOutcome = await collectGeminiGenerateContentProtocolEventsToResult(trip.events(iterate(nativeFrames('mixed', 'lookup'))));
+  if (!resultOutcome.ok) throw resultOutcome.error.cause;
+  const result = resultOutcome.value;
   const content = result.candidates?.[0]?.content;
   if (content === undefined) throw new Error('Expected a public Gemini assistant content');
   const calls = content.parts?.flatMap(part => part.functionCall === undefined ? [] : [part.functionCall]);
@@ -114,7 +118,9 @@ test('a source-ID-only result cannot answer a restored legacy call', async () =>
     tools: [{ name: 'lookup', input_schema: { type: 'object', properties: { x: { type: 'integer' } } } }],
   };
   const trip = expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context));
-  const result = await collectAnthropicMessagesProtocolEventsToResult(trip.events(iterate(nativeFrames('legacy', 'lookup'))));
+  const resultOutcome = await collectAnthropicMessagesProtocolEventsToResult(trip.events(iterate(nativeFrames('legacy', 'lookup'))));
+  if (!resultOutcome.ok) throw resultOutcome.error.cause;
+  const result = resultOutcome.value;
   const call = result.content.find(block => block.type === 'tool_use');
   if (call === undefined) throw new Error('Expected a public Messages tool invocation');
   payload.messages.push(

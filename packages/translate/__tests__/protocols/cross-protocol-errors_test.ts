@@ -9,7 +9,7 @@ import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
 import { collect, iterate } from '../shared/iterables.ts';
 import { PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ParsedProtocolFrame } from '@floway-dev/protocols/common';
 import {
   routeAnthropicMessagesViaOpenAIChatCompletions,
   routeAnthropicMessagesViaOpenAIResponses,
@@ -159,7 +159,7 @@ test.each([
   const error = { message: 'too long', code: 'context_length_exceeded' };
   const http = trip.error(502, new Headers(), new TextEncoder().encode(JSON.stringify({ error })));
   expect(http?.status).toBe(400);
-  const frames: ProtocolFrame<unknown>[] = [];
+  const frames: ParsedProtocolFrame<unknown>[] = [];
   for await (const frame of trip.events(iterate([eventFrame({ type: 'error', error } as const)]))) frames.push(frame);
   expect(frames).toEqual([eventFrame(http?.body)]);
   expect(http?.body).toMatchObject(protocol === 'Messages'

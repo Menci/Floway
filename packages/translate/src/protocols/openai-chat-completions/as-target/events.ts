@@ -9,6 +9,7 @@ import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, type ReadFieldStates, type ReadFieldState, type TextFragmentId } from '../../../round-trip/reference/reference-builder.ts';
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
+import { TranslateEventException } from '../../../shared/event-error.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
@@ -189,13 +190,13 @@ export const readOpenAIChatCompletionsEvents = async function* (
 
   const startForContent = (chunk: ChatChunk): void => {
     if (started) return;
-    if (!hasModel) throw new TypeError('ChatCompletions content arrived before a non-empty model');
+    if (!hasModel) throw new TranslateEventException('ChatCompletions content arrived before a non-empty model');
     start(chunk);
   };
 
   const assignUsage = (usage: OpenAIChatCompletionsUsageEx): void => {
     const converted = usageToIR(usage);
-    if (!started && !hasModel) throw new TypeError('ChatCompletions usage arrived before a non-empty model');
+    if (!started && !hasModel) throw new TranslateEventException('ChatCompletions usage arrived before a non-empty model');
     ir.usage(converted);
   };
 
@@ -225,7 +226,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
     const citations = annotations.map(annotation => {
       const native = annotation.url_citation;
       if (!Number.isInteger(native.start_index) || !Number.isInteger(native.end_index) || native.start_index < 0 || native.end_index < native.start_index) {
-        throw new RangeError('Invalid code-point range');
+        throw new TranslateEventException('Invalid code-point range');
       }
       const start = Math.min(native.start_index, availableCodePoints);
       const end = Math.min(native.end_index, availableCodePoints);
@@ -275,7 +276,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
   };
 
   const closeTool = (tool: ChatToolState, status: 'completed' | 'incomplete' = 'completed'): void => {
-    if (tool.item === undefined) throw new TypeError('Completed tool calls require a name');
+    if (tool.item === undefined) throw new TranslateEventException('Completed tool calls require a name');
     if (!tool.item.isOpen) return;
     if (tool.wrapped) {
       const input = unwrapCustomToolInput(tool.pendingInput);
@@ -286,8 +287,8 @@ export const readOpenAIChatCompletionsEvents = async function* (
   };
 
   const finish = (): readonly IRRecord[] => {
-    if (!started) throw new Error('ChatCompletions stream ended without a response');
-    for (const [index, choice] of choices) if (!choice.ended) throw new Error(`ChatCompletions choice ${index} ended without finish_reason`);
+    if (!started) throw new TranslateEventException('ChatCompletions stream ended without a response');
+    for (const [index, choice] of choices) if (!choice.ended) throw new TranslateEventException(`ChatCompletions choice ${index} ended without finish_reason`);
     ir.event({ type: 'finish', status: [...choices.values()].some(choice => choice.incomplete) ? 'incomplete' : 'completed' });
     return ir.drain();
   };
@@ -342,7 +343,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
       const tokens = logprobs[kind];
       if (tokens == null || tokens.length === 0) continue;
       const owner = choice.logprobParts.get(kind);
-      if (owner === undefined) throw new TypeError('ChatCompletions logprobs require a matching text part');
+      if (owner === undefined) throw new TranslateEventException('ChatCompletions logprobs require a matching text part');
       let group = choice.logprobGroups.get(owner.part);
       if (group === undefined) {
         group = { index: choice.logprobGroups.size, length: 0 };
@@ -463,7 +464,9 @@ export const readOpenAIChatCompletionsEvents = async function* (
     closeMessage(choice, status);
     for (const tool of choice.tools.values()) closeTool(tool, status);
     for (const item of choice.items) item.end(status);
-    const nativeChoice = nativeAccumulator(index).result().choices.find(resultChoice => resultChoice.index === index);
+    const result = nativeAccumulator(index).result();
+    if (!result.ok) throw new TranslateEventException(result.error.cause.message, { cause: result.error.cause });
+    const nativeChoice = result.value.choices.find(resultChoice => resultChoice.index === index);
     if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${index} at choice_end`);
     if (choice.fieldState.tool_calls !== undefined) choice.fieldState.tool_calls = [...choice.tools]
       .filter(([wireIndex]) => wireIndex >= 0)
@@ -488,8 +491,9 @@ export const readOpenAIChatCompletionsEvents = async function* (
       if (hasContent) console.warn('Ignoring ChatCompletions content for a closed choice', { choice: index });
       return;
     }
-    if (nativeDelta != null && !deltaIsObject) throw new TypeError('ChatCompletions choice delta must be an object');
-    nativeAccumulator(index).accept({ ...chunk, choices: [{ ...entry, delta }] });
+    if (nativeDelta != null && !deltaIsObject) throw new TranslateEventException('ChatCompletions choice delta must be an object');
+    const failure = nativeAccumulator(index).accept({ ...chunk, choices: [{ ...entry, delta }] });
+    if (failure !== undefined) throw new TranslateEventException(failure.cause.message, { cause: failure.cause });
 
     const choice = choiceState(index);
     // Scalar reasoning fields are aliases; keep the first observed field for the choice.

@@ -66,7 +66,12 @@ test('errors discard withheld items and upstream failures retain the original er
   expect(await collect(serializeAnthropicMessagesStream(frames([start(0), start(1), error]), true))).toEqual([start(0), error]);
   const failure = new Error('upstream failed');
   await expect(collect(serializeAnthropicMessagesStream((async function* () { yield start(0); yield start(1); throw failure; })(), true))).rejects.toBe(failure);
-  await expect(collect(serializeAnthropicMessagesStream(frames([start(0), start(1)]), true))).rejects.toThrow();
+  expect(await collect(serializeAnthropicMessagesStream(frames([start(0), start(1)]), true))).toMatchObject([
+    start(0), { type: 'error', cause: { message: 'Cannot serialize an interleaved stream whose active item never closed' } },
+  ]);
+  expect(await collect(serializeAnthropicMessagesStream(frames([start(0), doneFrame()]), true))).toMatchObject([
+    start(0), { type: 'error', cause: { message: 'Cannot serialize an interleaved stream whose active item never closed' } },
+  ]);
 });
 
 test('Responses reorder whole item lifecycles and restamp sequence numbers in delivery order', async () => {
@@ -81,10 +86,12 @@ test('Responses reorder whole item lifecycles and restamp sequence numbers in de
 
 test('item serialization fails when withheld frames exceed the frame or byte budget', async () => {
   const source = [start(0), start(1), delta(1, 'withheld')];
-  await expect(collect(serializeAnthropicMessagesStream(frames(source), true, { frames: 1, bytes: 4096 })))
-    .rejects.toThrow('exceeded 1 retained frames');
-  await expect(collect(serializeAnthropicMessagesStream(frames(source), true, { frames: 10, bytes: 1 })))
-    .rejects.toThrow('exceeded 1 retained bytes');
+  expect(await collect(serializeAnthropicMessagesStream(frames(source), true, { frames: 1, bytes: 4096 }))).toMatchObject([
+    start(0), { type: 'error', cause: { message: 'Interleaved stream item serialization exceeded 1 retained frames' } },
+  ]);
+  expect(await collect(serializeAnthropicMessagesStream(frames(source), true, { frames: 10, bytes: 1 }))).toMatchObject([
+    start(0), { type: 'error', cause: { message: 'Interleaved stream item serialization exceeded 1 retained bytes' } },
+  ]);
 });
 
 test('item serialization releases the retention budget as buffered items replay', async () => {

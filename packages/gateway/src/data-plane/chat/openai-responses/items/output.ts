@@ -1,8 +1,8 @@
 import { hashOpenAIResponsesItem, openaiResponsesItemId } from './identity.ts';
 import type { OpenAIResponsesStatefulStore } from './store.ts';
 import type { StoredOpenAIResponsesItem } from '../../../../repo/types.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { doneFrame, eventFrame, type ParsedProtocolFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 // Complete output items become reusable at their first done frame, so each row
 // commits before that frame is yielded. Later done frames remain
@@ -15,41 +15,15 @@ import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type Op
 // to every queued/created/in-progress and terminal response envelope without
 // changing any output item.
 export const wrapOpenAIResponsesClientOutput = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  frames: AsyncIterable<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>>,
   args: {
     readonly store: OpenAIResponsesStatefulStore;
     readonly responseId: string;
   },
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+): AsyncGenerator<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const { store, responseId } = args;
   const finalizedOutputIds = new Map<number, string>();
   let sawCompactionItem = false;
-
-  const requireMessageId = (item: OpenAIResponsesOutputItemEx): void => {
-    if (item.type === 'message' && (typeof item.id !== 'string' || item.id.length === 0)) {
-      throw new TypeError('OpenAI Responses message output has no id');
-    }
-  };
-
-  const finalizedRow = async (item: OpenAIResponsesOutputItemEx): Promise<StoredOpenAIResponsesItem> => {
-    const id = openaiResponsesItemId(item);
-    if (id === null) throw new TypeError(`OpenAI Responses ${item.type} output has no id`);
-    const row: StoredOpenAIResponsesItem = {
-      id,
-      apiKeyId: store.apiKeyId,
-      payload: { item },
-      itemHash: await hashOpenAIResponsesItem(item),
-      refreshedAt: Date.now(),
-    };
-    return row;
-  };
-
-  const persistFinalizedItem = async (item: OpenAIResponsesOutputItemEx, outputIndex: number): Promise<void> => {
-    if (finalizedOutputIds.has(outputIndex)) return;
-    const row = await finalizedRow(item);
-    await store.persistOutputItem(row);
-    finalizedOutputIds.set(outputIndex, row.id);
-  };
 
   const clientEnvelope = (response: OpenAIResponsesResultEx): OpenAIResponsesResultEx => ({
     ...response,
@@ -68,34 +42,50 @@ export const wrapOpenAIResponsesClientOutput = async function* (
       continue;
     }
 
-    if (event.type === 'response.output_item.added') {
-      requireMessageId(event.item);
-      yield frame;
-      continue;
-    }
-
-    if (event.type === 'response.output_item.done') {
-      requireMessageId(event.item);
-      if (store.writesState) {
-        if (isOpenAIResponsesCompactionItem(event.item)) sawCompactionItem = true;
-        await persistFinalizedItem(event.item, event.output_index);
+    if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
+      const { item } = event;
+      const persist = event.type === 'response.output_item.done' && store.writesState && !finalizedOutputIds.has(event.output_index);
+      const id = openaiResponsesItemId(item);
+      if (id === null && (item.type === 'message' || persist)) {
+        const cause = new TypeError(`OpenAI Responses ${item.type} output has no id`);
+        yield { type: 'error', cause };
+        return;
+      }
+      if (event.type === 'response.output_item.done' && store.writesState && isOpenAIResponsesCompactionItem(item)) sawCompactionItem = true;
+      if (id !== null && persist) {
+        const row: StoredOpenAIResponsesItem = {
+          id,
+          apiKeyId: store.apiKeyId,
+          payload: { item },
+          itemHash: await hashOpenAIResponsesItem(item),
+          refreshedAt: Date.now(),
+        };
+        await store.persistOutputItem(row);
+        finalizedOutputIds.set(event.output_index, id);
       }
       yield frame;
       continue;
     }
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
-      event.response.output.forEach(requireMessageId);
+      if (event.response.output.some(item => item.type === 'message' && openaiResponsesItemId(item) === null)) {
+        const cause = new TypeError('OpenAI Responses message output has no id');
+        yield { type: 'error', cause };
+        return;
+      }
       if (store.writesState) {
         // Persisted snapshots require the lifecycle that made each item
         // reusable. A terminal-only item has not reached that boundary.
         const finalizedIds = new Set(finalizedOutputIds.values());
-        event.response.output.forEach((item, outputIndex) => {
+        const unfinished = event.response.output.findIndex((item, outputIndex) => {
           const id = openaiResponsesItemId(item);
-          if ((id === null || !finalizedIds.has(id)) && !finalizedOutputIds.has(outputIndex)) {
-            throw new TypeError(`OpenAI Responses terminal output_index ${outputIndex} arrived before output_item.done`);
-          }
+          return (id === null || !finalizedIds.has(id)) && !finalizedOutputIds.has(outputIndex);
         });
+        if (unfinished !== -1) {
+          const cause = new TypeError(`OpenAI Responses terminal output_index ${unfinished} arrived before output_item.done`);
+          yield { type: 'error', cause };
+          return;
+        }
         const orderedOutputIds = [...finalizedOutputIds]
           .sort(([left], [right]) => left - right)
           .map(([, id]) => id);

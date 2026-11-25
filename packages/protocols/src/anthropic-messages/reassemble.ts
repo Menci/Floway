@@ -10,6 +10,8 @@ import type {
 import { cloneAnthropicMessagesUsageIterations, splitAnthropicMessagesCacheCreationTokens, usageDeltaKeys } from './usage.ts';
 import { parsePartialJSONWithRawNumbers } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
+import type { SseErrorFrame } from '../common/sse.ts';
+import type { Result } from '@floway-dev/pipeline';
 
 const normalizeAnthropicMessagesTextCitations = (value: AnthropicMessagesTextCitation[] | null | undefined): AnthropicMessagesTextCitation[] => value == null ? [] : [...value];
 
@@ -130,9 +132,9 @@ const finalizeContentBlock = (block: AnthropicMessagesBlockAccumulator): Anthrop
 };
 
 export interface AnthropicMessagesEventAccumulator {
-  accept: (event: AnthropicMessagesStreamEventEx) => void;
+  accept: (event: AnthropicMessagesStreamEventEx) => SseErrorFrame | undefined;
   contentBlock: (index: number) => AnthropicMessagesAssistantContentBlock | undefined;
-  result: () => AnthropicMessagesResult;
+  result: () => Result<AnthropicMessagesResult, SseErrorFrame>;
 }
 
 export const createAnthropicMessagesEventAccumulator = (): AnthropicMessagesEventAccumulator => {
@@ -147,7 +149,7 @@ export const createAnthropicMessagesEventAccumulator = (): AnthropicMessagesEven
   const blocks: Array<AnthropicMessagesBlockAccumulator | undefined> = [];
   const resultExtras: Record<string, unknown> = Object.create(null);
 
-  const accept = (event: AnthropicMessagesStreamEventEx): void => {
+  const accept = (event: AnthropicMessagesStreamEventEx): SseErrorFrame | undefined => {
     switch (event.type) {
     case 'message_start':
       id = event.message.id;
@@ -175,13 +177,23 @@ export const createAnthropicMessagesEventAccumulator = (): AnthropicMessagesEven
       if ('stop_sequence' in event.delta) {
         stopSequence = event.delta.stop_sequence as string | null;
       }
-      if (usage === undefined) throw new Error('Messages message_delta arrived before message_start');
+      if (usage === undefined) {
+        const cause = new Error('Messages message_delta arrived before message_start');
+        return { type: 'error', cause };
+      }
       const deltaUsage = event.usage;
       applyAnthropicMessagesUsageDelta(usage, deltaUsage);
       if (deltaUsage?.cache_creation !== undefined) {
         if (deltaUsage.cache_creation === null) usage.cache_creation = null;
         else {
-          const tokens = splitAnthropicMessagesCacheCreationTokens({ cache_creation: deltaUsage.cache_creation, ...(usage.cache_creation_input_tokens === null ? {} : { cache_creation_input_tokens: usage.cache_creation_input_tokens }) });
+          const cacheCreation = { cache_creation: deltaUsage.cache_creation, ...(usage.cache_creation_input_tokens === null ? {} : { cache_creation_input_tokens: usage.cache_creation_input_tokens }) };
+          let tokens;
+          try {
+            tokens = splitAnthropicMessagesCacheCreationTokens(cacheCreation);
+          } catch (cause) {
+            if (!(cause instanceof RangeError)) throw cause;
+            return { type: 'error', cause };
+          }
           usage.cache_creation = { ephemeral_5m_input_tokens: tokens.cacheWrite, ephemeral_1h_input_tokens: tokens.cacheWrite1h };
         }
       }
@@ -189,8 +201,10 @@ export const createAnthropicMessagesEventAccumulator = (): AnthropicMessagesEven
       if (deltaUsage?.speed != null) usage.speed = deltaUsage.speed;
       if (deltaUsage?.inference_geo != null) usage.inference_geo = deltaUsage.inference_geo;
       break;
-    case 'error':
-      throw new Error(`Upstream SSE error: ${event.error?.type ?? 'unknown'}: ${event.error?.message ?? JSON.stringify(event)}`);
+    case 'error': {
+      const cause = new Error(`Upstream SSE error: ${event.error?.type ?? 'unknown'}: ${event.error?.message ?? JSON.stringify(event)}`, { cause: event });
+      return { type: 'error', cause };
+    }
     case 'message_stop':
       for (const block of blocks) {
         finalizeToolUseInput(block);
@@ -199,6 +213,7 @@ export const createAnthropicMessagesEventAccumulator = (): AnthropicMessagesEven
     case 'ping':
       break;
     }
+    return undefined;
   };
 
   const contentBlock = (index: number): AnthropicMessagesAssistantContentBlock | undefined => {
@@ -206,24 +221,29 @@ export const createAnthropicMessagesEventAccumulator = (): AnthropicMessagesEven
     return block === undefined ? undefined : finalizeContentBlock(block);
   };
 
-  const result = (): AnthropicMessagesResult => {
-    if (usage === undefined) throw new Error('Messages stream ended without message_start');
+  const result = (): Result<AnthropicMessagesResult, SseErrorFrame> => {
+    if (usage === undefined) {
+      const cause = new Error('Messages stream ended without message_start');
+      return { ok: false, error: { type: 'error', cause } };
+    }
     const content = blocks.flatMap((block): AnthropicMessagesAssistantContentBlock[] => (block ? [finalizeContentBlock(block)] : []));
 
     return {
-      id,
-      type: 'message',
-      role: 'assistant',
-      content,
-      model,
-      stop_reason: stopReason,
-      stop_details: stopDetails,
-      container: null,
-      diagnostics: null,
-      stop_sequence: stopSequence,
-      usage,
-      ...resultExtras,
-    } as AnthropicMessagesResult;
+      ok: true, value: {
+        id,
+        type: 'message',
+        role: 'assistant',
+        content,
+        model,
+        stop_reason: stopReason,
+        stop_details: stopDetails,
+        container: null,
+        diagnostics: null,
+        stop_sequence: stopSequence,
+        usage,
+        ...resultExtras,
+      } as AnthropicMessagesResult,
+    };
   };
 
   return { accept, contentBlock, result };
@@ -231,6 +251,11 @@ export const createAnthropicMessagesEventAccumulator = (): AnthropicMessagesEven
 
 export async function reassembleAnthropicMessagesEvents(events: AsyncIterable<AnthropicMessagesStreamEventEx>): Promise<AnthropicMessagesResult> {
   const accumulator = createAnthropicMessagesEventAccumulator();
-  for await (const event of events) accumulator.accept(event);
-  return accumulator.result();
+  for await (const event of events) {
+    const failure = accumulator.accept(event);
+    if (failure !== undefined) throw failure.cause;
+  }
+  const result = accumulator.result();
+  if (!result.ok) throw result.error.cause;
+  return result.value;
 }

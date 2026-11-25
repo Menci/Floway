@@ -1,4 +1,4 @@
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ParsedProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   CanonicalOpenAIResponsesPayload,
   ClientResponseResource,
@@ -208,9 +208,9 @@ export const completeResponseResource = (
 // inserted between this one and a client-facing exit must preserve it or fail
 // to compile.
 export const wrapResponseResourceCompletion = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  frames: AsyncIterable<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>>,
   sources: ResponseResourceSources,
-): AsyncGenerator<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> {
+): AsyncGenerator<ParsedProtocolFrame<ClientOpenAIResponsesStreamEvent>> {
   for await (const frame of frames) {
     if (frame.type !== 'event') {
       yield frame;

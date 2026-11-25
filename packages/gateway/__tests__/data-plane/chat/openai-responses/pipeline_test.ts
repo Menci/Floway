@@ -130,7 +130,7 @@ test('OpenAI Responses compact enters the scalar provider operation and complete
   });
 });
 
-test('OpenAI Responses hosted search settles its own request and meters both model turns', async () => {
+test.each(['completed', 'protocol failure', 'panic'] as const)('OpenAI Responses hosted search with a %s continuation', async continuation => {
   const { repo, request } = await setup();
   await repo.webSearchConfig.save({ ...DEFAULT_WEB_SEARCH_CONFIG, provider: 'tavily', tavily: { apiKey: 'search-key' } });
   const usageRows: UsageRecord[] = [];
@@ -154,6 +154,7 @@ test('OpenAI Responses hosted search settles its own request and meters both mod
   };
   let modelCalls = 0;
   let searchCalls = 0;
+  const bug = new TypeError('continuation expected a readable body');
   await withMockedFetch(async upstream => {
     if (new URL(upstream.url).hostname === 'api.tavily.com') {
       searchCalls++;
@@ -177,10 +178,28 @@ test('OpenAI Responses hosted search settles its own request and meters both mod
         type: 'function_call_output', call_id: 'call_search', output: expect.stringContaining('Provider documentation result'),
       })]),
     });
-    return generatedResponse();
+    if (continuation === 'protocol failure') {
+      return new Response('data: {invalid\n\n', { headers: { 'content-type': 'text/event-stream' } });
+    }
+    const response = generatedResponse();
+    if (continuation === 'panic') Object.defineProperty(response, 'body', { get() { throw bug; } });
+    return response;
   }, async () => {
-    const response = await request('/v1/responses', { stream: false, tools: [{ type: 'web_search' }], include: ['web_search_call.results'] });
+    const response = await request('/v1/responses', { stream: continuation !== 'completed', tools: [{ type: 'web_search' }], include: ['web_search_call.results'] });
     expect(response.status).toBe(200);
+    if (continuation === 'panic') {
+      await expect(response.text()).rejects.toBe(bug);
+      await flushBackground();
+      return;
+    }
+    if (continuation === 'protocol failure') {
+      const body = await response.text();
+      expect(body).toContain('Upstream stream failed mid-response');
+      expect(body).toContain('Malformed upstream OpenAI Responses SSE JSON');
+      expect(body).toContain('response.failed');
+      await flushBackground();
+      return;
+    }
     expect(await response.json()).toMatchObject({
       status: 'completed',
       usage: { input_tokens: 8, output_tokens: 2, total_tokens: 10 },
@@ -192,7 +211,7 @@ test('OpenAI Responses hosted search settles its own request and meters both mod
   });
   expect(modelCalls).toBe(2);
   expect(searchCalls).toBe(1);
-  expect(usageRows).toMatchObject([{ model, requests: 1 }, { model, requests: 1 }]);
+  if (continuation === 'completed') expect(usageRows).toMatchObject([{ model, requests: 1 }, { model, requests: 1 }]);
   expect(searchRows).toMatchObject([{ provider: 'tavily', action: 'search', requests: 1 }]);
 });
 

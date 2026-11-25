@@ -2,6 +2,8 @@ import { openaiChatCompletionsErrorPayloadMessage } from './errors.ts';
 import type { OpenAIChatCompletionsChoiceNonStreaming, OpenAIChatCompletionsChoiceNonStreamingEx, OpenAIChatCompletionsDelta, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsAssistantOutputMessageEx, OpenAIChatCompletionsResultEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsToolCall, OpenAIChatCompletionsAudio, OpenAIChatCompletionsLogprobs } from './index.ts';
 import { isJsonObject } from '../common/json.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
+import type { SseErrorFrame } from '../common/sse.ts';
+import type { Result } from '@floway-dev/pipeline';
 
 // Field-fidelity contract: every field an upstream emits must reach the
 // non-streaming result. Known streaming fields use their protocol semantics;
@@ -136,18 +138,18 @@ const accumulateAudio = (choice: ChoiceAccumulator, delta: OpenAIChatCompletions
   if (delta.transcript !== undefined) audio.transcript = (audio.transcript ?? '') + delta.transcript;
 };
 
-const completeAudio = (audio: Partial<OpenAIChatCompletionsAudio>): OpenAIChatCompletionsAudio => {
-  if (audio.id === undefined || audio.data === undefined || audio.transcript === undefined || audio.expires_at === undefined) throw new TypeError('Upstream Chat Completions audio ended without its complete metadata.');
-  return audio as OpenAIChatCompletionsAudio;
-};
-
-const finalizeChoice = (choice: ChoiceAccumulator): OpenAIChatCompletionsChoiceNonStreamingEx => {
+const finalizeChoice = (choice: ChoiceAccumulator): Result<OpenAIChatCompletionsChoiceNonStreamingEx, SseErrorFrame> => {
+  const { audio } = choice;
+  if (audio !== undefined && (audio.id === undefined || audio.data === undefined || audio.transcript === undefined || audio.expires_at === undefined)) {
+    const cause = new TypeError('Upstream Chat Completions audio ended without its complete metadata.');
+    return { ok: false, error: { type: 'error', cause } };
+  }
   const toolCalls = finalizedToolCalls(choice);
   const message: OpenAIChatCompletionsAssistantOutputMessageEx = {
     role: 'assistant',
     content: choice.content || null,
     refusal: choice.refusal ?? null,
-    ...(choice.audio === undefined ? {} : { audio: completeAudio(choice.audio) }),
+    ...(audio === undefined ? {} : { audio: audio as OpenAIChatCompletionsAudio }),
     ...(choice.functionCall === undefined ? {} : { function_call: choice.functionCall }),
     ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
     ...(choice.reasoningText ? { reasoning_text: choice.reasoningText } : {}),
@@ -157,23 +159,30 @@ const finalizeChoice = (choice: ChoiceAccumulator): OpenAIChatCompletionsChoiceN
     ...choice.messageExtras,
   };
   return {
-    index: choice.index,
-    logprobs: choice.logprobs ?? null,
-    message,
-    finish_reason: choice.finishReason,
-    ...choice.choiceExtras,
+    ok: true, value: {
+      index: choice.index,
+      logprobs: choice.logprobs ?? null,
+      message,
+      finish_reason: choice.finishReason,
+      ...choice.choiceExtras,
+    },
   };
 };
 
 export async function reassembleOpenAIChatCompletionsEvents(chunks: AsyncIterable<OpenAIChatCompletionsStreamEvent>): Promise<OpenAIChatCompletionsResultEx> {
   const accumulator = createOpenAIChatCompletionsEventAccumulator();
-  for await (const chunk of chunks) accumulator.accept(chunk);
-  return accumulator.result();
+  for await (const chunk of chunks) {
+    const failure = accumulator.accept(chunk);
+    if (failure !== undefined) throw failure.cause;
+  }
+  const result = accumulator.result();
+  if (!result.ok) throw result.error.cause;
+  return result.value;
 }
 
 export interface OpenAIChatCompletionsEventAccumulator {
-  accept: (chunk: OpenAIChatCompletionsStreamEvent) => void;
-  result: () => OpenAIChatCompletionsResultEx;
+  accept: (chunk: OpenAIChatCompletionsStreamEvent) => SseErrorFrame | undefined;
+  result: () => Result<OpenAIChatCompletionsResultEx, SseErrorFrame>;
 }
 
 export const createOpenAIChatCompletionsEventAccumulator = (): OpenAIChatCompletionsEventAccumulator => {
@@ -186,9 +195,12 @@ export const createOpenAIChatCompletionsEventAccumulator = (): OpenAIChatComplet
   const choices = new Map<number, ChoiceAccumulator>();
   const chunkExtras: Record<string, unknown> = {};
 
-  const accept = (chunk: OpenAIChatCompletionsStreamEvent): void => {
+  const accept = (chunk: OpenAIChatCompletionsStreamEvent): SseErrorFrame | undefined => {
     const errorMessage = openaiChatCompletionsErrorPayloadMessage(chunk);
-    if (errorMessage) throw new Error(`Upstream OpenAI Chat Completions SSE error: ${errorMessage}`);
+    if (errorMessage) {
+      const cause = new Error(`Upstream OpenAI Chat Completions SSE error: ${errorMessage}`, { cause: chunk });
+      return { type: 'error', cause };
+    }
 
     if (!id && chunk.id) {
       id = chunk.id;
@@ -231,19 +243,30 @@ export const createOpenAIChatCompletionsEventAccumulator = (): OpenAIChatComplet
       accumulateAudio(choice, delta.audio);
       if (streamed.finish_reason != null) choice.finishReason = streamed.finish_reason;
     }
+    return undefined;
   };
 
-  const result = (): OpenAIChatCompletionsResultEx => ({
-    id,
-    object: 'chat.completion',
-    created,
-    model,
-    choices: [...choices.values()].toSorted((left, right) => left.index - right.index).map(finalizeChoice),
-    ...(systemFingerprint ? { system_fingerprint: systemFingerprint } : {}),
-    ...(serviceTier ? { service_tier: serviceTier } : {}),
-    ...(lastUsage ? { usage: lastUsage } : {}),
-    ...chunkExtras,
-  });
+  const result = (): Result<OpenAIChatCompletionsResultEx, SseErrorFrame> => {
+    const finalized: OpenAIChatCompletionsChoiceNonStreamingEx[] = [];
+    for (const choice of [...choices.values()].toSorted((left, right) => left.index - right.index)) {
+      const result = finalizeChoice(choice);
+      if (!result.ok) return result;
+      finalized.push(result.value);
+    }
+    return {
+      ok: true, value: {
+        id,
+        object: 'chat.completion',
+        created,
+        model,
+        choices: finalized,
+        ...(systemFingerprint ? { system_fingerprint: systemFingerprint } : {}),
+        ...(serviceTier ? { service_tier: serviceTier } : {}),
+        ...(lastUsage ? { usage: lastUsage } : {}),
+        ...chunkExtras,
+      },
+    };
+  };
 
   return { accept, result };
 };

@@ -1,4 +1,4 @@
-import { jsonrepair } from 'jsonrepair';
+import { JSONRepairError, jsonrepair } from 'jsonrepair';
 
 import { openAIResponsesError } from './error.ts';
 import { openAIResponsesExit, openAIResponsesFactSpace } from './facts.ts';
@@ -11,7 +11,7 @@ import { readProtocolFrames } from '../../pipeline/protocol-frames.ts';
 import { SidecarDomain } from '../../shared/sidecar-codec.ts';
 import type { HttpRequestFact } from '@floway-dev/http';
 import { move, type Pipeline } from '@floway-dev/pipeline';
-import { eventFrame, isJsonObject, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, isJsonObject, type ParsedProtocolFrame, type ProtocolFrame, type SseErrorFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
   isOpenAIResponsesAssistantInputItem,
@@ -208,10 +208,14 @@ const MAX_BUFFERED_HOSTED_TOOL_FRAMES = 1_000_000;
 const utf8 = new TextEncoder();
 const retainedSize = (value: unknown) => utf8.encode(JSON.stringify(value)).byteLength;
 
-const retainOutput = (state: MergeState, index: number, item: OpenAIResponsesOutputItemEx): void => {
+const retainOutput = (state: MergeState, index: number, item: OpenAIResponsesOutputItemEx): SseErrorFrame | undefined => {
   const size = retainedSize(item);
-  state.outputBytes += size - (state.outputSizes.get(index) ?? 0);
-  if (state.outputBytes > MAX_RETAINED_HOSTED_TOOL_BYTES) throw new RangeError('OpenAI Responses hosted tool output exceeded 64 MiB');
+  const bytes = state.outputBytes + size - (state.outputSizes.get(index) ?? 0);
+  if (bytes > MAX_RETAINED_HOSTED_TOOL_BYTES) {
+    const cause = new RangeError('OpenAI Responses hosted tool output exceeded 64 MiB');
+    return { type: 'error', cause };
+  }
+  state.outputBytes = bytes;
   state.outputSizes.set(index, size);
   state.accumulatedOutput.set(index, item);
 };
@@ -219,10 +223,11 @@ const retainOutput = (state: MergeState, index: number, item: OpenAIResponsesOut
 const createFrameBudget = () => {
   let bytes = 0;
   let frames = 0;
-  return (value: unknown): void => {
+  return (value: unknown): SseErrorFrame | undefined => {
     bytes += retainedSize(value);
     if (++frames > MAX_BUFFERED_HOSTED_TOOL_FRAMES || bytes > MAX_RETAINED_HOSTED_TOOL_BYTES) {
-      throw new RangeError('OpenAI Responses hosted tool frame buffer exceeded its limit');
+      const cause = new RangeError('OpenAI Responses hosted tool frame buffer exceeded its limit');
+      return { type: 'error', cause };
     }
   };
 };
@@ -498,7 +503,8 @@ export const parseServerToolArguments = (argumentsJson: string): Record<string, 
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonrepair(argumentsJson));
-  } catch {
+  } catch (error) {
+    if (!(error instanceof JSONRepairError) && !(error instanceof SyntaxError)) throw error;
     return null;
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -610,19 +616,15 @@ const serverToolEndFrames = (
   outputIndex: number,
   slot: ServerToolResultSlot,
   result: ServerToolSlotResult,
-): ProtocolFrame<OpenAIResponsesStreamEventEx>[] => {
-  const frames = [
-    ...result.endEvents.map(event => stampServerToolEvent(merge, outputIndex, slot.id, event)),
-    eventFrame({
-      type: 'response.output_item.done',
-      output_index: outputIndex,
-      item: attachServerToolItemId(result.item, slot.id),
-      sequence_number: merge.sequenceNumber++,
-    } as OpenAIResponsesStreamEventEx),
-  ];
-  retainOutput(merge, outputIndex, attachServerToolItemId(result.item, slot.id));
-  return frames;
-};
+): ProtocolFrame<OpenAIResponsesStreamEventEx>[] => [
+  ...result.endEvents.map(event => stampServerToolEvent(merge, outputIndex, slot.id, event)),
+  eventFrame({
+    type: 'response.output_item.done',
+    output_index: outputIndex,
+    item: attachServerToolItemId(result.item, slot.id),
+    sequence_number: merge.sequenceNumber++,
+  } as OpenAIResponsesStreamEventEx),
+];
 
 const isCallBatchItem = (item: CanonicalOpenAIResponsesInputItem): boolean =>
   item.type === 'function_call' || item.type === 'custom_tool_call';
@@ -704,7 +706,8 @@ const expandServerToolHistory = async (
 const deferHostedCallBatch = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  sourceFailure: () => ProtocolStreamError | undefined,
+): AsyncGenerator<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>> {
   let deferring = false;
   const buffer = createFrameBudget();
   const deferredIndexes = new Set<number>();
@@ -727,12 +730,18 @@ const deferHostedCallBatch = async function* (
       }
       if ('output_index' in event && typeof event.output_index === 'number' && deferredIndexes.has(event.output_index)) {
         const batch = pending.get(event.output_index) ?? [];
-        buffer(frame);
+        const failure = buffer(frame);
+        if (failure !== undefined) {
+          yield failure;
+          return;
+        }
         batch.push(frame);
         pending.set(event.output_index, batch);
       } else yield frame;
     }
   } catch (error) {
+    const failure = sourceFailure();
+    if (failure === undefined || error !== failure) throw error;
     for (const batch of pending.values()) yield* batch;
     throw error;
   }
@@ -747,7 +756,8 @@ export const consumeTurnStreaming = async function* (
   loopState: ServerToolLoopState,
   active: readonly ActiveServerTool[],
   runner: HostedToolRunner,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, TurnSummary> {
+  sourceFailure: () => ProtocolStreamError | undefined,
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, TurnSummary | SseErrorFrame> {
   const dispatchedSlots: DispatchedServerToolSlot[] = [];
   const buffer = createFrameBudget();
   let sawServerToolCall = false;
@@ -764,20 +774,14 @@ export const consumeTurnStreaming = async function* (
     bufferedEvents: OpenAIResponsesStreamEventEx[];
   }>();
 
-  const ensureModel = (): string => {
-    if (merge.lastSeenModel === null) {
-      throw new Error('Server-tool shim cannot synthesize an OpenAI Responses envelope because upstream `response.created` did not report a `model` field.');
-    }
-    return merge.lastSeenModel;
-  };
-
   const stamp = (event: OpenAIResponsesStreamEventEx): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
     eventFrame({
       ...event,
       sequence_number: merge.sequenceNumber++,
     } as OpenAIResponsesStreamEventEx);
 
-  for await (const frame of deferHostedCallBatch(frames, dispatchers)) {
+  for await (const frame of deferHostedCallBatch(frames, dispatchers, sourceFailure)) {
+    if (frame.type === 'error') return frame;
     if (frame.type !== 'event') {
       yield frame;
       continue;
@@ -788,12 +792,15 @@ export const consumeTurnStreaming = async function* (
       const reportedModel = event.response.model;
       if (typeof reportedModel === 'string' && reportedModel.length > 0) merge.lastSeenModel = reportedModel;
       merge.upstreamResponseSnapshot = event.response;
-      ensureModel();
+      if (merge.lastSeenModel === null) {
+        const cause = new Error('Server-tool shim cannot synthesize an OpenAI Responses envelope because upstream `response.created` did not report a `model` field.');
+        return { type: 'error', cause };
+      }
       if (isFirstTurn) {
         const status = event.type === 'response.queued' ? 'queued' : 'in_progress';
         yield stamp({
           type: event.type,
-          response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, ensureModel(), active, status),
+          response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, merge.lastSeenModel, active, status),
         } as OpenAIResponsesStreamEventEx);
       }
       continue;
@@ -801,9 +808,13 @@ export const consumeTurnStreaming = async function* (
 
     if (event.type === 'response.in_progress') {
       if (isFirstTurn) {
+        if (merge.lastSeenModel === null || merge.upstreamResponseSnapshot === undefined) {
+          const cause = new Error('Server-tool shim received response.in_progress before an upstream response prologue.');
+          return { type: 'error', cause };
+        }
         yield stamp({
           type: 'response.in_progress',
-          response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, ensureModel(), active, 'in_progress'),
+          response: syntheticPrologueResponse(merge, merge.synthesizedResponseId, merge.lastSeenModel, active, 'in_progress'),
         });
       }
       continue;
@@ -865,7 +876,8 @@ export const consumeTurnStreaming = async function* (
       if (intercepted !== undefined) {
         if (event.item.type !== 'function_call' || event.item.name !== intercepted.addedItem.name
           || event.item.call_id !== intercepted.addedItem.call_id || event.item.id !== intercepted.addedItem.id) {
-          throw new Error('Upstream changed a server-tool function identity before closing its call.');
+          const cause = new Error('Upstream changed a server-tool function identity before closing its call.');
+          return { type: 'error', cause };
         }
         const finalDispatcher = event.item.namespace === undefined ? dispatchers.get(event.item.name) : undefined;
         if (finalDispatcher === undefined) {
@@ -883,8 +895,9 @@ export const consumeTurnStreaming = async function* (
             const rewritten = rewriteOutputIndex(buffered, openItems, openItemIds, merge);
             if (rewritten !== null) yield stamp(rewritten);
           }
+          const failure = retainOutput(merge, downstreamIndex, doneItem);
+          if (failure !== undefined) return failure;
           yield stamp({ type: 'response.output_item.done', output_index: downstreamIndex, item: doneItem });
-          retainOutput(merge, downstreamIndex, doneItem);
           interceptedByUpstreamIndex.delete(upstreamIndex);
           continue;
         }
@@ -911,15 +924,17 @@ export const consumeTurnStreaming = async function* (
       const doneItem: OpenAIResponsesOutputItemEx = itemId !== undefined && upstreamDoneItemId !== itemId
         ? { ...event.item, id: itemId } as OpenAIResponsesOutputItemEx
         : event.item;
+      const failure = retainOutput(merge, downstreamIndex, doneItem);
+      if (failure !== undefined) return failure;
       yield stamp({ type: 'response.output_item.done', output_index: downstreamIndex, item: doneItem });
-      retainOutput(merge, downstreamIndex, doneItem);
       continue;
     }
 
     if (event.type === 'response.function_call_arguments.delta') {
       const intercepted = interceptedByUpstreamIndex.get(event.output_index);
       if (intercepted !== undefined) {
-        buffer(event);
+        const failure = buffer(event);
+        if (failure !== undefined) return failure;
         intercepted.bufferedEvents.push(event);
         continue;
       }
@@ -931,7 +946,8 @@ export const consumeTurnStreaming = async function* (
     if (event.type === 'response.function_call_arguments.done') {
       const intercepted = interceptedByUpstreamIndex.get(event.output_index);
       if (intercepted !== undefined) {
-        buffer(event);
+        const failure = buffer(event);
+        if (failure !== undefined) return failure;
         intercepted.bufferedEvents.push(event);
         continue;
       }
@@ -944,7 +960,8 @@ export const consumeTurnStreaming = async function* (
     const pending = typeof maybeIndexedForIntercepted.output_index === 'number'
       ? interceptedByUpstreamIndex.get(maybeIndexedForIntercepted.output_index) : undefined;
     if (pending !== undefined) {
-      buffer(event);
+      const failure = buffer(event);
+      if (failure !== undefined) return failure;
       pending.bufferedEvents.push(event);
       continue;
     }
@@ -959,7 +976,8 @@ export const consumeTurnStreaming = async function* (
     if (rewriteResult !== null) {
       const maybeItemEvent = rewriteResult as OpenAIResponsesStreamEventEx & { output_index?: number; item?: unknown };
       if (maybeItemEvent.item !== undefined && typeof maybeItemEvent.output_index === 'number' && (rewriteResult.type.endsWith('.added') || rewriteResult.type.endsWith('.done'))) {
-        retainOutput(merge, maybeItemEvent.output_index, maybeItemEvent.item as Parameters<MergeState['accumulatedOutput']['set']>[1]);
+        const failure = retainOutput(merge, maybeItemEvent.output_index, maybeItemEvent.item as Parameters<MergeState['accumulatedOutput']['set']>[1]);
+        if (failure !== undefined) return failure;
       }
       yield stamp(rewriteResult);
       continue;
@@ -984,7 +1002,7 @@ export const consumeTurnStreaming = async function* (
         response: {
           id: merge.synthesizedResponseId,
           object: 'response',
-          model: ensureModel(),
+          model: merge.lastSeenModel,
           output: [],
           status: 'failed',
           error: { message: 'Upstream stream ended without a terminal event.', code: 'server_error' },
@@ -998,16 +1016,21 @@ export const consumeTurnStreaming = async function* (
     const unmatched = [...interceptedByUpstreamIndex.keys()];
     const priorKind = terminalStatus.kind;
     const priorLabel = priorKind === 'error' ? 'an error event' : priorKind === 'bare-error-pre-shell' ? 'a pre-shell bare error' : `response.${priorKind}`;
+    const message = `Upstream emitted ${priorLabel} without closing shim call items at upstream output_index ${unmatched.join(', ')}.`;
+    if (merge.lastSeenModel === null) {
+      const cause = new Error(message);
+      return { type: 'error', cause };
+    }
     terminalStatus = {
       kind: 'failed',
       response: {
         id: merge.synthesizedResponseId,
         object: 'response',
-        model: ensureModel(),
+        model: merge.lastSeenModel,
         output: [],
         status: 'failed',
         error: {
-          message: `Upstream emitted ${priorLabel} without closing shim call items at upstream output_index ${unmatched.join(', ')}.`,
+          message,
           code: 'server_error',
         },
         incomplete_details: null,
@@ -1082,7 +1105,7 @@ async function* materializeServerToolItems(
   dispatchedSlots: readonly DispatchedServerToolSlot[],
   merge: MergeState,
   codec: SidecarCodec,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, void> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>, SseErrorFrame | undefined> {
   for (const { intercepted, slot, outputIndex, carrierIndex, carrierId } of dispatchedSlots) {
     const lifecycle = slot.run();
     let step = await lifecycle.next();
@@ -1099,10 +1122,14 @@ async function* materializeServerToolItems(
         ...(step.value.replayData === undefined ? {} : { data: step.value.replayData }),
       }),
     };
-    retainOutput(merge, carrierIndex, replayItem);
+    const replayFailure = retainOutput(merge, carrierIndex, replayItem);
+    if (replayFailure !== undefined) return replayFailure;
     yield eventFrame({ type: 'response.output_item.done', output_index: carrierIndex, item: replayItem, sequence_number: merge.sequenceNumber++ });
+    const toolFailure = retainOutput(merge, outputIndex, attachServerToolItemId(step.value.item, slot.id));
+    if (toolFailure !== undefined) return toolFailure;
     yield* serverToolEndFrames(merge, outputIndex, slot, step.value);
   }
+  return undefined;
 }
 
 const hostedToolRegistrations = [registerWebSearch, registerImageGeneration] as const;
@@ -1222,49 +1249,56 @@ export const hostOpenAIResponsesTools = defineStage({
     const demoteChoice = isForcedServerToolChoice(invocation.payload.tool_choice, dispatchers);
     const stream = scope.wrapStream<OpenAIResponsesStreamEventEx, ProtocolStreamError, OpenAIResponsesStreamEventEx, ProtocolStreamError>(outcome.stream, async function* (items, producer) {
       const firstSource = readProtocolFrames(items);
+      let drainFailedTurn: (() => Promise<void>) | undefined;
       const consumeTurn = async function* (
         source: ReturnType<typeof readProtocolFrames<OpenAIResponsesStreamEventEx>>,
         isFirstTurn: boolean,
         abort: () => void,
       ) {
+        let turn: TurnSummary | ProtocolStreamError;
         try {
-          return yield* consumeTurnStreaming(source.frames(), merge, isFirstTurn, dispatchers, loopState, active, producer);
-        } finally {
-          if (!source.done) abort();
+          const result = yield* consumeTurnStreaming(source.frames(), merge, isFirstTurn, dispatchers, loopState, active, producer, () => source.failure);
+          turn = 'type' in result ? { kind: 'protocol', cause: result.cause } : result;
+        } catch (error) {
+          if (source.failure === undefined || error !== source.failure) throw error;
+          turn = source.failure;
+        }
+        if (!source.done) abort();
+        if ('sawServerToolCall' in turn) {
           await source.drain();
+        } else {
+          drainFailedTurn = source.drain;
         }
+        return turn;
       };
-      try {
-        const events = runHostedToolTurns({
-          invocation,
-          merge,
-          loopState,
-          active,
-          replayCodec,
-          canonicalInput,
-          demoteChoice,
-          firstTurn: consumeTurn(firstSource, true, () => { producer.abort(firstCall); }),
-          signal: producer.signal,
-          async *nextTurn() {
-            const call = producer.next(requestFacts());
-            const next = await call;
-            const result = next['response.openaiResponses'];
-            if (result.kind === 'error') return result;
-            if (result.kind === 'result') throw new TypeError('A hosted tool continuation requires a generation stream');
-            return yield* consumeTurn(readProtocolFrames(result.stream), false, () => { producer.abort(call); });
-          },
-        });
-        for await (const frame of events) if (frame.type === 'event') yield { ok: true, value: frame.event };
-      } catch (cause) {
-        if (!producer.signal.aborted) {
-          const failure = firstSource.failure;
-          yield { ok: false, error: failure !== undefined && cause === failure ? failure : { kind: 'protocol', cause } };
+      const events = runHostedToolTurns({
+        invocation,
+        merge,
+        loopState,
+        active,
+        replayCodec,
+        canonicalInput,
+        demoteChoice,
+        firstTurn: consumeTurn(firstSource, true, () => { producer.abort(firstCall); }),
+        signal: producer.signal,
+        async *nextTurn() {
+          const call = producer.next(requestFacts());
+          const next = await call;
+          const result = next['response.openaiResponses'];
+          if (result.kind === 'error') return result;
+          if (result.kind === 'result') throw new TypeError('A hosted tool continuation requires a generation stream');
+          return yield* consumeTurn(readProtocolFrames(result.stream), false, () => { producer.abort(call); });
+        },
+      });
+      for (;;) {
+        const step = await events.next();
+        if (step.done) {
+          if (step.value !== undefined) yield { ok: false, error: step.value };
+          break;
         }
+        if (step.value.type === 'event') yield { ok: true, value: step.value.event };
       }
-      if (!firstSource.done) {
-        producer.abort(firstCall);
-        await firstSource.drain();
-      }
+      if (drainFailedTurn !== undefined) await drainFailedTurn();
     });
     return { ...first, 'response.openaiResponses': move({ kind: 'stream', stream } as const) };
   },
@@ -1282,78 +1316,86 @@ const runHostedToolTurns = async function* ({
   readonly replayCodec: SidecarCodec;
   readonly canonicalInput: CanonicalOpenAIResponsesInputItem[];
   readonly demoteChoice: boolean;
-  readonly firstTurn: AsyncGenerator<ResponsesFrame, TurnSummary>;
-  readonly nextTurn: () => AsyncGenerator<ResponsesFrame, TurnSummary | ProtocolError>;
+  readonly firstTurn: AsyncGenerator<ResponsesFrame, TurnSummary | ProtocolStreamError>;
+  readonly nextTurn: () => AsyncGenerator<ResponsesFrame, TurnSummary | ProtocolError | ProtocolStreamError>;
   readonly signal: AbortSignal;
-}): AsyncGenerator<ResponsesFrame> {
-  try {
-    let turn = yield* firstTurn;
-    while (!signal.aborted) {
-      merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, turn.turnUsage);
-      const terminal = turn.terminalStatus;
-      if (turn.sawServerToolCall) yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
-      if (signal.aborted) return;
-
-      switch (terminal.kind) {
-      case 'failed':
-        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: terminal.response.error }, active);
-        return;
-      case 'incomplete':
-        yield synthesizeTerminalEnvelope(merge, { kind: 'incomplete', incompleteDetails: terminal.response.incomplete_details }, active);
-        return;
-      case 'error':
-        return;
-      case 'bare-error-pre-shell':
-        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: terminal.error }, active);
-        return;
-      case 'completed':
-        if (!turn.sawServerToolCall || turn.sawClientToolCall) {
-          yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
-          return;
-        }
+}): AsyncGenerator<ResponsesFrame, ProtocolStreamError | undefined> {
+  let turn: TurnSummary | ProtocolError | ProtocolStreamError = yield* firstTurn;
+  while ('sawServerToolCall' in turn) {
+    if (signal.aborted) return { kind: 'abort', cause: signal.reason };
+    merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, turn.turnUsage);
+    const terminal = turn.terminalStatus;
+    if (turn.sawServerToolCall) {
+      const failure = yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
+      if (failure !== undefined) {
+        turn = { kind: 'protocol', cause: failure.cause };
+        break;
       }
-
-      const input = await expandServerToolHistory([
-        ...canonicalInput,
-        ...materializeAccumulatedOutput(merge) as CanonicalOpenAIResponsesInputItem[],
-      ], active, replayCodec);
-      const { max_tool_calls: _previousBudget, ...previous } = invocation.payload;
-      const choice = previous.tool_choice;
-      invocation.payload = {
-        ...previous,
-        input,
-        ...(loopState.remainingToolCalls !== undefined && { max_tool_calls: Math.max(0, loopState.remainingToolCalls) }),
-        ...(demoteChoice && {
-          tool_choice: typeof choice === 'object' && choice?.type === 'allowed_tools' ? { ...choice, mode: 'auto' } : 'auto',
-        }),
-      };
-      loopState.iterationCount++;
-      const next = yield* nextTurn();
-      if ('sawServerToolCall' in next) {
-        turn = next;
-        continue;
-      }
-
-      const event = { ...errorEvent(next), sequence_number: merge.sequenceNumber++ };
-      yield eventFrame(event);
-      yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: responseErrorFromEvent(event) }, active);
-      return;
     }
-  } catch (cause) {
-    if (signal.aborted) return;
-    if (merge.lastSeenModel === null) throw cause;
-    const debug = toInternalDebugError(cause);
-    const event = {
+    if (signal.aborted) return { kind: 'abort', cause: signal.reason };
+
+    if (terminal.kind !== 'error' && (merge.lastSeenModel === null || merge.upstreamResponseSnapshot === undefined)) {
+      const cause = new Error(terminal.kind === 'bare-error-pre-shell'
+        ? terminal.error.message
+        : 'Server-tool shim cannot synthesize an OpenAI Responses terminal envelope before an upstream response prologue.');
+      return { kind: 'protocol', cause };
+    }
+
+    switch (terminal.kind) {
+    case 'failed':
+      yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: terminal.response.error }, active);
+      return;
+    case 'incomplete':
+      yield synthesizeTerminalEnvelope(merge, { kind: 'incomplete', incompleteDetails: terminal.response.incomplete_details }, active);
+      return;
+    case 'error':
+      return;
+    case 'bare-error-pre-shell':
+      yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: terminal.error }, active);
+      return;
+    case 'completed':
+      if (!turn.sawServerToolCall || turn.sawClientToolCall) {
+        yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
+        return;
+      }
+    }
+
+    const input = await expandServerToolHistory([
+      ...canonicalInput,
+      ...materializeAccumulatedOutput(merge) as CanonicalOpenAIResponsesInputItem[],
+    ], active, replayCodec);
+    const { max_tool_calls: _previousBudget, ...previous } = invocation.payload;
+    const choice = previous.tool_choice;
+    invocation.payload = {
+      ...previous,
+      input,
+      ...(loopState.remainingToolCalls !== undefined && { max_tool_calls: Math.max(0, loopState.remainingToolCalls) }),
+      ...(demoteChoice && {
+        tool_choice: typeof choice === 'object' && choice?.type === 'allowed_tools' ? { ...choice, mode: 'auto' } : 'auto',
+      }),
+    };
+    loopState.iterationCount++;
+    turn = yield* nextTurn();
+  }
+  if (turn.kind === 'abort') return turn;
+  if (merge.lastSeenModel === null || merge.upstreamResponseSnapshot === undefined) {
+    return turn.kind === 'error' ? { kind: 'protocol', cause: turn.cause ?? turn.error } : turn;
+  }
+  let event: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>;
+  if (turn.kind === 'error') event = errorEvent(turn);
+  else {
+    const debug = toInternalDebugError(turn.cause);
+    event = {
       type: 'error' as const,
       code: 'server_error',
       message: `Upstream stream failed mid-response: ${debug.message}`,
       param: null,
       provider_specific_fields: internalDebugErrorFields(debug),
-      sequence_number: merge.sequenceNumber++,
     };
-    yield eventFrame(event);
-    yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: responseErrorFromEvent(event) }, active);
   }
+  yield eventFrame({ ...event, sequence_number: merge.sequenceNumber++ });
+  yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: responseErrorFromEvent(event) }, active);
+  return undefined;
 };
 
 const errorEvent = ({ error, cause }: ProtocolError): Extract<OpenAIResponsesStreamEventEx, { type: 'error' }> => {

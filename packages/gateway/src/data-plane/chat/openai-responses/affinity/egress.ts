@@ -1,6 +1,6 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { isPortableOpenAIResponsesCompactionItem } from '../pipeline/compact/items.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ParsedProtocolFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { createRandomOpenAIResponsesItemId, type OpenAIResponsesOutputItemEx, type OpenAIResponsesOutputReasoning, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 const canonicalItemType = (itemType: string): string =>
@@ -47,9 +47,9 @@ const replaceOpaqueSlots = (
 };
 
 const wrapNaturalOpenAIResponsesAffinity = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  frames: AsyncIterable<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>>,
   options: AffinityEgressOptions,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+): AsyncGenerator<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const wrapped = new Map<string, Promise<string>>();
 
   const wrapItem = async (item: OpenAIResponsesOutputItemEx, outputIndex: number): Promise<OpenAIResponsesOutputItemEx> => {
@@ -110,9 +110,9 @@ interface SyntheticPrefix {
 }
 
 const wrapOpenAIResponsesFirstCarrier = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  frames: AsyncIterable<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>>,
   options: AffinityEgressOptions,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+): AsyncGenerator<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const syntheticCarriers = new Map<string, Promise<string>>();
   let firstItem: { readonly outputIndex: number; readonly canCarry: boolean } | undefined;
   let prefix: SyntheticPrefix | undefined;
@@ -294,7 +294,7 @@ const wrapOpenAIResponsesFirstCarrier = async function* (
 };
 
 export const wrapOpenAIResponsesAffinityEgress = (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  frames: AsyncIterable<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>>,
   options: AffinityEgressOptions,
-): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> =>
+): AsyncIterable<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>> =>
   wrapOpenAIResponsesFirstCarrier(wrapNaturalOpenAIResponsesAffinity(frames, options), options);

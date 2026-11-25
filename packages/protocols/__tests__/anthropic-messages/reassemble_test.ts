@@ -466,11 +466,15 @@ test('result reflects all events accepted before each read', () => {
   });
   accumulator.accept({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: 'hello', citations: null } });
 
-  assertEquals(accumulator.result().content, [{ type: 'text', text: 'hello', citations: null }]);
+  const first = accumulator.result();
+  assert(first.ok);
+  assertEquals(first.value.content, [{ type: 'text', text: 'hello', citations: null }]);
   accumulator.accept({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: ' world' } });
 
-  assertEquals(accumulator.result().content, [{ type: 'text', text: 'hello world', citations: null }]);
-  assertEquals(accumulator.contentBlock(0), accumulator.result().content[0]);
+  const second = accumulator.result();
+  assert(second.ok);
+  assertEquals(second.value.content, [{ type: 'text', text: 'hello world', citations: null }]);
+  assertEquals(accumulator.contentBlock(0), second.value.content[0]);
 
   const block = { type: 'tool_use' as const, id: 'tool', name: 'lookup', input: {}, vendorText: 'preserved' };
   accumulator.accept({ type: 'content_block_start', index: 3, content_block: block });
@@ -481,5 +485,7 @@ test('result reflects all events accepted before each read', () => {
   assert(tool?.type === 'tool_use');
   assertEquals(JSON.stringify(tool.input), '{"large":900719925474099312345}');
   assertEquals(Object.keys(tool).sort(), ['id', 'input', 'name', 'type', 'vendorText']);
-  assertEquals(tool, accumulator.result().content[1]);
+  const third = accumulator.result();
+  assert(third.ok);
+  assertEquals(tool, third.value.content[1]);
 });

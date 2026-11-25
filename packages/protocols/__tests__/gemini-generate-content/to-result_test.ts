@@ -1,9 +1,9 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { eventFrame } from '../../src/common/index.ts';
 import type { GeminiGenerateContentStreamEvent } from '../../src/gemini-generate-content/index.ts';
 import { collectGeminiGenerateContentProtocolEventsToResult } from '../../src/gemini-generate-content/to-result.ts';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 test('collectGeminiGenerateContentProtocolEventsToResult consumes later candidates and final usage after a candidate finishes', async () => {
   let consumed = 0;
@@ -36,22 +36,27 @@ test('collectGeminiGenerateContentProtocolEventsToResult consumes later candidat
   })();
 
   assertEquals(await collectGeminiGenerateContentProtocolEventsToResult(frames), {
-    candidates: [{
-      index: 0,
-      content: { role: 'model', parts: [{ text: 'Hello' }] },
-      finishReason: 'STOP',
-    }, { index: 1, content: { role: 'model', parts: [{ text: 'Second' }] }, finishReason: 'MAX_TOKENS' }],
-    responseId: 'response-final',
-    usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5 },
+    ok: true, value: {
+      candidates: [{
+        index: 0,
+        content: { role: 'model', parts: [{ text: 'Hello' }] },
+        finishReason: 'STOP',
+      }, { index: 1, content: { role: 'model', parts: [{ text: 'Second' }] }, finishReason: 'MAX_TOKENS' }],
+      responseId: 'response-final',
+      usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5 },
+    },
   });
   assertEquals(consumed, 4);
 });
 
-test('collectGeminiGenerateContentProtocolEventsToResult rejects EOF with an unfinished observed candidate', async () => {
-  await assertRejects(async () => await collectGeminiGenerateContentProtocolEventsToResult((async function* () {
+test('collectGeminiGenerateContentProtocolEventsToResult reports EOF with an unfinished observed candidate', async () => {
+  const result = await collectGeminiGenerateContentProtocolEventsToResult((async function* () {
     yield eventFrame({ candidates: [{ index: 0, content: { parts: [{ text: 'done' }] }, finishReason: 'STOP' }] });
     yield eventFrame({ candidates: [{ index: 1, content: { parts: [{ text: 'unfinished' }] } }] });
-  })()), Error);
+  })());
+  expect(result).toMatchObject({
+    ok: false, error: { type: 'error', cause: { message: 'Gemini generateContent stream ended without a terminal event.' } },
+  });
 });
 
 test('collectGeminiGenerateContentProtocolEventsToResult stops at prompt blocking', async () => {
@@ -60,10 +65,10 @@ test('collectGeminiGenerateContentProtocolEventsToResult stops at prompt blockin
     yield eventFrame(blocked);
     throw new Error('Trailing frame pulled');
   })());
-  assertEquals(result, blocked);
+  assertEquals(result, { ok: true, value: blocked });
 });
 
-test('collectGeminiGenerateContentProtocolEventsToResult throws Gemini generateContent error events', async () => {
+test('collectGeminiGenerateContentProtocolEventsToResult preserves Gemini generateContent error events', async () => {
   const errorEvent = {
     error: {
       code: 429,
@@ -72,17 +77,11 @@ test('collectGeminiGenerateContentProtocolEventsToResult throws Gemini generateC
     },
   } satisfies GeminiGenerateContentStreamEvent;
 
-  const error = await assertRejects(
-    async () => {
-      await collectGeminiGenerateContentProtocolEventsToResult(
-        (async function* () {
-          yield eventFrame(errorEvent);
-          throw new Error('Trailing frame pulled');
-        })(),
-      );
-    },
-    Error,
-  );
-
-  assertEquals(error.cause, errorEvent);
+  const result = await collectGeminiGenerateContentProtocolEventsToResult((async function* () {
+    yield eventFrame(errorEvent);
+    throw new Error('Trailing frame pulled');
+  })());
+  expect(result).toMatchObject({
+    ok: false, error: { type: 'error', cause: { message: 'RESOURCE_EXHAUSTED: quota exceeded', cause: errorEvent } },
+  });
 });

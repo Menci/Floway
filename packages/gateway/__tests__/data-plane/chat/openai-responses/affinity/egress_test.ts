@@ -2,7 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
 import type { AffinityCodec, AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ParsedProtocolFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 const affinity: AffinityIdentity = {
@@ -39,7 +39,7 @@ describe('OpenAI Responses affinity egress', () => {
       summary: [],
       encrypted_content: 'opaque',
     };
-    const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
+    const output: ParsedProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
     for await (const frame of wrapOpenAIResponsesAffinityEgress(frames([
       eventFrame({ type: 'response.queued', response: response([reasoning], 'queued') }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
@@ -92,7 +92,7 @@ describe('OpenAI Responses affinity egress', () => {
       status: 'completed',
       content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
     };
-    const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
+    const output: ParsedProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
     for await (const frame of wrapOpenAIResponsesAffinityEgress(frames([
       eventFrame({ type: 'response.output_item.added', output_index: 0, item: message, sequence_number: 2 }),
       eventFrame({ type: 'response.output_text.delta', item_id: 'msg_1', output_index: 0, content_index: 0, delta: 'answer', sequence_number: 3 }),
@@ -118,7 +118,7 @@ describe('OpenAI Responses affinity egress', () => {
 
   test('adds an originless carrier to a carrier-capable first item at close', async () => {
     const program = { type: 'program', id: 'prog_1', call_id: 'call_1', code: 'return 1' } as OpenAIResponsesOutputItemEx;
-    const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
+    const output: ParsedProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
     for await (const frame of wrapOpenAIResponsesAffinityEgress(frames([
       eventFrame({ type: 'response.output_item.added', output_index: 0, item: program }),
       eventFrame({ type: 'response.output_item.done', output_index: 0, item: program }),

@@ -31,7 +31,7 @@ const emptyResult = async (frames: AsyncIterable<ProtocolFrame<string>>) => {
   for await (const _ of frames) {
     // The test only checks whether collection reached its terminal outcome.
   }
-  return {};
+  return { ok: true, value: {} } as const;
 };
 
 test('chat collection reads each frame on demand and drains after an early result', async () => {
@@ -50,7 +50,7 @@ test('chat collection reads each frame on demand and drains after an early resul
     for await (const frame of frames) {
       expect(frame).toEqual({ type: 'event', event: 'first' });
       expect(drained).toBe(false);
-      return frame;
+      return { ok: true, value: frame };
     }
     throw new Error('Expected the first frame');
   }, formatError);
@@ -78,7 +78,7 @@ test.each([
   let seen = 0;
   const outcome = await collectChatOutcome(source.stream, source, async frames => {
     for await (const _ of frames) seen++;
-    return {};
+    return { ok: true, value: {} };
   }, formatError, limits);
   expect(seen).toBe(accepted);
   expect(outcome).toMatchObject({ kind: 'error', source: 'local', error: { error: { message } }, cause: expect.any(RangeError) });
@@ -96,5 +96,17 @@ test('chat collection keeps the original upstream stream failure as its cause', 
   expect(outcome).toEqual({
     kind: 'error', source: 'upstream', error: { error: { message: 'connection dropped' } }, cause: failure,
   });
+  await source.done;
+});
+
+test('chat collection propagates collector bugs', async () => {
+  const source = await startSource(async function* () {
+    yield { ok: true, value: 'first' };
+  });
+  const bug = new TypeError('collector expected another frame');
+  await expect(collectChatOutcome(source.stream, source, async frames => {
+    await emptyResult(frames);
+    throw bug;
+  }, formatError)).rejects.toBe(bug);
   await source.done;
 });

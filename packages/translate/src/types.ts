@@ -1,5 +1,5 @@
 import type { SidecarCodec } from './round-trip/codec.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ParsedProtocolFrame, ProtocolFrame } from '@floway-dev/protocols/common';
 
 export interface TranslateOptions {
   readonly sidecarCodec: SidecarCodec;
@@ -17,7 +17,7 @@ export type ApiErrorTranslator = (status: number, headers: Headers, body: Uint8A
 export interface TranslateTrip<TargetPayload, SourceEvent, TargetEvent> {
   readonly type: 'trip';
   readonly target: TargetPayload;
-  readonly events: (frames: AsyncIterable<ProtocolFrame<TargetEvent>>) => AsyncIterable<ProtocolFrame<SourceEvent>>;
+  readonly events: (frames: AsyncIterable<ProtocolFrame<TargetEvent>>) => AsyncIterable<ParsedProtocolFrame<SourceEvent>>;
   readonly error: ApiErrorTranslator;
 }
 

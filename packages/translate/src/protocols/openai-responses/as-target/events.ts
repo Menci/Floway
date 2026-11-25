@@ -6,6 +6,7 @@ import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, invalidateReadField, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { errorPayloadFromEvent, errorPayloadFromWire } from '../../../shared/api-error.ts';
+import { TranslateEventException } from '../../../shared/event-error.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -159,14 +160,14 @@ export const readOpenAIResponsesEvents = async function* (
   let nextLogprobGroup = 0;
 
   const responseMetadata = (response: OpenAIResponsesResultEx): void => {
-    if (typeof response.id !== 'string') throw new TypeError('Responses response envelope requires an id');
-    if (typeof response.model !== 'string') throw new TypeError('Responses response envelope requires a model');
+    if (typeof response.id !== 'string') throw new TranslateEventException('Responses response envelope requires an id');
+    if (typeof response.model !== 'string') throw new TranslateEventException('Responses response envelope requires a model');
     if (responseIdentity === undefined) {
       responseIdentity = { id: response.id, model: response.model };
       ir.assign(['model'], response.model);
     } else {
       if (response.model !== responseIdentity.model) {
-        throw new TypeError(`Responses response model changed from ${responseIdentity.model} to ${response.model}`);
+        throw new TranslateEventException(`Responses response model changed from ${responseIdentity.model} to ${response.model}`);
       }
     }
     if (typeof response.service_tier === 'string') ir.assign(['service_tier'], response.service_tier);
@@ -175,16 +176,16 @@ export const readOpenAIResponsesEvents = async function* (
 
   const requireOutputIndex = (value: unknown): number => {
     if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
-      throw new RangeError(`Responses output_index must be a nonnegative safe integer: ${String(value)}`);
+      throw new TranslateEventException(`Responses output_index must be a nonnegative safe integer: ${String(value)}`);
     }
     return value;
   };
 
   const openItem = (outputIndex: number, item: OpenAIResponsesOutputItemEx): ResponsesItemState => {
     outputIndex = requireOutputIndex(outputIndex);
-    if (items.has(outputIndex)) throw new Error(`Duplicate Responses output_item.added at index ${outputIndex}`);
+    if (items.has(outputIndex)) throw new TranslateEventException(`Duplicate Responses output_item.added at index ${outputIndex}`);
     const id = itemId(item);
-    if (typeof id !== 'string') throw new TypeError('Responses output items require an id');
+    if (typeof id !== 'string') throw new TranslateEventException('Responses output items require an id');
     const seed = irItemSeed(item);
     const handle = seed === undefined ? undefined : ir.item(0, seed);
     const base: ResponsesItemStateBase = {
@@ -213,19 +214,19 @@ export const readOpenAIResponsesEvents = async function* (
   const requireItem = (outputIndex: number): ResponsesItemState => {
     outputIndex = requireOutputIndex(outputIndex);
     const item = items.get(outputIndex);
-    if (item === undefined) throw new Error(`Responses event arrived before its output item at index ${outputIndex}`);
-    if (item.closed) throw new Error(`Responses event arrived after output item ${outputIndex} closed`);
+    if (item === undefined) throw new TranslateEventException(`Responses event arrived before its output item at index ${outputIndex}`);
+    if (item.closed) throw new TranslateEventException(`Responses event arrived after output item ${outputIndex} closed`);
     return item;
   };
 
   const validateSnapshotIdentity = (state: ResponsesItemState, item: OpenAIResponsesOutputItemEx): void => {
-    if (item.type !== state.type) throw new TypeError(`Responses output item type changed from ${state.type} to ${item.type}`);
+    if (item.type !== state.type) throw new TranslateEventException(`Responses output item type changed from ${state.type} to ${item.type}`);
     const id = itemId(item);
-    if (id !== state.id) throw new TypeError(`Responses output item id changed from ${state.id} to ${String(id)}`);
+    if (id !== state.id) throw new TranslateEventException(`Responses output item id changed from ${state.id} to ${String(id)}`);
     // The group is part of what names the call, so it may not move between
     // snapshots any more than the id may.
     const namespace = item.type === 'function_call' || item.type === 'custom_tool_call' ? item.namespace : undefined;
-    if (namespace !== state.namespace) throw new TypeError(`Responses output item namespace changed from ${String(state.namespace)} to ${String(namespace)}`);
+    if (namespace !== state.namespace) throw new TranslateEventException(`Responses output item namespace changed from ${String(state.namespace)} to ${String(namespace)}`);
   };
 
   const ensureToolText = (state: ResponsesItemState): ResponsesTextTarget => {
@@ -252,7 +253,7 @@ export const readOpenAIResponsesEvents = async function* (
   const reconcileAppend = (target: ResponsesTextTarget, snapshot: unknown): string => {
     const { handle, path } = target;
     const absolutePath = handle.absolutePath(path);
-    if (typeof snapshot !== 'string') throw new TypeError(`Responses text snapshot must be a string at ${JSON.stringify(absolutePath)}`);
+    if (typeof snapshot !== 'string') throw new TranslateEventException(`Responses text snapshot must be a string at ${JSON.stringify(absolutePath)}`);
     const current = handle.current<string>(path);
     // Responses done events are final snapshots in the official SDK. Downstream
     // reports show both missing suffixes and empty snapshots after streamed text.
@@ -269,7 +270,7 @@ export const readOpenAIResponsesEvents = async function* (
       return snapshot;
     }
     if (!snapshot.startsWith(current)) {
-      throw new TypeError(`Responses snapshot cannot replace streamed text at ${JSON.stringify(absolutePath)}`);
+      throw new TranslateEventException(`Responses snapshot cannot replace streamed text at ${JSON.stringify(absolutePath)}`);
     }
     const suffix = snapshot.slice(current.length);
     if (suffix !== '') {
@@ -290,17 +291,17 @@ export const readOpenAIResponsesEvents = async function* (
     const current = handle.current(path);
     if (current === undefined) handle.assign(path, snapshot);
     else if (!deepEqual(current, snapshot)) {
-      throw new TypeError(`Responses snapshot conflicts with streamed value at ${JSON.stringify(handle.absolutePath(path))}`);
+      throw new TranslateEventException(`Responses snapshot conflicts with streamed value at ${JSON.stringify(handle.absolutePath(path))}`);
     }
   };
 
   const ensureReasoningText = (state: ResponsesItemState, field: 'summary' | 'content', index: number): ResponsesTextTarget => {
-    if (state.type !== 'reasoning') throw new TypeError('Responses reasoning text requires a reasoning item');
+    if (state.type !== 'reasoning') throw new TranslateEventException('Responses reasoning text requires a reasoning item');
     state.item ??= ir.item(0, { type: 'reasoning' });
     state.item.ensure(field, []);
     const targets = state.reasoning[field];
     const length = targets.length;
-    if (index > length) throw new TypeError(`Responses ${field} index is not contiguous`);
+    if (index > length) throw new TranslateEventException(`Responses ${field} index is not contiguous`);
     if (index === length) {
       state.item.initialize([field, index], '');
       const fieldState = createReadFieldState('text');
@@ -320,10 +321,10 @@ export const readOpenAIResponsesEvents = async function* (
     create: (item: IRItemHandle, owner: { readonly outputIndex: number; readonly fieldState: MessageFieldState }) => ResponsesTextPartState,
   ): ResponsesTextPartState => {
     if (state.item === undefined || state.type !== 'message') throw new TypeError('Responses content part requires a message item');
-    if (contentIndex > state.parts.size) throw new TypeError('Responses content indexes must be contiguous');
+    if (contentIndex > state.parts.size) throw new TranslateEventException('Responses content indexes must be contiguous');
     if (contentIndex === state.parts.size) state.parts.set(contentIndex, create(state.item, state));
     const partState = state.parts.get(contentIndex);
-    if (partState === undefined || partState.type === 'image') throw new TypeError('Responses content indexes must be contiguous');
+    if (partState === undefined || partState.type === 'image') throw new TranslateEventException('Responses content indexes must be contiguous');
     return partState;
   };
 
@@ -355,7 +356,7 @@ export const readOpenAIResponsesEvents = async function* (
       annotationOrdinals: new Map(),
       nextAnnotationOrdinal: 0,
     }));
-    if (part.type !== 'output_text') throw new TypeError(`Responses content part type changed from ${part.type} to output_text`);
+    if (part.type !== 'output_text') throw new TranslateEventException(`Responses content part type changed from ${part.type} to output_text`);
     return part;
   };
 
@@ -366,7 +367,7 @@ export const readOpenAIResponsesEvents = async function* (
       handle: item.part({ type: 'refusal', refusal: '' }),
       path: 'refusal',
     }));
-    if (part.type !== 'refusal') throw new TypeError(`Responses content part type changed from ${part.type} to refusal`);
+    if (part.type !== 'refusal') throw new TranslateEventException(`Responses content part type changed from ${part.type} to refusal`);
     return part;
   };
 
@@ -418,7 +419,7 @@ export const readOpenAIResponsesEvents = async function* (
     nativeIndex: number,
     annotation: OpenAIResponsesAnnotation | null,
   ): void => {
-    if (!Number.isSafeInteger(nativeIndex) || nativeIndex < 0) throw new RangeError(`Responses annotation_index must be a nonnegative safe integer: ${nativeIndex}`);
+    if (!Number.isSafeInteger(nativeIndex) || nativeIndex < 0) throw new TranslateEventException(`Responses annotation_index must be a nonnegative safe integer: ${nativeIndex}`);
     const converted = annotation === null ? undefined : annotationToIR(() => {
       part.coordinateIndex ??= TextCoordinateIndex.codePointsToUTF16(text);
       part.coordinateIndex.assertUTF16Length(text.length);
@@ -427,9 +428,9 @@ export const readOpenAIResponsesEvents = async function* (
     let ordinal: number | undefined;
     if (part.annotationOrdinals.has(nativeIndex)) {
       ordinal = part.annotationOrdinals.get(nativeIndex);
-      if ((ordinal === undefined) !== (converted === undefined)) throw new TypeError(`Responses annotation changed projection at index ${nativeIndex}`);
+      if ((ordinal === undefined) !== (converted === undefined)) throw new TranslateEventException(`Responses annotation changed projection at index ${nativeIndex}`);
     } else {
-      if (nativeIndex !== part.annotationOrdinals.size) throw new TypeError('Responses annotation indexes must be contiguous');
+      if (nativeIndex !== part.annotationOrdinals.size) throw new TranslateEventException('Responses annotation indexes must be contiguous');
       ordinal = converted === undefined ? undefined : part.nextAnnotationOrdinal++;
       part.annotationOrdinals.set(nativeIndex, ordinal);
     }
@@ -474,7 +475,7 @@ export const readOpenAIResponsesEvents = async function* (
   const reconcilePartText = (part: ResponsesOutputTextPartState, snapshot: string): string => {
     const previous = part.text;
     const text = reconcileAppend(part, snapshot);
-    if (!text.startsWith(previous)) throw new TypeError('Responses output text state cannot move backwards');
+    if (!text.startsWith(previous)) throw new TranslateEventException('Responses output text state cannot move backwards');
     part.coordinateIndex?.append(text.slice(previous.length));
     part.text = text;
     return text;
@@ -489,9 +490,9 @@ export const readOpenAIResponsesEvents = async function* (
         reconcileLogprobs(state, contentIndex, partState, part.logprobs);
       } else if (part.type === 'refusal') {
         reconcileAppend(ensureRefusalPart(state, contentIndex), part.refusal);
-      } else throw new TypeError(`Responses message cannot contain ${part.type}`);
+      } else throw new TranslateEventException(`Responses message cannot contain ${part.type}`);
     } else if (state.type === 'reasoning') {
-      if (part.type !== 'reasoning_text') throw new TypeError(`Responses reasoning cannot contain ${part.type}`);
+      if (part.type !== 'reasoning_text') throw new TranslateEventException(`Responses reasoning cannot contain ${part.type}`);
       reconcileAppend(ensureReasoningText(state, 'content', contentIndex), part.text);
     }
   };
@@ -499,14 +500,14 @@ export const readOpenAIResponsesEvents = async function* (
   const reconcileItem = (state: ResponsesItemState, item: OpenAIResponsesOutputItemEx): void => {
     validateSnapshotIdentity(state, item);
     if (item.type === 'reasoning') {
-      if (!Array.isArray(item.summary)) throw new TypeError('Responses reasoning snapshot requires summary');
+      if (!Array.isArray(item.summary)) throw new TranslateEventException('Responses reasoning snapshot requires summary');
       item.summary.forEach((part, index) => reconcileAppend(ensureReasoningText(state, 'summary', index), part.text));
       item.content?.forEach((part, index) => reconcileAppend(ensureReasoningText(state, 'content', index), part.text));
       return;
     }
     if (state.item === undefined) return;
     if (item.type === 'message') {
-      if (!Array.isArray(item.content)) throw new TypeError('Responses message snapshot requires content');
+      if (!Array.isArray(item.content)) throw new TranslateEventException('Responses message snapshot requires content');
       item.content.forEach((part, index) => reconcilePart(state, index, part));
     } else if (item.type === 'function_call') {
       reconcileAssign({ handle: state.item, path: 'call_id' }, item.call_id);
@@ -551,7 +552,7 @@ export const readOpenAIResponsesEvents = async function* (
   };
 
   for await (const frame of frames) {
-    if (frame.type === 'done') throw new Error('Responses done arrived without a terminal response');
+    if (frame.type === 'done') throw new TranslateEventException('Responses done arrived without a terminal response');
     const e = frame.event;
     if (e.type === 'error') {
       ir.event({ type: 'error', error: errorPayloadFromEvent(e) });
@@ -564,7 +565,7 @@ export const readOpenAIResponsesEvents = async function* (
       yield* ir.drain();
       return;
     }
-    if (!started && !('response' in e)) throw new Error('Responses event arrived before the initial response envelope');
+    if (!started && !('response' in e)) throw new TranslateEventException('Responses event arrived before the initial response envelope');
 
     if ('response' in e) {
       const response = e.response;
@@ -576,12 +577,12 @@ export const readOpenAIResponsesEvents = async function* (
         started = true;
       }
       if (['response.completed', 'response.incomplete', 'response.failed'].includes(e.type)) {
-        if (response.output != null && !Array.isArray(response.output)) throw new TypeError('Responses terminal envelope output must be an array');
+        if (response.output != null && !Array.isArray(response.output)) throw new TranslateEventException('Responses terminal envelope output must be an array');
         const reportedOutput = response.output ?? [];
         const terminalOutput = reportedOutput.length === 0
           ? [...items.entries()].toSorted(([left], [right]) => left - right).map(([outputIndex, state]) => {
               if (!state.closed || state.finalSnapshot === undefined) {
-                throw new Error(`Responses terminal envelope omitted output indexes: ${outputIndex}`);
+                throw new TranslateEventException(`Responses terminal envelope omitted output indexes: ${outputIndex}`);
               }
               return state.finalSnapshot;
             })
@@ -593,7 +594,7 @@ export const readOpenAIResponsesEvents = async function* (
           if (state.closed) {
             validateSnapshotIdentity(state, item);
             if (state.finalSnapshot === undefined || !closedSnapshotEqual(state.finalSnapshot, item)) {
-              throw new TypeError(`Responses terminal snapshot conflicts with closed output item ${outputIndex}`);
+              throw new TranslateEventException(`Responses terminal snapshot conflicts with closed output item ${outputIndex}`);
             }
           } else {
             reconcileItem(state, item);
@@ -601,11 +602,11 @@ export const readOpenAIResponsesEvents = async function* (
           }
         }
         const omitted = [...items.keys()].filter(index => index >= terminalOutput.length);
-        if (omitted.length > 0) throw new Error(`Responses terminal envelope omitted output indexes: ${omitted.join(', ')}`);
+        if (omitted.length > 0) throw new TranslateEventException(`Responses terminal envelope omitted output indexes: ${omitted.join(', ')}`);
         if (audioItem !== undefined) {
           if (audioPart === undefined) throw new TypeError('Responses audio state is invalid');
           for (const field of ['data', 'transcript'] as const) {
-            if (audioFields.has(field) && !audioDone.has(field)) throw new Error('Responses audio stream ended without its done event');
+            if (audioFields.has(field) && !audioDone.has(field)) throw new TranslateEventException('Responses audio stream ended without its done event');
           }
           audioItem.end();
         }
@@ -673,17 +674,17 @@ export const readOpenAIResponsesEvents = async function* (
           reconcileAppend(ensureRefusalPart(state, e.content_index), e.refusal);
         } else if (e.type === 'response.output_text.annotation.added') {
           const part = state.parts.get(e.content_index);
-          if (part?.type !== 'output_text') throw new TypeError('Responses output-text annotation requires an output-text part');
+          if (part?.type !== 'output_text') throw new TranslateEventException('Responses output-text annotation requires an output-text part');
           reconcileAnnotation(part, part.text, e.annotation_index, e.annotation);
         } else if (e.type === 'response.function_call_arguments.delta' || e.type === 'response.custom_tool_call_input.delta') {
           const target = ensureToolText(state);
           const field = e.type === 'response.function_call_arguments.delta' ? 'arguments' : 'input';
-          if (target.path !== field) throw new TypeError('Responses tool delta does not match its native item');
+          if (target.path !== field) throw new TranslateEventException('Responses tool delta does not match its native item');
           if (e.delta !== '') appendTextAtom(target, e.delta);
         } else if (e.type === 'response.function_call_arguments.done' || e.type === 'response.custom_tool_call_input.done') {
           const target = ensureToolText(state);
           const field = e.type === 'response.function_call_arguments.done' ? 'arguments' : 'input';
-          if (target.path !== field) throw new TypeError('Responses tool completion does not match its native item');
+          if (target.path !== field) throw new TranslateEventException('Responses tool completion does not match its native item');
           reconcileAppend(target, e.type === 'response.function_call_arguments.done' ? e.arguments : e.input);
         } else if (e.type === 'response.reasoning_summary_text.delta' || e.type === 'response.reasoning_text.delta' || e.type === 'response.reasoning.delta') {
           const summary = e.type === 'response.reasoning_summary_text.delta';
@@ -700,5 +701,5 @@ export const readOpenAIResponsesEvents = async function* (
     yield* ir.drain();
     if (finished) return;
   }
-  throw new Error('Responses stream ended without a terminal response');
+  throw new TranslateEventException('Responses stream ended without a terminal response');
 };

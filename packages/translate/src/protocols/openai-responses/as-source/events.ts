@@ -13,6 +13,7 @@ import { createIRUnitQueue } from '../../../ir/output/unit-queue.ts';
 import { createIRUnitRegistry } from '../../../ir/output/unit-registry.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldState, type EmittedFieldStates } from '../../../round-trip/reference/reference-builder.ts';
+import { TranslateEventException } from '../../../shared/event-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.ts';
 import { isCompleteJSONObject } from '../../../shared/json/object.ts';
@@ -316,7 +317,7 @@ export const writeOpenAIResponsesEvents = async function* (
       if (item.type !== 'message') throw new TypeError('Responses image unit requires a message item');
       const part = item.content[unit.path[5] as number];
       if (part.type !== 'image') throw new TypeError('Responses image unit requires an image part');
-      if (status !== 'completed') throw new TypeError('Responses image unit can only complete');
+      if (status !== 'completed') throw new TranslateEventException('Responses image unit can only complete');
       const outputFormat = part.image.media_type === undefined ? undefined : IMAGE_OUTPUT_FORMATS[part.image.media_type as keyof typeof IMAGE_OUTPUT_FORMATS];
       return { type: 'image_generation_call', id, status, result: part.image.data, ...(outputFormat === undefined ? {} : { output_format: outputFormat }) };
     }
@@ -367,7 +368,7 @@ export const writeOpenAIResponsesEvents = async function* (
   // Creates the output units that the IR structures initialized by a record will become.
   const registerUnits = (record: IRRecord, state: IROutput): void => {
     if (record.type === 'write' && record.kind === 'initialize') {
-      if (record.path[0] === 'choices' && record.path[1] !== 0) throw new Error('Responses cannot represent multiple choices');
+      if (record.path[0] === 'choices' && record.path[1] !== 0) throw new TranslateEventException('Responses cannot represent multiple choices');
       if (record.path.length === 4 && record.path[0] === 'choices' && record.path[2] === 'logprobs') {
         const group = textPartLogprobMetadata(record.value);
         if (group !== undefined) {
@@ -664,7 +665,7 @@ export const writeOpenAIResponsesEvents = async function* (
     }
     if (!started) continue;
     if (record.type === 'choice_end') {
-      if (record.choice !== 0) throw new Error('Responses cannot represent multiple choices');
+      if (record.choice !== 0) throw new TranslateEventException('Responses cannot represent multiple choices');
       finishReason = record.finish_reason;
       for (const current of pendingEnds) {
         const item = state.choices[0].items[current.path[3] as number];

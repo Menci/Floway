@@ -1,4 +1,4 @@
-import { readProtocolFrames } from './protocol-frames.ts';
+import { transformProtocolFrames } from './protocol-frames.ts';
 import { chatBodyEntry, chatBodyExit, type ChatProtocol, type ChatRequestKey, type ChatResponseKey } from './topology.ts';
 import { gatewayFactSpace, type GatewayPipelineFacts } from '../../pipeline/facts.ts';
 import type { ProtocolEvent } from '../../pipeline/protocol-outcome.ts';
@@ -6,8 +6,7 @@ import { responseHead } from '../../pipeline/response.ts';
 import type { GatewayServices } from '../../pipeline/services.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { deleteHeader, materializeHeaders, setHeader, type HttpResponseFact } from '@floway-dev/http';
-import { move, type ManagedStream, type Pipeline, type Result } from '@floway-dev/pipeline';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { move, type ManagedStream, type Pipeline } from '@floway-dev/pipeline';
 import type { ProtocolError, ProtocolStreamError, ProviderOperationFacts } from '@floway-dev/provider';
 import type { TranslateInputError, TranslateTrip, Translator } from '@floway-dev/translate';
 
@@ -23,28 +22,6 @@ type ChatBody<Protocol extends ChatProtocol> = Pipeline<
 >;
 
 const { compose, defineStage } = gatewayFactSpace<GatewayServices>();
-
-const translateFrames = async function* <In, Out>(
-  items: AsyncIterable<Result<In, ProtocolStreamError>>,
-  translate: (frames: AsyncIterable<ProtocolFrame<In>>) => AsyncIterable<ProtocolFrame<Out>>,
-  abort: () => void,
-): AsyncGenerator<Result<Out, ProtocolStreamError>> {
-  const source = readProtocolFrames(items);
-  let failure: ProtocolStreamError | undefined;
-  try {
-    for await (const frame of translate(source.frames())) {
-      if (frame.type === 'done') break;
-      yield { ok: true, value: frame.event };
-    }
-    failure = source.failure;
-  } catch (cause) {
-    const upstream = source.failure;
-    failure = upstream !== undefined && cause === upstream ? upstream : { kind: 'protocol', cause };
-  }
-  if (!source.done) abort();
-  if (failure !== undefined) yield { ok: false, error: failure };
-  await source.drain();
-};
 
 const encode = new TextEncoder();
 
@@ -146,7 +123,7 @@ export const translateChat = <
       if (outcome.kind === 'result') throw new TypeError(`The ${target} translation target returned a scalar result`);
       const stream = scope.wrapStream(
         outcome.stream as ManagedStream<ChatEvent<Target>, ProtocolStreamError>,
-        (items, producer) => translateFrames(items, trip.events, () => { producer.abort(call); }),
+        (items, producer) => transformProtocolFrames(items, trip.events, () => { producer.abort(call); }),
       );
       return { ...response, 'response.http': http, [sourceResponseKey]: move({ kind: 'stream', stream } as const) } as Answer;
     },

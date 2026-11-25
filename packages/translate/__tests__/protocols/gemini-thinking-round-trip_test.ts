@@ -29,7 +29,9 @@ test('includeThoughts controls only visible plaintext', async () => {
     }, options));
     const frames = [];
     for await (const frame of trip.events(upstream())) frames.push(frame);
-    const result = await collectGeminiGenerateContentProtocolEventsToResult(iterate(frames));
+    const resultOutcome = await collectGeminiGenerateContentProtocolEventsToResult(iterate(frames));
+    if (!resultOutcome.ok) throw resultOutcome.error.cause;
+    const result = resultOutcome.value;
     const content = result.candidates?.[0]?.content;
     if (content === undefined) throw new Error('Expected translated Gemini content.');
     return { includeThoughts, target: trip.target, frames, content };

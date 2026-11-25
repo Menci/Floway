@@ -1,8 +1,7 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { eventFrame } from '../../src/common/index.ts';
 import { collectOpenAIChatCompletionsProtocolEventsToResult } from '../../src/openai-chat-completions/to-result.ts';
-import { assertEquals } from '@floway-dev/test-utils';
 
 test('collectOpenAIChatCompletionsProtocolEventsToResult collects OpenAI Chat Completions streams without DONE', async () => {
   async function* events() {
@@ -22,5 +21,5 @@ test('collectOpenAIChatCompletionsProtocolEventsToResult collects OpenAI Chat Co
   }
 
   const result = await collectOpenAIChatCompletionsProtocolEventsToResult(events());
-  assertEquals(result.choices[0]?.message.content, 'partial');
+  expect(result).toMatchObject({ ok: true, value: { choices: [{ message: { content: 'partial' } }] } });
 });

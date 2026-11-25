@@ -1,6 +1,7 @@
-import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from './index.ts';
-import { reassembleGeminiGenerateContentEvents } from './reassemble.ts';
-import type { ProtocolFrame } from '../common/index.ts';
+import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from './index.ts';
+import { createGeminiGenerateContentEventAccumulator } from './reassemble.ts';
+import type { ParsedProtocolFrame, SseErrorFrame } from '../common/sse.ts';
+import type { Result } from '@floway-dev/pipeline';
 
 export const GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE = 'Gemini generateContent stream ended without a terminal event.';
 
@@ -27,18 +28,19 @@ export const createGeminiGenerateContentCandidateCompletion = () => {
   };
 };
 
-const geminiGenerateContentEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>): AsyncGenerator<GeminiGenerateContentStreamEvent> {
+export const collectGeminiGenerateContentProtocolEventsToResult = async (frames: AsyncIterable<ParsedProtocolFrame<GeminiGenerateContentStreamEvent>>): Promise<Result<GeminiGenerateContentResult, SseErrorFrame>> => {
   const completion = createGeminiGenerateContentCandidateCompletion();
+  const accumulator = createGeminiGenerateContentEventAccumulator();
   for await (const frame of frames) {
-    if (frame.type === 'done') return;
-
-    yield frame.event;
-    if (isGeminiGenerateContentTerminalEvent(frame.event)) return;
+    if (frame.type === 'error') return { ok: false, error: frame };
+    if (frame.type === 'done') return { ok: true, value: accumulator.result() };
+    const failure = accumulator.accept(frame.event);
+    if (failure !== undefined) return { ok: false, error: failure };
+    if (isGeminiGenerateContentTerminalEvent(frame.event)) return { ok: true, value: accumulator.result() };
     completion.observe(frame.event);
   }
 
-  if (!completion.isComplete()) throw new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
+  if (completion.isComplete()) return { ok: true, value: accumulator.result() };
+  const cause = new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
+  return { ok: false, error: { type: 'error', cause } };
 };
-
-export const collectGeminiGenerateContentProtocolEventsToResult = async (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>) =>
-  await reassembleGeminiGenerateContentEvents(geminiGenerateContentEventsUntilTerminal(frames));

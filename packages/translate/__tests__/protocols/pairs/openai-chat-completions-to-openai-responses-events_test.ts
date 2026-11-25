@@ -9,7 +9,8 @@ import { structuredResponsesFixture } from '../openai-responses/fixtures.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, parseOpenAIChatCompletionsStream, openaiChatCompletionsProtocolFrameToSSEFrame as writeChatFrame } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
+import { routeOpenAIChatCompletionsViaOpenAIResponses } from '@floway-dev/translate';
 
 const makeResponse = (status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
   id: 'resp_123',
@@ -84,10 +85,11 @@ test('OpenAI Responses to OpenAI Chat Completions translation rejects malformed 
     });
   }
 
-  await assertRejects(
-    async () => await collect(translate(stream())),
-    RangeError,
-  );
+  const trip = await routeOpenAIChatCompletionsViaOpenAIResponses(emptyPayload.chat, { sidecarCodec: createTestSidecarCodec() });
+  if (trip.type === 'input-error') throw new Error(trip.message);
+  expect(await collect(trip.events(stream()))).toMatchObject([
+    { type: 'error', cause: { message: 'cache token counts exceed inclusive input tokens: 40 - 30 - 25', cause: expect.any(RangeError) } },
+  ]);
 });
 
 test('translateToSourceEvents streams independent text before deferred reasoning and retains usage', async () => {
@@ -249,13 +251,17 @@ test.each([
     { type: 'response.completed', response },
   ];
   const upstreamSSE = events.map((event, sequence_number) => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number })}\n\n`).join('');
-  const upstream = await collectOpenAIResponsesProtocolEventsToResult(expectParsedProtocolFrames(parseOpenAIResponsesStream(new Response(upstreamSSE).body!)));
+  const upstreamOutcome = await collectOpenAIResponsesProtocolEventsToResult(expectParsedProtocolFrames(parseOpenAIResponsesStream(new Response(upstreamSSE).body!)));
+  if (!upstreamOutcome.ok) throw upstreamOutcome.error.cause;
+  const upstream = upstreamOutcome.value;
   let clientSSE = '';
   for await (const frame of translate(expectParsedProtocolFrames(parseOpenAIResponsesStream(new Response(upstreamSSE).body!)))) {
     const sse = writeChatFrame(frame, includeUsageChunk);
     if (sse) clientSSE += `data: ${sse.data}\n\n`;
   }
-  const client = await collectOpenAIChatCompletionsProtocolEventsToResult(expectParsedProtocolFrames(parseOpenAIChatCompletionsStream(new Response(clientSSE).body!)));
+  const clientOutcome = await collectOpenAIChatCompletionsProtocolEventsToResult(expectParsedProtocolFrames(parseOpenAIChatCompletionsStream(new Response(clientSSE).body!)));
+  if (!clientOutcome.ok) throw clientOutcome.error.cause;
+  const client = clientOutcome.value;
   expect(client.choices[0].finish_reason).toBe('tool_calls');
   const replay = await buildTargetPayloadFor(openaiChatCompletionsSourceProtocol, openaiResponsesTargetProtocol, { model: response.model, stream: true, messages: [client.choices[0].message, { role: 'tool', tool_call_id: custom.call_id, content: 'edited' }] }, { sidecarCodec: createTestSidecarCodec() });
   expect(replay.input.slice(0, -1)).toEqual(upstream.output);

@@ -1,6 +1,7 @@
 import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from './field-keys.ts';
 import type { GeminiGenerateContentCandidate, GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
+import type { SseErrorFrame } from '../common/sse.ts';
 
 const isMergeableTextPart = (part: GeminiGenerateContentPart): boolean => part.text !== undefined && Object.keys(part).every(key => key === 'text' || key === 'thought' && part.thought === false);
 const appendPart = (parts: GeminiGenerateContentPart[], part: GeminiGenerateContentPart): void => {
@@ -17,7 +18,7 @@ interface CandidateAccumulator {
 const finalizeCandidate = (state: CandidateAccumulator): GeminiGenerateContentCandidate => Object.assign(state.candidate, state.extras);
 
 export interface GeminiGenerateContentEventAccumulator {
-  accept: (event: GeminiGenerateContentStreamEvent) => void;
+  accept: (event: GeminiGenerateContentStreamEvent) => SseErrorFrame | undefined;
   candidate: (index: number) => GeminiGenerateContentCandidate | undefined;
   result: () => GeminiGenerateContentResult;
 }
@@ -27,8 +28,11 @@ export const createGeminiGenerateContentEventAccumulator = (): GeminiGenerateCon
   const resultFields: GeminiGenerateContentResult = {};
   const resultExtras: Record<string, unknown> = {};
 
-  const accept = (event: GeminiGenerateContentStreamEvent): void => {
-    if ('error' in event) throw new Error(`${event.error.status}: ${event.error.message}`, { cause: event });
+  const accept = (event: GeminiGenerateContentStreamEvent): SseErrorFrame | undefined => {
+    if ('error' in event) {
+      const cause = new Error(`${event.error.status}: ${event.error.message}`, { cause: event });
+      return { type: 'error', cause };
+    }
     for (const incoming of event.candidates ?? []) {
       // Protobuf omits an index whose value is zero; finish-only candidates may have no Content.
       // https://github.com/googleapis/googleapis/blob/e09e85d32ca349e1b205514a412817a7692595c6/google/ai/generativelanguage/v1beta/generative_service.proto
@@ -48,6 +52,7 @@ export const createGeminiGenerateContentEventAccumulator = (): GeminiGenerateCon
     const { candidates: _candidates, ...fields } = event;
     Object.assign(resultFields, fields);
     captureExtras(event as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_RESULT_KEYS, resultExtras);
+    return undefined;
   };
 
   const candidate = (index: number): GeminiGenerateContentCandidate | undefined => {
@@ -66,6 +71,9 @@ export const createGeminiGenerateContentEventAccumulator = (): GeminiGenerateCon
 
 export async function reassembleGeminiGenerateContentEvents(events: AsyncIterable<GeminiGenerateContentStreamEvent>): Promise<GeminiGenerateContentResult> {
   const accumulator = createGeminiGenerateContentEventAccumulator();
-  for await (const event of events) accumulator.accept(event);
+  for await (const event of events) {
+    const failure = accumulator.accept(event);
+    if (failure !== undefined) throw failure.cause;
+  }
   return accumulator.result();
 }

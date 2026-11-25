@@ -1,5 +1,5 @@
 import { openAIResponsesExit, openAIResponsesFactSpace } from './facts.ts';
-import { readProtocolFrames } from '../../pipeline/protocol-frames.ts';
+import { transformProtocolFrames } from '../../pipeline/protocol-frames.ts';
 import { serializeOpenAIResponsesStream } from '../../shared/stream-compatibility/index.ts';
 import { move } from '@floway-dev/pipeline';
 
@@ -16,20 +16,8 @@ export const serializeOpenAIResponsesStreamItems = defineStage({
     const back = await call;
     const outcome = back['response.openaiResponses'];
     if (outcome.kind !== 'stream' || !facts['serve.candidate'].model.enabledFlags.includes('serialize-stream-items')) return back;
-    const stream = scope.wrapStream(outcome.stream, async function* (items, producer) {
-      const source = readProtocolFrames(items);
-      let failure;
-      try {
-        for await (const frame of serializeOpenAIResponsesStream(source.frames(), true)) {
-          if (frame.type === 'event') yield { ok: true, value: frame.event };
-        }
-      } catch (cause) {
-        failure = cause === source.failure ? source.failure : { kind: 'protocol' as const, cause };
-      }
-      if (!source.done) producer.abort(call);
-      if (failure !== undefined) yield { ok: false, error: failure };
-      await source.drain();
-    });
+    const stream = scope.wrapStream(outcome.stream, (items, producer) =>
+      transformProtocolFrames(items, frames => serializeOpenAIResponsesStream(frames, true), () => { producer.abort(call); }));
     return { ...back, 'response.openaiResponses': move({ kind: 'stream', stream } as const) };
   },
 });

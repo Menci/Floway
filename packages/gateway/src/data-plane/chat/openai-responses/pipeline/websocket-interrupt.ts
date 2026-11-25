@@ -1,5 +1,6 @@
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ParsedProtocolFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import type { ProtocolStreamError } from '@floway-dev/provider';
 
 export class OpenAIResponsesInterrupted extends Error {
   constructor() {
@@ -20,20 +21,21 @@ const utf8 = new TextEncoder();
 // https://github.com/openai/codex/blob/12de0e395d3313bc564190d983cb4f5acf0be713/codex-rs/core/tests/suite/pending_input.rs#L1140-L1168
 export const completeInterruptedOpenAIResponses = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
-  { signal, responseId, model }: { readonly signal: AbortSignal; readonly responseId: string; readonly model: string },
+  { failure, responseId, model }: {
+    readonly failure: () => ProtocolStreamError | undefined;
+    readonly responseId: string;
+    readonly model: string;
+  },
   limits: InterruptLimits = interruptLimits,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+): AsyncGenerator<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const completedItems = new Map<number, { readonly item: OpenAIResponsesOutputItemEx; readonly bytes: number }>();
   const pendingItems = new Map<number, string>();
   let response: Omit<OpenAIResponsesResultEx, 'output'> | undefined;
   let retainedBytes = 0;
   let nextSequence = 0;
   let terminal = false;
-  const interrupted = () => signal.aborted && signal.reason instanceof OpenAIResponsesInterrupted;
-
   try {
     for await (const frame of frames) {
-      if (interrupted()) break;
       if (frame.type === 'event') {
         const event = frame.event;
         if (typeof event.sequence_number === 'number') nextSequence = Math.max(nextSequence, event.sequence_number + 1);
@@ -49,21 +51,29 @@ export const completeInterruptedOpenAIResponses = async function* (
           const previous = completedItems.get(event.output_index);
           const bytes = utf8.encode(JSON.stringify(event.item)).byteLength;
           retainedBytes += bytes - (previous?.bytes ?? 0);
-          if (retainedBytes > limits.bytes) throw new RangeError(`OpenAI Responses interruption exceeded ${limits.bytes} retained bytes`);
+          if (retainedBytes > limits.bytes) {
+            const cause = new RangeError(`OpenAI Responses interruption exceeded ${limits.bytes} retained bytes`);
+            yield { type: 'error', cause };
+            return;
+          }
           completedItems.set(event.output_index, { item: event.item, bytes });
         }
         if (completedItems.size + pendingItems.size > limits.items) {
-          throw new RangeError(`OpenAI Responses interruption exceeded ${limits.items} retained items`);
+          const cause = new RangeError(`OpenAI Responses interruption exceeded ${limits.items} retained items`);
+          yield { type: 'error', cause };
+          return;
         }
         terminal ||= isOpenAIResponsesTerminalEvent(event);
       }
       yield frame;
     }
+    return;
   } catch (error) {
-    if (!interrupted()) throw error;
+    const source = failure();
+    if (source?.kind !== 'abort' || error !== source || !(source.cause instanceof OpenAIResponsesInterrupted)) throw error;
   }
 
-  if (!interrupted() || terminal) return;
+  if (terminal) return;
   for (const [outputIndex, itemId] of [...pendingItems].sort(([left], [right]) => left - right)) {
     yield eventFrame({
       type: 'response.output_item.interrupted',

@@ -9,6 +9,7 @@ import type { SidecarRecognition } from '../round-trip/resolve.ts';
 import { roundTripAssistantTurn } from '../round-trip/resolve.ts';
 import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
 import type { RoundTripWriter } from '../round-trip/writer.ts';
+import { TranslateEventException } from '../shared/event-error.ts';
 import { TranslateInputException } from '../shared/input-error.ts';
 import type { ApiErrorTranslator, TranslateOptions, Translator } from '../types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -72,9 +73,14 @@ export const composeTranslation = <
       type: 'trip',
       target: targetPayload,
       error: source.error,
-      events: frames => {
+      async *events(frames) {
         const coordinator = createRoundTripCoordinator(source.name, target.name, options.sidecarCodec);
-        return source.writeEvents(payload, target.readEvents(frames, context, coordinator.reader), coordinator.writer);
+        try {
+          yield* source.writeEvents(payload, target.readEvents(frames, context, coordinator.reader), coordinator.writer);
+        } catch (error) {
+          if (!(error instanceof TranslateEventException)) throw error;
+          yield { type: 'error', cause: error };
+        }
       },
     };
   } catch (error) {

@@ -12,7 +12,9 @@ const collect = (...deltas: unknown[]) => {
       choices: [{ index: 0, delta, finish_reason: null }],
     });
   }
-  return accumulator.result().choices[0].message.reasoning_details;
+  const result = accumulator.result();
+  if (!result.ok) throw result.error.cause;
+  return result.value.choices[0].message.reasoning_details;
 };
 
 test('merges summary fragments without concatenating repeated discriminants or metadata', () => {

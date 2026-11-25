@@ -160,6 +160,93 @@ test('translation selects the preferred available target, preserves its trip and
   expect(drained).toBe(true);
 });
 
+test('translation reports an invalid upstream lifecycle and drains the aborted target', async () => {
+  const aborted = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const targetEgress = defineStage({
+    name: 'test.anthropic-messages-invalid-lifecycle',
+    request: { needs: chatBodyEntry(target) },
+    return: { provides: chatBodyExit(target) },
+    async execute(_facts, scope) {
+      const stream = scope.createStream<AnthropicMessagesStreamEventEx, ProtocolStreamError>(async function* ({ signal }) {
+        yield { ok: true, value: { type: 'message_stop' } };
+        expect(signal.aborted).toBe(true);
+        aborted.resolve();
+        await release.promise;
+        yield { ok: false, error: { kind: 'abort', cause: signal.reason } };
+      });
+      return {
+        'response.http': move(responseHead(200)),
+        'response.anthropicMessages': move({ kind: 'stream', stream } as const),
+      };
+    },
+  });
+  const handle = run(sourceBody(targetEgress), facts, { services: services() });
+  const outcome = (await handle.result)['response.openaiChatCompletions'];
+  if (outcome.kind !== 'stream') throw new TypeError('Expected the translated stream');
+  const reader = outcome.stream[Symbol.asyncIterator]();
+  expect((await reader.next()).value).toMatchObject({
+    ok: false, error: { kind: 'protocol', cause: { message: 'Messages message_stop arrived before message_start' } },
+  });
+  let finished = false;
+  const end = reader.next().then(item => {
+    finished = true;
+    return item;
+  });
+  try {
+    await Promise.race([aborted.promise, end.then(() => { throw new Error('Translation ended before aborting target'); })]);
+    expect(finished).toBe(false);
+  } finally {
+    release.resolve();
+  }
+  expect((await end).done).toBe(true);
+  await handle.done;
+});
+
+test('translation panics when an event transform throws after abort', async () => {
+  const controller = new AbortController();
+  const bug = new TypeError('transform expected another event');
+  const targetEgress = defineStage({
+    name: 'test.anthropic-messages-before-transform-panic',
+    request: { needs: chatBodyEntry(target) },
+    return: { provides: chatBodyExit(target) },
+    async execute(_facts, scope) {
+      const stream = scope.createStream<AnthropicMessagesStreamEventEx, ProtocolStreamError>(async function* ({ signal }) {
+        yield { ok: true, value: { type: 'ping' } };
+        yield { ok: false, error: { kind: 'abort', cause: signal.reason } };
+      });
+      return {
+        'response.http': move(responseHead(200)),
+        'response.anthropicMessages': move({ kind: 'stream', stream } as const),
+      };
+    },
+  });
+  const pipeline = sourceBody(targetEgress, async (payload, options) => {
+    const trip = await routeOpenAIChatCompletionsViaAnthropicMessages(payload, options);
+    if (trip.type === 'input-error') return trip;
+    return {
+      ...trip,
+      async *events(frames) {
+        await frames[Symbol.asyncIterator]().next();
+        yield eventFrame({
+          id: 'translated', object: 'chat.completion.chunk', created: 1, model: payload.model,
+          choices: [{ index: 0, delta: { content: 'first' }, finish_reason: null }],
+        });
+        controller.abort();
+        expect(controller.signal.aborted).toBe(true);
+        throw bug;
+      },
+    };
+  });
+  const handle = run(pipeline, facts, { services: services(), signal: controller.signal });
+  const outcome = (await handle.result)['response.openaiChatCompletions'];
+  if (outcome.kind !== 'stream') throw new TypeError('Expected the translated stream');
+  const reader = outcome.stream[Symbol.asyncIterator]();
+  expect((await reader.next()).value).toMatchObject({ ok: true, value: { id: 'translated' } });
+  await expect(reader.next()).rejects.toBe(bug);
+  await expect(handle.done).rejects.toBe(bug);
+});
+
 test('translation restates the target failure and retains its origin, status and repeated headers', async () => {
   const targetEgress = defineStage({
     name: 'test.anthropic-messages-failure',

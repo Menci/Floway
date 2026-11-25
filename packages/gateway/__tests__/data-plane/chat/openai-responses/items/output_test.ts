@@ -6,7 +6,7 @@ import { createOpenAIResponsesHttpStore } from '../../../../../src/data-plane/ch
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from '../test-policy.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ParsedProtocolFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 const frames = async function* (response: OpenAIResponsesResultEx): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
@@ -56,7 +56,7 @@ test('stateless client egress retains terminal-only output without applying a pr
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: completedReasoningItem });
     yield eventFrame({ type: 'response.completed', response });
   };
-  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
+  const frames: ParsedProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
   const store = createOpenAIResponsesHttpStore({ id: 'key-stateless', openaiResponsesRetentionSeconds: 0 }, Date.now(), false);
   for await (const frame of wrapOpenAIResponsesClientOutput(events(), { store, responseId: 'resp_public' })) frames.push(frame);
   const terminal = frames.at(-1);
@@ -69,7 +69,7 @@ test('client output replaces history when a compaction_summary item closes', asy
   const { repo, store } = memoryOutputHarness();
   const item = { type: 'compaction_summary' as const, id: 'cmp_alias', encrypted_content: 'opaque' };
   const commitSnapshot = vi.spyOn(store, 'commitSnapshot');
-  const emitted: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
+  const emitted: ParsedProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
 
   for await (const frame of wrapOpenAIResponsesClientOutput(frames(responseFor([item])), {
     store,
@@ -158,14 +158,8 @@ test('client output refuses to persist an id-less upstream item', async () => {
     incomplete_details: null,
   };
 
-  const collect = async () => {
-    for await (const _frame of wrapOpenAIResponsesClientOutput(frames(result), {
-      store,
-      responseId: 'resp_public',
-    })) { /* drain */ }
-  };
-
-  await expect(collect()).rejects.toThrow();
+  const output = await Array.fromAsync(wrapOpenAIResponsesClientOutput(frames(result), { store, responseId: 'resp_public' }));
+  expect(output.at(-1)).toMatchObject({ type: 'error', cause: { message: 'OpenAI Responses message output has no id' } });
 });
 
 test('stateful output rejects a terminal item that never emitted output_item.done', async () => {
@@ -183,14 +177,8 @@ test('stateful output rejects a terminal item that never emitted output_item.don
   const input = (async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
     yield eventFrame({ type: 'response.completed', response });
   })();
-  const collect = async () => {
-    for await (const _frame of wrapOpenAIResponsesClientOutput(input, {
-      store,
-      responseId: 'resp_public',
-    })) { /* drain */ }
-  };
-
-  await expect(collect()).rejects.toThrow();
+  const output = await Array.fromAsync(wrapOpenAIResponsesClientOutput(input, { store, responseId: 'resp_public' }));
+  expect(output).toMatchObject([{ type: 'error', cause: { message: 'OpenAI Responses terminal output_index 0 arrived before output_item.done' } }]);
   expect(await repo.openaiResponsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
   expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 });

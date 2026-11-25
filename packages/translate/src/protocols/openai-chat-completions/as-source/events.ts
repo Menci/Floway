@@ -9,6 +9,7 @@ import type { IROutputItem, IROutputMessageItem, IROutputTokenLogprob } from '..
 import { createIRUnitIndexAllocator } from '../../../ir/output/unit-index.ts';
 import { provenanceSpanForAppend, replayTextProvenance, type TextProvenanceSpan } from '../../../round-trip/provenance.ts';
 import { appendEmittedField, createEmittedFieldState, type EmittedFieldStates, type EmittedFieldState } from '../../../round-trip/reference/reference-builder.ts';
+import { TranslateEventException } from '../../../shared/event-error.ts';
 import type { SourceEventWriterOptions } from '../../../shared/event-writer-options.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantTurnState } from '../as-target/assistant-turn.ts';
@@ -135,7 +136,10 @@ export const writeOpenAIChatCompletionsEvents = async function* (
       ...(options.continuousUsageStats && choices.length > 0 ? { usage: usage ?? null } : {}),
       ...fields,
     };
-    for (const choice of choices) nativeAccumulator(choice.index).accept({ ...event, choices: [choice] });
+    for (const choice of choices) {
+      const failure = nativeAccumulator(choice.index).accept({ ...event, choices: [choice] });
+      if (failure !== undefined) throw failure.cause;
+    }
     return eventFrame(event);
   };
   const deltaFrame = (
@@ -265,7 +269,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
           }
           if (path[7] === 'data') {
             const audioMetadata = options.audioMetadata?.(choice);
-            if (audioMetadata === undefined) throw new Error('ChatCompletions audio requires replay ID and expiry metadata');
+            if (audioMetadata === undefined) throw new TranslateEventException('ChatCompletions audio requires replay ID and expiry metadata');
             // The first native audio delta includes the transcript accumulated before data arrived.
             const item = state.choices[choice].items[path[3] as number];
             const part = item.type === 'message' ? item.content[path[5] as number] : undefined;
@@ -383,11 +387,16 @@ export const writeOpenAIChatCompletionsEvents = async function* (
         appendEmittedField(options.roundTrip.builder, textState(record.choice, 'refusal'), choice.refusal_details.explanation);
         yield deltaFrame(record.choice, { refusal: choice.refusal_details.explanation }, tier);
       }
-      const summary = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice)?.message.reasoning_text;
+      const accumulator = nativeAccumulator(record.choice);
+      const beforeSummary = accumulator.result();
+      if (!beforeSummary.ok) throw beforeSummary.error.cause;
+      const summary = beforeSummary.value.choices.find(choice => choice.index === record.choice)?.message.reasoning_text;
       if (typeof summary === 'string' && summary !== '') {
         yield deltaFrame(record.choice, { reasoning_details: [{ type: 'reasoning.summary', summary, format: 'unknown', index: 0 }] }, tier);
       }
-      const nativeChoice = nativeAccumulator(record.choice).result().choices.find(choice => choice.index === record.choice);
+      const result = accumulator.result();
+      if (!result.ok) throw result.error.cause;
+      const nativeChoice = result.value.choices.find(choice => choice.index === record.choice);
       if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${record.choice} at choice_end`);
       const sourceTurnDigest = await computeOpenAIChatCompletionsTurnDigest(nativeChoice.message);
       const input = toOpenAIChatCompletionsInputAssistantTurn<EmittedFieldStates>(nativeChoice.message, outputState(record.choice));

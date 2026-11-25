@@ -1,5 +1,5 @@
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ParsedProtocolFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { FlagId } from '@floway-dev/provider';
 
@@ -29,12 +29,13 @@ const serialize = async function* <T>(
   describe: (event: T) => ItemEvent | undefined,
   isError: (event: T) => boolean,
   limits: InterleavedLimits,
-): AsyncGenerator<ProtocolFrame<T>> {
+): AsyncGenerator<ParsedProtocolFrame<T>> {
   let current: number | undefined;
   let buffered: QueuedFrame<T>[] = [];
   let retainedBytes = 0;
   let retainedFrames = 0;
   for await (const frame of frames) {
+    if (frame.type === 'done' && current !== undefined) break;
     const work: { frames: QueuedFrame<T>[]; cursor: number }[] = [{ frames: [{ frame }], cursor: 0 }];
     while (work.length > 0) {
       const batch = work.at(-1)!;
@@ -52,10 +53,18 @@ const serialize = async function* <T>(
       const item = next.type === 'event' ? describe(next.event) : undefined;
       if (current !== undefined && ((item !== undefined && item.index !== current) || (item === undefined && buffered.length > 0))) {
         if (queued.retainedBytes === undefined) {
-          if (++retainedFrames > limits.frames) throw new RangeError(`Interleaved stream item serialization exceeded ${limits.frames} retained frames`);
+          if (++retainedFrames > limits.frames) {
+            const cause = new RangeError(`Interleaved stream item serialization exceeded ${limits.frames} retained frames`);
+            yield { type: 'error', cause };
+            return;
+          }
           queued.retainedBytes = utf8.encode(JSON.stringify(next)).byteLength;
           retainedBytes += queued.retainedBytes;
-          if (retainedBytes > limits.bytes) throw new RangeError(`Interleaved stream item serialization exceeded ${limits.bytes} retained bytes`);
+          if (retainedBytes > limits.bytes) {
+            const cause = new RangeError(`Interleaved stream item serialization exceeded ${limits.bytes} retained bytes`);
+            yield { type: 'error', cause };
+            return;
+          }
         }
         buffered.push(queued);
         continue;
@@ -75,14 +84,17 @@ const serialize = async function* <T>(
       }
     }
   }
-  if (buffered.length > 0) throw new Error('Cannot serialize an interleaved stream whose active item never closed');
+  if (current !== undefined) {
+    const cause = new Error('Cannot serialize an interleaved stream whose active item never closed');
+    yield { type: 'error', cause };
+  }
 };
 
 export const serializeAnthropicMessagesStream = (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   enabled: boolean,
   limits: InterleavedLimits = interleavedLimits,
-): AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>> => enabled
+): AsyncIterable<ParsedProtocolFrame<AnthropicMessagesStreamEventEx>> => enabled
   ? serialize(frames, event => {
       if (event.type === 'content_block_start') return { index: event.index, kind: 'start' };
       if (event.type === 'content_block_delta') return { index: event.index, kind: 'delta' };
@@ -95,7 +107,7 @@ export const serializeOpenAIResponsesStream = (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   enabled: boolean,
   limits: InterleavedLimits = interleavedLimits,
-): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> => {
+): AsyncIterable<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>> => {
   if (!enabled) return frames;
   const ordered = serialize(frames, event => {
     if (!('output_index' in event)) return undefined;
@@ -104,7 +116,7 @@ export const serializeOpenAIResponsesStream = (
   return (async function* () {
     let sequence = 0;
     for await (const frame of ordered) {
-      if (frame.type === 'done') yield frame;
+      if (frame.type !== 'event') yield frame;
       else {
         yield frame.event.sequence_number === sequence ? frame : eventFrame({ ...frame.event, sequence_number: sequence });
         sequence++;
