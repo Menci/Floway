@@ -64,7 +64,7 @@ declare const stageServices: unique symbol;
 
 export interface Stage<in S> {
   readonly name: string;
-  readonly [stageServices]?: (services: S) => void;
+  readonly [stageServices]: (services: S) => void;
 }
 
 interface DefineStage<Space, S> {
@@ -135,7 +135,7 @@ export const defineStageFor = <Space, S>(): DefineStage<Space, S> => ((options: 
     throw new TypeError(`Stage "${name}" has an invalid continuation or return declaration`);
   }
   const requestNeeds = through?.request.needs ?? parseKeys(options.request!.needs, `${name} request needs`);
-  const stage = Object.freeze({ name });
+  const stage = Object.freeze({ name }) as Stage<S>;
   definitions.set(stage, {
     name,
     execute,

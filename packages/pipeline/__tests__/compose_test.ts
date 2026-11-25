@@ -1,7 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import { factSpace, run, transform } from '../src/index.ts';
-import type { Pipeline } from '../src/index.ts';
+import type { Deferred, ManagedStream, Pipeline, Result } from '../src/index.ts';
 
 interface Space {
   readonly 'request.initial': number;
@@ -22,6 +22,12 @@ const valueEnding = defineStage({
 });
 
 describe('composition', () => {
+  it('keeps handles confined to their runtime constructors', () => {
+    expectTypeOf<AsyncIterable<Result<string, string>>>().not.toExtend<ManagedStream<string, string>>();
+    expectTypeOf<{ promise: Promise<string> }>().not.toExtend<Deferred<string>>();
+    expectTypeOf<{ name: string; entry: []; exit: [] }>().not.toExtend<Pipeline<{}, {}>>();
+  });
+
   it('derives required and optional keys for stage and pipeline contracts', () => {
     const ending = defineStage({
       name: 'optional',

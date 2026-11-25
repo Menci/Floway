@@ -68,7 +68,7 @@ export class StreamResource<T, E> {
         if (this.#wrappedBy) this.#wrappedBy(new Error('Cannot iterate a stream transferred to a wrapper'));
         return this.#open();
       },
-    });
+    }) as AsyncIterable<Result<T, E>> as ManagedStream<T, E>;
     resources.set(this.handle, this);
     owner.add(this);
     void this.done.catch(() => undefined);

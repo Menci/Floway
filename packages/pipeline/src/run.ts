@@ -10,7 +10,7 @@ import { checkFacts, registerHandle } from './facts.ts';
 import type { Facts } from './facts.ts';
 import { resourceOf, StreamResource, streamsIn, transferStreams } from './stream.ts';
 import type { AnyStream, StreamOwner } from './stream.ts';
-import type { DeferredController, ManagedStream, Result } from './values.ts';
+import type { Deferred, DeferredController, ManagedStream, Result } from './values.ts';
 
 type AnyPipeline = Pipeline<never, unknown, never>;
 type Failure = { readonly error: unknown };
@@ -457,7 +457,7 @@ class StageRun {
   #deferred<T>(): DeferredController<T> {
     const promise = Promise.withResolvers<T>();
     void promise.promise.catch(() => undefined);
-    const deferred = registerHandle({ promise: promise.promise });
+    const deferred = registerHandle({ promise: promise.promise }) as Deferred<T>;
     const finish = (result: Result<T, unknown>): void => {
       if (!this.#pendingDeferred.delete(cancel)) this.#fail(new Error('Deferred has already settled'));
       if (result.ok) promise.resolve(result.value);

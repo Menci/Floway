@@ -9,7 +9,7 @@ export interface Pipeline<in I, out O, in S = {}> {
   readonly name: string;
   readonly entry: KeyList;
   readonly exit: KeyList;
-  readonly [pipelineTypes]?: (input: I, services: S) => O;
+  readonly [pipelineTypes]: (input: I, services: S) => O;
 }
 
 type AnyPipeline = Pipeline<never, unknown, never>;
@@ -151,7 +151,7 @@ const composeFor = <Space, S>() => <
     name,
     entry: Object.freeze([...options.entry]),
     exit: Object.freeze([...options.exit]),
-  });
+  }) as Pipeline<FactShape<Space, Entry[number]>, FactShape<Space, Exit[number]>, S>;
   assemblies.set(pipeline, { entry, exit, stages, targets });
   return pipeline;
 };
