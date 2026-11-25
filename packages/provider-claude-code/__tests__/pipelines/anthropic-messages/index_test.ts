@@ -423,6 +423,21 @@ describe('Claude Code Anthropic Messages pipeline', () => {
     expect(h.send).toHaveBeenCalledOnce();
   });
 
+  test('records the allowed quota and metrics from a successful stream', async () => {
+    const h = createHarness();
+    h.send.mockResolvedValueOnce(reply(sse({
+      'anthropic-ratelimit-unified-status': 'allowed',
+      'anthropic-ratelimit-unified-5h-status': 'allowed',
+      'anthropic-ratelimit-unified-5h-utilization': '0.25',
+    })));
+    const { items } = await finish(h.start());
+    expect(items).toEqual([{ ok: true, value: { type: 'message_stop' } }]);
+    expect(h.account().quotaSnapshot).toMatchObject({
+      modelId, data: { status: 'allowed', fiveHour: { status: 'allowed', utilization: 0.25 } },
+    });
+    expect(h.recordUpstreamMetric).toHaveBeenCalled();
+  });
+
   // Claude Code 2.1.322 labels the model-specific seven-day claim 7d_oi.
   // https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/-/claude-code-darwin-arm64-2.1.322.tgz
   test.each([false, true])('Fable quota leaves sibling models available (five-hour header present: %s)', async windowObserved => {
