@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@guiiai/logg": "^1.2.12"
+    "@guiiai/logg": "^1.2.12",
+    "@noble/hashes": "^2.2.0"
   }
 }

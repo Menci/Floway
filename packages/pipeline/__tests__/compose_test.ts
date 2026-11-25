@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { factSpace, transform } from '../src/index.ts';
+import { factSpace, run, transform } from '../src/index.ts';
 import type { Pipeline } from '../src/index.ts';
 
 interface Space {
@@ -65,6 +65,9 @@ describe('composition', () => {
     expect(() => compose('optional-exit', {
       entry: [], exit: ['response.value?'], stages: [], ending: valueEnding,
     })).toThrow('exit disagrees');
+    expect(() => compose('unreachable-ending', {
+      entry: [], exit: ['response.value'], stages: [valueEnding], ending: valueEnding,
+    })).toThrow('has no continuation before ending');
   });
 
   it('requires a consumed key to be provided before another stage can need it', () => {
@@ -142,5 +145,34 @@ describe('composition', () => {
     expect(() => compose('non-ending', {
       entry: [], exit: ['response.value'], stages: [into], ending: valueEnding,
     })).toThrow('declares into outside ending');
+  });
+
+  it('validates eager targets at composition and lazy targets before entry', async () => {
+    const into = defineStage({
+      name: 'into',
+      request: { needs: [] },
+      into: { value: { request: untouched, response: { ...untouched, needs: ['response.value'] } } },
+      execute: async (facts, scope) => await scope.into.value(facts),
+    });
+    const mismatched = compose('mismatched', {
+      entry: ['request.initial'], exit: ['response.value'], stages: [],
+      ending: defineStage({
+        name: 'missing-input',
+        request: { needs: ['request.initial'] },
+        return: { provides: ['response.value'] },
+        execute: async facts => ({ 'response.value': facts['request.initial'] }),
+      }),
+    });
+    const options = { entry: [], exit: ['response.value'], stages: [], ending: into } as const;
+    expect(() => compose('mismatched-eager', { ...options, targets: { value: mismatched } }))
+      .toThrow('does not guarantee "request.initial"');
+    const lazy = compose('mismatched-lazy', { ...options, targets: { value: () => mismatched } });
+    expect(() => run(lazy, {}, { services: {} })).toThrow('does not guarantee "request.initial"');
+
+    const target = compose('target', { entry: [], exit: ['response.value'], stages: [], ending: valueEnding });
+    const linked = compose('linked-run', { ...options, targets: { value: () => target } });
+    const request = run(linked, {}, { services: {} });
+    await expect(request.result).resolves.toEqual({ 'response.value': 1 });
+    await request.done;
   });
 });

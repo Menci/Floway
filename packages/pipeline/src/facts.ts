@@ -1,14 +1,12 @@
 export type Facts = Readonly<Record<string, unknown>>;
 
-type DeepReadonly<T> = T extends Uint8Array | ((...args: any[]) => unknown) ? T
-  : T extends object ? { readonly [K in keyof T]: DeepReadonly<T[K]> } : T;
-
 const moved = new WeakSet<object>();
 
 const isObject = (value: unknown): value is object =>
   (typeof value === 'object' && value !== null) || typeof value === 'function';
 
-export const move = <T>(value: T): DeepReadonly<T> => {
+export const move = <T>(value: T): T => {
+  if (!isObject(value) || moved.has(value)) return value;
   const visited = new WeakSet<object>();
   const freeze = (object: object): void => {
     if (visited.has(object) || moved.has(object)) return;
@@ -23,11 +21,9 @@ export const move = <T>(value: T): DeepReadonly<T> => {
     }
     Object.freeze(object);
   };
-  if (isObject(value)) {
-    freeze(value);
-    moved.add(value);
-  }
-  return value as DeepReadonly<T>;
+  freeze(value);
+  moved.add(value);
+  return value;
 };
 
 export const checkFacts = (facts: Facts, where: string): void => {

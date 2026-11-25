@@ -50,6 +50,12 @@ const requireGuaranteed = (available: Keys, needs: Keys, where: string): void =>
   }
 };
 
+const checkTarget = (name: string, key: string, target: Target, pipeline: AnyPipeline): void => {
+  const { entry, exit } = assemblyOf(pipeline);
+  requireGuaranteed(target.available, entry, `${name} into "${key}" request`);
+  requireGuaranteed(exit, target.declaration.response.needs, `${name} into "${key}" response`);
+};
+
 const join = (paths: readonly Keys[]): Map<string, boolean> => {
   const result = new Map<string, boolean>();
   const keys = new Set(paths.flatMap(path => [...path.keys()]));
@@ -76,6 +82,7 @@ const composeFor = <Space, S>() => <
   const stages = [...options.stages, options.ending].map(definitionOf);
   for (const stage of stages.slice(0, -1)) {
     if (stage.into) throw new TypeError(`Stage "${stage.name}" declares into outside ending`);
+    if (!stage.through) throw new TypeError(`Stage "${stage.name}" has no continuation before ending`);
   }
   const ending = stages.at(-1)!;
   if (ending.through) throw new TypeError(`Ending "${ending.name}" declares through`);
@@ -102,7 +109,6 @@ const composeFor = <Space, S>() => <
       for (const key of stage.through.request.consumes.keys()) consumed.add(key);
       apply(available, stage.through.request);
     }
-    if (!stage.through) break;
   }
 
   const targets = new Map<string, Target>();
@@ -111,20 +117,19 @@ const composeFor = <Space, S>() => <
   for (const key of Object.keys(supplied)) {
     if (!into.has(key)) throw new TypeError(`Ending "${ending.name}" has an undeclared target "${key}"`);
   }
-  if (stages.slice(0, -1).every(stage => stage.through)) {
-    for (const declaration of into.values()) need(ending.name, declaration.request.needs);
-  }
+  for (const declaration of into.values()) need(ending.name, declaration.request.needs);
   for (const [key, declaration] of into) {
     if (!Object.hasOwn(supplied, key)) throw new TypeError(`Ending "${ending.name}" has no target "${key}"`);
     const after = new Map(available);
     apply(after, declaration.request);
-    targets.set(key, { declaration, resolve: supplied[key], available: after });
+    const target = { declaration, resolve: supplied[key], available: after };
+    if (typeof target.resolve !== 'function') checkTarget(name, key, target, target.resolve);
+    targets.set(key, target);
   }
   match(entry, external, `${name} entry`);
 
   let response = new Map<string, boolean>();
-  const firstTerminal = stages.findIndex(stage => !stage.through);
-  for (const stage of stages.slice(0, firstTerminal + 1).toReversed()) {
+  for (const stage of stages.toReversed()) {
     const paths: Keys[] = [];
     if (stage.through) {
       const { response: declaration } = stage.through;
@@ -160,9 +165,7 @@ export const linkTargets = (pipeline: AnyPipeline): void => {
     links.set(assembly, linked);
     for (const [key, target] of assembly.targets) {
       const pipeline = typeof target.resolve === 'function' ? target.resolve() : target.resolve;
-      const { entry, exit } = assemblyOf(pipeline);
-      requireGuaranteed(target.available, entry, `${handle.name} into "${key}" request`);
-      requireGuaranteed(exit, target.declaration.response.needs, `${handle.name} into "${key}" response`);
+      checkTarget(handle.name, key, target, pipeline);
       linked.set(key, pipeline);
       visit(pipeline);
     }
