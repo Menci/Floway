@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { assertClaudeCodeUpstreamRecord } from '../src/config.ts';
+import { assertClaudeCodeUpstreamRecord, claudeCodeUpstreamFact } from '../src/config.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 
 const goodAccount = {
@@ -23,4 +23,21 @@ describe('assertClaudeCodeUpstreamRecord (config validation)', () => {
   ])('rejects %s', (_label, value) => {
     expect(() => assertClaudeCodeUpstreamRecord(wrap(value))).toThrow();
   });
+});
+
+test('projects only Claude Code configuration into the upstream fact', () => {
+  const config = { accounts: [goodAccount] };
+  const record = {
+    ...wrap(config),
+    state: { accounts: [{ accessToken: 'access-token', refreshToken: 'refresh-token' }] },
+  };
+  const fact = claudeCodeUpstreamFact(record);
+  expect(fact).toEqual({ id: record.id, kind: 'claude-code', name: record.name, config });
+  expect(fact.config.accounts[0]).not.toBe(goodAccount);
+});
+
+test('rejects credentials placed in the Claude Code account config', () => {
+  expect(() => claudeCodeUpstreamFact(wrap({
+    accounts: [{ ...goodAccount, accessToken: 'access-token' }],
+  }))).toThrow("unexpected key 'accessToken'");
 });

@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
+import { claudeCodeUpstreamFact } from '../../../src/config.ts';
 import { addMetadataUserId } from '../../../src/pipelines/anthropic-messages/synthesize-metadata-user-id.ts';
 import { claudeCodePipelines } from '../../../src/pipelines/index.ts';
 import { parseClaudeCodeQuotaHeaders } from '../../../src/quota.ts';
@@ -12,15 +13,18 @@ import { toProviderModelFact, type ProviderRepo, type ProviderServices, type Ups
 import { stubProviderModel } from '@floway-dev/test-utils';
 
 const upstreamId = 'claude-code-upstream';
+const accountUuid = 'claude-code-account';
 const modelId = 'claude-sonnet-4-5-20250929';
 const sonnet = stubProviderModel({
   id: 'claude-sonnet-4-5',
   upstreamModelId: modelId,
   limits: { max_output_tokens: 8192 },
 });
-const upstream = { id: upstreamId, kind: 'claude-code', name: 'Claude Code', config: {} } as const;
 const record = {
-  ...upstream,
+  id: upstreamId,
+  kind: 'claude-code',
+  name: 'Claude Code',
+  config: { accounts: [{ accountUuid, email: null, organizationUuid: null, subscriptionType: 'max', rateLimitTier: null }] },
   configVersion: 1,
   enabled: true,
   usageRefreshIntervalMinutes: 0,
@@ -36,7 +40,7 @@ const record = {
 } satisfies Omit<UpstreamRecord, 'state'> & { configVersion: number };
 
 const activeAccount = {
-  accountUuid: 'claude-code-account',
+  accountUuid,
   tokenKind: 'oauth',
   refreshToken: 'rt_cached',
   state: 'active',
@@ -70,7 +74,7 @@ const createHarness = (account: ClaudeCodeAccountCredential = activeAccount) => 
       'request.http': move({ url: 'https://floway.test/v1/messages', method: 'POST', headers, body }),
       'request.anthropicMessages': move(body),
       'provider.model': move(toProviderModelFact(model)),
-      'provider.upstream': move(upstream),
+      'provider.upstream': move(claudeCodeUpstreamFact({ ...record, state })),
     },
     {
       services: { claudeCode, fetcher: () => send },
