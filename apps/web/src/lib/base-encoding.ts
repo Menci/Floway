@@ -19,6 +19,9 @@ export const decodeWebBase64BinaryString = (value: string): string => {
 export const encodeBase64BinaryString = (value: string): string =>
   hasTypedArrayBase64() ? encodeProtocolBase64(bytesFromBinaryString(value)) : btoa(value);
 
+export const encodeWebBase64 = (bytes: Uint8Array): string =>
+  hasTypedArrayBase64() ? encodeProtocolBase64(bytes) : btoa(binaryStringFromBytes(bytes));
+
 export { encodeBase64url };
 
 const hasTypedArrayBase64 = (): boolean =>

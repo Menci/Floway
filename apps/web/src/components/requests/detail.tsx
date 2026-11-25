@@ -19,9 +19,11 @@ import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { PANEL_BAND_CLASS } from '../ui/panel';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
+import type { DumpArchive } from '@floway-dev/dump/browser';
 import type { DumpRecord, DumpResponseBody } from '@floway-dev/gateway/browser';
 
 const BodyEditor = lazy(() => import('../ui/body-editor'));
+const PipelineViewer = lazy(() => import('./pipeline-viewer'));
 const { Button, DialogActions, DialogTitle, Option, Spinner, Text, Tooltip } = fluentComponents;
 
 type Source = 'request' | 'upstreamRequest' | 'upstreamResponse' | 'response';
@@ -51,20 +53,26 @@ function HeaderTable({ headers, revealable }: { headers: Array<[string, string]>
   </tbody></table>;
 }
 
-export function RequestDetailPanel({ collected, upstreamCollected, error, record, recordId, retainLastRecord }: {
-  collected: CollectedStream | null;
-  upstreamCollected: CollectedStream | null;
+type RequestDetailInput = {
   error: string | null;
-  record: DumpRecord | null;
   recordId: string | null;
   retainLastRecord: boolean;
-}) {
-  const [shown, setShown] = useState({ collected, upstreamCollected, error, record, recordId });
-  const incoming = retainLastRecord && recordId === null ? shown : { collected, upstreamCollected, error, record, recordId };
-  if (shown.record !== incoming.record || shown.error !== incoming.error || shown.recordId !== incoming.recordId) setShown(incoming);
+} & ({ archive: DumpArchive } | {
+  record: DumpRecord | null;
+  collected: CollectedStream | null;
+  upstreamCollected: CollectedStream | null;
+});
+
+export function RequestDetailPanel(input: RequestDetailInput) {
+  const [shown, setShown] = useState(input);
+  const incoming = input.retainLastRecord && input.recordId === null ? shown : input;
+  const changed = 'archive' in shown ? !('archive' in incoming) || shown.archive !== incoming.archive
+    : 'archive' in incoming || shown.record !== incoming.record;
+  if (changed || shown.error !== incoming.error || shown.recordId !== incoming.recordId) setShown(incoming);
   const { t } = useTranslation();
   if (!shown.recordId) return <EmptyStateLine className="p-4">{t('requests.selectPrompt')}</EmptyStateLine>;
   if (shown.error) return <OutcomeMessageBar className="!m-4">{shown.error}</OutcomeMessageBar>;
+  if ('archive' in shown) return <Suspense fallback={<Spinner />}><PipelineViewer key={shown.recordId} archive={shown.archive} /></Suspense>;
   if (!shown.record) return null;
   return <RecordDetail key={shown.record.meta.id} record={shown.record} collected={shown.collected} upstreamCollected={shown.upstreamCollected} />;
 }

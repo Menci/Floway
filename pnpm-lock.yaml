@@ -169,6 +169,9 @@ importers:
       '@floway-dev/agent-setup':
         specifier: workspace:*
         version: link:../../packages/agent-setup
+      '@floway-dev/dump':
+        specifier: workspace:*
+        version: link:../../packages/dump
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../../packages/protocols
