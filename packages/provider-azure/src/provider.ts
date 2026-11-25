@@ -15,6 +15,29 @@ const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData 
 
 type AzureTypedFetch = (config: ReturnType<typeof assertAzureUpstreamRecord>['config'], init: FetchInit, options: UpstreamFetchOptions) => Promise<Response>;
 
+export const getAzureProvidedModels = (record: UpstreamRecord): Promise<ProviderModel[]> => {
+  const azure = assertAzureUpstreamRecord(record);
+  return Promise.resolve(azure.config.models.map(model => {
+    const enabledFlags = resolveEffectiveFlags([AZURE_DEFAULT_FLAGS, azure.flagOverrides, model.flagOverrides]);
+    const endpoints = model.endpoints;
+    const kind = kindForEndpoints(endpoints);
+    return {
+      id: publicModelId(model),
+      upstreamModelId: model.upstreamModelId,
+      limits: { ...(model.limits ?? {}) },
+      ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
+      ...(model.pricing ? { pricing: model.pricing } : {}),
+      ...(kind === 'chat' && model.chat ? { chat: model.chat } : {}),
+      kind,
+      endpoints,
+      providerData: { upstreamModelId: model.upstreamModelId },
+      enabledFlags,
+      opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
+      ...(kind === 'decision' ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
+    };
+  }));
+};
+
 export const createAzureProvider = (record: UpstreamRecord): Provider => {
   const azure = assertAzureUpstreamRecord(record);
 
@@ -49,29 +72,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
   const instance: ProviderInstance = {
     runScheduledTask: async () => {},
     callAlphaSearch: () => Promise.reject(new Error('Azure provider does not support callAlphaSearch')),
-    getProvidedModels() {
-      return Promise.resolve(azure.config.models.map(model => {
-        const effective = resolveEffectiveFlags([AZURE_DEFAULT_FLAGS, azure.flagOverrides, model.flagOverrides]);
-        const endpoints = model.endpoints;
-        const kind = kindForEndpoints(endpoints);
-        return {
-          id: publicModelId(model),
-          upstreamModelId: model.upstreamModelId,
-          limits: { ...(model.limits ?? {}) },
-          ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
-          ...(model.pricing ? { pricing: model.pricing } : {}),
-          ...(kind === 'chat' && model.chat ? { chat: model.chat } : {}),
-          kind,
-          endpoints,
-          providerData: { upstreamModelId: model.upstreamModelId },
-          enabledFlags: effective,
-          opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
-          // A Foundry decision deployment answers the System One contract; the
-          // dialect is not the operator's to choose.
-          ...(kind === 'decision' ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
-        };
-      }));
-    },
+    getProvidedModels: () => getAzureProvidedModels(azure),
     callOpenAICompletions: (model, body, signal, opts) => callNonStreaming(azureFetchOpenAICompletions, model, body, signal, [...opts.headers], opts),
     callOpenAIChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchOpenAIChatCompletions, model, body, signal, [...opts.headers], parseOpenAIChatCompletionsStream, opts),
     callOpenAIResponses: async (model, body, action, signal, opts) => {
@@ -115,7 +116,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     callOpenAIImagesGenerations: (model, body, signal, opts) => callNonStreaming(azureFetchOpenAIImagesGenerations, model, body, signal, [...opts.headers], opts),
     callOpenAIImagesEdits: async (model, request, signal, opts) => {
       const upstreamModelId = upstreamModelIdOf(model);
-      const body = await serializeOpenAIImagesEditsRequest(request, upstreamModelId);
+      const body = serializeOpenAIImagesEditsRequest(request, upstreamModelId);
       const response = await azureFetchOpenAIImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { http: response, modelKey: upstreamModelId };
     },

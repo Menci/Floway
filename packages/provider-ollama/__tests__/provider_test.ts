@@ -139,7 +139,7 @@ test('manual transcription models call Ollama without auto-advertising the endpo
       assertEquals(models[0]?.chat, undefined);
       await instance.instance.callOpenAIAudioTranscriptions(models[0], {
         entries: [
-          { name: 'file', value: new File(['audio'], 'clip.wav', { type: 'audio/wav' }) },
+          { name: 'file', value: { name: 'clip.wav', type: 'audio/wav', bytes: new TextEncoder().encode('audio') } },
           { name: 'model', value: 'public-model' },
         ],
       }, undefined, noopUpstreamCallOptions());

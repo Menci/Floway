@@ -25,7 +25,7 @@ import { type OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchMe } from './fetch.ts';
 import { type OllamaAccountEntry, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { isOllamaUsageEnabled } from './usage-probe.ts';
-import { type Fetcher, getProviderRepo, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { type Fetcher, type ProviderRepo, getProviderRepo, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 // A subscription changes on a billing boundary at most, so this refreshes on a
 // wholly different cadence from the usage windows beside it: an upstream
@@ -66,8 +66,9 @@ export const fetchOllamaAccount = async (
   };
 };
 
-const persistAccountEntry = async (upstreamId: string, entry: OllamaAccountEntry): Promise<void> => {
-  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+const persistAccountEntry = async (repo: ProviderRepo, upstreamId: string, entry: OllamaAccountEntry, expectedConfigVersion?: number): Promise<void> => {
+  await repo.upstreams.saveState(upstreamId, (current, configVersion) => {
+    if (expectedConfigVersion !== undefined && configVersion !== expectedConfigVersion) return current;
     const state = readOllamaUpstreamState(current);
     // Races resolve by read time rather than by write order, as the usage slot
     // beside this one does, and equal stamps mean equally fresh rather than a
@@ -81,13 +82,15 @@ export const refreshOllamaAccount = async (
   upstreamId: string,
   config: OllamaUpstreamConfig,
   fetcher: Fetcher,
+  repo = getProviderRepo(),
+  expectedConfigVersion?: number,
 ): Promise<OllamaAccountEntry> => {
   const entry = await fetchOllamaAccount(config, fetcher);
-  await persistAccountEntry(upstreamId, entry);
+  await persistAccountEntry(repo, upstreamId, entry, expectedConfigVersion);
   return entry;
 };
 
-const isOllamaAccountProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
+export const isOllamaAccountProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
   const account = state.account;
   return account === null || now - account.fetchedAt >= OLLAMA_ACCOUNT_PROBE_MIN_INTERVAL_MS;
 };

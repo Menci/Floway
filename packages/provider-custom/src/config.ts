@@ -29,9 +29,7 @@ import { endpointsField, modelsField, validateUpstreamPath } from '@floway-dev/p
 // (`/models` — owned by modelsFetch.endpoint) are intentionally absent:
 // they derive their URL from a parent override or a separate field. Each
 // key is the default path fragment, so the upstream path is `/v1` + the key
-// unless overridden — the lookup table is the key itself. Kept
-// package-internal because outside callers reach the upstream through
-// the typed `customFetchXxx` transports, not by naming an endpoint key.
+// unless overridden. Each operation resolves its own path.
 const CUSTOM_PATH_OVERRIDE_KEYS = [
   '/completions',
   '/chat/completions',
@@ -68,14 +66,7 @@ export interface CustomModelsFetch {
 // client's values enter the request once. A name with no rule at all reaches
 // no upstream: it is not admitted, and nothing here writes it.
 //
-// How several values reach the wire is the runtime's choice, and the two
-// disagree: workerd keeps them as a list and emits one field line each, while
-// undici concatenates on append and emits a single combined line. RFC 9110
-// makes those the same field value for a list-typed name, so rules are
-// expressed as values and the representation is left to the runtime.
-// https://github.com/cloudflare/workerd/blob/5165b467ef2a5df54768cb5f18f33b2916e58fa7/src/workerd/api/headers.c%2B%2B#L398-L440
-// https://github.com/nodejs/undici/blob/v8.3.0/lib/web/fetch/headers.js#L236-L258
-// https://www.rfc-editor.org/rfc/rfc9110.html#section-5.3
+// Each resulting value has its own field line in the outbound request fact.
 export interface CustomIngressHeaderRule {
   key: string;
   value: string | null;

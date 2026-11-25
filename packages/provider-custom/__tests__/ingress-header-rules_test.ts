@@ -177,10 +177,10 @@ test('every endpoint resolves the same rules', async () => {
       await provider.instance.callOpenAIImagesGenerations(model, { prompt: 'hi' }, undefined, opts());
       await provider.instance.callOpenAIImagesEdits(model, {
         parameters: { prompt: 'hi' },
-        images: [{ type: 'upload', file: new File([new Uint8Array([1])], 'photo.png', { type: 'image/png' }) }],
+        images: [{ type: 'upload', file: { name: 'photo.png', type: 'image/png', bytes: Uint8Array.of(1) } }],
       }, undefined, opts());
       await provider.instance.callOpenAIAudioTranscriptions(model, {
-        entries: [{ name: 'file', value: new File([new Uint8Array([1])], 'voice.ogg', { type: 'audio/ogg' }) }],
+        entries: [{ name: 'file', value: { name: 'voice.ogg', type: 'audio/ogg', bytes: Uint8Array.of(1) } }],
       }, undefined, opts());
       await provider.instance.callRerank(
         rerankModel,

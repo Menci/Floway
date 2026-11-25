@@ -1,5 +1,5 @@
 import type { AzureUpstreamConfig } from './config.ts';
-import { azureAnthropicBaseUrl, azureOpenAiV1BaseUrl, azureResourceRootUrl } from './endpoint.ts';
+import { azureAnthropicBaseUrl, azureDeploymentScopedOpenAIAudioTranscriptionUrl, azureOpenAiV1BaseUrl, azureResourceRootUrl } from './endpoint.ts';
 import { type FetchInit, type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
 const azureFetchUrl = async (
@@ -45,15 +45,6 @@ const azureFetchInternal = async (
   return await azureFetchUrl(config, surface, parsed.href, init, options);
 };
 
-const azureDeploymentScopedOpenAIAudioTranscriptionUrl = (config: AzureUpstreamConfig, deployment: string): string => {
-  const url = new URL(config.endpoint);
-  url.pathname = `/openai/deployments/${encodeURIComponent(deployment)}/audio/transcriptions`;
-  url.search = '';
-  url.hash = '';
-  url.searchParams.set('api-version', '2025-04-01-preview');
-  return url.href;
-};
-
 export const azureFetchOpenAIChatCompletions = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   azureFetchInternal(config, 'openai', '/chat/completions', init, options);
 export const azureFetchOpenAIResponses = (config: AzureUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
@@ -78,7 +69,7 @@ export const azureFetchOpenAIImagesEdits = (config: AzureUpstreamConfig, init: F
 // https://github.com/Azure/azure-rest-api-specs/blob/b0a48bcbffead733affe03944ef09f5e8d12f8c8/specification/cognitiveservices/OpenAI.Inference/models/audio/audio_transcription.tsp#L119-L126
 // https://github.com/Azure/azure-rest-api-specs/blob/928047803788f7377fa003a26ba2bdc2e0fcccc0/specification/cognitiveservices/OpenAI.Inference/routes/audio_transcription.tsp#L19-L49
 export const azureFetchOpenAIAudioTranscriptions = (config: AzureUpstreamConfig, deployment: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  azureFetchUrl(config, 'openai', azureDeploymentScopedOpenAIAudioTranscriptionUrl(config, deployment), init, options);
+  azureFetchUrl(config, 'openai', azureDeploymentScopedOpenAIAudioTranscriptionUrl(config.endpoint, deployment), init, options);
 // The decision contract is resource-scoped, so the path is absolute from the
 // resource host rather than relative to the OpenAI v1 base.
 export const azureFetchDecision = (config: AzureUpstreamConfig, path: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>

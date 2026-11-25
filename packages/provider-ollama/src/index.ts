@@ -7,11 +7,15 @@ export const ollamaProviderModule: ProviderModule = {
   defaultFlags: OLLAMA_DEFAULT_FLAGS,
 };
 
-export { createOllamaProvider } from './provider.ts';
+export { createOllamaProvider, getOllamaProvidedModels } from './provider.ts';
 export { assertOllamaUpstreamRecord, parseOllamaUpstreamConfig, type OllamaUpstreamConfig, type OllamaUpstreamRecord } from './config.ts';
+export { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
+export { ollamaPipelines } from './pipelines/index.ts';
 export { pricingForOllamaModelKey } from './pricing.ts';
+export { createOllamaService, type OllamaService, type OllamaServices } from './service.ts';
 export { readOllamaUpstreamState, type OllamaAccountEntry, type OllamaUpstreamState } from './state.ts';
-export { isOllamaUsageEnabled, refreshOllamaUsageProbe } from './usage-probe.ts';
+export { ollamaUpstreamFact } from './upstream.ts';
+export { isOllamaUsageEnabled, refreshOllamaUsageProbe, runOllamaScheduledTask } from './usage-probe.ts';
 export { fetchOllamaAccount, refreshOllamaAccount } from './account-probe.ts';
 
 export { ollamaMetrics, resolveUpstreamMetricDisplay, resolveUpstreamMetricDisplays } from './upstream-metrics.ts';

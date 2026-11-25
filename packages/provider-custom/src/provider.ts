@@ -10,7 +10,7 @@ import { parseGeminiGenerateContentStream, type GeminiGenerateContentCountTokens
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
-import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelFieldOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelFieldOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type Fetcher, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -150,6 +150,12 @@ export const projectCustomModels = (
   return [...effectiveManualModels, ...finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags)];
 };
 
+export const getCustomProvidedModels = async (record: UpstreamRecord, fetcher: Fetcher): Promise<ProviderModel[]> => {
+  const { config } = assertCustomUpstreamRecord(record);
+  const response = config.modelsFetch.enabled ? await fetchCustomModels(config, fetcher) : undefined;
+  return projectCustomModels(record, response);
+};
+
 export const createCustomProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertCustomUpstreamRecord(record);
 
@@ -222,11 +228,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
 
   const instance: ProviderInstance = {
     runScheduledTask: async () => {},
-    getProvidedModels: async fetcher => {
-      if (!config.modelsFetch.enabled) return projectCustomModels(record);
-      const response = await fetchCustomModels(config, fetcher);
-      return projectCustomModels(record, response);
-    },
+    getProvidedModels: async fetcher => await getCustomProvidedModels(record, fetcher),
     callAlphaSearch: (model, body, signal, opts) => call(customFetchAlphaSearch, model, body, signal, headersForCall(opts.headers), opts),
     callOpenAICompletions: (model, body, signal, opts) => call(customFetchOpenAICompletions, model, body, signal, headersForCall(opts.headers), opts),
     callOpenAIChatCompletions: (model, body, signal, opts) => callStreaming(customFetchOpenAIChatCompletions, model, body, signal, headersForCall(opts.headers), parseOpenAIChatCompletionsStream, opts),
@@ -282,7 +284,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     callOpenAIImagesGenerations: (model, body, signal, opts) => call(customFetchOpenAIImagesGenerations, model, body, signal, headersForCall(opts.headers), opts),
     callOpenAIImagesEdits: async (model, request, signal, opts) => {
       const rawModelId = rawModelIdOf(model);
-      const body = await serializeOpenAIImagesEditsRequest(request, rawModelId);
+      const body = serializeOpenAIImagesEditsRequest(request, rawModelId);
       const response = await customFetchOpenAIImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { http: response, modelKey: rawModelId };
     },

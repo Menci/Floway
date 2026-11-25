@@ -8,13 +8,13 @@ import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.
 import { ollamaFetchUsage, ollamaFetchBalance } from './fetch.ts';
 import { type OllamaUsageObservation, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { ollamaMetrics } from './upstream-metrics.ts';
-import { type Fetcher, getProviderRepo, identityWrapUpstreamCall, recordUpstreamMetrics, runScheduledUsageRefresh, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { type Fetcher, getProviderRepo, identityWrapUpstreamCall, normalizeUpstreamMetricIdentity, runScheduledUsageRefresh, type ProviderRepo, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // Reading account usage takes two things the operator states: that this upstream
 // is an Ollama Cloud account (`cloudUsage` — the endpoint belongs to
 // ollama.com, and a base URL cannot settle it, since the cloud may be reached
 // through the operator's own domain), and a key to authenticate with.
-export const isOllamaUsageEnabled = (config: OllamaUpstreamConfig): boolean =>
+export const isOllamaUsageEnabled = (config: { readonly cloudUsage: boolean; readonly apiKey?: unknown }): boolean =>
   config.cloudUsage && config.apiKey !== undefined;
 
 // Ollama recommends one-minute polling; request-triggered refreshes share
@@ -37,19 +37,38 @@ const readOllamaObservation = async (response: Response, path: string): Promise<
 
 // A single outcome commits both upstream bodies. Failed reads retain the last
 // successful pair, and older attempts cannot replace a newer observation.
-const persistUsageReading = async (upstreamId: string, attemptedAt: number, observation: OllamaUsageObservation | null, error: string | null): Promise<void> => {
+const persistUsageReading = async (
+  repo: ProviderRepo,
+  upstreamId: string,
+  attemptedAt: number,
+  observation: OllamaUsageObservation | null,
+  error: string | null,
+  expectedConfigVersion?: number,
+): Promise<void> => {
   let accepted = false;
-  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+  await repo.upstreams.saveState(upstreamId, (current, configVersion) => {
     accepted = false;
+    if (expectedConfigVersion !== undefined && configVersion !== expectedConfigVersion) return current;
     const state = readOllamaUpstreamState(current);
     if (state.usageProbe && state.usageProbe.attemptedAt > attemptedAt) return current;
     accepted = true;
     return { ...state, usageProbe: { attemptedAt, observation: observation ?? state.usageProbe?.observation ?? null, error } } satisfies OllamaUpstreamState;
   });
-  if (accepted && observation !== null) await recordUpstreamMetrics(upstreamId, ollamaMetrics(observation.data), observation.fetchedAt);
+  if (accepted && observation !== null) {
+    await Promise.all(ollamaMetrics(observation.data).map(metric => {
+      const { name, labels } = normalizeUpstreamMetricIdentity(metric.name, metric.labels);
+      return repo.recordUpstreamMetric(upstreamId, name, labels, metric.value, observation.fetchedAt);
+    }));
+  }
 };
 
-export const refreshOllamaUsageProbe = async (upstreamId: string, config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> => {
+export const refreshOllamaUsageProbe = async (
+  upstreamId: string,
+  config: OllamaUpstreamConfig,
+  fetcher: Fetcher,
+  repo?: ProviderRepo,
+  expectedConfigVersion?: number,
+): Promise<OllamaUsageObservation> => {
   const attemptedAt = Date.now();
   let observation: OllamaUsageObservation;
   try {
@@ -65,18 +84,18 @@ export const refreshOllamaUsageProbe = async (upstreamId: string, config: Ollama
   } catch (error) {
     if (upstreamId !== '') {
       try {
-        await persistUsageReading(upstreamId, attemptedAt, null, error instanceof Error ? error.message : String(error));
+        await persistUsageReading(repo ?? getProviderRepo(), upstreamId, attemptedAt, null, error instanceof Error ? error.message : String(error), expectedConfigVersion);
       } catch (persistenceError) {
         throw new AggregateError([error, persistenceError], 'Ollama usage refresh and outcome persistence failed');
       }
     }
     throw error;
   }
-  if (upstreamId !== '') await persistUsageReading(upstreamId, attemptedAt, observation, null);
+  if (upstreamId !== '') await persistUsageReading(repo ?? getProviderRepo(), upstreamId, attemptedAt, observation, null, expectedConfigVersion);
   return observation;
 };
 
-const isOllamaUsageProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
+export const isOllamaUsageProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
   const probe = state.usageProbe;
   return probe === null || now - probe.attemptedAt >= OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS;
 };

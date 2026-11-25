@@ -80,3 +80,14 @@ export const azureAnthropicBaseUrl = (endpoint: string): string => {
   url.pathname = '/anthropic';
   return trimTrailingSlash(url.href);
 };
+
+// The deployment is selected in the path on the 2025-04 preview surface.
+// https://github.com/Azure/azure-rest-api-specs/blob/928047803788f7377fa003a26ba2bdc2e0fcccc0/specification/cognitiveservices/OpenAI.Inference/routes/audio_transcription.tsp#L19-L49
+export const azureDeploymentScopedOpenAIAudioTranscriptionUrl = (endpoint: string, deployment: string): string => {
+  const url = new URL(endpoint);
+  url.pathname = `/openai/deployments/${encodeURIComponent(deployment)}/audio/transcriptions`;
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('api-version', '2025-04-01-preview');
+  return url.href;
+};

@@ -256,7 +256,7 @@ test('createAzureProvider callOpenAIImagesEdits posts multipart with model repla
         parameters: { prompt: 'replace sky' },
         images: [{
           type: 'upload',
-          file: new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' }),
+          file: { name: 'photo.png', type: 'image/png', bytes: Uint8Array.of(1, 2, 3) },
         }],
       }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
