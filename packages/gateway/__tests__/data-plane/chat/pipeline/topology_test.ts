@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { expect, test } from 'vitest';
 
 import { chatEgress } from '../../../../src/data-plane/chat/pipeline/egress.ts';
-import { chatBodyEntry, chatBodyExit, chatBodyTargets, enterChatBody } from '../../../../src/data-plane/chat/pipeline/topology.ts';
+import { chatBodyEntry, chatBodyExit, chatBodyTargets, chatEgressEntry, enterChatBody } from '../../../../src/data-plane/chat/pipeline/topology.ts';
 import { discoverCandidates } from '../../../../src/data-plane/pipeline/discover-candidates.ts';
 import { encodeResponse } from '../../../../src/data-plane/pipeline/encode-response.ts';
 import { gatewayFactSpace, httpEntry } from '../../../../src/data-plane/pipeline/facts.ts';
@@ -74,7 +74,7 @@ const encode = encodeResponse(responseKey, (outcome, http, delivery, scope) => {
 const entry = chatBodyEntry(protocol);
 const exit = chatBodyExit(protocol);
 const egress = compose('test.openaiChatCompletions.egress', {
-  entry,
+  entry: chatEgressEntry(protocol),
   exit,
   ...chatEgress(protocol, {
     usage: { kind: 'unbillable' },

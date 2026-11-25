@@ -38,6 +38,9 @@ const facts = {
     headers: [['anthropic-beta', 'client-beta'], ['x-trace-id', 'preserved']],
   }),
   'request.auth.apiKeyId': 'test-key',
+  'request.auth.user': move({ id: 1, isAdmin: false }),
+  'request.auth.upstreamIds': move(['translated-upstream']),
+  'request.auth.randomizeUpstreams': false,
   'serve.candidate': move(candidate),
   'request.openaiChatCompletions': move<OpenAIChatCompletionsPayloadEx>({
     model: 'client-model',
@@ -91,6 +94,9 @@ test('translation selects the preferred available target, preserves its trip and
     return: { provides: chatBodyExit(target) },
     async execute(request, scope) {
       expect(Object.hasOwn(request, 'request.openaiChatCompletions')).toBe(false);
+      expect(request['request.auth.user']).toEqual({ id: 1, isAdmin: false });
+      expect(request['request.auth.upstreamIds']).toEqual(['translated-upstream']);
+      expect(request['request.auth.randomizeUpstreams']).toBe(false);
       expect(request['request.http'].headers).toEqual([['x-trace-id', 'preserved']]);
       expect(request['request.anthropicMessages']).toMatchObject({ model: candidate.model.id, stream: true, max_tokens: 10 });
       const stream = scope.createStream(async function* ({ signal }): AsyncIterable<Result<AnthropicMessagesStreamEventEx, ProtocolStreamError>> {

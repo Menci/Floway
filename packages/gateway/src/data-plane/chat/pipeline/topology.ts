@@ -1,5 +1,5 @@
 import type { ChatDelivery } from './delivery.ts';
-import { gatewayFactSpace, type ServeCandidate } from '../../pipeline/facts.ts';
+import { gatewayFactSpace, httpEntry, type ServeCandidate } from '../../pipeline/facts.ts';
 import { providerSupportsOperation } from '../../pipeline/provider-pipelines.ts';
 import type { GatewayServices } from '../../pipeline/services.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
@@ -14,6 +14,9 @@ type ChatTarget = ChatPipeline | (() => ChatPipeline);
 const { defineStage } = gatewayFactSpace<GatewayServices>();
 
 export const chatBodyEntry = <const Protocol extends ChatProtocol>(protocol: Protocol) =>
+  [...httpEntry, 'serve.candidate', `request.${protocol}`] as const;
+
+export const chatEgressEntry = <const Protocol extends ChatProtocol>(protocol: Protocol) =>
   ['request.http', 'request.auth.apiKeyId', 'serve.candidate', `request.${protocol}`] as const;
 
 export const chatBodyExit = <const Protocol extends ChatProtocol>(protocol: Protocol) =>
