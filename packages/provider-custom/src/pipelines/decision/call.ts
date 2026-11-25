@@ -39,18 +39,25 @@ const call = defineStage({
         return { ...facts, 'request.http': move(request) };
       },
       response: async back => {
+        let invalidBody: Record<string, unknown> | undefined;
         const parse = (bytes: Uint8Array) => {
           const json = parseJsonObject(bytes, parseJSONWithRawNumbers);
           if (!json.ok) return json;
           try {
             return { ok: true, value: parseDecisionResponse(target.protocol, json.value) } as const;
           } catch (error) {
+            invalidBody = json.value;
             return { ok: false, error } as const;
           }
         };
         const { http, outcome } = await parseResultBody(back, parse, formatDecisionError);
         const { 'response.transport': _transport, ...response } = back;
-        return { ...response, 'response.http': move(http), 'response.modelKey': modelKey, 'response.decision': move(outcome) };
+        return {
+          ...response,
+          'response.http': move(http),
+          'response.modelKey': modelKey,
+          'response.decision': move(outcome.kind === 'error' && invalidBody !== undefined ? { ...outcome, error: invalidBody } : outcome),
+        };
       },
     };
   }),

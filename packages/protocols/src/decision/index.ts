@@ -156,6 +156,7 @@ export interface DecisionRefusalAnswer {
 export type DecisionAnswer = DecisionNoulAnswer | DecisionChoiceAnswer | DecisionScoreAnswer | DecisionRefusalAnswer;
 
 export interface CanonicalDecisionResponse {
+  targetProtocol: DecisionProtocol;
   raw: Record<string, unknown>;
   // The model id the upstream reports answering with, rendered back to the
   // client. It can differ from the Floway model id, since a provider may update

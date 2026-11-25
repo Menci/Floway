@@ -1,24 +1,27 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import type { Repo } from '../../../src/repo/types.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
 import type { DecisionTarget, ModelPricing } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-const saveDecisionUpstream = async (
+const addDecisionUpstream = async (
   repo: Repo,
+  id: string,
+  host: string,
+  sortOrder: number,
   target: DecisionTarget,
   pricing?: ModelPricing,
 ): Promise<void> => {
-  await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_decision',
+    id,
     name: 'Decision Provider',
+    sortOrder,
     config: {
-      baseUrl: 'https://decision.example.com',
+      baseUrl: `https://${host}`,
       ingressHeadersRules: [],
       apiKey: 'sk-decision',
       endpoints: {},
@@ -33,6 +36,12 @@ const saveDecisionUpstream = async (
       }],
     },
   }));
+};
+
+const saveDecisionUpstream = async (repo: Repo, target: DecisionTarget, pricing?: ModelPricing): Promise<void> => {
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+  await addDecisionUpstream(repo, 'up_decision', 'decision.example.com', 1, target, pricing);
 };
 
 const requestHeaders = (apiKey: string) => ({
@@ -79,7 +88,7 @@ test('/v1/systemone forwards a System One request and records input tokens', asy
   assertEquals(new URL(upstreamRequest.url).pathname, '/v1/systemone');
   assertEquals(await upstreamRequest.clone().json(), { ...choiceRequest, model: 'raw-decision' });
 
-  await flushAsyncWork();
+  await flushBackground();
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0].requests, 1);
@@ -164,4 +173,84 @@ test('/v1/decisions surfaces a cross-dialect upstream body it cannot parse', asy
       assertEquals(response.status, 502);
     },
   );
+});
+
+test('/v1/systemone classifies an OpenAI refusal as an upstream error and bills its reported usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveDecisionUpstream(repo, { protocol: 'openai-decisions' });
+  const body = { answers: [{ name: 'team', type: 'refusal' }], usage: { input_tokens: 9 } };
+
+  await withMockedFetch(() => Response.json(body, { headers: { 'x-upstream': 'decisions' } }), async () => {
+    const response = await requestAppWithWarmModels('/v1/systemone', {
+      method: 'POST',
+      headers: requestHeaders(apiKey.key),
+      body: JSON.stringify(choiceRequest),
+    });
+    expect(response.status).toBe(502);
+    expect(response.headers.get('x-upstream')).toBe('decisions');
+    expect(await response.json()).toEqual(body);
+  });
+  await flushBackground();
+
+  expect(await repo.usage.listAll()).toMatchObject([{ requests: 1, metrics: [{ metric: 'input_tokens', quantity: '9' }] }]);
+  expect(await repo.performance.listAll()).toMatchObject([{ operation: 'decision', requests: 1, errorsNoOutput: 1 }]);
+});
+
+test.each([
+  {
+    name: 'JSON error',
+    second: () => jsonResponse({ error: { code: 'vendor_failure' } }, 400),
+    status: 400,
+    body: { error: { code: 'vendor_failure' } },
+  },
+  {
+    name: 'text error',
+    second: () => new Response('decision temporarily unavailable', { status: 503 }),
+    status: 503,
+    body: { error: { message: 'decision temporarily unavailable', type: 'api_error' } },
+  },
+  {
+    name: 'decision result',
+    second: () => new Response('{"model":"raw-decision","answers":{"is_bug":{"type":"noul","noul":0.50000000000000000001}}}', { headers: { 'content-type': 'application/json' } }),
+    status: 200,
+    body: { model: 'raw-decision', answers: [{ name: 'is_bug', type: 'predicate', probability: 0.5 }] },
+  },
+])('/v1/decisions bills a damaged first result and renders the selected $name', async ({ second, status, body }) => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' }, { entries: [{ rates: { input_tokens: '0.000042' } }] });
+  await addDecisionUpstream(repo, 'second', 'second.example.com', 2, { protocol: 'typesafe-systemone' });
+  const calls: string[] = [];
+
+  await withMockedFetch(async request => {
+    const url = new URL(request.url);
+    expect(await request.json()).toMatchObject({ model: 'raw-decision' });
+    calls.push(url.hostname);
+    return url.hostname === 'decision.example.com' ? jsonResponse({ answers: [], usage: { input_tokens: 8 } }) : second();
+  }, async () => {
+    const response = await requestAppWithWarmModels('/v1/decisions', {
+      method: 'POST',
+      headers: requestHeaders(apiKey.key),
+      body: JSON.stringify({
+        model: 'public-decision',
+        input: 'The API returns 500.',
+        questions: [{ type: 'predicate', name: 'is_bug', instructions: 'Is this a bug?' }],
+      }),
+    });
+    expect(response.status).toBe(status);
+    const text = await response.text();
+    expect(JSON.parse(text)).toEqual(body);
+    if (status === 200) expect(text).toContain('"probability":0.50000000000000000001');
+  });
+  await flushBackground();
+
+  expect(calls).toEqual(['decision.example.com', 'second.example.com']);
+  const usage = await repo.usage.listAll();
+  expect(usage).toHaveLength(status === 200 ? 2 : 1);
+  expect(usage).toEqual(expect.arrayContaining([
+    expect.objectContaining({ upstream: 'up_decision', requests: 1, metrics: [{ metric: 'input_tokens', quantity: '8', unitPrice: '0.000042' }] }),
+  ]));
+  expect(await repo.performance.listAll()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ upstream: 'up_decision', operation: 'decision', requests: 1, errorsNoOutput: 1 }),
+    expect.objectContaining({ upstream: 'second', operation: 'decision', requests: 1, errorsNoOutput: status === 200 ? 0 : 1 }),
+  ]));
 });

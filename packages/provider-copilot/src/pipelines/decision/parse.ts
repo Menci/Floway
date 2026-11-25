@@ -6,16 +6,6 @@ import { parseDecisionResponse } from '@floway-dev/protocols/decision';
 import { formatOpenAIChatCompletionsError } from '@floway-dev/protocols/openai-chat-completions';
 import { parseResultBody } from '@floway-dev/provider';
 
-const parseDecisionBody = (bytes: Uint8Array, target: ReturnType<typeof decisionTarget>) => {
-  const result = parseJsonObject(bytes);
-  if (!result.ok) return result;
-  try {
-    return { ok: true, value: parseDecisionResponse(target.protocol, result.value) } as const;
-  } catch (error) {
-    return { ok: false, error } as const;
-  }
-};
-
 export const parseDecision = defineCopilotStage({
   name: 'copilot.decision.parse',
   through: {
@@ -36,9 +26,25 @@ export const parseDecision = defineCopilotStage({
         return facts;
       },
       async response(facts) {
+        let invalidBody: Record<string, unknown> | undefined;
+        const parse = (bytes: Uint8Array) => {
+          const json = parseJsonObject(bytes);
+          if (!json.ok) return json;
+          try {
+            return { ok: true, value: parseDecisionResponse(target.protocol, json.value) } as const;
+          } catch (error) {
+            invalidBody = json.value;
+            return { ok: false, error } as const;
+          }
+        };
         const { 'response.transport': _transport, ...rest } = facts;
-        const { http, outcome } = await parseResultBody(facts, bytes => parseDecisionBody(bytes, target), formatOpenAIChatCompletionsError);
-        return { ...rest, 'response.http': move(http), 'response.modelKey': modelKey, 'response.decision': move(outcome) };
+        const { http, outcome } = await parseResultBody(facts, parse, formatOpenAIChatCompletionsError);
+        return {
+          ...rest,
+          'response.http': move(http),
+          'response.modelKey': modelKey,
+          'response.decision': move(outcome.kind === 'error' && invalidBody !== undefined ? { ...outcome, error: invalidBody } : outcome),
+        };
       },
     };
   }),

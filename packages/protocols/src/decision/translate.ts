@@ -557,6 +557,7 @@ const typesafeSystemOneAnswer = (name: string, value: unknown): DecisionAnswer =
 const parseSystemOneResponse = (body: Record<string, unknown>): CanonicalDecisionResponse => {
   if (!isRecord(body.answers)) throw new Error('answers must be an object keyed by question name');
   return {
+    targetProtocol: 'typesafe-systemone',
     raw: body,
     ...(typeof body.model === 'string' ? { model: body.model } : {}),
     answers: Object.entries(body.answers).map(([name, entry]) => typesafeSystemOneAnswer(name, entry)),
@@ -632,6 +633,7 @@ const parseOpenAIDecisionsResponse = (body: Record<string, unknown>): CanonicalD
     throw new Error(`answers[${index}].type ${JSON.stringify(entry.type)} is not supported`);
   });
   return {
+    targetProtocol: 'openai-decisions',
     raw: body,
     ...(typeof body.model === 'string' ? { model: body.model } : {}),
     answers,
