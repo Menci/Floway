@@ -33,7 +33,7 @@ test('projects only Claude Code configuration into the upstream fact', () => {
   };
   const fact = claudeCodeUpstreamFact(record);
   expect(fact).toEqual({ id: record.id, kind: 'claude-code', name: record.name, config });
-  expect(fact.config.accounts[0]).not.toBe(goodAccount);
+  expect(fact.config).toBe(config);
 });
 
 test('rejects credentials placed in the Claude Code account config', () => {

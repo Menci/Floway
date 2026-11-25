@@ -98,5 +98,5 @@ export function assertClaudeCodeUpstreamRecord(record: UpstreamRecord): asserts 
 export const claudeCodeUpstreamFact = (record: UpstreamRecord): ProviderUpstream<'claude-code', ClaudeCodeUpstreamConfig> => {
   assertClaudeCodeUpstreamRecord(record);
   const { id, kind, name, config } = record;
-  return { id, kind, name, config: { accounts: [{ ...config.accounts[0] }] } };
+  return { id, kind, name, config };
 };
