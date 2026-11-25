@@ -37,6 +37,8 @@ export interface PipelineAuthFacts {
 
 export type GatewayPipelineFacts = GatewayFacts & PipelineAuthFacts & {
   readonly 'request.delivery': ClientDelivery;
+  readonly 'request.openaiResponsesAction': 'generate' | 'compact';
+  readonly 'request.ws.responseId': string;
   readonly 'serve.model': string;
   readonly 'serve.candidates': ServeCandidates;
   readonly 'serve.candidate': ServeCandidate;

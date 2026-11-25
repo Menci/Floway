@@ -58,7 +58,7 @@ const finishRecording = (done: Promise<void>, recorder: PipelineRecorder): Promi
   },
 );
 
-const initialHttpFacts = (c: AuthedContext): GatewayHttpInput => {
+export const initialHttpFacts = (c: AuthedContext): GatewayHttpInput => {
   const { id: apiKeyId, randomizeUpstreams } = apiKeyFromContext(c);
   const { id, isAdmin } = userFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
