@@ -1,0 +1,26 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -400,6 +400,9 @@ function createLogg(context) {
+       logger.context = logObj.context;
+       logger.format = logObj.format;
+       logger.shouldUseGlobalConfig = logObj.shouldUseGlobalConfig;
++      logger.hookPostLog = logObj.hookPostLog;
++      logger.errorProcessor = logObj.errorProcessor;
++      logger.timeFormatter = logObj.timeFormatter;
+       return logger;
+     },
+     withContext: (context2) => {
+diff --git a/dist/index.mjs b/dist/index.mjs
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -393,6 +393,9 @@ function createLogg(context) {
+       logger.context = logObj.context;
+       logger.format = logObj.format;
+       logger.shouldUseGlobalConfig = logObj.shouldUseGlobalConfig;
++      logger.hookPostLog = logObj.hookPostLog;
++      logger.errorProcessor = logObj.errorProcessor;
++      logger.timeFormatter = logObj.timeFormatter;
+       return logger;
+     },
+     withContext: (context2) => {

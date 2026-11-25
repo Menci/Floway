@@ -1,0 +1,23 @@
+{
+  "name": "@floway-dev/pipeline",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    },
+    "./transport": {
+      "import": "./src/transport.ts",
+      "types": "./src/transport.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@guiiai/logg": "^1.2.12",
+    "@noble/hashes": "^2.2.0"
+  }
+}
