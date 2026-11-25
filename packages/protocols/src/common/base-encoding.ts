@@ -3,6 +3,7 @@ import { base64, base64urlnopad, hex } from '@scure/base';
 const ASCII_WHITESPACE = /[\t\n\f\r ]/g;
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const BASE64_BODY = /^[A-Za-z0-9+/]*$/;
+const BASE64URL_BODY = /^[A-Za-z0-9_-]*$/;
 
 export const normalizeForgivingBase64 = (value: string): string => {
   // https://infra.spec.whatwg.org/#forgiving-base64-decode
@@ -38,19 +39,15 @@ export const encodeHex = (bytes: Uint8Array): string => hex.encode(bytes);
 export const decodeHex = (value: string): Uint8Array => hex.decode(value);
 
 export const decodeCanonicalBase64 = (value: string): Uint8Array | null => {
-  try {
-    const bytes = base64.decode(value);
-    return base64.encode(bytes) === value ? bytes : null;
-  } catch {
-    return null;
-  }
+  if (value.length % 4 !== 0) return null;
+  const body = value.replace(/={1,2}$/, '');
+  if (!BASE64_BODY.test(body) || body.length % 4 === 1 || normalizeForgivingBase64(value) !== value) return null;
+  return base64.decode(value);
 };
 
 export const decodeCanonicalBase64url = (value: string): Uint8Array | null => {
-  try {
-    const bytes = base64urlnopad.decode(value);
-    return base64urlnopad.encode(bytes) === value ? bytes : null;
-  } catch {
-    return null;
-  }
+  if (!BASE64URL_BODY.test(value) || value.length % 4 === 1) return null;
+  const standard = value.replaceAll('-', '+').replaceAll('_', '/');
+  if (!normalizeForgivingBase64(standard).startsWith(standard)) return null;
+  return base64urlnopad.decode(value);
 };

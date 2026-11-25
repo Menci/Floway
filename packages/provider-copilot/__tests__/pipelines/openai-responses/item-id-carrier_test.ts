@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { assert, describe, expect, test, vi } from 'vitest';
 
 import { unwrapCopilotItemId, wrapCopilotItemId } from '../../../src/pipelines/openai-responses/item-id-carrier.ts';
 
@@ -10,7 +10,8 @@ describe('Copilot item id carrier', () => {
   ])('round-trips %s blobs and their upstream ids', (_label, original) => {
     const wrapped = wrapCopilotItemId(original, 'rs_upstream');
 
-    expect(unwrapCopilotItemId(wrapped)).toEqual({
+    assert(wrapped.ok);
+    expect(unwrapCopilotItemId(wrapped.value)).toEqual({
       kind: 'owned',
       value: original,
       version: 1,
@@ -22,7 +23,9 @@ describe('Copilot item id carrier', () => {
   test.each([`a\ud800${String.fromCodePoint(0x1f600)}\udfffz`])(
     'round-trips raw UTF-16 code units exactly',
     original => {
-      expect(unwrapCopilotItemId(wrapCopilotItemId(original, 'rs_raw'))).toMatchObject({
+      const wrapped = wrapCopilotItemId(original, 'rs_raw');
+      assert(wrapped.ok);
+      expect(unwrapCopilotItemId(wrapped.value)).toMatchObject({
         kind: 'owned',
         value: original,
       });
@@ -31,7 +34,8 @@ describe('Copilot item id carrier', () => {
 
   test('leaves malformed and non-carrier values byte-for-byte unchanged', () => {
     const wrapped = wrapCopilotItemId('opaque', 'rs_upstream');
-    const bytes = Uint8Array.from(atob(wrapped), char => char.charCodeAt(0));
+    assert(wrapped.ok);
+    const bytes = Uint8Array.from(atob(wrapped.value), char => char.charCodeAt(0));
     bytes[bytes.length - 1] ^= 1;
     const malformed = btoa(String.fromCharCode(...bytes));
 
@@ -43,8 +47,26 @@ describe('Copilot item id carrier', () => {
     const originalBytes = crypto.getRandomValues(new Uint8Array(48));
     const original = btoa(String.fromCharCode(...originalBytes));
     const wrapped = wrapCopilotItemId(original, 'rs_upstream');
-    const framedBytes = Uint8Array.from(atob(wrapped), char => char.charCodeAt(0));
+    assert(wrapped.ok);
+    const framedBytes = Uint8Array.from(atob(wrapped.value), char => char.charCodeAt(0));
 
     expect(framedBytes.subarray(0, originalBytes.length)).toEqual(originalBytes);
+  });
+
+  test('leaves invalid UTF-8 and JSON trailers opaque and propagates a parser bug', () => {
+    const invalidUtf8 = btoa(String.fromCharCode(0xff, 0, 1));
+    const invalidJson = btoa('!\0\x01');
+    expect(unwrapCopilotItemId(invalidUtf8)).toEqual({ kind: 'foreign', value: invalidUtf8 });
+    expect(unwrapCopilotItemId(invalidJson)).toEqual({ kind: 'foreign', value: invalidJson });
+
+    const wrapped = wrapCopilotItemId('opaque', 'rs_upstream');
+    assert(wrapped.ok);
+    const bug = new TypeError('carrier parse bug');
+    const parse = vi.spyOn(JSON, 'parse').mockImplementationOnce(() => { throw bug; });
+    try {
+      expect(() => unwrapCopilotItemId(wrapped.value)).toThrow(bug);
+    } finally {
+      parse.mockRestore();
+    }
   });
 });

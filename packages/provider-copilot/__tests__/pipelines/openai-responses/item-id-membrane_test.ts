@@ -1,10 +1,14 @@
-import { expect, test } from 'vitest';
+import { assert, expect, test, vi } from 'vitest';
 
+import { defineCopilotStage, type CopilotFacts } from '../../../src/pipelines/facts.ts';
 import { unwrapCopilotItemId, wrapCopilotItemId } from '../../../src/pipelines/openai-responses/item-id-carrier.ts';
 import { itemIdMembrane } from '../../../src/pipelines/openai-responses/item-id-membrane.ts';
+import { createCopilotService, type CopilotServices } from '../../../src/service.ts';
 import { runStage, type StageRequest } from '../stage.ts';
+import { factSpace, move, run, type Result } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import type { ProtocolStreamError } from '@floway-dev/provider';
 
 const request = (input: CanonicalOpenAIResponsesInputItem[] = []): StageRequest<'openaiResponses'> => ({
   payload: {
@@ -271,20 +275,26 @@ test('preserves shell command events that carry no item id', async () => {
 });
 
 test('restores owned blob ids for Copilot input and leaves foreign items unchanged', async () => {
+  const reasoning = wrapCopilotItemId('reasoning state', 'rs_raw');
+  const program = wrapCopilotItemId('program state', 'cm_raw');
+  const firstAgentPart = wrapCopilotItemId('one', 'amsg_raw');
+  const secondAgentPart = wrapCopilotItemId('two', 'amsg_raw');
+  const compaction = wrapCopilotItemId('compact state', 'cmp_raw');
+  assert(reasoning.ok && program.ok && firstAgentPart.ok && secondAgentPart.ok && compaction.ok);
   const input: CanonicalOpenAIResponsesInputItem[] = [
-    { type: 'reasoning', id: 'rs_public', summary: [], encrypted_content: wrapCopilotItemId('reasoning state', 'rs_raw') },
-    { type: 'program', id: 'cm_public', call_id: 'call_program', code: 'return 1', fingerprint: wrapCopilotItemId('program state', 'cm_raw') },
+    { type: 'reasoning', id: 'rs_public', summary: [], encrypted_content: reasoning.value },
+    { type: 'program', id: 'cm_public', call_id: 'call_program', code: 'return 1', fingerprint: program.value },
     {
       type: 'agent_message',
       id: 'amsg_public',
       author: 'a',
       recipient: 'b',
       content: [
-        { type: 'encrypted_content', encrypted_content: wrapCopilotItemId('one', 'amsg_raw') },
-        { type: 'encrypted_content', encrypted_content: wrapCopilotItemId('two', 'amsg_raw') },
+        { type: 'encrypted_content', encrypted_content: firstAgentPart.value },
+        { type: 'encrypted_content', encrypted_content: secondAgentPart.value },
       ],
     },
-    { type: 'compaction', id: 'cmp_public', encrypted_content: wrapCopilotItemId('compact state', 'cmp_raw') },
+    { type: 'compaction', id: 'cmp_public', encrypted_content: compaction.value },
     { type: 'reasoning', id: 'rs_foreign', summary: [], encrypted_content: 'foreign state' },
     { type: 'message', id: 'msg_foreign', role: 'user', content: 'hello' },
   ];
@@ -310,18 +320,40 @@ test('restores owned blob ids for Copilot input and leaves foreign items unchang
 });
 
 test('rejects conflicting ids carried by one input item', async () => {
+  const first = wrapCopilotItemId('one', 'amsg_one');
+  const second = wrapCopilotItemId('two', 'amsg_two');
+  assert(first.ok && second.ok);
   const input = request([{
     type: 'agent_message',
     id: 'amsg_public',
     author: 'a',
     recipient: 'b',
     content: [
-      { type: 'encrypted_content', encrypted_content: wrapCopilotItemId('one', 'amsg_one') },
-      { type: 'encrypted_content', encrypted_content: wrapCopilotItemId('two', 'amsg_two') },
+      { type: 'encrypted_content', encrypted_content: first.value },
+      { type: 'encrypted_content', encrypted_content: second.value },
     ],
   }]);
 
-  await expect(runStage(itemIdMembrane, 'openaiResponses', input)).rejects.toThrow('conflicting upstream ids');
+  const entry = ['request.openaiResponses', 'copilot.modelId'] as const;
+  const exit = ['response.http', 'response.modelKey', 'response.openaiResponses'] as const;
+  const ending = defineCopilotStage({
+    name: 'observe-conflicting-carriers',
+    request: { needs: entry },
+    return: { provides: exit },
+    async execute() {
+      throw new Error('Rejected input reached the terminal');
+    },
+  });
+  const { compose } = factSpace<CopilotFacts, CopilotServices>();
+  const pipeline = compose('conflicting-carriers', { entry, exit, stages: [itemIdMembrane], ending });
+  const invocation = run(pipeline, { 'request.openaiResponses': move(input.payload), 'copilot.modelId': 'wire-model' }, {
+    services: { copilot: createCopilotService(), fetcher: () => { throw new Error('Unexpected upstream fetch'); } },
+  });
+  await expect(invocation.result).resolves.toMatchObject({
+    'response.http': { status: 400, statusText: 'Bad Request' },
+    'response.openaiResponses': { kind: 'error', source: 'local', error: { error: { type: 'invalid_request_error', message: expect.stringContaining('conflicting upstream ids') } } },
+  });
+  await invocation.done;
 });
 
 test('normalizes a generated compaction without touching retained compact messages', async () => {
@@ -429,4 +461,45 @@ test('rejects an id-bearing child event before its output item opens', async () 
   ]);
 
   await expect(collect(result)).rejects.toThrow();
+});
+
+test('emits the carrier byte bound failure, aborts the upstream, and waits for native done', async () => {
+  const aborted = Promise.withResolvers<void>();
+  const finish = Promise.withResolvers<void>();
+  let upstreamDone = false;
+  const item: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'x'.repeat(65_536), summary: [], encrypted_content: 'opaque state' };
+  const result = await runStage(itemIdMembrane, 'openaiResponses', request(), {
+    async *stream(signal): AsyncGenerator<Result<OpenAIResponsesStreamEventEx, ProtocolStreamError>> {
+      signal.addEventListener('abort', () => aborted.resolve(), { once: true });
+      yield { ok: true, value: outputItemEvent('added', 0, item) };
+      await aborted.promise;
+      yield { ok: false, error: { kind: 'abort', cause: signal.reason } };
+      await finish.promise;
+      upstreamDone = true;
+    },
+  });
+  assert(result.stream !== undefined);
+  const cursor = result.stream[Symbol.asyncIterator]();
+  await expect(cursor.next()).resolves.toMatchObject({ done: false, value: { ok: false, error: { kind: 'protocol', cause: expect.any(RangeError) } } });
+  const completed = cursor.next();
+  await aborted.promise;
+  expect(upstreamDone).toBe(false);
+  finish.resolve();
+  await expect(completed).resolves.toMatchObject({ done: true });
+  expect(upstreamDone).toBe(true);
+  await result.done;
+});
+
+test('propagates a public id generator bug as the original panic', async () => {
+  const bug = new TypeError('public id bug');
+  const random = vi.spyOn(crypto, 'getRandomValues').mockImplementationOnce(() => { throw bug; });
+  try {
+    const item: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'rs_raw', summary: [] };
+    const { result } = await runStream([eventFrame(outputItemEvent('added', 0, item))]);
+    assert(result.stream !== undefined);
+    await expect(result.stream[Symbol.asyncIterator]().next()).rejects.toBe(bug);
+    await expect(result.done).rejects.toBe(bug);
+  } finally {
+    random.mockRestore();
+  }
 });

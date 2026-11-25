@@ -1,3 +1,4 @@
+import type { Result } from '@floway-dev/pipeline';
 import { appendOpaqueTrailer, decodeOpaqueValue, encodeOpaqueValue, MAX_OPAQUE_TRAILER_BYTES, splitOpaqueTrailer, type OpaqueValueOrigin } from '@floway-dev/protocols/common';
 
 interface CopilotItemIdData {
@@ -26,7 +27,7 @@ const parseData = (value: unknown): CopilotItemIdData | null => {
   return { version: 1, origin: record.origin, id: record.id };
 };
 
-export const wrapCopilotItemId = (value: string, id: string): string => {
+export const wrapCopilotItemId = (value: string, id: string): Result<string, RangeError> => {
   if (id.length === 0) throw new TypeError('Cannot carry an empty Copilot item id');
   const original = decodeOpaqueValue(value);
   const metadata = textEncoder.encode(JSON.stringify({
@@ -34,23 +35,30 @@ export const wrapCopilotItemId = (value: string, id: string): string => {
     origin: original.origin,
     id,
   } satisfies CopilotItemIdData));
-  if (metadata.length > MAX_OPAQUE_TRAILER_BYTES) throw new RangeError('Copilot item id metadata exceeds the 2-byte length marker');
-  return appendOpaqueTrailer(original, metadata);
+  if (metadata.length > MAX_OPAQUE_TRAILER_BYTES) return { ok: false, error: new RangeError('Copilot item id metadata exceeds the 2-byte length marker') };
+  return { ok: true, value: appendOpaqueTrailer(original, metadata) };
 };
 
 export const unwrapCopilotItemId = (value: string): DecodedCopilotItemIdCarrier => {
   const framed = splitOpaqueTrailer(value);
   if (framed === null) return { kind: 'foreign', value };
 
+  let text;
   try {
-    const data = parseData(JSON.parse(fatalTextDecoder.decode(framed.trailer)) as unknown);
-    if (data === null) return { kind: 'foreign', value };
-    return {
-      kind: 'owned',
-      value: encodeOpaqueValue(framed.original, data.origin),
-      ...data,
-    };
-  } catch {
+    text = fatalTextDecoder.decode(framed.trailer);
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
     return { kind: 'foreign', value };
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return { kind: 'foreign', value };
+  }
+  const data = parseData(parsed);
+  if (data === null) return { kind: 'foreign', value };
+  if (data.origin === 'raw' && framed.original.length % 2 !== 0) return { kind: 'foreign', value };
+  return { kind: 'owned', value: encodeOpaqueValue(framed.original, data.origin), ...data };
 };

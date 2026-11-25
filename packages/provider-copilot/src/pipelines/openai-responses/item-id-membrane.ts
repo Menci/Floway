@@ -1,56 +1,68 @@
 import { defineCopilotStage } from '../facts.ts';
 import { unwrapCopilotItemId, wrapCopilotItemId } from './item-id-carrier.ts';
-import { move, transform } from '@floway-dev/pipeline';
+import { move, type Result } from '@floway-dev/pipeline';
 import { encodeHex } from '@floway-dev/protocols/common';
-import { isOpenAIResponsesCompactionItem, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesCompactionResultEx, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { formatOpenAIResponsesError, isOpenAIResponsesCompactionItem, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesCompactionResultEx, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import type { ProtocolStreamError } from '@floway-dev/provider';
 
 export const itemIdMembrane = defineCopilotStage({
   name: 'copilot.openaiResponses.itemIdMembrane',
   through: {
-    request: { needs: ['request.openaiResponses'], provides: ['request.openaiResponses'], consumes: [] },
+    request: { needs: ['request.openaiResponses', 'copilot.modelId'], provides: ['request.openaiResponses'], consumes: [] },
     response: { needs: ['response.openaiResponses'], provides: ['response.openaiResponses'], consumes: [] },
   },
-  execute: transform(scope => ({
-    request(facts) {
-      return { ...facts, 'request.openaiResponses': move(restoreInputItemIds(facts['request.openaiResponses'])) };
-    },
-    response(facts) {
-      const outcome = facts['response.openaiResponses'];
-      switch (outcome.kind) {
-      case 'error':
-        return facts;
-      case 'result': {
-        const result = normalizeCompactionResult(outcome.result);
-        return { ...facts, 'response.openaiResponses': move({ kind: 'result', result }) };
-      }
-      case 'stream': {
-        const stream = scope.wrapStream(outcome.stream, async function* (source, producer) {
-          const state: StreamItemState = { items: new Map() };
-          let stopped = false;
-          for await (const item of source) {
-            if (stopped) continue;
-            if (!item.ok) {
-              yield item;
-              continue;
-            }
-            let event: OpenAIResponsesStreamEventEx;
-            try {
-              event = normalizeStreamEvent(item.value, state);
-            } catch (cause) {
-              stopped = true;
-              yield { ok: false, error: { kind: 'protocol', cause } } as const;
-              producer.abort(facts);
-              continue;
-            }
-            yield { ok: true, value: event } as const;
+  return: { provides: ['response.http', 'response.modelKey', 'response.openaiResponses'] },
+  async execute(facts, scope) {
+    const restored = restoreInputItemIds(facts['request.openaiResponses']);
+    if (!restored.ok) {
+      const { cause } = restored.error;
+      const message = cause instanceof Error ? cause.message : String(cause);
+      return {
+        'response.http': move({ status: 400, statusText: 'Bad Request', headers: [['content-type', 'application/json']], body: null }),
+        'response.modelKey': facts['copilot.modelId'],
+        'response.openaiResponses': move({ kind: 'error', source: 'local', error: { error: { type: 'invalid_request_error', message } }, cause }),
+      };
+    }
+    const back = await scope.next({ ...facts, 'request.openaiResponses': move(restored.value) });
+    const outcome = back['response.openaiResponses'];
+    switch (outcome.kind) {
+    case 'error':
+      return back;
+    case 'result': {
+      const result = normalizeCompactionResult(outcome.result);
+      if (result.ok) return { ...back, 'response.openaiResponses': move({ kind: 'result', result: result.value }) };
+      const { cause } = result.error;
+      return { ...back, 'response.openaiResponses': move({ kind: 'error', source: 'upstream', error: formatOpenAIResponsesError(null, cause instanceof Error ? cause.message : String(cause)), cause }) };
+    }
+    case 'stream': {
+      const stream = scope.wrapStream(outcome.stream, async function* (source, producer) {
+        const state: StreamItemState = { items: new Map() };
+        const cursor = source[Symbol.asyncIterator]();
+        let stopped = false;
+        for (;;) {
+          const { done, value: item } = await cursor.next();
+          if (done) return;
+          if (stopped) continue;
+          if (!item.ok) {
+            yield item;
+            continue;
           }
-        });
-        return { ...facts, 'response.openaiResponses': move({ kind: 'stream', stream }) };
-      }
-      }
-    },
-  })),
+          const event = normalizeStreamEvent(item.value, state);
+          yield event;
+          if (!event.ok) {
+            stopped = true;
+            producer.abort(back);
+          }
+        }
+      });
+      return { ...back, 'response.openaiResponses': move({ kind: 'stream', stream }) };
+    }
+    }
+  },
 });
+
+const protocolFailure = (message: string): Result<never, ProtocolStreamError> =>
+  ({ ok: false, error: { kind: 'protocol', cause: new TypeError(message) } });
 
 // OpenAI's published examples establish these item-specific prefixes. Keeping
 // the Copilot output inventory closed prevents a new upstream item kind from
@@ -79,10 +91,10 @@ const COPILOT_OUTPUT_ITEM_POLICIES = {
 type CopilotOutputItemType = keyof typeof COPILOT_OUTPUT_ITEM_POLICIES;
 type CarrierItem = CanonicalOpenAIResponsesInputItem | OpenAIResponsesOutputItemEx;
 
-const copilotOutputItemType = (item: OpenAIResponsesOutputItemEx): CopilotOutputItemType => {
-  if (isOpenAIResponsesCompactionItem(item)) return 'compaction';
-  if (Object.hasOwn(COPILOT_OUTPUT_ITEM_POLICIES, item.type)) return item.type as CopilotOutputItemType;
-  throw new TypeError(`Unsupported Copilot OpenAI Responses output item type '${item.type}'`);
+const copilotOutputItemType = (item: OpenAIResponsesOutputItemEx): Result<CopilotOutputItemType, ProtocolStreamError> => {
+  if (isOpenAIResponsesCompactionItem(item)) return { ok: true, value: 'compaction' };
+  if (Object.hasOwn(COPILOT_OUTPUT_ITEM_POLICIES, item.type)) return { ok: true, value: item.type as CopilotOutputItemType };
+  return protocolFailure(`Unsupported Copilot OpenAI Responses output item type '${item.type}'`);
 };
 
 const createPublicItemId = (type: CopilotOutputItemType): string => {
@@ -93,79 +105,76 @@ const createPublicItemId = (type: CopilotOutputItemType): string => {
 
 const mapCarrierValues = <TItem extends CarrierItem>(
   item: TItem,
-  transform: (value: string) => string,
-): TItem => {
+  transform: (value: string) => Result<string, ProtocolStreamError>,
+): Result<TItem, ProtocolStreamError> => {
   const type = isOpenAIResponsesCompactionItem(item) ? 'compaction' : item.type;
-  if (!Object.hasOwn(COPILOT_OUTPUT_ITEM_POLICIES, type)) return item;
+  if (!Object.hasOwn(COPILOT_OUTPUT_ITEM_POLICIES, type)) return { ok: true, value: item };
   const policy = COPILOT_OUTPUT_ITEM_POLICIES[type as CopilotOutputItemType];
   switch (policy.carrier) {
   case 'encrypted_content': {
     const record = item as CarrierItem & { encrypted_content?: unknown };
-    return typeof record.encrypted_content === 'string'
-      ? { ...item, encrypted_content: transform(record.encrypted_content) } as TItem
-      : item;
+    if (typeof record.encrypted_content !== 'string') return { ok: true, value: item };
+    const encryptedContent = transform(record.encrypted_content);
+    return encryptedContent.ok ? { ok: true, value: { ...item, encrypted_content: encryptedContent.value } as TItem } : encryptedContent;
   }
   case 'fingerprint': {
     const record = item as CarrierItem & { fingerprint: string };
-    return { ...item, fingerprint: transform(record.fingerprint) } as TItem;
+    const fingerprint = transform(record.fingerprint);
+    return fingerprint.ok ? { ok: true, value: { ...item, fingerprint: fingerprint.value } as TItem } : fingerprint;
   }
   case 'agent_content': {
     const record = item as Extract<CarrierItem, { type: 'agent_message' }>;
-    return {
-      ...item,
-      content: record.content.map(content =>
-        content.type === 'encrypted_content' && typeof content.encrypted_content === 'string'
-          ? { ...content, encrypted_content: transform(content.encrypted_content) }
-          : content),
-    } as TItem;
+    const content: (typeof record.content)[number][] = [];
+    for (const part of record.content) {
+      if (part.type !== 'encrypted_content' || typeof part.encrypted_content !== 'string') {
+        content.push(part);
+        continue;
+      }
+      const encryptedContent = transform(part.encrypted_content);
+      if (!encryptedContent.ok) return encryptedContent;
+      content.push({ ...part, encrypted_content: encryptedContent.value });
+    }
+    return { ok: true, value: { ...item, content } as TItem };
   }
   case null:
-    return item;
+    return { ok: true, value: item };
   }
 };
 
-const restoreInputItem = (item: CanonicalOpenAIResponsesInputItem): CanonicalOpenAIResponsesInputItem => {
-  const upstreamItemIds = new Set<string>();
+const restoreInputItem = (item: CanonicalOpenAIResponsesInputItem): Result<CanonicalOpenAIResponsesInputItem, ProtocolStreamError> => {
+  let upstreamId: string | undefined;
   const restored = mapCarrierValues(item, value => {
     const decoded = unwrapCopilotItemId(value);
-    if (decoded.kind === 'foreign') return value;
-    upstreamItemIds.add(decoded.id);
-    return decoded.value;
+    if (decoded.kind === 'foreign') return { ok: true, value };
+    if (upstreamId !== undefined && upstreamId !== decoded.id) return protocolFailure('Copilot OpenAI Responses item carries conflicting upstream ids');
+    upstreamId = decoded.id;
+    return { ok: true, value: decoded.value };
   });
 
-  if (upstreamItemIds.size === 0) return restored;
-  if (upstreamItemIds.size > 1) {
-    throw new TypeError('Copilot OpenAI Responses item carries conflicting upstream ids');
-  }
-  return { ...restored, id: [...upstreamItemIds][0] } as CanonicalOpenAIResponsesInputItem;
+  if (!restored.ok || upstreamId === undefined) return restored;
+  return { ok: true, value: { ...restored.value, id: upstreamId } as CanonicalOpenAIResponsesInputItem };
 };
 
-const restoreInputItemIds = <Payload extends Pick<CanonicalOpenAIResponsesPayload, 'input'>>(payload: Payload): Payload => ({
-  ...payload,
-  input: payload.input.map(restoreInputItem),
-});
+const restoreInputItemIds = <Payload extends Pick<CanonicalOpenAIResponsesPayload, 'input'>>(payload: Payload): Result<Payload, ProtocolStreamError> => {
+  const input: CanonicalOpenAIResponsesInputItem[] = [];
+  for (const item of payload.input) {
+    const restored = restoreInputItem(item);
+    if (!restored.ok) return restored;
+    input.push(restored.value);
+  }
+  return { ok: true, value: { ...payload, input } };
+};
 
-const carrierValueCount = (item: OpenAIResponsesOutputItemEx): number => {
-  let count = 0;
-  mapCarrierValues(item, value => {
-    count += 1;
-    return value;
+const normalizeObservedItem = (item: OpenAIResponsesOutputItemEx, publicId: string): Result<OpenAIResponsesOutputItemEx, ProtocolStreamError> => {
+  const normalized = mapCarrierValues(item, value => {
+    const upstreamId = 'id' in item ? item.id : undefined;
+    if (typeof upstreamId !== 'string' || upstreamId.length === 0) {
+      return protocolFailure(`Copilot OpenAI Responses ${item.type} item has replay state but no upstream id`);
+    }
+    const wrapped = wrapCopilotItemId(value, upstreamId);
+    return wrapped.ok ? wrapped : { ok: false, error: { kind: 'protocol', cause: wrapped.error } };
   });
-  return count;
-};
-
-const normalizeObservedItem = (item: OpenAIResponsesOutputItemEx, publicId: string): OpenAIResponsesOutputItemEx => {
-  copilotOutputItemType(item);
-  if (carrierValueCount(item) === 0) return { ...item, id: publicId } as OpenAIResponsesOutputItemEx;
-
-  const upstreamId = 'id' in item ? item.id : undefined;
-  if (typeof upstreamId !== 'string' || upstreamId.length === 0) {
-    throw new TypeError(`Copilot OpenAI Responses ${item.type} item has replay state but no upstream id`);
-  }
-  return {
-    ...mapCarrierValues(item, value => wrapCopilotItemId(value, upstreamId)),
-    id: publicId,
-  } as OpenAIResponsesOutputItemEx;
+  return normalized.ok ? { ok: true, value: { ...normalized.value, id: publicId } as OpenAIResponsesOutputItemEx } : normalized;
 };
 
 interface TrackedItem {
@@ -178,42 +187,39 @@ interface StreamItemState {
   readonly items: Map<number, TrackedItem>;
 }
 
-const trackedAt = (state: StreamItemState, outputIndex: number): TrackedItem => {
-  const tracked = state.items.get(outputIndex);
-  if (tracked === undefined) throw new TypeError(`Copilot OpenAI Responses event references output_index ${outputIndex} before output_item.added`);
-  return tracked;
-};
-
 const trackObservedItem = (
   state: StreamItemState,
   outputIndex: number,
   item: OpenAIResponsesOutputItemEx,
-): TrackedItem => {
+): Result<TrackedItem, ProtocolStreamError> => {
   const type = copilotOutputItemType(item);
+  if (!type.ok) return type;
   const existing = state.items.get(outputIndex);
   if (existing === undefined) {
-    const tracked: TrackedItem = { type, publicId: createPublicItemId(type), added: false };
+    const tracked: TrackedItem = { type: type.value, publicId: createPublicItemId(type.value), added: false };
     state.items.set(outputIndex, tracked);
-    return tracked;
+    return { ok: true, value: tracked };
   }
-  if (existing.type !== type) {
-    throw new TypeError(`Copilot OpenAI Responses output_index ${outputIndex} changed type from ${existing.type} to ${item.type}`);
+  if (existing.type !== type.value) {
+    return protocolFailure(`Copilot OpenAI Responses output_index ${outputIndex} changed type from ${existing.type} to ${item.type}`);
   }
-  return existing;
+  return { ok: true, value: existing };
 };
 
 const normalizeResponseOutput = (
   response: OpenAIResponsesResultEx,
   state: StreamItemState,
-): OpenAIResponsesResultEx => {
-  if (response.output.length === 0) return response;
-  return {
-    ...response,
-    output: response.output.map((item, outputIndex) => {
-      const tracked = trackObservedItem(state, outputIndex, item);
-      return normalizeObservedItem(item, tracked.publicId);
-    }),
-  };
+): Result<OpenAIResponsesResultEx, ProtocolStreamError> => {
+  if (response.output.length === 0) return { ok: true, value: response };
+  const output: OpenAIResponsesOutputItemEx[] = [];
+  for (const [outputIndex, item] of response.output.entries()) {
+    const tracked = trackObservedItem(state, outputIndex, item);
+    if (!tracked.ok) return tracked;
+    const normalized = normalizeObservedItem(item, tracked.value.publicId);
+    if (!normalized.ok) return normalized;
+    output.push(normalized.value);
+  }
+  return { ok: true, value: { ...response, output } };
 };
 
 const ITEM_ID_EVENT_TYPES = new Set<OpenAIResponsesStreamEventEx['type']>([
@@ -249,19 +255,16 @@ const NO_ITEM_ID_EVENT_TYPES = new Set<OpenAIResponsesStreamEventEx['type']>([
   'response.shell_call_command.done',
 ]);
 
-const normalizeStreamEvent = (event: OpenAIResponsesStreamEventEx, state: StreamItemState): OpenAIResponsesStreamEventEx => {
-  if (event.type === 'response.output_item.added') {
+const normalizeStreamEvent = (event: OpenAIResponsesStreamEventEx, state: StreamItemState): Result<OpenAIResponsesStreamEventEx, ProtocolStreamError> => {
+  if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
     const tracked = trackObservedItem(state, event.output_index, event.item);
-    if (tracked.added) {
-      throw new TypeError(`Copilot OpenAI Responses emitted output_item.added twice for output_index ${event.output_index}`);
+    if (!tracked.ok) return tracked;
+    if (event.type === 'response.output_item.added') {
+      if (tracked.value.added) return protocolFailure(`Copilot OpenAI Responses emitted output_item.added twice for output_index ${event.output_index}`);
+      tracked.value.added = true;
     }
-    tracked.added = true;
-    return { ...event, item: normalizeObservedItem(event.item, tracked.publicId) };
-  }
-
-  if (event.type === 'response.output_item.done') {
-    const tracked = trackObservedItem(state, event.output_index, event.item);
-    return { ...event, item: normalizeObservedItem(event.item, tracked.publicId) };
+    const item = normalizeObservedItem(event.item, tracked.value.publicId);
+    return item.ok ? { ok: true, value: { ...event, item: item.value } } : item;
   }
 
   if (
@@ -272,38 +275,47 @@ const normalizeStreamEvent = (event: OpenAIResponsesStreamEventEx, state: Stream
     || event.type === 'response.incomplete'
     || event.type === 'response.failed'
   ) {
-    return { ...event, response: normalizeResponseOutput(event.response, state) };
+    const response = normalizeResponseOutput(event.response, state);
+    return response.ok ? { ok: true, value: { ...event, response: response.value } } : response;
   }
 
-  if (event.type === 'error') return event;
+  if (event.type === 'error') return { ok: true, value: event };
   const carrier = event as OpenAIResponsesStreamEventEx & { item_id?: unknown; output_index?: unknown };
   const requiresItemId = ITEM_ID_EVENT_TYPES.has(event.type);
   const permitsMissingItemId = NO_ITEM_ID_EVENT_TYPES.has(event.type);
   if (!requiresItemId && !permitsMissingItemId) {
     if (Object.hasOwn(event, 'item') || Object.hasOwn(event, 'response')) {
-      throw new TypeError(`Unsupported Copilot OpenAI Responses stream event type '${event.type}'`);
+      return protocolFailure(`Unsupported Copilot OpenAI Responses stream event type '${event.type}'`);
     }
-    if (!Object.hasOwn(carrier, 'item_id')) return event;
+    if (!Object.hasOwn(carrier, 'item_id')) return { ok: true, value: event };
   } else if (permitsMissingItemId && !Object.hasOwn(carrier, 'item_id')) {
-    return event;
+    return { ok: true, value: event };
   }
   if (typeof carrier.item_id !== 'string') {
     const reason = requiresItemId ? 'is missing item_id' : 'carries an invalid item_id extension';
-    throw new TypeError(`Copilot OpenAI Responses event '${event.type}' ${reason}`);
+    return protocolFailure(`Copilot OpenAI Responses event '${event.type}' ${reason}`);
   }
   if (typeof carrier.output_index !== 'number') {
     if (!requiresItemId) {
-      throw new TypeError(`Copilot OpenAI Responses event '${event.type}' carries an invalid item_id extension`);
+      return protocolFailure(`Copilot OpenAI Responses event '${event.type}' carries an invalid item_id extension`);
     }
-    throw new TypeError(`Copilot OpenAI Responses event '${event.type}' carries item_id without output_index`);
+    return protocolFailure(`Copilot OpenAI Responses event '${event.type}' carries item_id without output_index`);
   }
-  return { ...carrier, item_id: trackedAt(state, carrier.output_index).publicId } as OpenAIResponsesStreamEventEx;
+  const tracked = state.items.get(carrier.output_index);
+  if (tracked === undefined) return protocolFailure(`Copilot OpenAI Responses event references output_index ${carrier.output_index} before output_item.added`);
+  return { ok: true, value: { ...carrier, item_id: tracked.publicId } as OpenAIResponsesStreamEventEx };
 };
 
-const normalizeCompactionResult = (response: OpenAIResponsesCompactionResultEx): OpenAIResponsesCompactionResultEx => ({
-  ...response,
-  output: response.output.map(item => {
-    if (!isOpenAIResponsesCompactionItem(item)) return item;
-    return normalizeObservedItem(item, createPublicItemId('compaction'));
-  }),
-});
+const normalizeCompactionResult = (response: OpenAIResponsesCompactionResultEx): Result<OpenAIResponsesCompactionResultEx, ProtocolStreamError> => {
+  const output: OpenAIResponsesCompactionResultEx['output'] = [];
+  for (const item of response.output) {
+    if (!isOpenAIResponsesCompactionItem(item)) {
+      output.push(item);
+      continue;
+    }
+    const normalized = normalizeObservedItem(item, createPublicItemId('compaction'));
+    if (!normalized.ok) return normalized;
+    output.push(normalized.value);
+  }
+  return { ok: true, value: { ...response, output } };
+};
