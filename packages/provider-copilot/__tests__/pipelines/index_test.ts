@@ -180,11 +180,13 @@ test.each(['openaiResponses', 'openaiResponsesCompact'] as const)('GitHub token 
   expect(fetcher).not.toHaveBeenCalled();
   expect(result['response.modelKey']).toBe('raw-model');
   expect(result['response.http']).toMatchObject({ status: 403, headers: expect.arrayContaining([['x-github-request-id', 'token-request-id']]) });
-  expect(result['response.openaiResponses']).toEqual({
+  const outcome = result['response.openaiResponses'];
+  expect(outcome).toMatchObject({
     kind: 'error',
     source: 'upstream',
     error: { type: 'error', message: 'access denied' },
   });
+  expect(outcome.kind === 'error' && outcome.cause).toBeInstanceOf(SyntaxError);
 });
 
 test('Copilot generates Anthropic Messages with selected Fast Mode and reports it in the opening event', async () => {

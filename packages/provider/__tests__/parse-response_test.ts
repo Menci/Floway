@@ -69,8 +69,7 @@ describe('provider response parsing', () => {
   it.each([
     ['{"error":{"message":"original"}}', { error: { message: 'original' } }],
     ['"JSON string"', 'JSON string'],
-    ['<html>original body</html>', { error: { status: 429, message: '<html>original body</html>' } }],
-  ])('preserves the upstream head and carries %s through the protocol error', async (body, error) => {
+  ])('preserves the upstream head and carries the JSON body %s as the protocol error', async (body, error) => {
     const response = new Response(body, { status: 429, headers: { 'retry-after': '5' } });
     const exchange = run(chatPipeline, facts, { services: services({ ok: true, value: response }) });
     const answer = await exchange.result;
@@ -81,6 +80,19 @@ describe('provider response parsing', () => {
     expect(outcome).toEqual({ kind: 'error', source: 'upstream', error });
     expect('cause' in outcome).toBe(false);
     expect(answer).not.toHaveProperty('response.transport');
+    await exchange.done;
+  });
+
+  it('synthesizes the protocol envelope for a non-JSON error body and keeps the parse failure as its cause', async () => {
+    const response = new Response('<html>original body</html>', { status: 429, headers: { 'retry-after': '5' } });
+    const exchange = run(chatPipeline, facts, { services: services({ ok: true, value: response }) });
+    const answer = await exchange.result;
+
+    expect(answer['response.http']).toMatchObject({ status: 429, body: null });
+    const outcome = answer['response.openaiChatCompletions'];
+    assert(outcome.kind === 'error');
+    expect(outcome).toMatchObject({ kind: 'error', source: 'upstream', error: { error: { status: 429, message: '<html>original body</html>' } } });
+    expect(outcome.cause).toBeInstanceOf(SyntaxError);
     await exchange.done;
   });
 

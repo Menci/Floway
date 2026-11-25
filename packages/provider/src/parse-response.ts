@@ -73,7 +73,9 @@ export const parseErrorBody = async <Body>(http: HttpResponseFact, format: Forma
 
   const text = new TextDecoder().decode(body.value);
   const parsed = parseJson(text);
-  return upstreamError(response, parsed.ok ? parsed.value : format(http.status, text));
+  // A synthesized envelope keeps the parse failure as its cause, so a protocol whose
+  // rendering differs for non-JSON upstream bodies can tell them from native JSON errors.
+  return parsed.ok ? upstreamError(response, parsed.value) : upstreamFailure(response, text, parsed.error, format);
 };
 
 export const parseResultBody = async <Output, Body>(
