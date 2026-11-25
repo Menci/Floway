@@ -4,6 +4,7 @@ import type { ChatGatewayCtx } from '../../src/data-plane/chat/shared/gateway-ct
 import { createSidecarCodecFactory } from '../../src/data-plane/chat/shared/sidecar-codec.ts';
 import type { GatewayCtx } from '../../src/data-plane/shared/gateway-ctx.ts';
 import type { User } from '../../src/repo/types.ts';
+import { projectAffinityTestCandidate } from '../data-plane/chat/shared/affinity/helpers.ts';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const testUser: User = {
@@ -41,7 +42,7 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
 export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx & { readonly store: OpenAIResponsesStatefulStore } => {
   const base = mockGatewayCtx(overrides);
   const affinity = overrides.affinity ?? new AffinityRequestContext('00'.repeat(32));
-  if (overrides.affinity === undefined) affinity.select(stubModelCandidate());
+  if (overrides.affinity === undefined) affinity.select(projectAffinityTestCandidate(stubModelCandidate()));
   return {
     ...base,
     affinity,

@@ -10,42 +10,30 @@ import {
   projectRequiredAffinityBlob,
   selectAffinityCandidates,
 } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import type { ServeCandidate } from '../../../../../src/data-plane/pipeline/facts.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
-import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
-
-const candidate = (upstreamId: string, model: string, rules?: AliasRules) => {
-  const base = stubModelCandidate();
-  const value = stubModelCandidate({
-    provider: { ...base.provider, upstreamId },
-    model: { id: model },
-  });
-  return rules === undefined ? value : { ...value, rules };
-};
+import { toProviderModelFact } from '@floway-dev/provider';
+import { stubProviderModel } from '@floway-dev/test-utils';
 
 const candidateWithScope = (
   upstreamId: string,
   model: string,
   scope: { bindToUpstream: boolean; key?: string },
-) => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    provider: { ...base.provider, upstreamId },
-    model: {
-      id: model,
-      opaqueBlobCompatibilityScope: scope,
-      providerModels: {
-        [upstreamId]: stubProviderModel({ id: model, upstreamModelId: model, opaqueBlobCompatibilityScope: scope }),
-      },
-    },
-  });
-};
+): ServeCandidate => ({
+  upstream: { id: upstreamId, kind: 'custom', name: upstreamId, config: {} },
+  model: toProviderModelFact(stubProviderModel({ id: model, upstreamModelId: model, opaqueBlobCompatibilityScope: scope })),
+});
+
+const candidate = (upstreamId: string, model: string, rules?: AliasRules): ServeCandidate => ({
+  ...candidateWithScope(upstreamId, model, { bindToUpstream: true }),
+  ...(rules === undefined ? {} : { rules }),
+});
 
 const targetFor = (value: ReturnType<typeof candidate>): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
+  upstreamId: value.upstream.id,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
+  opaqueBlobCompatibilityIdentity: { upstreamId: value.upstream.id, key: value.model.id },
 });
 
 const ownedBlob = (
@@ -64,7 +52,7 @@ const ownedBlob = (
 
 const affinity = (
   requiredTargets: readonly AffinityIdentity[] = [],
-  degrading: readonly ModelCandidate[] = [],
+  degrading: readonly ServeCandidate[] = [],
 ): AffinityRequestAnalysis<undefined> => defineAffinityRequest(requiredTargets, candidate => {
   const unsatisfiedTargets = requiredTargets.filter(target => !candidateSatisfiesAffinityIdentity(candidate, target));
   return unsatisfiedTargets.length > 0
@@ -73,9 +61,9 @@ const affinity = (
 });
 
 const selectedCandidates = (
-  candidates: readonly ModelCandidate[],
+  candidates: readonly ServeCandidate[],
   analysis: AffinityRequestAnalysis<undefined>,
-): readonly ModelCandidate[] => {
+): readonly ServeCandidate[] => {
   const selection = selectAffinityCandidates(candidates, analysis);
   if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
   return selection.candidates;

@@ -35,14 +35,15 @@ export const openaiResponsesServe = {
       ctx,
       'chat',
       async candidate => {
+        const { affinityCandidate, payload } = plan.attemptFor(candidate);
         const result = await openaiResponsesAttempt.generate({
-          payload: plan.affinitySelection.payloadFor(candidate),
+          payload,
           ctx,
           candidate,
           headers,
         });
         if (result.type !== 'events') return result;
-        ctx.affinity.select(candidate);
+        ctx.affinity.select(affinityCandidate);
         const enabled = shouldSerializeStreamItems(providerModelOf(candidate).enabledFlags, 'openaiResponses', headers.get('user-agent'));
         return { ...result, events: serializeOpenAIResponsesStream(result.events, enabled) };
       },
@@ -69,14 +70,15 @@ export const openaiResponsesServe = {
       ctx,
       'chat',
       async candidate => {
+        const { affinityCandidate, payload } = plan.attemptFor(candidate);
         const result = await openaiResponsesAttempt.invoke({
-          payload: plan.affinitySelection.payloadFor(candidate),
+          payload,
           action: 'compact',
           ctx,
           candidate,
           headers,
         });
-        if (result.type === 'result') ctx.affinity.select(candidate);
+        if (result.type === 'result') ctx.affinity.select(affinityCandidate);
         return result;
       },
     );

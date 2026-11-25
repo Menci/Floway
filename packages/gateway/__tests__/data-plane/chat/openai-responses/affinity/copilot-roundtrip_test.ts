@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
 import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
+import { acceptedAffinityEvaluation, projectAffinityTestCandidate } from '../../shared/affinity/helpers.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { initProviderRepo, providerModelOf, type UpstreamRecord } from '@floway-dev/provider';
@@ -151,8 +151,8 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
         store: false,
       };
       const prepared = await analyzeOpenAIResponsesAffinity(payload, codec);
-      const exact = acceptedAffinityEvaluation(prepared, candidate).materialize();
-      const incompatible = acceptedAffinityEvaluation(prepared, otherCandidate).materialize();
+      const exact = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidate)).materialize();
+      const incompatible = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(otherCandidate)).materialize();
       expect(exact.input[0]).toMatchObject({ type: 'reasoning', id: publicItem.id });
       expect(incompatible.input).toEqual([]);
 

@@ -1,13 +1,13 @@
 import { isEqual } from 'es-toolkit';
 
 import type { AffinityIdentity, AffinityTarget, DecodedAffinityBlob, OpaqueBlobCompatibilityIdentity } from './carrier.ts';
+import type { ServeCandidate } from '../../../pipeline/facts.ts';
 import type { ChatServeFailure } from '../errors.ts';
 import { materializeOpaqueBlobCompatibilityIdentity } from '@floway-dev/protocols/common';
-import { providerModelOf, type ModelCandidate } from '@floway-dev/provider';
 
 export interface AffinityRequestAnalysis<T> {
   readonly requiredTargets: readonly AffinityIdentity[];
-  readonly evaluateCandidate: (candidate: ModelCandidate) => CandidateAffinityEvaluation<T>;
+  readonly evaluateCandidate: (candidate: ServeCandidate) => CandidateAffinityEvaluation<T>;
 }
 
 export type CandidateAffinityEvaluation<T> =
@@ -15,8 +15,8 @@ export type CandidateAffinityEvaluation<T> =
   | { readonly kind: 'accepted'; readonly degrades: boolean; readonly preferred?: boolean; readonly materialize: () => T };
 
 export interface AffinityCandidateSelection<T> {
-  readonly candidates: readonly ModelCandidate[];
-  readonly payloadFor: (candidate: ModelCandidate) => T;
+  readonly candidates: readonly ServeCandidate[];
+  readonly payloadFor: (candidate: ServeCandidate) => T;
 }
 
 export type AffinitySelectionFailure = Extract<ChatServeFailure, { kind: 'routing-unavailable' }>;
@@ -34,8 +34,8 @@ const sameCompatibilityIdentity = (
   right: OpaqueBlobCompatibilityIdentity,
 ): boolean => left.upstreamId === right.upstreamId && left.key === right.key;
 
-const candidateMatchesExactTarget = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
-  candidate.provider.upstreamId === affinity.upstreamId
+const candidateMatchesExactTarget = (candidate: ServeCandidate, affinity: AffinityTarget): boolean =>
+  candidate.upstream.id === affinity.upstreamId
   && candidate.model.id === affinity.modelId
   // Alias targets always carry a rules object, while direct candidates omit
   // it. Both shapes describe the same no-overlay variant when the object is
@@ -43,24 +43,22 @@ const candidateMatchesExactTarget = (candidate: ModelCandidate, affinity: Affini
   // same-name alias starts shadowing that model.
   && isEqual(candidate.rules ?? {}, affinity.rules ?? {});
 
-const candidateMatchesPhysicalTarget = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
-  candidate.provider.upstreamId === affinity.upstreamId && candidate.model.id === affinity.modelId;
+const candidateMatchesPhysicalTarget = (candidate: ServeCandidate, affinity: AffinityTarget): boolean =>
+  candidate.upstream.id === affinity.upstreamId && candidate.model.id === affinity.modelId;
 
-export const compatibilityIdentityForCandidate = (candidate: ModelCandidate): OpaqueBlobCompatibilityIdentity => {
-  const model = providerModelOf(candidate);
-  return materializeOpaqueBlobCompatibilityIdentity(
+export const compatibilityIdentityForCandidate = ({ model, upstream }: ServeCandidate): OpaqueBlobCompatibilityIdentity =>
+  materializeOpaqueBlobCompatibilityIdentity(
     model.opaqueBlobCompatibilityScope,
-    candidate.provider.upstreamId,
+    upstream.id,
     model.upstreamModelId,
   );
-};
 
-export const candidateSatisfiesAffinityIdentity = (candidate: ModelCandidate, target: AffinityIdentity): boolean =>
+export const candidateSatisfiesAffinityIdentity = (candidate: ServeCandidate, target: AffinityIdentity): boolean =>
   sameCompatibilityIdentity(compatibilityIdentityForCandidate(candidate), target.opaqueBlobCompatibilityIdentity);
 
 export const projectOptionalAffinityBlob = (
   decoded: DecodedAffinityBlob,
-  candidate: ModelCandidate,
+  candidate: ServeCandidate,
 ): OptionalAffinityBlobProjection => {
   if (decoded.kind === 'foreign') return { kind: 'preserve', value: decoded.value, preferred: true };
   const target = {
@@ -97,7 +95,7 @@ export const incompatibleReasoningParts = <Part>(
 
 export const projectRequiredAffinityBlob = (
   decoded: DecodedAffinityBlob,
-  candidate: ModelCandidate,
+  candidate: ServeCandidate,
 ): RequiredAffinityBlobProjection => {
   if (decoded.kind === 'foreign') return { kind: 'preserve', value: decoded.value, preferred: true };
   const target = {
@@ -112,7 +110,7 @@ export const projectRequiredAffinityBlob = (
 
 export const defineAffinityRequest = <T>(
   requiredTargets: readonly AffinityIdentity[],
-  evaluate: (candidate: ModelCandidate) => CandidateAffinityEvaluation<T>,
+  evaluate: (candidate: ServeCandidate) => CandidateAffinityEvaluation<T>,
 ): AffinityRequestAnalysis<T> => {
   const uniqueRequiredTargets: AffinityIdentity[] = [];
   for (const target of requiredTargets) {
@@ -121,7 +119,7 @@ export const defineAffinityRequest = <T>(
       target.opaqueBlobCompatibilityIdentity,
     ))) uniqueRequiredTargets.push(target);
   }
-  const evaluations = new WeakMap<ModelCandidate, CandidateAffinityEvaluation<T>>();
+  const evaluations = new WeakMap<ServeCandidate, CandidateAffinityEvaluation<T>>();
   return {
     requiredTargets: uniqueRequiredTargets,
     evaluateCandidate: candidate => {
@@ -153,7 +151,7 @@ export const defineAffinityRequest = <T>(
 };
 
 export const selectAffinityCandidates = <T>(
-  candidates: readonly ModelCandidate[],
+  candidates: readonly ServeCandidate[],
   affinity: AffinityRequestAnalysis<T>,
 ): AffinityCandidateSelection<T> | AffinitySelectionFailure => {
   if (affinity.requiredTargets.length > 1) {
@@ -164,7 +162,7 @@ export const selectAffinityCandidates = <T>(
   }
 
   const accepted: Array<{
-    readonly candidate: ModelCandidate;
+    readonly candidate: ServeCandidate;
     readonly evaluation: Extract<CandidateAffinityEvaluation<T>, { kind: 'accepted' }>;
   }> = [];
   for (const candidate of candidates) {

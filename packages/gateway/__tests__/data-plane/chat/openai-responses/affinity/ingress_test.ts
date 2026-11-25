@@ -2,10 +2,11 @@ import { expect, test } from 'vitest';
 
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
 import { AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, compatibilityIdentityForCandidate, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import type { ServeCandidate } from '../../../../../src/data-plane/pipeline/facts.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
+import { toProviderModelFact } from '@floway-dev/provider';
+import { stubProviderModel } from '@floway-dev/test-utils';
 
 const codec = new AffinityCodec('22'.repeat(32));
 const canonicalItemType = (itemType: string): string => itemType === 'compaction' || itemType === 'compaction_summary' || itemType === 'context_compaction' ? 'compaction' : itemType;
@@ -15,26 +16,13 @@ const candidate = (
   upstream: string,
   model = 'model',
   scope: { bindToUpstream: boolean; key?: string } = { bindToUpstream: true },
-): ModelCandidate => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    provider: { ...base.provider, upstreamId: upstream },
-    model: {
-      id: model,
-      opaqueBlobCompatibilityScope: scope,
-      providerModels: {
-        [upstream]: stubProviderModel({
-          id: model,
-          upstreamModelId: model,
-          opaqueBlobCompatibilityScope: scope,
-        }),
-      },
-    },
-  });
-};
+): ServeCandidate => ({
+  upstream: { id: upstream, kind: 'custom', name: upstream, config: {} },
+  model: toProviderModelFact(stubProviderModel({ id: model, upstreamModelId: model, opaqueBlobCompatibilityScope: scope })),
+});
 
-const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
+const targetFor = (value: ServeCandidate): AffinityIdentity => ({
+  upstreamId: value.upstream.id,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
   opaqueBlobCompatibilityIdentity: compatibilityIdentityForCandidate(value),
@@ -44,7 +32,7 @@ const candidateA = candidate('upstream-a');
 const candidateB = candidate('upstream-b');
 
 const select = (
-  candidates: readonly ModelCandidate[],
+  candidates: readonly ServeCandidate[],
   analysis: AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>,
 ) => {
   const selection = selectAffinityCandidates(candidates, analysis);

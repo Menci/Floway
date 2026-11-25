@@ -1,3 +1,4 @@
+import type { ServeCandidate } from '../../../pipeline/facts.ts';
 import {
   type AffinityCodec,
   type AffinityIdentity,
@@ -13,7 +14,6 @@ import {
 } from '../../shared/affinity/index.ts';
 import { isOpenAIResponsesCompactShimItem } from '../interceptors/compact-shim.ts';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate } from '@floway-dev/provider';
 
 interface OpenAIResponsesBlobLocation {
   readonly itemIndex: number;
@@ -175,7 +175,7 @@ const materializeOpenAIResponsesPayload = (
 const evaluateOpenAIResponsesCandidate = (
   payload: CanonicalOpenAIResponsesPayload,
   analysis: OpenAIResponsesRequestAnalysis,
-  candidate: ModelCandidate,
+  candidate: ServeCandidate,
 ) => {
   const unsatisfiedTargets: AffinityIdentity[] = [];
   const projectionsByItem = new Map<number, readonly OpenAIResponsesBlobCandidateProjection[] | null>();
@@ -216,7 +216,7 @@ const evaluateOpenAIResponsesCandidate = (
       if (item.inheritedRequiredTarget !== undefined) {
         const target = item.inheritedRequiredTarget;
         if (
-          candidate.provider.upstreamId !== target.upstreamId
+          candidate.upstream.id !== target.upstreamId
           || candidate.model.id !== target.modelId
         ) return false;
       }

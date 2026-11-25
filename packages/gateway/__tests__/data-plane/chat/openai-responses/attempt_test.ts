@@ -13,7 +13,7 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import { encodeBase64UrlJson } from '../../../../src/shared/base64url-json.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import { acceptedAffinityEvaluation } from '../shared/affinity/helpers.ts';
+import { acceptedAffinityEvaluation, projectAffinityTestCandidate } from '../shared/affinity/helpers.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -448,7 +448,7 @@ test('generate restores signed hosted-tool replay data without stored state', as
   });
   const affinity = await analyzeOpenAIResponsesAffinity(JSON.parse(JSON.stringify(sourcePayload)), ctx.affinity.codec);
   const result = await openaiResponsesAttempt.generate({
-    payload: acceptedAffinityEvaluation(affinity, candidate).materialize(),
+    payload: acceptedAffinityEvaluation(affinity, projectAffinityTestCandidate(candidate)).materialize(),
     ctx,
     candidate,
     headers: new Headers(),

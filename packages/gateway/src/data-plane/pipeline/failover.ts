@@ -2,18 +2,42 @@ import { gatewayFactSpace, type GatewayPipelineFacts, type ProtocolResponseKey, 
 import { retryTime } from '../shared/iterate-candidates.ts';
 import { getHeader, type HttpResponseFact } from '@floway-dev/http';
 import { isManagedStream, move, type Facts, type ManagedStream } from '@floway-dev/pipeline';
-
-const { defineStage } = gatewayFactSpace<{}>();
+import type { GatewayFacts } from '@floway-dev/provider';
 
 type AttemptResponse<Key extends ProtocolResponseKey> = Pick<GatewayPipelineFacts, 'response.http' | Key>;
+type ProtocolRequestKey = Exclude<Extract<keyof GatewayFacts, `request.${string}`>, 'request.http'>;
 
-export const failover = <const Key extends ProtocolResponseKey>(
+export interface AttemptPreparation<Request extends ProtocolRequestKey, Response extends ProtocolResponseKey, Services> {
+  readonly requestKey: Request;
+  readonly prepare: (
+    candidates: readonly ServeCandidate[],
+    payload: GatewayPipelineFacts[Request],
+    services: Readonly<Services>,
+  ) => Promise<
+    | { readonly kind: 'targets'; readonly targets: readonly { readonly candidate: ServeCandidate; readonly payload: GatewayPipelineFacts[Request] }[] }
+    | { readonly kind: 'unavailable'; readonly message: string }
+  >;
+  readonly unavailable: (message: string) => AttemptResponse<Response>;
+}
+
+export const failover = <
+  const Key extends ProtocolResponseKey,
+  const Request extends ProtocolRequestKey = never,
+  Services = {},
+>(
   responseKey: Key,
   unavailable: (model: string, discovery: ServeCandidates) => AttemptResponse<Key>,
   servesOperation: (candidate: ServeCandidate) => boolean,
+  preparation?: AttemptPreparation<Request, NoInfer<Key>, Services>,
 ) => {
+  const { defineStage } = gatewayFactSpace<Services>();
+  const payloadKeys = preparation === undefined ? [] : [preparation.requestKey];
   const through = {
-    request: { needs: ['serve.model', 'serve.candidates'], provides: ['serve.candidate'], consumes: ['serve.candidates'] },
+    request: {
+      needs: ['serve.model', 'serve.candidates', ...payloadKeys],
+      provides: ['serve.candidate', ...payloadKeys],
+      consumes: ['serve.candidates'],
+    },
     response: { needs: ['response.http', responseKey], provides: [], consumes: [] },
   } as const;
   type ThroughStage = Parameters<typeof defineStage<typeof through>>[0];
@@ -24,11 +48,23 @@ export const failover = <const Key extends ProtocolResponseKey>(
     return: { provides: ['response.http', responseKey] },
     async execute({ 'serve.candidates': discovery, ...facts }, scope) {
       const candidates = discovery.candidates.filter(servesOperation);
-      if (candidates.length === 0) return unavailable(facts['serve.model'], discovery) as SelectedAnswer;
+      let targets: readonly { readonly candidate: ServeCandidate; readonly request?: Facts }[];
+      if (preparation === undefined) {
+        targets = candidates.map(candidate => ({ candidate }));
+      } else {
+        const key = preparation.requestKey;
+        const selected = await preparation.prepare(candidates, facts[key] as unknown as GatewayPipelineFacts[Request], scope.services);
+        if (selected.kind === 'unavailable') return preparation.unavailable(selected.message) as SelectedAnswer;
+        targets = selected.targets.map(({ candidate, payload }) => ({ candidate, request: { [key]: move(payload) } }));
+      }
+      if (targets.length === 0) return unavailable(facts['serve.model'], discovery) as SelectedAnswer;
 
       const answer = await chooseCandidate(
-        candidates,
-        candidate => scope.next({ ...facts, 'serve.candidate': move(candidate) }),
+        targets,
+        ({ candidate, request }) => {
+          const handoff = { ...facts, ...request, 'serve.candidate': move(candidate) };
+          return scope.next(handoff as Parameters<typeof scope.next>[0]);
+        },
         candidate => candidate[responseKey].kind !== 'error',
         scope,
       );
@@ -37,9 +73,9 @@ export const failover = <const Key extends ProtocolResponseKey>(
   });
 };
 
-const chooseCandidate = async <Answer extends { readonly 'response.http': HttpResponseFact | null }>(
-  candidates: readonly ServeCandidate[],
-  runCandidate: (candidate: ServeCandidate) => Promise<Answer>,
+const chooseCandidate = async <Target, Answer extends { readonly 'response.http': HttpResponseFact | null }>(
+  candidates: readonly Target[],
+  runCandidate: (candidate: Target) => Promise<Answer>,
   isSuccess: (answer: Answer) => boolean,
   { signal, abort }: { readonly signal: AbortSignal; readonly abort: (call: object) => void },
 ): Promise<Answer> => {

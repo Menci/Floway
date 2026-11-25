@@ -1,31 +1,34 @@
 import { AffinityCodec, type AffinityIdentity } from './carrier.ts';
 import { resolveLegacyOpaqueBlobCompatibilityIdentity } from './legacy.ts';
 import { compatibilityIdentityForCandidate } from './selection.ts';
+import type { ServeCandidate } from '../../../pipeline/facts.ts';
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { ChatGatewayCtx } from '../gateway-ctx.ts';
-import type { ModelCandidate } from '@floway-dev/provider';
 
 export interface AffinityEgressOptions {
   readonly codec: Pick<AffinityCodec, 'wrap'>;
   readonly affinity: AffinityIdentity;
 }
 
-const affinityIdentityForCandidate = (candidate: ModelCandidate): AffinityIdentity => ({
-  upstreamId: candidate.provider.upstreamId,
+export const affinityIdentityForCandidate = (candidate: ServeCandidate): AffinityIdentity => ({
+  upstreamId: candidate.upstream.id,
   modelId: candidate.model.id,
   ...(candidate.rules !== undefined ? { rules: candidate.rules } : {}),
   opaqueBlobCompatibilityIdentity: compatibilityIdentityForCandidate(candidate),
 });
 
+export const createAffinityCodec = (serverSecret: string): AffinityCodec =>
+  new AffinityCodec(serverSecret, resolveLegacyOpaqueBlobCompatibilityIdentity);
+
 export class AffinityRequestContext {
   readonly codec: AffinityCodec;
-  #selectedCandidate: ModelCandidate | undefined;
+  #selectedCandidate: ServeCandidate | undefined;
 
   constructor(serverSecret: string) {
-    this.codec = new AffinityCodec(serverSecret, resolveLegacyOpaqueBlobCompatibilityIdentity);
+    this.codec = createAffinityCodec(serverSecret);
   }
 
-  select(candidate: ModelCandidate): void {
+  select(candidate: ServeCandidate): void {
     this.#selectedCandidate = candidate;
   }
 

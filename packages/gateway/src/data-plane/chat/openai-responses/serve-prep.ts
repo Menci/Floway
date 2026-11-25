@@ -3,14 +3,14 @@ import { openaiResponsesTarget } from './attempt.ts';
 import { renderOpenAIResponsesFailure, type OpenAIResponsesServeFailure } from './errors.ts';
 import { hydrateOpenAIResponsesPayload } from './items/hydrate.ts';
 import type { OpenAIResponsesStatefulStore } from './items/store.ts';
+import type { ServeCandidate } from '../../pipeline/facts.ts';
 import { enumerateModelCandidates } from '../../providers/resolution.ts';
-import type { AffinityCandidateSelection } from '../shared/affinity/index.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure, tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate, ExecuteResult } from '@floway-dev/provider';
+import { providerModelOf, toProviderModelFact, type ModelCandidate, type ExecuteResult } from '@floway-dev/provider';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
 // resolve. The HTTP/WS entry layer catches this and renders the OpenAI-shaped
@@ -63,9 +63,23 @@ export type OpenAIResponsesServePlan =
   | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> }
   | {
     readonly kind: 'ready';
-    readonly affinitySelection: AffinityCandidateSelection<CanonicalOpenAIResponsesPayload>;
     readonly candidates: readonly ModelCandidate[];
+    readonly attemptFor: (candidate: ModelCandidate) => ResponsesAttempt;
   };
+
+interface ResponsesAttempt {
+  readonly affinityCandidate: ServeCandidate;
+  readonly payload: CanonicalOpenAIResponsesPayload;
+}
+
+const projectAffinityCandidate = (candidate: ModelCandidate): ServeCandidate => {
+  const { provider, rules } = candidate;
+  return {
+    upstream: { id: provider.upstreamId, kind: provider.kind, name: provider.name, config: {} },
+    model: toProviderModelFact(providerModelOf(candidate)),
+    ...(rules === undefined ? {} : { rules }),
+  };
+};
 
 // Runs the native source preparation both `openaiResponsesServe.generate` and
 // `openaiResponsesServe.compact` need before dispatching to `openaiResponsesAttempt`:
@@ -102,7 +116,8 @@ export const prepareOpenAIResponsesServePlan = async (args: {
     return { kind: 'failure', result: renderOpenAIResponsesFailure(failure) };
   }
   const affinity = await analyzeOpenAIResponsesAffinity(hydrated, ctx.affinity.codec);
-  const selection = selectAffinityCandidates(viable, affinity);
+  const projected = new Map(viable.map(candidate => [projectAffinityCandidate(candidate), candidate]));
+  const selection = selectAffinityCandidates([...projected.keys()], affinity);
   if ('kind' in selection) return { kind: 'failure', result: renderOpenAIResponsesFailure(selection) };
   // Stage the user-supplied input from the original payload — not the
   // expansion's `item_reference` prefix — so the next-turn snapshot picks
@@ -117,5 +132,17 @@ export const prepareOpenAIResponsesServePlan = async (args: {
       result: renderOpenAIResponsesFailure(noViableCandidateFailure(sawModel, prepared.model, failedUpstreams)),
     };
   }
-  return { kind: 'ready', affinitySelection: selection, candidates: selection.candidates };
+  const attempts = new Map(selection.candidates.map(affinityCandidate => [projected.get(affinityCandidate)!, {
+    affinityCandidate,
+    payload: selection.payloadFor(affinityCandidate),
+  }]));
+  return {
+    kind: 'ready',
+    candidates: [...attempts.keys()],
+    attemptFor: candidate => {
+      const attempt = attempts.get(candidate);
+      if (attempt === undefined) throw new Error('OpenAI Responses attempt requested for a candidate outside the selected set');
+      return attempt;
+    },
+  };
 };

@@ -9,6 +9,7 @@ import { isUpstreamTransportError } from '../../dial/transport-error.ts';
 import { createModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
+import { createAffinityCodec, type AffinityCodec } from '../chat/shared/affinity/index.ts';
 import { createSidecarCodecFactory, type SidecarCodecFactory } from '../chat/shared/sidecar-codec.ts';
 import { findCatalogCandidates } from '../providers/resolution.ts';
 import { isAbortError, toProviderModelFact, type Fetcher, type ProviderServices, type ProviderUpstream, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
@@ -21,7 +22,10 @@ import { kimiCodeUpstreamFact } from '@floway-dev/provider-kimi-code';
 import { ollamaUpstreamFact } from '@floway-dev/provider-ollama';
 
 export type GatewayServices = RequestBodyService & CandidateDiscoveryServices & PerformanceServices & UsageStoreServices
-  & ProviderServices & GatewayProviderServices & { readonly sidecarCodecFactory: SidecarCodecFactory };
+  & ProviderServices & GatewayProviderServices & {
+    readonly affinityCodec: () => AffinityCodec;
+    readonly sidecarCodecFactory: SidecarCodecFactory;
+  };
 
 const projectUpstream = {
   azure: azureUpstreamFact,
@@ -53,12 +57,14 @@ export const createGatewayServices = ({ requestBody, runtimeLocation, serverSecr
   let fetcherResolver: Promise<(upstreamId: string) => Fetcher> | undefined;
   const listUpstreams = () => upstreams ??= repo.upstreams.list();
   const resolveFetcher = () => fetcherResolver ??= listUpstreams().then(rows => createPerRequestFetcher(runtimeLocation, rows));
+  let affinity: AffinityCodec | undefined;
   let sidecars: SidecarCodecFactory | undefined;
 
   return {
     ...getGatewayProviderServices(),
     requestBody,
     runtimeLocation,
+    affinityCodec: () => affinity ??= createAffinityCodec(serverSecret),
     sidecarCodecFactory: {
       codecFor: domain => (sidecars ??= createSidecarCodecFactory(serverSecret)).codecFor(domain),
     },
