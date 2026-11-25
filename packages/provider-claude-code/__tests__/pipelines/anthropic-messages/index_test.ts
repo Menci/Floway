@@ -110,7 +110,9 @@ describe('Claude Code Anthropic Messages pipeline', () => {
     expect(h.send).toHaveBeenCalledOnce();
     const [url, request] = h.send.mock.calls[0]!;
     expect(url).toBe('https://api.anthropic.com/v1/messages?beta=true');
-    expect(new Headers(request.headers).get('user-agent')).toMatch(/^claude-cli\//);
+    const wireHeaders = new Headers(request.headers);
+    expect(wireHeaders.get('user-agent')).toMatch(/^claude-cli\//);
+    expect(wireHeaders.get('anthropic-beta')).toContain('claude-code-20250219');
     const body = JSON.parse(String(request.body)) as AnthropicMessagesPayload;
     expect(body).toMatchObject({
       model: modelId,
@@ -140,15 +142,22 @@ describe('Claude Code Anthropic Messages pipeline', () => {
     h.send.mockResolvedValueOnce(reply(sse()));
     const shaped = {
       ...payload,
+      stream: false,
       system: "You are Claude Code, Anthropic's official CLI for Claude.",
       metadata: { user_id: JSON.stringify({ device_id: 'a'.repeat(64), account_uuid: '', session_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }) },
     };
-    const headers: HttpHeaders = [
+    const fingerprint: HttpHeaders = [
       ['User-Agent', 'claude-cli/2.1.280 (external, cli)'],
       ['x-app', 'cli'],
       ['anthropic-version', '2023-06-01'],
       ['anthropic-beta', 'oauth-2025-04-20'],
       ['Anthropic-Beta', 'custom-beta'],
+      ['x-stainless-package-version', '0.112.1'],
+      ['x-claude-code-session-id', 'sess-abc'],
+      ['x-client-request-id', 'req-xyz'],
+    ];
+    const headers: HttpHeaders = [
+      ...fingerprint,
       ['authorization', 'Bearer inbound'],
       ['unrecognized', 'omit'],
     ];
@@ -157,7 +166,7 @@ describe('Claude Code Anthropic Messages pipeline', () => {
     const [, request] = h.send.mock.calls[0]!;
     expect(JSON.parse(String(request.body))).toEqual({ ...shaped, model: modelId, stream: true });
     expect(request.headers).toEqual([
-      ...headers.slice(0, 5),
+      ...fingerprint,
       ['content-type', 'application/json'],
       ['authorization', 'Bearer at_cached'],
     ]);
@@ -463,6 +472,10 @@ describe('Claude Code Anthropic Messages pipeline', () => {
     expect(first.answer['response.modelKey']).toBe(fable.upstreamModelId);
     expect(getHeader(first.answer['response.http']!.headers, 'retry-after')).toBe('600');
     expect(first.outcome).toEqual({ kind: 'error', source: 'upstream', error });
+    expect(h.account().quotaSnapshot).toMatchObject({
+      modelId: fable.upstreamModelId,
+      data: { status: 'rejected', representativeClaim: 'seven_day_overage_included' },
+    });
     expect((await finish(h.start(payload, [], fable))).outcome).toMatchObject({ kind: 'error', source: 'local' });
     expect(h.send).toHaveBeenCalledOnce();
 

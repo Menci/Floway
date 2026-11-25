@@ -5,7 +5,6 @@ import {
   chatFromCapabilities,
   fetchClaudeCodeModelsList,
   type ClaudeCodeApiModel,
-  type ClaudeCodeProviderData,
 } from '../src/models.ts';
 import { ProviderModelsUnavailableError, type FlagId } from '@floway-dev/provider';
 
@@ -67,11 +66,11 @@ describe('chatFromCapabilities', () => {
 describe('buildClaudeCodeCatalog', () => {
   const models = buildClaudeCodeCatalog(SAMPLE_API_MODELS, new Set<FlagId>());
 
-  test('preserves the original upstream id under providerData.upstreamModelId', () => {
+  test('preserves the original upstream id beside the public alias', () => {
     const byAlias = new Map(models.map(m => [m.id, m]));
-    expect((byAlias.get('claude-opus-5-5')!.providerData as ClaudeCodeProviderData).upstreamModelId)
+    expect(byAlias.get('claude-opus-5-5')!.upstreamModelId)
       .toBe('claude-opus-5-5');
-    expect((byAlias.get('claude-sonnet-4-5')!.providerData as ClaudeCodeProviderData).upstreamModelId)
+    expect(byAlias.get('claude-sonnet-4-5')!.upstreamModelId)
       .toBe('claude-sonnet-4-5-20250929');
   });
 

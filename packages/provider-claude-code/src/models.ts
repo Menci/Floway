@@ -9,19 +9,14 @@
 // de-dated form (`claude-sonnet-4-5-20250929` → `claude-sonnet-4-5`).
 // 4.6+ and Fable 5+ return with the alias already (no date),
 // so the alias derivation is the identity. The catalog id we publish is
-// always the alias; the original /v1/models id rides on
-// `providerData.upstreamModelId` so the Messages request and the
-// pricing table key by the per-revision id.
+// always the alias. The Messages request and pricing use the original
+// /v1/models id carried in `upstreamModelId`.
 
 import { ensureClaudeCodeAccessToken } from './access-token.ts';
 import { CLAUDE_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { CLAUDE_CODE_HEADERS_SONNET_OPUS } from './headers.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import { getProviderRepo, ProviderModelsUnavailableError, resolveEffectiveFlags, type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig, type UpstreamRecord } from '@floway-dev/provider';
-
-export interface ClaudeCodeProviderData {
-  readonly upstreamModelId: string;
-}
 
 export const getClaudeCodeProvidedModels = async (record: Pick<UpstreamRecord, 'id' | 'flagOverrides'>, fetcher: Fetcher): Promise<ProviderModel[]> => {
   const access = await ensureClaudeCodeAccessToken({ upstreamId: record.id, repo: getProviderRepo().upstreams, fetcher });
@@ -204,7 +199,6 @@ export const buildClaudeCodeCatalog = (
 ): ProviderModel[] => apiModels.map(api => {
   const alias = aliasFromApiId(api.id);
   const pricing = pricingForClaudeCodeModelKey(api.id);
-  const providerData: ClaudeCodeProviderData = { upstreamModelId: api.id };
   const chat = chatFromCapabilities(api.capabilities);
   return {
     id: alias,
@@ -216,7 +210,6 @@ export const buildClaudeCodeCatalog = (
     enabledFlags,
     opaqueBlobCompatibilityScope: { bindToUpstream: true },
     limits: { max_context_window_tokens: api.max_input_tokens },
-    providerData,
     ...(pricing ? { pricing } : {}),
     ...(chat ? { chat } : {}),
   };

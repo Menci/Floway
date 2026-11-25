@@ -1,7 +1,7 @@
 import { stripHeaders } from '@floway-dev/provider';
 
 // https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L421-L444
-export const claudeCodeInboundHeaders = [
+const claudeCodeInboundHeaders = [
   'accept',
   /^x-stainless-(?:retry-count|timeout|lang|package-version|os|arch|runtime|runtime-version|helper-method)$/,
   'anthropic-beta',
