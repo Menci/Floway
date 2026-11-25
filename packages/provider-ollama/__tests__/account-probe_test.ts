@@ -3,10 +3,10 @@ import { test } from 'vitest';
 import { CREDIT_BALANCE, USAGE_TOTALS } from './usage-fixture.ts';
 import { OLLAMA_ACCOUNT_PROBE_MIN_INTERVAL_MS, fetchOllamaAccount, refreshOllamaAccount } from '../src/account-probe.ts';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
-import { createOllamaProvider } from '../src/provider.ts';
+import { createOllamaService } from '../src/service.ts';
 import { readOllamaUpstreamState } from '../src/state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_ollama_account';
 
@@ -98,46 +98,31 @@ test('the account slot resolves a race by read time', async () => {
   assertEquals(repoWithNewer.read().account?.plan, 'pro');
 });
 
-// Drives the provider so the arming decision is exercised where it is made.
-const callChat = async (record: UpstreamRecord, onCall: (pathname: string) => void): Promise<void> => {
-  const provider = createOllamaProvider(record);
-  const pending: Promise<unknown>[] = [];
-  await withMockedFetch(
-    request => {
-      const { pathname } = new URL(request.url);
-      onCall(pathname);
-      if (pathname === '/api/me') return new Response(JSON.stringify(ME_BODY), { status: 200 });
-      if (pathname === '/api/usage') return Response.json(USAGE_TOTALS);
-      if (pathname === '/api/balance') return Response.json(CREDIT_BALANCE);
-      return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
-    },
-    async () => {
-      await provider.instance.callOpenAIChatCompletions(
-        stubProviderModel({ providerData: 'gpt-oss:120b' }),
-        { messages: [] },
-        undefined,
-        noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }),
-      );
-      await Promise.all(pending);
-    },
-  );
-};
-
-test('an inference call arms the account probe on its own daily interval', async () => {
+test('the service refreshes the account on its own daily interval', async () => {
   withStateRepo();
+  const service = createOllamaService();
   let probes = 0;
-  const count = (pathname: string) => { if (pathname === '/api/me') probes++; };
+  const refresh = () => service.refreshProbes(UPSTREAM_ID, 1, async url => {
+    const { pathname } = new URL(url);
+    if (pathname === '/api/me') {
+      probes++;
+      return Response.json(ME_BODY);
+    }
+    return Response.json(pathname === '/api/usage' ? USAGE_TOTALS : CREDIT_BALANCE);
+  }, (_probe, error) => { throw error; });
 
-  await callChat(cloudRecord(), count);
+  await refresh();
   assertEquals(probes, 1);
 
   // Fresh enough for the account, stale for the usage window beside it: the
   // longer interval is what keeps this one from riding along.
   const hourOld = { account: { fetchedAt: Date.now() - 60 * 60 * 1000, plan: 'free', name: null, email: null } };
-  await callChat(cloudRecord({ state: hourOld }), count);
+  withStateRepo(hourOld);
+  await refresh();
   assertEquals(probes, 1);
 
   const dayOld = { account: { fetchedAt: Date.now() - OLLAMA_ACCOUNT_PROBE_MIN_INTERVAL_MS, plan: 'free', name: null, email: null } };
-  await callChat(cloudRecord({ state: dayOld }), count);
+  withStateRepo(dayOld);
+  await refresh();
   assertEquals(probes, 2);
 });

@@ -1,8 +1,8 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { CREDIT_BALANCE as BALANCE_BODY, USAGE_TOTALS as USAGE_BODY } from './usage-fixture.ts';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
-import { createOllamaProvider } from '../src/provider.ts';
+import { createOllamaService } from '../src/service.ts';
 import { readOllamaUpstreamState } from '../src/state.ts';
 import {
   OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS,
@@ -10,7 +10,7 @@ import {
   refreshOllamaUsageProbe,
 } from '../src/usage-probe.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertRejects, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_ollama_usage';
 
@@ -96,44 +96,56 @@ test('usage is probed when the operator enabled it and a key is configured, and 
   assertEquals(enabled({ baseUrl: 'https://ollama.com', apiKey: 'k', models: [] }), false);
 });
 
-// Drives the provider rather than the probe helpers so the arming decision —
-// which call consumes the account's windows, and what the debounce reads — is
-// exercised where it is made.
-const callChat = async (record: UpstreamRecord, onUsageProbe: (path: string) => void): Promise<void> => {
-  const provider = createOllamaProvider(record);
-  const pending: Promise<unknown>[] = [];
-  await withMockedFetch(
-    request => {
-      const path = new URL(request.url).pathname;
-      if (path === '/api/usage' || path === '/api/balance') {
-        onUsageProbe(path);
-        return Response.json(path === '/api/usage' ? USAGE_BODY : BALANCE_BODY);
-      }
-      return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
-    },
-    async () => {
-      await provider.instance.callOpenAIChatCompletions(
-        stubProviderModel({ providerData: 'gpt-oss:120b' }),
-        { messages: [] },
-        undefined,
-        noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }),
-      );
-      await Promise.all(pending);
-    },
-  );
-};
-
-test('an inference call arms the probe, and the stored attempt time debounces the next one', async () => {
+test('the service reads the stored attempt time before refreshing usage', async () => {
   withStateRepo();
+  const service = createOllamaService();
   const probes: string[] = [];
-  await callChat(cloudRecord(), path => { probes.push(path); });
+  const refresh = () => service.refreshProbes(UPSTREAM_ID, 1, async url => {
+    const path = new URL(url).pathname;
+    if (path === '/api/me') return Response.json({});
+    probes.push(path);
+    return Response.json(path === '/api/usage' ? USAGE_BODY : BALANCE_BODY);
+  }, (_probe, error) => { throw error; });
+  await refresh();
   assertEquals(probes, ['/api/usage', '/api/balance']);
 
-  const justProbed = { usageProbe: { attemptedAt: Date.now(), observation: null, error: null } };
-  await callChat(cloudRecord({ state: justProbed }), path => { probes.push(path); });
+  await refresh();
   assertEquals(probes.length, 2);
 
   const stale = { usageProbe: { attemptedAt: Date.now() - OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS, observation: null, error: null } };
-  await callChat(cloudRecord({ state: stale }), path => { probes.push(path); });
+  withStateRepo(stale);
+  await refresh();
   assertEquals(probes, ['/api/usage', '/api/balance', '/api/usage', '/api/balance']);
+});
+
+test('a configuration rotation rejects a completed refresh from the previous credentials', async () => {
+  let version = 1;
+  let state: unknown = null;
+  const metrics = vi.fn(async () => {});
+  const persist = vi.fn(async (_id: string, mutate: (current: unknown, configVersion: number) => unknown) => {
+    state = mutate(state, version);
+  });
+  initProviderRepo(() => ({
+    recordUpstreamMetric: metrics,
+    upstreams: {
+      getById: async () => ({ ...cloudRecord({ state }), configVersion: version }),
+      saveState: persist,
+    },
+  }));
+  const started = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const service = createOllamaService();
+  const pending = service.refreshProbes(UPSTREAM_ID, 1, async url => {
+    started.resolve();
+    await release.promise;
+    const path = new URL(url).pathname;
+    return Response.json(path === '/api/usage' ? USAGE_BODY : path === '/api/balance' ? BALANCE_BODY : {});
+  }, (_probe, error) => { throw error; });
+  await started.promise;
+  version = 2;
+  release.resolve();
+  await pending;
+  expect(persist).toHaveBeenCalledTimes(2);
+  expect(state).toBeNull();
+  expect(metrics).not.toHaveBeenCalled();
 });
