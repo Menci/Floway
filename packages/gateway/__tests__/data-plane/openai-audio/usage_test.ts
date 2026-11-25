@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
 import { measureOpenAIAudioTranscriptionsResult, measureOpenAIAudioTranscriptionUsage, openaiAudioTranscriptionUsageMeasurement } from '../../../src/data-plane/openai-audio/usage.ts';
+import type { UsageObserverContext } from '../../../src/data-plane/pipeline/compute-usage.ts';
 import { toProviderModelFact } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -62,12 +63,12 @@ test('audio transcription usage propagates defects while measuring the provider 
 
 test('audio transcription usage ignores invalid JSON and propagates a parser defect', () => {
   const bytes = new TextEncoder().encode('{');
-  const context = {
+  const context: UsageObserverContext = {
     candidate: {
-      upstream: { id: 'upstream', name: 'Provider', kind: 'custom' as const, config: {} },
+      upstream: { id: 'upstream', name: 'Provider', kind: 'custom', config: {} },
       model: toProviderModelFact(stubProviderModel({ kind: 'transcription' })),
     },
-    http: { status: 200, statusText: 'OK', headers: [['content-type', 'application/json']] as const, body: null },
+    http: { status: 200, statusText: 'OK', headers: [['content-type', 'application/json']], body: null },
   };
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const defect = new TypeError('unexpected JSON parser failure');

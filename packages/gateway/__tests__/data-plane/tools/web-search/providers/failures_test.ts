@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { createJinaWebSearchProvider } from '../../../../../src/data-plane/tools/web-search/providers/jina.ts';
 import { createMicrosoftWebIqWebSearchProvider } from '../../../../../src/data-plane/tools/web-search/providers/microsoft-web-iq.ts';
@@ -40,4 +40,27 @@ test.each([
   });
   await expect(provider.search({ query: 'example', signal: controller.signal })).rejects.toBe(defect);
   await expect(provider.fetchPage({ urls: ['https://example.com/'], signal: controller.signal })).rejects.toBe(defect);
+});
+
+test('provider diagnostics keep plain HTTP error text and propagate a parser defect', async () => {
+  const message = 'upstream refused the query';
+  const provider = createTavilyWebSearchProvider('key', {
+    fetch: () => Promise.resolve(new Response(message, { status: 400 })),
+  });
+  await expect(provider.search({ query: 'example' })).resolves.toEqual({
+    type: 'error', errorCode: 'invalid_tool_input', message,
+  });
+
+  const defect = new TypeError('unexpected diagnostic parser failure');
+  const jsonParse = JSON.parse;
+  const parse = vi.spyOn(JSON, 'parse').mockImplementation((text, reviver) => {
+    if (text === message) throw defect;
+    return jsonParse(text, reviver);
+  });
+  try {
+    await expect(provider.search({ query: 'example' })).rejects.toBe(defect);
+    expect(parse).toHaveBeenCalledWith(message);
+  } finally {
+    parse.mockRestore();
+  }
 });
