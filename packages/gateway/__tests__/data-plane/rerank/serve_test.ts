@@ -5,7 +5,6 @@ import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { flushBackground } from '../../test-utils/background-tracker.ts';
 import type { ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const addRerankUpstream = async (
@@ -40,7 +39,6 @@ const addRerankUpstream = async (
 
 const saveRerankUpstream = async (repo: Repo, target: RerankTarget, pricing?: ModelPricing): Promise<void> => {
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
   await addRerankUpstream(repo, 'up_rerank', 'rerank.example.com', 1, target, pricing);
 };
 

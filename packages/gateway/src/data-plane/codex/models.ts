@@ -65,8 +65,8 @@ export const assembleCodexCatalog = (
       continue;
     }
     const candidates = entry.upstreams.map(upstream => {
-      const providerModel = entry.model.providerModels?.[upstream.upstreamId];
-      if (providerModel === undefined) throw new Error(`Codex catalog model ${entry.id} has no provider model for ${upstream.upstreamId}`);
+      const providerModel = entry.model.providerModels?.[upstream.id];
+      if (providerModel === undefined) throw new Error(`Codex catalog model ${entry.id} has no provider model for ${upstream.id}`);
       return { providerModel, metadata: upstream.kind === 'chatgpt' ? chatgptCodexModelMetadata(providerModel) : undefined };
     });
     // A ChatGPT rate is not an entitlement. Only advertise tiers usable on every fallback.

@@ -5,11 +5,12 @@ import { createModelsRefreshScheduler } from '../../execution/models-refresh.ts'
 import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { modelsQuery } from '../schemas.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
-import type { InternalModel, Provider, UpstreamProviderKind } from '@floway-dev/provider';
+import type { InternalModel, UpstreamProviderKind } from '@floway-dev/provider';
 
 // Same DTO as the public /models endpoint, plus one dashboard-only field:
 // `upstreams` lists every upstream that surfaces this model as { kind, id, name, hue }
@@ -27,27 +28,12 @@ interface ControlPlaneModelsResponse extends Omit<PublicModelsResponse, 'data'> 
   data: ControlPlaneModel[];
 }
 
-// The map and the provider instances are both built from the same
-// `upstreams.list()` call, so a miss is a composition bug rather than a row
-// that happens to have no hue.
-const upstreamHue = (hueByUpstream: ReadonlyMap<string, number>, upstreamId: string): number => {
-  const hue = hueByUpstream.get(upstreamId);
-  if (hue === undefined) throw new Error(`No upstream row backs provider instance ${upstreamId}`);
-  return hue;
-};
-
 const toControlPlaneModel = (
   model: InternalModel,
-  instances: readonly Provider[],
-  hueByUpstream: ReadonlyMap<string, number>,
+  upstreams: readonly StoredUpstreamRecord[],
 ): ControlPlaneModel => ({
   ...toPublicModel(model),
-  upstreams: instances.map(instance => ({
-    kind: instance.kind,
-    id: instance.upstreamId,
-    name: instance.name,
-    hue: upstreamHue(hueByUpstream, instance.upstreamId),
-  })),
+  upstreams: upstreams.map(({ kind, id, name, hue }) => ({ kind, id, name, hue })),
 });
 
 // Wrap an addressable-but-not-listed entry as a control-plane row. The
@@ -59,9 +45,8 @@ const toControlPlaneModel = (
 // badge does not need a second registry call.
 const toUnlistedControlPlaneModel = (
   entry: AddressableIdEntry,
-  hueByUpstream: ReadonlyMap<string, number>,
 ): ControlPlaneModel => ({
-  ...toControlPlaneModel(entry.model, entry.upstreams, hueByUpstream),
+  ...toControlPlaneModel(entry.model, entry.upstreams),
   id: entry.id,
   display_name: entry.model.display_name ?? entry.id,
   unlisted: true,
@@ -78,8 +63,6 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     const isAdmin = subject.isAdmin;
     const gatewayMetadataSubject = isAdmin ? subject : { ...subject, isAdmin: true };
     const upstreamScope = isAdmin ? null : effectiveUpstreamIdsFromContext(c);
-    // Fetch the upstream list once at the request boundary and thread it into
-    // catalog enumeration and the hue join.
     const upstreamRows = await getRepo().upstreams.list();
     const runtimeLocation = getRuntimeLocation(c.req.raw);
     const scheduleRefresh = createModelsRefreshScheduler(runtimeLocation, backgroundSchedulerFromContext(c));
@@ -95,7 +78,6 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
         : enumerateAddressableModelIds(gatewayMetadataSubject, null, scheduleRefresh, upstreamRows),
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
     ]);
-    const hueByUpstream = new Map<string, number>(upstreamRows.map(row => [row.id, row.hue]));
     const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
     const upstreamsByListedId = new Map(callerAddressable.map(entry => [entry.id, entry.upstreams] as const));
     const realModels = listedRealModels(callerAddressable);
@@ -116,7 +98,7 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     const listedRows = merged.map(model => {
       const upstreams = model.aliasedFrom !== undefined ? [] : upstreamsByListedId.get(model.id);
       if (upstreams === undefined) throw new Error(`Missing upstream index for listed model ${model.id}`);
-      return toControlPlaneModel(model, upstreams, hueByUpstream);
+      return toControlPlaneModel(model, upstreams);
     });
     // Dedupe the unlisted half against the listed half on `id` — an alias
     // whose name coincides with an addressable-but-not-listed id (e.g. a
@@ -127,7 +109,7 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     const unlistedRows = includeUnlisted
       ? callerAddressable
           .filter(entry => entry.unlisted === true && !listedIds.has(entry.id))
-          .map(entry => toUnlistedControlPlaneModel(entry, hueByUpstream))
+          .map(toUnlistedControlPlaneModel)
       : [];
     const data = [...listedRows, ...unlistedRows];
     const response: ControlPlaneModelsResponse = {

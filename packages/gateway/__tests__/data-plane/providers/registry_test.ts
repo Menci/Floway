@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 
-import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
+import { selectEnabledUpstreams } from '../../../src/data-plane/providers/registry.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest, sseOpenAIChatCompletionsResponse, sseOpenAIResponsesResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
 import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
-test('listModelProviders creates enabled provider instances with upstream row ids', async () => {
+test('selectEnabledUpstreams returns enabled rows in catalog order', async () => {
   const { githubAccount, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom', sortOrder: 1 }));
@@ -39,19 +39,19 @@ test('listModelProviders creates enabled provider instances with upstream row id
   await saveUpstreamForTest(repo.upstreams, buildCopilotUpstreamRecord(githubAccount, { id: 'up_copilot', name: 'Copilot Row', sortOrder: 3 }));
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, usageRefreshIntervalMinutes: 0, sortOrder: 0 }));
 
-  const providers = await listModelProviders(null);
-  assertEquals(providers.map(provider => provider.upstreamId), ['up_custom', 'up_azure', 'up_copilot']);
+  const upstreams = selectEnabledUpstreams(null, await repo.upstreams.list());
+  assertEquals(upstreams.map(upstream => upstream.id), ['up_custom', 'up_azure', 'up_copilot']);
 });
 
-test('listModelProviders silently drops deleted upstreams from a whitelist', async () => {
+test('selectEnabledUpstreams skips missing upstreams in a whitelist', async () => {
   // Deleting an upstream does not prune the caps that reference it, so a
   // dangling id narrows the cap instead of failing the principal's requests.
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_a', name: 'A', sortOrder: 10 }));
 
-  const providers = await listModelProviders(['up_ghost', 'up_a']);
-  assertEquals(providers.map(p => p.upstreamId), ['up_a']);
+  const upstreams = selectEnabledUpstreams(['up_ghost', 'up_a'], await repo.upstreams.list());
+  assertEquals(upstreams.map(upstream => upstream.id), ['up_a']);
 });
 
 // Lane selection and per-model prices belong to provider-kimi-code; this

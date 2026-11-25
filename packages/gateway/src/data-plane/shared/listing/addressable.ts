@@ -3,7 +3,7 @@
 // addressable-but-not-listed surface contributed by `modelPrefix.addressable`
 // alternates. Listing-side availability checks (this module's alias helper,
 // codex catalog) must see the same set the request-time resolver routes
-// through (the per-upstream walk inside `enumerateRealModelCandidates`);
+// through (the per-upstream walk inside `findCatalogCandidates`);
 // recomputing it once here gives every consumer one consistent answer.
 //
 // Each entry carries the merged `InternalModel` the addressable id will
@@ -13,11 +13,12 @@
 
 import { checkMany } from '../../../access-control/check.ts';
 import type { ModelsRefreshScheduler } from '../../../execution/models-refresh.ts';
+import { getRepo } from '../../../repo/index.ts';
 import type { StoredUpstreamRecord, User } from '../../../repo/types.ts';
-import { compareModelIds, getModelsFromProviders, mergeIntoCatalog } from '../../providers/catalog.ts';
+import { compareModelIds, getModelsFromUpstreams, mergeIntoCatalog } from '../../providers/catalog.ts';
 import { MODEL_CATALOG_REVISION } from '../../providers/models-cache.ts';
-import { listModelProviders } from '../../providers/registry.ts';
-import type { InternalModel, Provider } from '@floway-dev/provider';
+import { selectEnabledUpstreams } from '../../providers/registry.ts';
+import type { InternalModel } from '@floway-dev/provider';
 
 export interface AddressableIdEntry {
   // The inbound model id the data plane will accept verbatim.
@@ -29,16 +30,16 @@ export interface AddressableIdEntry {
   // wire bytes stay byte-identical.
   readonly unlisted: true | undefined;
   // Real catalog row this id routes to. For multi-provider models this is
-  // the same `InternalModel` instance `getModelsFromProviders` returns (one row per
+  // the same `InternalModel` that `getModelsFromUpstreams` returns (one row per
   // public-listed id, with the union-merged endpoints already applied).
   readonly model: InternalModel;
-  // Every upstream instance that surfaces this addressable id in its
+  // Every upstream that surfaces this addressable id in its
   // catalog, in enumeration order. Mirrors `upstreamsByPublicId` for the
   // canonical listed row the addressable id resolves to — addressable-only
   // alternates inherit the same list (the prefix-stripped id resolves
   // through the same upstream). Lets the control-plane DTO render per-
   // model upstream chips without re-walking the catalog.
-  readonly upstreams: readonly Provider[];
+  readonly upstreams: readonly StoredUpstreamRecord[];
 }
 
 // Project the listed (real-catalog) `InternalModel`s out of an addressable
@@ -49,28 +50,21 @@ export const listedRealModels = (entries: readonly AddressableIdEntry[]): readon
 
 // Enumerate every inbound id the data plane accepts under `upstreamFilter`,
 // tagged with whether the id participates in the default `/v1/models`
-// listing. Fans out persisted snapshot reads the same way
-// `collectProviderModels` does; repeated stale access may submit or join the
-// same separate background refresh trigger.
+// listing.
 export const enumerateAddressableModelIds = async (
   subject: User,
   upstreamFilter: readonly string[] | null,
   scheduleRefresh: ModelsRefreshScheduler,
   preFetchedUpstreams?: readonly StoredUpstreamRecord[],
 ): Promise<readonly AddressableIdEntry[]> => {
-  // Resolve providers once and thread them into the catalog assembly so
-  // the upstreams.list() round-trip and provider-instantiation cost is
-  // paid once per call. An empty provider selection yields an empty
-  // addressable surface. `preFetchedUpstreams` avoids an additional
-  // round-trip when the caller has the list already.
-  const providers = await listModelProviders(upstreamFilter, preFetchedUpstreams);
-  if (providers.length === 0 && upstreamFilter !== null) return [];
-  const { models: realModels, upstreamsByPublicId } = getModelsFromProviders(providers, scheduleRefresh);
+  const selectedUpstreams = selectEnabledUpstreams(upstreamFilter, preFetchedUpstreams ?? await getRepo().upstreams.list());
+  if (selectedUpstreams.length === 0) return [];
+  const { models: realModels, upstreamsByPublicId } = getModelsFromUpstreams(selectedUpstreams, scheduleRefresh);
   const byId = new Map(realModels.map(model => [model.id, model] as const));
 
   const entries: AddressableIdEntry[] = [];
   const unlistedOnlyModels = new Map<string, InternalModel>();
-  const unlistedOnlyUpstreams = new Map<string, Provider[]>();
+  const unlistedOnlyUpstreams = new Map<string, StoredUpstreamRecord[]>();
   const seen = new Set<string>();
   const push = (entry: AddressableIdEntry): void => {
     if (seen.has(entry.id)) return;
@@ -84,14 +78,14 @@ export const enumerateAddressableModelIds = async (
     push({ id: model.id, unlisted: undefined, model, upstreams });
   }
 
-  // Prefix alternates reuse the provider snapshots read by the listed surface.
-  for (const provider of providers) {
-    const cfg = provider.modelPrefix;
+  // Prefix alternates reuse the persisted snapshots read by the listed surface.
+  for (const upstream of selectedUpstreams) {
+    const cfg = upstream.modelPrefix;
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];
     if (cfg === null || addressableOnly.length === 0) continue;
 
-    const upstreamModels = provider.modelsCache?.revision === MODEL_CATALOG_REVISION ? provider.modelsCache.models : [];
-    const disabled = new Set(provider.disabledPublicModelIds);
+    const upstreamModels = upstream.modelsCache?.revision === MODEL_CATALOG_REVISION ? upstream.modelsCache.models : [];
+    const disabled = new Set(upstream.disabledPublicModelIds);
 
     // The canonical listed form for this upstream — the row the listing
     // surface emitted, and the row an addressable-only prefix alternate
@@ -103,7 +97,7 @@ export const enumerateAddressableModelIds = async (
       if (cfg.listed.length === 0) {
         for (const form of addressableOnly) {
           const id = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
-          mergeIntoCatalog(unlistedOnlyModels, unlistedOnlyUpstreams, provider, upstreamModel, id);
+          mergeIntoCatalog(unlistedOnlyModels, unlistedOnlyUpstreams, upstream, upstreamModel, id);
         }
         continue;
       }
@@ -131,12 +125,12 @@ export const enumerateAddressableModelIds = async (
     entry,
     upstream,
     check: {
-      target: { kind: 'upstreamModel' as const, upstreamId: upstream.upstreamId, model: { kind: 'exact' as const, value: entry.id } },
+      target: { kind: 'upstreamModel' as const, upstreamId: upstream.id, model: { kind: 'exact' as const, value: entry.id } },
       requirement: { permission: 'Model.Use' as const },
     },
   })));
   const allowed = await checkMany(subject, checks.map(item => item.check));
-  const allowedByEntry = new Map<AddressableIdEntry, Provider[]>();
+  const allowedByEntry = new Map<AddressableIdEntry, StoredUpstreamRecord[]>();
   for (let index = 0; index < checks.length; index++) {
     if (!allowed[index]) continue;
     const item = checks[index]!;
@@ -150,10 +144,10 @@ export const enumerateAddressableModelIds = async (
     if (!allowedUpstreams?.length) return [];
     if (entry.model.providerModels === undefined) throw new Error(`Addressable real model ${entry.id} has no providerModels`);
     const rebuilt = new Map<string, InternalModel>();
-    const rebuiltUpstreams = new Map<string, Provider[]>();
+    const rebuiltUpstreams = new Map<string, StoredUpstreamRecord[]>();
     for (const upstream of allowedUpstreams) {
-      const providerModel = entry.model.providerModels[upstream.upstreamId];
-      if (providerModel === undefined) throw new Error(`Addressable model ${entry.id} is missing provider data for ${upstream.upstreamId}`);
+      const providerModel = entry.model.providerModels[upstream.id];
+      if (providerModel === undefined) throw new Error(`Addressable model ${entry.id} is missing provider data for ${upstream.id}`);
       mergeIntoCatalog(rebuilt, rebuiltUpstreams, upstream, providerModel, entry.model.id);
     }
     const model = rebuilt.get(entry.model.id);

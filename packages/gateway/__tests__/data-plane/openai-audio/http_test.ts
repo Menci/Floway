@@ -5,7 +5,6 @@ import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { flushBackground } from '../../test-utils/background-tracker.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const saveAudioModel = async (
@@ -47,7 +46,6 @@ const saveAudioModel = async (
 
 const registerAudioModel = async (repo: InMemoryRepo, pricing?: ModelPricing): Promise<void> => {
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
   await saveAudioModel(repo, { id: 'up_audio', host: 'audio.example.com', sortOrder: 1, pricing });
 };
 

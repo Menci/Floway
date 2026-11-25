@@ -16,7 +16,7 @@ import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../../../src/data-plane/tools/w
 import type { WebSearchProvider } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { projectAffinityTestCandidate } from '../../shared/affinity/helpers.ts';
+import { affinityTestCandidate } from '../../shared/affinity/helpers.ts';
 import { move, run } from '@floway-dev/pipeline';
 import { anthropicMessagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/anthropic-messages';
 import type {
@@ -32,7 +32,7 @@ import type {
 } from '@floway-dev/protocols/anthropic-messages';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolStreamError } from '@floway-dev/provider';
-import { assertEquals, assertExists, stubModelCandidate } from '@floway-dev/test-utils';
+import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const { compose, defineStage } = gatewayFactSpace<{}>();
 const requestKey = 'request.anthropicMessages';
@@ -74,10 +74,10 @@ const runWebSearchStage = async (
   });
   const handle = run(pipeline, {
     [requestKey]: move(payload),
-    'serve.candidate': move(projectAffinityTestCandidate(stubModelCandidate({
-      model: { endpoints: { anthropicMessages: {} } },
+    'serve.candidate': move(affinityTestCandidate('test-upstream', {
+      endpoints: { anthropicMessages: {} },
       enabledFlags: new Set(['anthropic-messages-web-search-shim']),
-    }))),
+    })),
     'request.auth.apiKeyId': 'test-key',
   }, { services: {} });
   const { 'response.http': http, [responseKey]: outcome } = await handle.result;

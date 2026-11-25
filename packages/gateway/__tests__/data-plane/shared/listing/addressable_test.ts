@@ -95,7 +95,7 @@ describe('enumerateAddressableModelIds', () => {
         expect(surface.map(entry => entry.id)).toEqual(['shared', 'private/shared']);
         for (const entry of surface) {
           expect(entry.unlisted).toBe(true);
-          expect(entry.upstreams.map(upstream => upstream.upstreamId)).toEqual(['up_first', 'up_second']);
+          expect(entry.upstreams.map(upstream => upstream.id)).toEqual(['up_first', 'up_second']);
           expect(Object.keys(entry.model.providerModels ?? {})).toEqual(['up_first', 'up_second']);
           expect(entry.model.endpoints).toMatchObject({ openaiChatCompletions: {}, openaiEmbeddings: {} });
           expect(entry.model.kind).toBe('embedding');

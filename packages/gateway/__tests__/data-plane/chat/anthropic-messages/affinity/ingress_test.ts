@@ -1,34 +1,18 @@
 import { expect, test } from 'vitest';
 
 import { analyzeAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts';
-import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation, projectAffinityTestCandidate } from '../../shared/affinity/helpers.ts';
+import { affinityIdentityForCandidate } from '../../../../../src/data-plane/chat/shared/affinity/context.ts';
+import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { acceptedAffinityEvaluation, affinityTestCandidate } from '../../shared/affinity/helpers.ts';
 import type { AnthropicMessagesAssistantContentBlock } from '@floway-dev/protocols/anthropic-messages';
-import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const codec = new AffinityCodec('22'.repeat(32));
 
-const candidate = (upstream: string): ModelCandidate => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    provider: { ...base.provider, upstreamId: upstream },
-    model: { id: 'model' },
-  });
-};
-
-const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
-  modelId: value.model.id,
-  ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
-});
-
 test('removes thinking and redacted blocks whose affinity belongs to another candidate', async () => {
-  const candidateA = candidate('upstream-a');
-  const candidateB = candidate('upstream-b');
-  const signature = await codec.wrap('signature', targetFor(candidateA), 'anthropic-messages.thinking.signature');
-  const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'anthropic-messages.redacted_thinking.data');
+  const candidateA = affinityTestCandidate('upstream-a');
+  const candidateB = affinityTestCandidate('upstream-b');
+  const signature = await codec.wrap('signature', affinityIdentityForCandidate(candidateA), 'anthropic-messages.thinking.signature');
+  const synthetic = await codec.wrap(undefined, affinityIdentityForCandidate(candidateA), 'anthropic-messages.redacted_thinking.data');
   const prepared = await analyzeAnthropicMessagesAffinity({
     model: 'model',
     max_tokens: 100,
@@ -42,14 +26,14 @@ test('removes thinking and redacted blocks whose affinity belongs to another can
     }],
   }, codec);
 
-  expect(acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA)).materialize().messages[0]).toEqual({
+  expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().messages[0]).toEqual({
     role: 'assistant',
     content: [
       { type: 'thinking', thinking: 'visible reasoning', signature: 'signature' },
       { citations: null, type: 'text', text: 'answer' },
     ],
   });
-  expect(acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB)).materialize().messages[0]).toEqual({
+  expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().messages[0]).toEqual({
     role: 'assistant',
     content: [
       { citations: null, type: 'text', text: 'answer' },
@@ -58,10 +42,10 @@ test('removes thinking and redacted blocks whose affinity belongs to another can
 });
 
 test('discards marker-only and unsigned thinking on an incompatible turn', async () => {
-  const candidateA = candidate('upstream-a');
-  const candidateB = candidate('upstream-b');
-  const prefix = await codec.wrap(undefined, targetFor(candidateA), 'anthropic-messages.redacted_thinking.data');
-  const marker = await codec.wrap(undefined, targetFor(candidateA), 'anthropic-messages.thinking.signature');
+  const candidateA = affinityTestCandidate('upstream-a');
+  const candidateB = affinityTestCandidate('upstream-b');
+  const prefix = await codec.wrap(undefined, affinityIdentityForCandidate(candidateA), 'anthropic-messages.redacted_thinking.data');
+  const marker = await codec.wrap(undefined, affinityIdentityForCandidate(candidateA), 'anthropic-messages.thinking.signature');
   const answer = { citations: null, type: 'text' as const, text: 'answer' };
   const unsigned = { type: 'thinking', thinking: 'unsigned reasoning' } as AnthropicMessagesAssistantContentBlock;
   const blankSignature = { type: 'thinking' as const, thinking: 'another unsigned block', signature: '' };
@@ -81,8 +65,8 @@ test('discards marker-only and unsigned thinking on an incompatible turn', async
     }],
   }, codec);
 
-  const compatible = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA));
-  const incompatible = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB));
+  const compatible = acceptedAffinityEvaluation(prepared, candidateA);
+  const incompatible = acceptedAffinityEvaluation(prepared, candidateB);
   expect(compatible.degrades).toBe(false);
   expect(compatible.materialize().messages[0].content).toEqual([
     { type: 'thinking', thinking: 'marked reasoning' },

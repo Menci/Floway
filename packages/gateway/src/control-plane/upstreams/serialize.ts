@@ -3,17 +3,26 @@ import type {
   FullSerializedUpstreamRecord,
   RedactedSerializedUpstreamRecord,
 } from './types.ts';
-import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
-import type { FlagOverrides, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
-import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/provider-chatgpt';
-import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
-import { assertCopilotUpstreamRecord, assertCopilotUpstreamState } from '@floway-dev/provider-copilot';
-import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
-import { assertKimiCodeUpstreamRecord, readKimiCodeUpstreamState } from '@floway-dev/provider-kimi-code';
-import { assertOllamaUpstreamRecord, readOllamaUpstreamState } from '@floway-dev/provider-ollama';
+import type { FlagDefaults, FlagOverrides, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { assertAzureUpstreamRecord, AZURE_DEFAULT_FLAGS } from '@floway-dev/provider-azure';
+import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState, CHATGPT_DEFAULT_FLAGS } from '@floway-dev/provider-chatgpt';
+import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState, CLAUDE_CODE_DEFAULT_FLAGS } from '@floway-dev/provider-claude-code';
+import { assertCopilotUpstreamRecord, assertCopilotUpstreamState, COPILOT_DEFAULT_FLAGS } from '@floway-dev/provider-copilot';
+import { assertCustomUpstreamRecord, CUSTOM_DEFAULT_FLAGS } from '@floway-dev/provider-custom';
+import { assertKimiCodeUpstreamRecord, KIMI_CODE_DEFAULT_FLAGS, readKimiCodeUpstreamState } from '@floway-dev/provider-kimi-code';
+import { assertOllamaUpstreamRecord, OLLAMA_DEFAULT_FLAGS, readOllamaUpstreamState } from '@floway-dev/provider-ollama';
 
 export type { FullSerializedUpstreamRecord } from './types.ts';
+
+const flagDefaultsByKind: Record<UpstreamProviderKind, FlagDefaults> = {
+  azure: AZURE_DEFAULT_FLAGS,
+  chatgpt: CHATGPT_DEFAULT_FLAGS,
+  'claude-code': CLAUDE_CODE_DEFAULT_FLAGS,
+  copilot: COPILOT_DEFAULT_FLAGS,
+  custom: CUSTOM_DEFAULT_FLAGS,
+  'kimi-code': KIMI_CODE_DEFAULT_FLAGS,
+  ollama: OLLAMA_DEFAULT_FLAGS,
+};
 
 const clone = <T>(value: T): T => structuredClone(value);
 const hasSecret = (value: string | undefined | null): boolean => typeof value === 'string' && value.length > 0;
@@ -27,7 +36,7 @@ const serializeBase = (upstream: UpstreamRecord) => ({
   created_at: upstream.createdAt,
   updated_at: upstream.updatedAt,
   flag_overrides: { ...upstream.flagOverrides },
-  flag_defaults: flagDefaultsForKind(upstream.kind),
+  flag_defaults: flagDefaultsByKind[upstream.kind],
   disabled_public_model_ids: [...upstream.disabledPublicModelIds],
   proxy_fallback_list: upstream.proxyFallbackList.map(entry => entry.colos === undefined
     ? { id: entry.id }
@@ -198,7 +207,7 @@ const blueprintBase = (kind: UpstreamProviderKind) => ({
   created_at: '',
   updated_at: '',
   flag_overrides: {} as FlagOverrides,
-  flag_defaults: flagDefaultsForKind(kind),
+  flag_defaults: flagDefaultsByKind[kind],
   disabled_public_model_ids: [] as string[],
   proxy_fallback_list: [] as ProxyFallbackEntry[],
   model_prefix: null,

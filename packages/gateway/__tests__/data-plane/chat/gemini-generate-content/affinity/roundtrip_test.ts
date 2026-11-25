@@ -2,29 +2,13 @@ import { expect, test } from 'vitest';
 
 import { wrapGeminiGenerateContentAffinityEgress } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/egress.ts';
 import { analyzeGeminiGenerateContentAffinity } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/ingress.ts';
-import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation, projectAffinityTestCandidate } from '../../shared/affinity/helpers.ts';
+import { affinityIdentityForCandidate } from '../../../../../src/data-plane/chat/shared/affinity/context.ts';
+import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { acceptedAffinityEvaluation, affinityTestCandidate } from '../../shared/affinity/helpers.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { reassembleGeminiGenerateContentEvents, type GeminiGenerateContentContent, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const codec = new AffinityCodec('22'.repeat(32));
-
-const candidate = (upstream: string): ModelCandidate => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    provider: { ...base.provider, upstreamId: upstream },
-    model: { id: 'model' },
-  });
-};
-
-const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
-  modelId: value.model.id,
-  ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
-});
 
 const frames = async function* (values: ProtocolFrame<GeminiGenerateContentStreamEvent>[]) {
   yield* values;
@@ -47,8 +31,8 @@ const modelContents = async (
 };
 
 test('a carrier a real codec emits on thoughtSignature decodes on the next turn', async () => {
-  const candidateA = candidate('upstream-a');
-  const candidateB = candidate('upstream-b');
+  const candidateA = affinityTestCandidate('upstream-a');
+  const candidateB = affinityTestCandidate('upstream-b');
   const contents = await modelContents(wrapGeminiGenerateContentAffinityEgress(frames([
     eventFrame({
       candidates: [{
@@ -57,12 +41,12 @@ test('a carrier a real codec emits on thoughtSignature decodes on the next turn'
         finishReason: 'STOP',
       }],
     }),
-  ]), { codec, affinity: targetFor(candidateA) }));
+  ]), { codec, affinity: affinityIdentityForCandidate(candidateA) }));
 
   const prepared = await analyzeGeminiGenerateContentAffinity({ contents }, codec);
 
-  const projectionA = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA));
-  const projectionB = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB));
+  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
+  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
   expect(projectionA.degrades).toBe(false);
   expect(projectionB.degrades).toBe(true);
   expect(projectionA.materialize().contents?.[0].parts).toEqual([

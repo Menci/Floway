@@ -1,4 +1,3 @@
-import type { GatewayProvider } from './registry.ts';
 import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { MODEL_CATALOG_REVISION, shouldScheduleModelsRefresh } from '../../repo/models-cache-contract.ts';
 import { modelsRefreshInputHash } from '../../repo/models-refresh-inputs.ts';
@@ -12,9 +11,12 @@ export interface ModelsSnapshot {
   readonly lastError: UpstreamModelsCache['lastError'];
 }
 
-export type ModelCatalogSource = Pick<GatewayProvider,
-  'upstreamId' | 'name' | 'modelsCache' | 'configVersion' | 'modelsRefreshInputHash' | 'modelPrefix' | 'disabledPublicModelIds'
->;
+export type ModelCatalogSource = Readonly<Pick<StoredUpstreamRecord,
+  'name' | 'modelsCache' | 'configVersion' | 'modelPrefix' | 'disabledPublicModelIds'
+> & {
+  upstreamId: string;
+  modelsRefreshInputHash: string;
+}>;
 
 export const modelCatalogSource = (record: StoredUpstreamRecord): ModelCatalogSource => ({
   upstreamId: record.id,
@@ -29,19 +31,19 @@ export const modelCatalogSource = (record: StoredUpstreamRecord): ModelCatalogSo
 // Capture one immutable snapshot before scheduling any refresh work so its
 // models and error metadata always describe the same durable snapshot.
 export const readUpstreamModelsSnapshotAndScheduleRefresh = (
-  instance: ModelCatalogSource,
+  source: ModelCatalogSource,
   scheduleRefresh: ModelsRefreshScheduler,
 ): ModelsSnapshot => {
-  const cached = instance.modelsCache?.revision === MODEL_CATALOG_REVISION ? instance.modelsCache : null;
+  const cached = source.modelsCache?.revision === MODEL_CATALOG_REVISION ? source.modelsCache : null;
   const snapshot = {
     models: cached?.models ?? [],
     lastError: cached?.lastError ?? null,
   };
   if (shouldScheduleModelsRefresh(cached, Date.now())) {
     scheduleRefresh({
-      upstreamId: instance.upstreamId,
-      configVersion: instance.configVersion,
-      inputHash: instance.modelsRefreshInputHash,
+      upstreamId: source.upstreamId,
+      configVersion: source.configVersion,
+      inputHash: source.modelsRefreshInputHash,
     });
   }
   return snapshot;

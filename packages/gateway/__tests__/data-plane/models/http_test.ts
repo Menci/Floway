@@ -4,7 +4,6 @@ import type { OmpModel } from '../../../src/data-plane/models/omp-catalog.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelKind } from '@floway-dev/protocols/common';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
 
 test('/v1/models returns merged model list from Copilot and custom upstreams', async () => {
@@ -106,7 +105,6 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
 test('/v1/models secret-free listing survives a failing upstream catalog', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_http_secret_provider',
     name: 'HTTP Secret Provider',
@@ -406,7 +404,6 @@ test('/v1/models keeps the configured public endpoint when OMP connects through 
 test('/v1/models serves omp-tailored catalog to omp/* callers and preserves precedence for other callers', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
 
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_omp_test',
@@ -479,7 +476,6 @@ test('/v1/models serves omp-tailored catalog to omp/* callers and preserves prec
 test('the TypeSafe SDK user agent receives the { models } catalog its parsers require', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
 
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_typesafe',

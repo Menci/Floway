@@ -119,7 +119,7 @@ const modelUseForUpstreams = async (
     createModelsRefreshScheduler(getRuntimeLocation(c.req.raw), backgroundSchedulerFromContext(c)),
     [...items],
   );
-  const covered = new Set(coverage.flatMap(entry => entry.upstreams.map(upstream => upstream.upstreamId)));
+  const covered = new Set(coverage.flatMap(entry => entry.upstreams.map(upstream => upstream.id)));
   return items.map((item, index) => grants[index]! || covered.has(item.id));
 };
 

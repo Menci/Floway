@@ -1,6 +1,7 @@
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
 import { fullUpstreamActionError } from '../../access-control/upstream-edit.ts';
+import { getGatewayProviderServices } from '../../data-plane/pipeline/provider-services.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -11,7 +12,6 @@ import { saveUpstream } from '../shared/save-upstreams.ts';
 import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
 import {
   assertCopilotUpstreamRecord,
-  clearInProcessCopilotTokenCache,
   emptyCopilotUpstreamState,
   exchangeCopilotToken,
   fetchCopilotUsage,
@@ -153,7 +153,7 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     if (!Number.isFinite(previousUpdatedAt)) throw new Error(`Copilot upstream ${record.id} has an invalid updatedAt timestamp`);
     const updatedAt = new Date(Math.max(Date.now(), previousUpdatedAt + 1)).toISOString();
     const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt };
-    clearInProcessCopilotTokenCache();
+    getGatewayProviderServices().copilot.clearTokens();
     await saveUpstream({ previous: dbRecord, next });
   } else {
     nextState = { ...emptyCopilotUpstreamState(), copilotToken: cred.tokenEntry, seat: cred.seat };

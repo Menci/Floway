@@ -1,15 +1,12 @@
 import type { AffinityRequestAnalysis, CandidateAffinityEvaluation } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import type { ServeCandidate } from '../../../../../src/data-plane/pipeline/facts.ts';
-import { providerModelOf, toProviderModelFact, type ModelCandidate } from '@floway-dev/provider';
+import { toProviderModelFact, type ProviderModel } from '@floway-dev/provider';
+import { stubProviderModel } from '@floway-dev/test-utils';
 
-export const projectAffinityTestCandidate = (candidate: ModelCandidate): ServeCandidate => {
-  const { provider, rules } = candidate;
-  return {
-    upstream: { id: provider.upstreamId, kind: provider.kind, name: provider.name, config: {} },
-    model: toProviderModelFact(providerModelOf(candidate)),
-    ...(rules === undefined ? {} : { rules }),
-  };
-};
+export const affinityTestCandidate = (upstreamId: string, model: Partial<ProviderModel> = {}): ServeCandidate => ({
+  upstream: { id: upstreamId, kind: 'custom', name: upstreamId, config: {} },
+  model: toProviderModelFact(stubProviderModel({ id: 'model', upstreamModelId: 'model', ...model })),
+});
 
 export const acceptedAffinityEvaluation = <T>(
   analysis: AffinityRequestAnalysis<T>,

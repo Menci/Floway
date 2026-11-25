@@ -7,7 +7,6 @@ import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { initSocketDial, type DialedSocket } from '@floway-dev/platform';
 import type { ProxyFallbackEntry } from '@floway-dev/provider';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 // Both Node egress paths end in a byte serializer of their own — undici for
@@ -105,7 +104,6 @@ const embeddingsThroughUpstream = async (egress: ProxyFallbackEntry[], origin: s
   const { apiKey, repo } = await setupAppTest();
   initSocketDial(socketDial);
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_bytes',
     proxyFallbackList: egress,

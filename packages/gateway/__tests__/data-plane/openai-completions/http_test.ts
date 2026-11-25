@@ -7,7 +7,6 @@ import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { flushBackground } from '../../test-utils/background-tracker.ts';
 import { decodeDump } from '@floway-dev/dump/browser';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const initialDumpStore = getDumpStore();
@@ -49,7 +48,6 @@ const saveCompletionsUpstream = (repo: Awaited<ReturnType<typeof setupAppTest>>[
 
 const registerOpenAICompletionsUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
   await saveCompletionsUpstream(repo, 'up_completions', 'completions.example.com', 100);
 };
 

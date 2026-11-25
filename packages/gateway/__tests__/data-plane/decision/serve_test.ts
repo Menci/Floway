@@ -5,7 +5,6 @@ import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { flushBackground } from '../../test-utils/background-tracker.ts';
 import type { DecisionTarget, ModelPricing } from '@floway-dev/protocols/common';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const addDecisionUpstream = async (
@@ -40,7 +39,6 @@ const addDecisionUpstream = async (
 
 const saveDecisionUpstream = async (repo: Repo, target: DecisionTarget, pricing?: ModelPricing): Promise<void> => {
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
   await addDecisionUpstream(repo, 'up_decision', 'decision.example.com', 1, target, pricing);
 };
 

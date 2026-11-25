@@ -1,5 +1,8 @@
+import { onTestFinished, vi } from 'vitest';
+
 import { trackBackground } from './background-tracker.ts';
 import { app } from '../../src/app.ts';
+import * as providerServices from '../../src/data-plane/pipeline/provider-services.ts';
 import type { WebSearchConfig } from '../../src/data-plane/tools/web-search/types.ts';
 import { modelsRefreshTarget, refreshModels } from '../../src/execution/models-refresh.ts';
 import { getRepo, initRepo } from '../../src/repo/index.ts';
@@ -9,8 +12,7 @@ import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileStore, initImageProcessor, initSocketDial, MemoryFileStore } from '@floway-dev/platform';
 import type { UserPreferences } from '@floway-dev/protocols/common';
-import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { getProviderRepo, type ProxyFallbackEntry, type UpstreamRecord } from '@floway-dev/provider';
 
 interface SetupOptions {
   // `null` models an unset ADMIN_KEY — the platform EnvGetter contract says
@@ -181,6 +183,9 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
 export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestContext> {
   const repo = new InMemoryRepo();
   initRepo(repo);
+  const serviceGetter = vi.spyOn(providerServices, 'getGatewayProviderServices')
+    .mockReturnValue(providerServices.createGatewayProviderServices(getProviderRepo()));
+  onTestFinished(() => { serviceGetter.mockRestore(); });
   initExternalResourceFetcher(() => Promise.resolve(new Response(null, { status: 404 })));
   initFileStore(new MemoryFileStore());
   initImageProcessor(createInMemoryImageProcessor());
@@ -202,8 +207,6 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     if (name !== 'ADMIN_KEY') return '';
     return adminKey ?? undefined;
   });
-
-  clearInProcessCopilotTokenCache();
 
   // The default API key is owned by a non-admin user so tests can assert
   // "non-admin via API key" behavior straight away. Tests that need an

@@ -1,10 +1,9 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
-import { enumerateModelCandidates as enumerateModelCandidatesRaw, enumerateRealModelCandidates as enumerateRealModelCandidatesRaw } from '../../../src/data-plane/providers/resolution.ts';
+import { findCatalogCandidates, type FindCandidatesInput } from '../../../src/data-plane/providers/resolution.ts';
+import { createModelsRefreshScheduler } from '../../../src/execution/models-refresh.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest, testAdminUser, warmModelsForTest } from '../../test-utils/app.ts';
-import { directFetcher } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
 
 const withMockedFetch = <T>(
@@ -18,12 +17,13 @@ const withMockedFetch = <T>(
 const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
-const enumerateModelCandidates = (
-  input: Omit<Parameters<typeof enumerateModelCandidatesRaw>[0], 'subject'>,
-) => enumerateModelCandidatesRaw({ subject: testAdminUser, ...input });
-const enumerateRealModelCandidates = (
-  ...args: Parameters<typeof enumerateRealModelCandidatesRaw> extends [unknown, ...infer Rest] ? Rest : never
-) => enumerateRealModelCandidatesRaw(testAdminUser, ...args);
+const scheduleRefresh = createModelsRefreshScheduler('TEST', testScheduler);
+const findCandidates = async (
+  repo: Awaited<ReturnType<typeof setupAppTest>>['repo'],
+  input: Pick<FindCandidatesInput, 'model' | 'randomizeUpstreams'> & Partial<Pick<FindCandidatesInput, 'scheduleRefresh'>>,
+) => await findCatalogCandidates(await repo.upstreams.list(), {
+  subject: testAdminUser, upstreamIds: null, kind: 'chat', scheduleRefresh, ...input,
+});
 
 test('a cold candidate read schedules refresh without waiting for upstream I/O', async () => {
   const { repo } = await setupAppTest();
@@ -36,13 +36,10 @@ test('a cold candidate read schedules refresh without waiting for upstream I/O',
   await withMockedFetchRaw(
     fetch,
     async () => {
-      const result = await enumerateModelCandidates({
-        upstreamIds: null,
+      const result = await findCandidates(repo, {
         randomizeUpstreams: false,
         model: 'eventual-model',
-        kind: 'chat',
-        scheduler: promise => { background.push(promise); },
-        runtimeLocation: 'TEST',
+        scheduleRefresh: createModelsRefreshScheduler('TEST', promise => { background.push(promise); }),
       });
       expect(result.candidates).toEqual([]);
       expect(background).toHaveLength(1);
@@ -65,9 +62,8 @@ test('scheduler registration failures propagate rather than looking like an upst
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     config: { baseUrl: 'https://custom.example.com', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' }, models: [] },
   }));
-  const providers = await listModelProviders(null);
-  await expect(enumerateRealModelCandidates('model', 'chat', providers, {
-    fetcherForUpstream: () => directFetcher,
+  await expect(findCandidates(repo, {
+    model: 'model',
     randomizeUpstreams: false,
     scheduleRefresh: () => { throw new Error('scheduler unavailable'); },
   })).rejects.toThrow('scheduler unavailable');
@@ -97,16 +93,12 @@ test('randomizes upstream candidate groups without splitting or reordering a gro
     async () => {
       const random = vi.spyOn(Math, 'random').mockReturnValue(0);
       try {
-        const resolved = await enumerateModelCandidates({
-          upstreamIds: null,
+        const resolved = await findCandidates(repo, {
           randomizeUpstreams: true,
           model: 'or/gpt-4o',
-          kind: 'chat',
-          scheduler: testScheduler,
-          runtimeLocation: 'TEST',
         });
         assertEquals(
-          resolved.candidates.map(candidate => `${candidate.model.id}@${candidate.provider.upstreamId}`),
+          resolved.candidates.map(candidate => `${candidate.model.id}@${candidate.upstream.id}`),
           ['or/gpt-4o@up_b', 'gpt-4o@up_b', 'or/gpt-4o@up_a', 'gpt-4o@up_a'],
         );
         expect(random).toHaveBeenCalledOnce();
@@ -120,7 +112,7 @@ test('randomizes upstream candidate groups without splitting or reordering a gro
 // A persisted refresh error must not hide healthy siblings. The broken
 // upstream's display name flows back via `failedUpstreams` while its empty
 // or last-known-good snapshot stays independent of the current request.
-test('enumerateModelCandidates: healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
+test('a healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -149,8 +141,8 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolvedExisting = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'ok-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
-      assertEquals(resolvedExisting.candidates.map(m => m.provider.upstreamId), ['up_ok']);
+      const resolvedExisting = await findCandidates(repo, { randomizeUpstreams: false, model: 'ok-model' });
+      assertEquals(resolvedExisting.candidates.map(m => m.upstream.id), ['up_ok']);
       assertEquals(resolvedExisting.candidates[0]?.model.id, 'ok-model');
       assertEquals(resolvedExisting.failedUpstreams, ['Broken upstream']);
 
@@ -158,7 +150,7 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
       // upstream's catalog error — the caller's failure renderer is the right
       // place to surface that, parenthetically, alongside the model-missing
       // body.
-      const resolvedMissing = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'unknown-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+      const resolvedMissing = await findCandidates(repo, { randomizeUpstreams: false, model: 'unknown-model' });
       assertEquals(resolvedMissing.candidates.length, 0);
       assertEquals(resolvedMissing.failedUpstreams, ['Broken upstream']);
     },
@@ -170,7 +162,7 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
 // order, and dedups by (model, upstream, rules). Two targets pointing at
 // the same real model with the same rules collapse; the same pair with
 // distinct rules stays as two candidates so both can be attempted.
-describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
+describe('findCatalogCandidates alias targets', () => {
   const aliasCommon = {
     displayName: null,
     visibleInModelsList: true,
@@ -220,11 +212,11 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     await withMockedFetch(
       buildCatalogFetch({ up_a: ['gpt-5'], up_b: ['claude'] }),
       async () => {
-        const resolved = await enumerateModelCandidates({
-          upstreamIds: null, randomizeUpstreams: false, model: 'interleaved-duplicates', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+        const resolved = await findCandidates(repo, {
+          randomizeUpstreams: false, model: 'interleaved-duplicates',
         });
         expect(resolved.candidates.map(candidate => ({
-          binding: `${candidate.model.id}@${candidate.provider.upstreamId}`,
+          binding: `${candidate.model.id}@${candidate.upstream.id}`,
           effort: candidate.rules?.reasoning?.effort,
         }))).toEqual([
           { binding: 'gpt-5@up_a', effort: 'low' },

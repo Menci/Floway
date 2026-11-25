@@ -1,7 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
-import { createProvider } from '../../../src/data-plane/providers/registry.ts';
+import { modelCatalogSource, readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { createModelsRefreshScheduler, modelsRefreshTarget, refreshModels, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
 import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
@@ -41,7 +40,7 @@ test('a stale snapshot returns immediately and refreshes through the execution c
     () => jsonResponse({ object: 'list', data: [{ id: 'fresh' }] }),
     async () => {
       const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(
-        createProvider(stale),
+        modelCatalogSource(stale),
         createModelsRefreshScheduler('TEST', scheduled.scheduler),
       );
       expect(snapshot.models.map(model => model.id)).toEqual(['stale']);

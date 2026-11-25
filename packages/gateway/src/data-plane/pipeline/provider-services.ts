@@ -12,6 +12,14 @@ export type GatewayProviderServices = Pick<
 
 let services: GatewayProviderServices | undefined;
 
+export const createGatewayProviderServices = (repo: ProviderRepo): GatewayProviderServices => Object.freeze({
+  chatgpt: createChatGPTService(),
+  claudeCode: createClaudeCodeService(repo),
+  copilot: createCopilotService(),
+  kimiCode: createKimiCodeService(),
+  ollama: createOllamaService(repo),
+});
+
 export const initGatewayProviderServices = (): void => {
   if (services !== undefined) return;
   // The host can rebind its repository for each event in the same isolate.
@@ -22,13 +30,7 @@ export const initGatewayProviderServices = (): void => {
     },
     recordUpstreamMetric: (...args) => getProviderRepo().recordUpstreamMetric(...args),
   };
-  services = Object.freeze({
-    chatgpt: createChatGPTService(),
-    claudeCode: createClaudeCodeService(repo),
-    copilot: createCopilotService(),
-    kimiCode: createKimiCodeService(),
-    ollama: createOllamaService(repo),
-  });
+  services = createGatewayProviderServices(repo);
 };
 
 export const getGatewayProviderServices = (): GatewayProviderServices => {

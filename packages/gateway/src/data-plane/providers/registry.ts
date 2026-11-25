@@ -1,55 +1,6 @@
-import { getRepo } from '../../repo/index.ts';
-import { modelsRefreshInputHash } from '../../repo/models-refresh-inputs.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
-import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-import { azureProviderModule } from '@floway-dev/provider-azure';
-import { chatgptProviderModule } from '@floway-dev/provider-chatgpt';
-import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
-import { copilotProviderModule } from '@floway-dev/provider-copilot';
-import { customProviderModule } from '@floway-dev/provider-custom';
-import { kimiCodeProviderModule } from '@floway-dev/provider-kimi-code';
-import { ollamaProviderModule } from '@floway-dev/provider-ollama';
 
-const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
-  copilot: copilotProviderModule,
-  custom: customProviderModule,
-  azure: azureProviderModule,
-  chatgpt: chatgptProviderModule,
-  'claude-code': claudeCodeProviderModule,
-  'kimi-code': kimiCodeProviderModule,
-  ollama: ollamaProviderModule,
-};
-
-export type GatewayProvider = Provider & {
-  readonly configVersion: number;
-  readonly modelsRefreshInputHash: string;
-};
-
-export const createProvider = (
-  record: StoredUpstreamRecord,
-): GatewayProvider => {
-  const provider = providersByKind[record.kind].create(record);
-  return {
-    ...provider,
-    configVersion: record.configVersion,
-    modelsRefreshInputHash: modelsRefreshInputHash(record),
-  };
-};
-
-export const createPreviewProvider = (record: UpstreamRecord): Provider =>
-  providersByKind[record.kind].create(record);
-
-export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
-  providersByKind[kind].defaultFlags;
-
-// The upstream scope is a required argument across the catalog-assembly chain
-// (this, `enumerateAddressableModelIds`, `enumerateModelCandidates`) so a
-// caller can never omit it and silently receive the full, unscoped catalog —
-// a missing scope is a compile error, not a runtime leak. Pass `null` to
-// deliberately request every enabled upstream.
-//
-// `preFetchedUpstreams` lets a caller reuse a list it already loaded on
-// this request instead of paying a second `upstreams.list()` round-trip.
+// Requiring a scope makes an unrestricted catalog an explicit choice.
 export const selectEnabledUpstreams = (
   upstreamFilter: readonly string[] | null,
   upstreams: readonly StoredUpstreamRecord[],
@@ -69,11 +20,3 @@ export const selectEnabledUpstreams = (
     ? upstreamFilter.map(id => enabledById.get(id)).filter((u): u is StoredUpstreamRecord => u !== undefined)
     : [...enabledById.values()];
 };
-
-export const listModelProviders = async (
-  upstreamFilter: readonly string[] | null,
-  preFetchedUpstreams?: readonly StoredUpstreamRecord[],
-): Promise<GatewayProvider[]> => selectEnabledUpstreams(
-  upstreamFilter,
-  preFetchedUpstreams ?? await getRepo().upstreams.list(),
-).map(createProvider);

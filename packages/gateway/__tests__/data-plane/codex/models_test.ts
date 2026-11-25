@@ -2,8 +2,9 @@ import { describe, expect, test } from 'vitest';
 
 import { assembleCodexCatalog } from '../../../src/data-plane/codex/models.ts';
 import type { AddressableIdEntry } from '../../../src/data-plane/shared/listing/addressable.ts';
+import { buildChatGPTUpstreamRecord, buildCustomUpstreamRecord } from '../../test-utils/app.ts';
 import type { InternalModel } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
+import { stubProviderModel } from '@floway-dev/test-utils';
 
 const bundled = {
   models: [
@@ -34,11 +35,11 @@ const entries = (...models: InternalModel[]): AddressableIdEntry[] => models.map
 
 describe('assembleCodexCatalog', () => {
   test('uses the primary ChatGPT provider default for a prefixed model without a matching client entry', () => {
-    const provider = { ...stubModelCandidate().provider, kind: 'chatgpt' as const };
+    const provider = { ...buildChatGPTUpstreamRecord(), configVersion: 1 };
     const model = {
       ...chat('codex/future-model', 'Future', 600000),
       providerModels: {
-        [provider.upstreamId]: stubProviderModel({
+        [provider.id]: stubProviderModel({
           limits: { max_context_window_tokens: 600000 },
           providerData: { contextWindow: 80000, useResponsesLite: false },
         }),
@@ -49,13 +50,13 @@ describe('assembleCodexCatalog', () => {
   });
 
   test('a secondary ChatGPT provider cannot replace the primary provider budget', () => {
-    const primary = stubModelCandidate().provider;
-    const secondary = { ...primary, upstreamId: 'secondary', kind: 'chatgpt' as const };
+    const primary = { ...buildCustomUpstreamRecord(), configVersion: 1 };
+    const secondary = { ...buildChatGPTUpstreamRecord({ id: 'secondary' }), configVersion: 1 };
     const model = {
       ...chat('gpt-5.5', 'Primary', 200000),
       providerModels: {
-        [primary.upstreamId]: stubProviderModel({ limits: { max_context_window_tokens: 200000 } }),
-        [secondary.upstreamId]: stubProviderModel({
+        [primary.id]: stubProviderModel({ limits: { max_context_window_tokens: 200000 } }),
+        [secondary.id]: stubProviderModel({
           limits: { max_context_window_tokens: 872000 },
           providerData: { contextWindow: 272000, useResponsesLite: false },
         }),
@@ -71,14 +72,14 @@ describe('assembleCodexCatalog', () => {
     { codex: { additional_speed_tiers: ['fast'] }, expected: ['priority'] },
     { codex: { service_tiers: [{ id: 'ultrafast', name: 'Ultrafast', description: '' }] }, expected: ['ultrafast'] },
   ])('only lists tiers shared with the ChatGPT catalog $codex, in either routing order', ({ codex, expected }) => {
-    const native = { ...stubModelCandidate().provider, kind: 'custom' as const };
-    const subscription = { ...native, kind: 'chatgpt' as const, upstreamId: 'subscription' };
+    const native = { ...buildCustomUpstreamRecord(), configVersion: 1 };
+    const subscription = { ...buildChatGPTUpstreamRecord({ id: 'subscription' }), configVersion: 1 };
     const pricing = { entries: ['priority', 'ultrafast'].map(serviceTier => ({ selector: { serviceTier }, rates: { input_tokens: '1' } })) };
     const model = {
       ...chat('shared'), pricing,
       providerModels: {
-        [native.upstreamId]: stubProviderModel({ pricing, endpoints: { openaiResponses: {} } }),
-        [subscription.upstreamId]: stubProviderModel({ providerData: { contextWindow: 100000, codex } }),
+        [native.id]: stubProviderModel({ pricing, endpoints: { openaiResponses: {} } }),
+        [subscription.id]: stubProviderModel({ providerData: { contextWindow: 100000, codex } }),
       },
     };
     for (const upstreams of [[native, subscription], [subscription, native]]) {
@@ -86,7 +87,7 @@ describe('assembleCodexCatalog', () => {
       expect(row.service_tiers?.map(tier => tier.id)).toEqual(expected);
       expect(row.additional_speed_tiers).toEqual(expected.some(id => id === 'priority') ? ['fast'] : []);
     }
-    model.providerModels[native.upstreamId] = stubProviderModel({ endpoints: { openaiResponses: {} } });
+    model.providerModels[native.id] = stubProviderModel({ endpoints: { openaiResponses: {} } });
     expect(assembleCodexCatalog(bundled, [{ ...entry(model), upstreams: [subscription, native] }]).models[0].service_tiers).toEqual([]);
   });
 
