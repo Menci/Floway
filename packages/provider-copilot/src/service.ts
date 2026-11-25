@@ -1,4 +1,4 @@
-import { createCopilotCredentials, isCopilotTokenFetchError, type CopilotTokenFetchError } from './auth.ts';
+import { createCopilotCredentials, isCopilotTokenFetchError } from './auth.ts';
 import { projectCopilotModels, rawModelSupportsEndpoint } from './catalog.ts';
 import { assertCopilotUpstreamRecord, type CopilotUpstreamConfig } from './config.ts';
 import { fetchCopilotModels } from './fetch-models.ts';
@@ -8,23 +8,26 @@ import { copilotModelSupportsFastVariant, resolveCopilotRawModel, type ModelSele
 import { copilotVariantIndex } from './model-variants.ts';
 import { parseCopilotQuotaHeaders, putCopilotQuota } from './quota.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
-import { materializeHeaders, type HttpHeaders, type HttpStreamError } from '@floway-dev/http';
+import { materializeHeaders, responseHeaderEntries, type HttpHeaders, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
 import { Secret, type Result } from '@floway-dev/pipeline';
+import { compressBytesToWebp } from '@floway-dev/platform';
 import type { ModelEndpointKey } from '@floway-dev/protocols/common';
 import { getProviderRepo, type Fetcher, type ProviderModel, type ProviderServices, type ProviderUpstream, type UpstreamRecord } from '@floway-dev/provider';
 
 type CopilotModelSelection = { readonly kind: 'model'; readonly id: string } | { readonly kind: 'unsupportedFast' };
-type CopilotCredentials = { readonly baseUrl: string; readonly token: Secret<string> };
-type CopilotCredentialFailure = CopilotTokenFetchError | HttpStreamError;
+export type CopilotCredentials = { readonly baseUrl: string; readonly token: Secret<string> };
+export type CopilotCredentialFailure =
+  | { readonly kind: 'response'; readonly http: Omit<HttpResponseFact, 'body'>; readonly body: string }
+  | { readonly kind: 'transport'; readonly error: HttpStreamError };
 type CopilotFetcher = ReturnType<ProviderServices['fetcher']>;
 
 export interface CopilotService {
   readonly credentials: (
     upstream: ProviderUpstream,
     fetcher: CopilotFetcher,
-    signal: AbortSignal,
   ) => Promise<Result<CopilotCredentials, CopilotCredentialFailure>>;
   readonly identityHeaders: () => HttpHeaders;
+  readonly compressImage: typeof compressBytesToWebp;
   readonly selectModel: (
     upstreamId: string,
     upstreamModelId: string,
@@ -32,7 +35,7 @@ export interface CopilotService {
     hints: ModelSelectionHints,
   ) => Promise<CopilotModelSelection>;
   readonly observeQuota: (upstreamId: string, headers: HttpHeaders) => Promise<void>;
-  readonly refreshCatalog: (record: UpstreamRecord, fetcher: Fetcher) => Promise<CopilotKnownModels>;
+  readonly refreshCatalog: (record: UpstreamRecord, fetcher: Fetcher) => Promise<ProviderModel[]>;
   readonly clearTokens: () => void;
 }
 
@@ -51,10 +54,10 @@ const authConfig = (upstream: ProviderUpstream): Pick<CopilotUpstreamConfig, 'gi
     throw new TypeError(`Expected Copilot upstream config for ${upstream.id}`);
   }
   const { githubHost, githubToken } = upstream.config as Record<string, unknown>;
-  if (typeof githubHost !== 'string' || (typeof githubToken !== 'string' && !(githubToken instanceof Secret))) {
+  if (typeof githubHost !== 'string' || !(githubToken instanceof Secret)) {
     throw new TypeError(`Malformed GitHub credentials for Copilot upstream ${upstream.id}`);
   }
-  return { githubHost: normalizeGitHubHost(githubHost), githubToken: typeof githubToken === 'string' ? githubToken : githubToken.reveal() };
+  return { githubHost: normalizeGitHubHost(githubHost), githubToken: githubToken.reveal() };
 };
 
 const readStoredModels = async (id: string): Promise<CopilotKnownModels> => {
@@ -67,19 +70,22 @@ export const createCopilotService = (): CopilotService => {
   const auth = createCopilotCredentials();
   const catalogs = new Map<string, { readonly models: CopilotKnownModels; readonly checkedAt: number }>();
 
-  const credentials: CopilotService['credentials'] = async (upstream, fetcher, signal) => {
+  const credentials: CopilotService['credentials'] = async (upstream, fetcher) => {
     const { githubHost, githubToken } = authConfig(upstream);
     try {
       const { baseUrl, token } = await auth.getCopilotToken(upstream.id, githubHost, githubToken, async (url, init) => {
         const result = await fetcher(url, init);
         if (!result.ok) throw new CopilotCredentialTransportError(result.error);
         return result.value;
-      }, signal);
+      });
       return { ok: true, value: { baseUrl, token: Secret.from(token) } };
     } catch (error) {
-      if (isCopilotTokenFetchError(error)) return { ok: false, error };
-      if (error instanceof CopilotCredentialTransportError) return { ok: false, error: error.failure };
-      if (signal.aborted && error === signal.reason) return { ok: false, error: { kind: 'abort', cause: error } };
+      if (isCopilotTokenFetchError(error)) {
+        const { response, body } = error;
+        const http = { status: response.status, statusText: response.statusText, headers: responseHeaderEntries(response) };
+        return { ok: false, error: { kind: 'response', http, body } };
+      }
+      if (error instanceof CopilotCredentialTransportError) return { ok: false, error: { kind: 'transport', error: error.failure } };
       throw error;
     }
   };
@@ -133,12 +139,13 @@ export const createCopilotService = (): CopilotService => {
     } catch (error) {
       console.warn(`Failed to persist Copilot known-models for ${copilot.id}:`, error);
     }
-    return models;
+    return projectCopilotModels(projectKnownModels(models, now), copilot.flagOverrides);
   };
 
   return {
     credentials,
     identityHeaders: () => auth.identityHeaders().map(([name, value]) => [name, value]),
+    compressImage: compressBytesToWebp,
     selectModel,
     refreshCatalog,
     async observeQuota(upstreamId, headers) {
@@ -149,11 +156,8 @@ export const createCopilotService = (): CopilotService => {
   };
 };
 
-export const getCopilotProvidedModels = async (
+export const getCopilotProvidedModels = (
   service: CopilotService,
   record: UpstreamRecord,
   fetcher: Fetcher,
-): Promise<ProviderModel[]> => {
-  const known = await service.refreshCatalog(record, fetcher);
-  return projectCopilotModels(projectKnownModels(known, Date.now()), record.flagOverrides);
-};
+): Promise<ProviderModel[]> => service.refreshCatalog(record, fetcher);

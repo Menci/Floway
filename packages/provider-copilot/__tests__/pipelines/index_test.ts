@@ -1,6 +1,5 @@
 import { expect, test, vi } from 'vitest';
 
-import { CopilotTokenFetchError } from '../../src/auth.ts';
 import { copilotPipelines } from '../../src/pipelines/index.ts';
 import type { CopilotService, CopilotServices } from '../../src/service.ts';
 import { getHeader, type FetchInit, type HttpHeaders } from '@floway-dev/http';
@@ -31,6 +30,7 @@ const servicesFor = (response: () => Response, overrides: Partial<CopilotService
         ['copilot-integration-id', 'vscode-chat'],
         ['openai-intent', 'conversation-agent'],
       ],
+      compressImage: bytes => Promise.resolve(bytes),
       selectModel,
       observeQuota,
       refreshCatalog: () => Promise.reject(new Error('unexpected catalog refresh')),
@@ -76,12 +76,15 @@ test('Copilot embeddings preserve the wire model and mark credentials across the
 });
 
 test('GitHub token exchange failures use the operation error envelope without calling the Copilot API', async () => {
-  const tokenFailure = new CopilotTokenFetchError(new Response('access denied', {
-    status: 403,
-    headers: [['x-github-request-id', 'token-request-id']],
-  }), 'access denied');
   const { services, fetcher } = servicesFor(() => Response.json({}), {
-    credentials: async () => ({ ok: false, error: tokenFailure }),
+    credentials: async () => ({
+      ok: false,
+      error: {
+        kind: 'response',
+        http: { status: 403, statusText: '', headers: [['x-github-request-id', 'token-request-id']] },
+        body: 'access denied',
+      },
+    }),
   });
   const started = run(copilotPipelines.openaiResponses, {
     ...requestFacts(),
@@ -154,6 +157,34 @@ test('Copilot Chat Completions aborts and drains an open upstream stream on dege
   });
 });
 
+test('Copilot Responses ends with its synthesized error and drains the upstream abort failure', async () => {
+  const delta = { type: 'response.function_call_arguments.delta', output_index: 0, delta: '\n'.repeat(21) };
+  const cancel = vi.fn();
+  const bytes = new TextEncoder().encode(`data: ${JSON.stringify(delta)}\n\n`);
+  const { services } = servicesFor(() => new Response(new ReadableStream<Uint8Array>({
+    start(controller) { controller.enqueue(bytes); },
+    cancel,
+  }), { headers: { 'content-type': 'text/event-stream' } }));
+  const failures: unknown[] = [];
+  const started = run(copilotPipelines.openaiResponses, {
+    ...requestFacts(),
+    'request.openaiResponses': move({ model: 'visible-model', input: [] }),
+  }, {
+    services,
+    events(event) {
+      if (event.type === 'stream.frame' && !event.item.ok) failures.push(event.item.error);
+    },
+  });
+  const outcome = (await started.result)['response.openaiResponses'];
+  if (outcome.kind !== 'stream') throw new Error('Expected OpenAI Responses stream');
+  const items = await Array.fromAsync(outcome.stream);
+  await started.done;
+
+  expect(cancel).toHaveBeenCalledOnce();
+  expect(failures).toContainEqual(expect.objectContaining({ kind: 'abort' }));
+  expect(items).toEqual([{ ok: true, value: expect.objectContaining({ type: 'error', code: 'api_error' }) }]);
+});
+
 test('Copilot rejects unavailable Anthropic fast mode before dispatch', async () => {
   const { services, fetcher } = servicesFor(() => Response.json({}), {
     selectModel: async () => ({ kind: 'unsupportedFast' }),
@@ -206,6 +237,41 @@ test('Copilot Anthropic context errors retain upstream HTTP and expose the canon
   });
 });
 
+test('Copilot Responses compresses repeated image content before serializing native tool outputs', async () => {
+  const compressImage = vi.fn(async () => new Uint8Array([4, 5, 6]));
+  const { services, fetcher } = servicesFor(() => new Response('data: [DONE]\n\n', {
+    headers: { 'content-type': 'text/event-stream' },
+  }), { compressImage });
+  const image = () => ({ type: 'input_image' as const, image_url: 'data:image/png;base64,AAEC' });
+  const started = run(copilotPipelines.openaiResponses, {
+    ...requestFacts(),
+    'request.openaiResponses': move({
+      model: 'visible-model',
+      input: [
+        { type: 'message' as const, role: 'user' as const, content: [image()] },
+        { type: 'function_call_output' as const, call_id: 'call-1', output: [image()] },
+      ],
+    }),
+  }, { services });
+  const result = await started.result;
+  const outcome = result['response.openaiResponses'];
+  if (outcome.kind !== 'stream') throw new Error('Expected OpenAI Responses stream');
+  await Array.fromAsync(outcome.stream);
+  await started.done;
+
+  const init = fetcher.mock.calls[0][1];
+  expect(new Headers(init.headers).get('copilot-vision-request')).toBe('true');
+  expect(new Headers(init.headers).get('x-initiator')).toBe('agent');
+  expect(compressImage).toHaveBeenCalledOnce();
+  expect(wireJson(init)).toMatchObject({
+    stream: true,
+    input: [
+      { type: 'message', content: [{ type: 'input_image', image_url: 'data:image/webp;base64,BAUG' }] },
+      { type: 'function_call_output', output: [{ type: 'input_image', image_url: 'data:image/webp;base64,BAUG' }] },
+    ],
+  });
+});
+
 test('Copilot compact sends one trigger turn and returns normalized compaction state', async () => {
   const { services, fetcher, selectModel } = servicesFor(() => Response.json({
     id: 'response-id',
@@ -243,7 +309,7 @@ test('Copilot image edits send multipart bytes with the matching boundary', asyn
   const started = run(copilotPipelines.openaiImagesEdits, {
     ...requestFacts(),
     'request.openaiImagesEdits': move({
-      images: [{ type: 'upload' as const, file: new File([new Uint8Array([0, 1, 2])], 'test.png', { type: 'image/png' }) }],
+      images: [{ type: 'upload' as const, file: { name: 'test.png', type: 'image/png', bytes: new Uint8Array([0, 1, 2]) } }],
       parameters: { prompt: 'edit this' },
     }),
   }, { services });

@@ -38,7 +38,7 @@ export const abortOnToolArgumentWhitespace = defineCopilotStage({
 
         stopped = true;
         producer.log.warn('Aborting Copilot OpenAI Responses stream with excessive tool argument whitespace');
-        yield { ok: true, value: formatOpenAIResponsesError(null, ABORT_MESSAGE, { code: 'api_error', param: null }) } as const;
+        yield { ok: true, value: formatOpenAIResponsesError(null, ABORT_MESSAGE, { code: 'api_error' }) } as const;
         producer.abort(back);
       }
     });

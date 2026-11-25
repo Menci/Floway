@@ -32,6 +32,7 @@ export {
 } from './quota.ts';
 export {
   assertCopilotUpstreamRecord,
+  copilotUpstreamFact,
   parseCopilotUpstreamConfig,
   type CopilotUpstreamConfig,
   type CopilotUpstreamUser,

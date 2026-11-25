@@ -123,6 +123,12 @@ export const createCopilotCredentials = () => {
       githubToken: string;
     }
   >();
+  const pendingTokenExchanges = new Map<string, {
+    githubHost: string;
+    githubToken: string;
+    task: Promise<CopilotTokenEntry>;
+  }>();
+  let generation = 0;
 
   const identityHeaders = (): HttpHeaderLines => {
     const requestId = crypto.randomUUID();
@@ -141,7 +147,14 @@ export const createCopilotCredentials = () => {
     ];
   };
 
-  async function getCopilotToken(upstreamId: string, githubHost: string, githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<CopilotTokenEntry> {
+  const readOrExchangeToken = async (
+    upstreamId: string,
+    githubHost: string,
+    githubToken: string,
+    fetcher: Fetcher,
+    signal?: AbortSignal,
+  ): Promise<CopilotTokenEntry> => {
+    const started = generation;
     const now = Date.now();
     const cached = inProcessTokenCache.get(upstreamId);
     if (cached?.githubHost === githubHost && cached.githubToken === githubToken && isTokenValid(cached.entry.token, cached.entry.expiresAt) && now - cached.cachedAt < IN_PROCESS_TTL_MS) {
@@ -153,7 +166,7 @@ export const createCopilotCredentials = () => {
     const state = readCopilotUpstreamState(fresh.state);
     const persisted = state.copilotToken;
     if (persisted && isTokenValid(persisted.token, persisted.expiresAt)) {
-      inProcessTokenCache.set(upstreamId, { entry: persisted, cachedAt: now, githubHost, githubToken });
+      if (started === generation) inProcessTokenCache.set(upstreamId, { entry: persisted, cachedAt: now, githubHost, githubToken });
       return persisted;
     }
 
@@ -164,6 +177,7 @@ export const createCopilotCredentials = () => {
     // ~25 minutes per process.
     return await retryCopilotTokenFetch(async () => {
       const entry = await exchangeCopilotToken(githubHost, githubToken, fetcher, signal);
+      if (started !== generation) return entry;
       inProcessTokenCache.set(upstreamId, { entry, cachedAt: Date.now(), githubHost, githubToken });
       // Best-effort: the caller is about to satisfy a live request with this
       // token, so a storage failure costs the next cold isolate one extra mint
@@ -171,18 +185,52 @@ export const createCopilotCredentials = () => {
       // of retryCopilotTokenFetch, which would otherwise answer it by minting
       // again.
       try {
-        await getRepo().upstreams.saveState(upstreamId, current => ({
-          ...readCopilotUpstreamState(current),
-          copilotToken: entry,
-        } satisfies CopilotUpstreamState));
+        await getRepo().upstreams.saveState(upstreamId, (current, configVersion) => {
+          if (configVersion !== fresh.configVersion) return current;
+          return {
+            ...readCopilotUpstreamState(current),
+            copilotToken: entry,
+          } satisfies CopilotUpstreamState;
+        });
       } catch (err) {
         console.warn(`Failed to persist Copilot token for ${upstreamId}:`, err);
       }
       return entry;
     }, signal);
-  }
+  };
 
-  return { getCopilotToken, identityHeaders, clear: () => { inProcessTokenCache.clear(); } };
+  const getCopilotToken = async (
+    upstreamId: string,
+    githubHost: string,
+    githubToken: string,
+    fetcher: Fetcher,
+    signal?: AbortSignal,
+  ): Promise<CopilotTokenEntry> => {
+    if (signal !== undefined) return await readOrExchangeToken(upstreamId, githubHost, githubToken, fetcher, signal);
+
+    const current = pendingTokenExchanges.get(upstreamId);
+    if (current?.githubHost === githubHost && current.githubToken === githubToken) return await current.task;
+
+    // Every waiter for these GitHub credentials shares the service-owned
+    // exchange. An individual request can abort without cancelling the mint.
+    const task = readOrExchangeToken(upstreamId, githubHost, githubToken, fetcher);
+    pendingTokenExchanges.set(upstreamId, { githubHost, githubToken, task });
+    try {
+      return await task;
+    } finally {
+      if (pendingTokenExchanges.get(upstreamId)?.task === task) pendingTokenExchanges.delete(upstreamId);
+    }
+  };
+
+  return {
+    getCopilotToken,
+    identityHeaders,
+    clear() {
+      generation++;
+      inProcessTokenCache.clear();
+      pendingTokenExchanges.clear();
+    },
+  };
 };
 
 const legacyCredentials = createCopilotCredentials();

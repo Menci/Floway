@@ -1,5 +1,6 @@
+import type { CopilotService } from '../../service.ts';
 import { defineCopilotStage } from '../facts.ts';
-import { memoizedBase64Compressor } from '../shared/image-compression.ts';
+import { compressBase64ImageToWebp } from '../shared/image-compression.ts';
 import { move, transform } from '@floway-dev/pipeline';
 import { fitWithin, type SizeCaps } from '@floway-dev/platform';
 import type { AnthropicMessagesCountTokensPayload, AnthropicMessagesPayload, AnthropicMessagesToolResultContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
@@ -34,7 +35,7 @@ const claudeImageCaps = (upstreamModelId: string): SizeCaps => {
 type Payload = AnthropicMessagesPayload | AnthropicMessagesCountTokensPayload;
 type ContentBlock = AnthropicMessagesToolResultContentBlock | AnthropicMessagesUserContentBlock;
 
-const compressRequests = async <Request extends Payload>(payload: Request, model: string): Promise<Request> => {
+const compressRequests = async <Request extends Payload>(payload: Request, model: string, compress: CopilotService['compressImage']): Promise<Request> => {
   const sources = new Set<string>();
   const collect = (block: ContentBlock): void => {
     if (block.type === 'image' && block.source.type === 'base64') sources.add(block.source.data);
@@ -49,8 +50,7 @@ const compressRequests = async <Request extends Payload>(payload: Request, model
   if (sources.size === 0) return payload;
 
   const caps = claudeImageCaps(model);
-  const compress = memoizedBase64Compressor(source => fitWithin(source, caps));
-  const compressed = new Map(await Promise.all([...sources].map(async base64 => [base64, await compress(base64)] as const)));
+  const compressed = new Map(await Promise.all([...sources].map(async base64 => [base64, await compressBase64ImageToWebp(compress, base64, source => fitWithin(source, caps))] as const)));
   const rewrite = <Block extends ContentBlock>(block: Block): Block => {
     if (block.type !== 'image' || block.source.type !== 'base64') return block;
     const data = compressed.get(block.source.data);
@@ -77,10 +77,10 @@ export const compressImages = defineCopilotStage({
     request: { needs: ['request.anthropicMessages', 'provider.model'], provides: ['request.anthropicMessages'], consumes: [] },
     response: { needs: [], provides: [], consumes: [] },
   },
-  execute: transform(() => ({
+  execute: transform(scope => ({
     async request(facts) {
       const payload = facts['request.anthropicMessages'];
-      const compressed = await compressRequests(payload, facts['provider.model'].id);
+      const compressed = await compressRequests(payload, facts['provider.model'].id, scope.services.copilot.compressImage);
       return compressed === payload ? facts : { ...facts, 'request.anthropicMessages': move(compressed) };
     },
   })),

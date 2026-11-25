@@ -1,11 +1,12 @@
+import type { CopilotService } from '../../service.ts';
 import { defineCopilotStage } from '../facts.ts';
-import { memoizedDataUrlCompressor } from '../shared/image-compression.ts';
+import { compressImageDataUrlToWebp } from '../shared/image-compression.ts';
 import { openAIImageSize } from '../shared/image-size.ts';
 import { move, transform } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesOutputRefusal, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
 import { isBase64ImageDataUrl } from '@floway-dev/provider';
 
-const compressRequests = async <Payload extends Pick<CanonicalOpenAIResponsesPayload, 'input'>>(payload: Payload, model: string): Promise<Payload> => {
+const compressRequests = async <Payload extends Pick<CanonicalOpenAIResponsesPayload, 'input'>>(payload: Payload, model: string, compress: CopilotService['compressImage']): Promise<Payload> => {
   const sources = new Set<string>();
   for (const item of payload.input) {
     const parts = item.type === 'message'
@@ -20,8 +21,8 @@ const compressRequests = async <Payload extends Pick<CanonicalOpenAIResponsesPay
   }
   if (sources.size === 0) return payload;
 
-  const compress = memoizedDataUrlCompressor(openAIImageSize(model));
-  const compressed = new Map(await Promise.all([...sources].map(async url => [url, await compress(url)] as const)));
+  const size = openAIImageSize(model);
+  const compressed = new Map(await Promise.all([...sources].map(async url => [url, await compressImageDataUrlToWebp(compress, url, size)] as const)));
   const rewrite = <Part extends OpenAIResponsesInputContent | OpenAIResponsesToolOutputContent | OpenAIResponsesOutputRefusal>(parts: Part[]): Part[] => parts.map(part => {
     if (part.type !== 'input_image' || typeof part.image_url !== 'string') return part;
     const url = compressed.get(part.image_url);
@@ -48,10 +49,10 @@ export const compressImages = defineCopilotStage({
     request: { needs: ['request.openaiResponses', 'provider.model'], provides: ['request.openaiResponses'], consumes: [] },
     response: { needs: [], provides: [], consumes: [] },
   },
-  execute: transform(() => ({
+  execute: transform(scope => ({
     async request(facts) {
       const payload = facts['request.openaiResponses'];
-      const compressed = await compressRequests(payload, facts['provider.model'].id);
+      const compressed = await compressRequests(payload, facts['provider.model'].id, scope.services.copilot.compressImage);
       return compressed === payload ? facts : { ...facts, 'request.openaiResponses': move(compressed) };
     },
   })),

@@ -1,4 +1,5 @@
 import { copilotOperation } from '../facts.ts';
+import { authorizeOpenAIResponsesCompact } from './authorize.ts';
 import { parseOpenAIResponsesCompact } from './parse.ts';
 import { serializeOpenAIResponsesCompact } from './serialize.ts';
 import { compressImages } from '../openai-responses/compress-images.ts';
@@ -9,11 +10,9 @@ import { setInitiatorHeader } from '../openai-responses/set-initiator-header.ts'
 import { setVisionHeader } from '../openai-responses/set-vision-header.ts';
 import { stripImageGeneration } from '../openai-responses/strip-image-generation.ts';
 import { stripServiceTier } from '../openai-responses/strip-service-tier.ts';
-import { authorize } from '../shared/authorize.ts';
 import { observeQuota } from '../shared/observe-quota.ts';
 import { setIdentityHeaders } from '../shared/set-identity-headers.ts';
 import { stripClientHeaders } from '../shared/strip-client-headers.ts';
-import { formatOpenAIResponsesError } from '@floway-dev/protocols/openai-responses';
 import { httpTerminal } from '@floway-dev/provider';
 
 export const openaiResponsesCompact = copilotOperation<'openaiResponsesCompact'>().compose('copilot.openaiResponsesCompact', {
@@ -32,7 +31,7 @@ export const openaiResponsesCompact = copilotOperation<'openaiResponsesCompact'>
     setInitiatorHeader,
     serializeOpenAIResponsesCompact,
     observeQuota,
-    authorize('response.openaiResponses', formatOpenAIResponsesError),
+    authorizeOpenAIResponsesCompact,
     parseOpenAIResponsesCompact,
   ],
   ending: httpTerminal,

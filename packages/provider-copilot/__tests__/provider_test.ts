@@ -835,7 +835,7 @@ test('Copilot image edits keeps multipart uploads free of a JSON content-type', 
     },
     async () => {
       const [model] = await provider.getProvidedModels(directFetcher);
-      const file = new File([new Uint8Array([0x89, 0x50, 0x4E, 0x47])], 'in.png', { type: 'image/png' });
+      const file = { name: 'in.png', type: 'image/png', bytes: new Uint8Array([0x89, 0x50, 0x4E, 0x47]) };
       const result = await provider.callOpenAIImagesEdits(model, { images: [{ type: 'upload', file }], parameters: { prompt: 'make it blue' } }, undefined, noopUpstreamCallOptions());
       assertEquals(result.http.status, 200);
     },

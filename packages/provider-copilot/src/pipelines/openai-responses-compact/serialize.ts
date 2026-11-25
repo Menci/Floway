@@ -9,24 +9,26 @@ import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesResultEx } from 
 export const serializeOpenAIResponsesCompact = defineCopilotStage({
   name: 'copilot.openaiResponsesCompact.serialize',
   through: {
-    request: { needs: ['request.openaiResponses', 'request.http', 'copilot.modelId'], provides: ['request.http'], consumes: [] },
-    response: { needs: ['response.openaiResponses'], provides: ['response.openaiResponses'], consumes: [] },
+    request: { needs: ['request.openaiResponses', 'request.http', 'copilot.modelId'], provides: ['request.http'], consumes: ['copilot.modelId'] },
+    response: { needs: ['response.openaiResponses'], provides: ['response.openaiResponses', 'response.modelKey'], consumes: [] },
   },
   execute: transform(() => {
     let input: CanonicalOpenAIResponsesInputItem[];
+    let modelKey: string;
     return {
-      request(facts) {
+      request({ 'copilot.modelId': id, ...facts }) {
+        modelKey = id;
         const { store: _store, ...payload } = facts['request.openaiResponses'];
         input = payload.input;
-        const body = { ...payload, input: [...input, COMPACTION_TRIGGER], stream: false, model: facts['copilot.modelId'] };
+        const body = { ...payload, input: [...input, COMPACTION_TRIGGER], stream: false, model: modelKey };
         return { ...facts, 'request.http': serializeJsonRequest(facts['request.http'], '/responses', body) };
       },
       response(facts) {
         const outcome = facts['response.openaiResponses'];
-        if (outcome.kind !== 'result') return facts;
+        if (outcome.kind !== 'result') return { ...facts, 'response.modelKey': modelKey };
         // The trigger turn returns a generation resource, which this stage turns into a compact resource.
         const result = compactionResponse(input, outcome.result as OpenAIResponsesResultEx);
-        return { ...facts, 'response.openaiResponses': move({ kind: 'result', result }) };
+        return { ...facts, 'response.modelKey': modelKey, 'response.openaiResponses': move({ kind: 'result', result }) };
       },
     };
   }),
