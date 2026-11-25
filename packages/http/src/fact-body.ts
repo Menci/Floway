@@ -75,3 +75,15 @@ export const readHttpResponseBody = async function* (
     reader.releaseLock();
   }
 };
+
+export const readHttpResponseText = async (response: Response, signal = new AbortController().signal): Promise<Result<string, HttpStreamError>> => {
+  if (response.body === null) return { ok: true, value: '' };
+  const decoder = new TextDecoder();
+  let text = '';
+  let failure: HttpStreamError | undefined;
+  for await (const item of readHttpResponseBody(response.body, signal)) {
+    if (item.ok) text += decoder.decode(item.value, { stream: true });
+    else failure = item.error;
+  }
+  return failure === undefined ? { ok: true, value: text + decoder.decode() } : { ok: false, error: failure };
+};

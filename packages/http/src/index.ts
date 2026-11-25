@@ -22,7 +22,7 @@
 
 export type { DuplexStream, Fetcher, FetchInit, HttpContentDecoders, HttpHeaderLines, HttpRequest, RawHttpResponse, ReplayableBody } from './types.ts';
 export type { HeaderEntry, HttpBody, HttpHeaders, HttpRequestFact, HttpResponseFact, HttpStreamError } from './facts.ts';
-export { isHttpBodyStream, readHttpBody, readHttpResponseBody } from './fact-body.ts';
+export { isHttpBodyStream, readHttpBody, readHttpResponseBody, readHttpResponseText } from './fact-body.ts';
 export { appendHeader, deleteHeader, filterHeaders, getHeader, getHeaders, hasHeader, materializeHeaders, responseHeaderEntries, setHeader } from './headers.ts';
 export { isReplayableBody, toRequestInit } from './request-body.ts';
 
