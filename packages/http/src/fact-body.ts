@@ -66,7 +66,9 @@ export const readHttpResponseBody = async function* (
     const failure = await cancellation;
     yield {
       ok: false,
-      error: failure ? { kind: 'transport', cause: failure.cause } : { kind: 'abort', cause: signal.reason },
+      error: failure !== undefined && failure.cause !== signal.reason
+        ? { kind: 'transport', cause: failure.cause }
+        : { kind: 'abort', cause: signal.reason },
     };
   } finally {
     signal.removeEventListener('abort', cancel);
