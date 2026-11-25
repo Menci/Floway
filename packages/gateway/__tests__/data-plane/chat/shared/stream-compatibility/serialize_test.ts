@@ -78,3 +78,18 @@ test('Responses reorder whole item lifecycles and restamp sequence numbers in de
   expect(output.at(-1)).toEqual(doneFrame());
   expect(source[1]).toEqual(event('response.output_item.added', 1, 1));
 });
+
+test('item serialization fails when withheld frames exceed the frame or byte budget', async () => {
+  const source = [start(0), start(1), delta(1, 'withheld')];
+  await expect(collect(serializeAnthropicMessagesStream(frames(source), true, { frames: 1, bytes: 4096 })))
+    .rejects.toThrow('exceeded 1 retained frames');
+  await expect(collect(serializeAnthropicMessagesStream(frames(source), true, { frames: 10, bytes: 1 })))
+    .rejects.toThrow('exceeded 1 retained bytes');
+});
+
+test('item serialization releases the retention budget as buffered items replay', async () => {
+  const source = [start(0), start(1), stop(0), stop(1), start(2), start(3), stop(2), stop(3)];
+  expect(await collect(serializeAnthropicMessagesStream(frames(source), true, { frames: 1, bytes: 1024 }))).toEqual([
+    start(0), stop(0), start(1), stop(1), start(2), stop(2), start(3), stop(3),
+  ]);
+});

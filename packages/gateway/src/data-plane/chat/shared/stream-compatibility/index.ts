@@ -16,22 +16,34 @@ export const shouldSerializeStreamItems = (flags: ReadonlySet<FlagId>, protocol:
 
 interface ItemEvent { index: number; kind: 'start' | 'delta' | 'end' }
 
+interface InterleavedLimits { readonly bytes: number; readonly frames: number }
+interface QueuedFrame<T> { readonly frame: ProtocolFrame<T>; retainedBytes?: number }
+
+// Match the whole-response collector's budget for withheld media and text
+// frames. The frame limit also caps bookkeeping for many small events.
+const interleavedLimits: InterleavedLimits = { bytes: 64 * 1024 * 1024, frames: 1_000_000 };
+const utf8 = new TextEncoder();
+
 const serialize = async function* <T>(
   frames: AsyncIterable<ProtocolFrame<T>>,
   describe: (event: T) => ItemEvent | undefined,
   isError: (event: T) => boolean,
+  limits: InterleavedLimits,
 ): AsyncGenerator<ProtocolFrame<T>> {
   let current: number | undefined;
-  let buffered: ProtocolFrame<T>[] = [];
+  let buffered: QueuedFrame<T>[] = [];
+  let retainedBytes = 0;
+  let retainedFrames = 0;
   for await (const frame of frames) {
-    const work = [{ frames: [frame], cursor: 0 }];
+    const work: { frames: QueuedFrame<T>[]; cursor: number }[] = [{ frames: [{ frame }], cursor: 0 }];
     while (work.length > 0) {
       const batch = work.at(-1)!;
       if (batch.cursor === batch.frames.length) {
         work.pop();
         continue;
       }
-      const next = batch.frames[batch.cursor++];
+      const queued = batch.frames[batch.cursor++];
+      const next = queued.frame;
       if (next.type === 'event' && isError(next.event)) {
         buffered = [];
         yield next;
@@ -39,8 +51,18 @@ const serialize = async function* <T>(
       }
       const item = next.type === 'event' ? describe(next.event) : undefined;
       if (current !== undefined && ((item !== undefined && item.index !== current) || (item === undefined && buffered.length > 0))) {
-        buffered.push(next);
+        if (queued.retainedBytes === undefined) {
+          if (++retainedFrames > limits.frames) throw new RangeError(`Interleaved stream item serialization exceeded ${limits.frames} retained frames`);
+          queued.retainedBytes = utf8.encode(JSON.stringify(next)).byteLength;
+          retainedBytes += queued.retainedBytes;
+          if (retainedBytes > limits.bytes) throw new RangeError(`Interleaved stream item serialization exceeded ${limits.bytes} retained bytes`);
+        }
+        buffered.push(queued);
         continue;
+      }
+      if (queued.retainedBytes !== undefined) {
+        retainedFrames--;
+        retainedBytes -= queued.retainedBytes;
       }
       if (item?.kind === 'start') current = item.index;
       yield next;
@@ -56,21 +78,29 @@ const serialize = async function* <T>(
   if (buffered.length > 0) throw new Error('Cannot serialize an interleaved stream whose active item never closed');
 };
 
-export const serializeAnthropicMessagesStream = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>, enabled: boolean): AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>> => enabled
+export const serializeAnthropicMessagesStream = (
+  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
+  enabled: boolean,
+  limits: InterleavedLimits = interleavedLimits,
+): AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>> => enabled
   ? serialize(frames, event => {
       if (event.type === 'content_block_start') return { index: event.index, kind: 'start' };
       if (event.type === 'content_block_delta') return { index: event.index, kind: 'delta' };
       if (event.type === 'content_block_stop') return { index: event.index, kind: 'end' };
       return undefined;
-    }, event => event.type === 'error')
+    }, event => event.type === 'error', limits)
   : frames;
 
-export const serializeOpenAIResponsesStream = (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, enabled: boolean): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> => {
+export const serializeOpenAIResponsesStream = (
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  enabled: boolean,
+  limits: InterleavedLimits = interleavedLimits,
+): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> => {
   if (!enabled) return frames;
   const ordered = serialize(frames, event => {
     if (!('output_index' in event)) return undefined;
     return { index: event.output_index, kind: event.type === 'response.output_item.added' ? 'start' : event.type === 'response.output_item.done' ? 'end' : 'delta' };
-  }, event => event.type === 'error' || event.type === 'response.failed');
+  }, event => event.type === 'error' || event.type === 'response.failed', limits);
   return (async function* () {
     let sequence = 0;
     for await (const frame of ordered) {
