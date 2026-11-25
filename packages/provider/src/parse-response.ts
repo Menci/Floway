@@ -178,9 +178,9 @@ const parseSse = async function* <Event>(
   }
   if (!failure && !completed) {
     if (eof.kind === 'doneFrame') {
-      yield { ok: false, error: { kind: 'protocol', cause: 'Upstream SSE ended without a [DONE] sentinel' } };
+      yield { ok: false, error: { kind: 'protocol', cause: new Error('Upstream SSE ended without a [DONE] sentinel') } };
     } else if (eof.kind === 'terminalEvent' && !sawTerminalEvent) {
-      yield { ok: false, error: { kind: 'protocol', cause: 'Upstream SSE ended before a terminal event' } };
+      yield { ok: false, error: { kind: 'protocol', cause: new Error('Upstream SSE ended before a terminal event') } };
     }
   }
 };

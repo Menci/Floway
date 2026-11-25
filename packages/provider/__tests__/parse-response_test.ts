@@ -164,7 +164,7 @@ describe('provider response parsing', () => {
     assert(missedTerminal.kind === 'stream');
     expect(await Array.fromAsync(missedTerminal.stream)).toEqual([
       { ok: true, value: chunk },
-      { ok: false, error: { kind: 'protocol', cause: 'Upstream SSE ended before a terminal event' } },
+      { ok: false, error: { kind: 'protocol', cause: expect.objectContaining({ message: 'Upstream SSE ended before a terminal event', stack: expect.any(String) }) } },
     ]);
     await incomplete.done;
   });
@@ -177,7 +177,7 @@ describe('provider response parsing', () => {
 
     expect(await Array.fromAsync(outcome.stream)).toEqual([
       { ok: true, value: chunk },
-      { ok: false, error: { kind: 'protocol', cause: 'Upstream SSE ended without a [DONE] sentinel' } },
+      { ok: false, error: { kind: 'protocol', cause: expect.objectContaining({ message: 'Upstream SSE ended without a [DONE] sentinel', stack: expect.any(String) }) } },
     ]);
     await exchange.done;
   });
