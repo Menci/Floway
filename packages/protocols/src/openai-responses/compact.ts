@@ -1,5 +1,4 @@
 import type {
-  CanonicalOpenAIResponsesPayload,
   OpenAIResponsesCompactionItem,
   CanonicalOpenAIResponsesInputItem,
   OpenAIResponsesOutputItemEx,
@@ -35,7 +34,7 @@ export type CanonicalOpenAIResponsesCompactPayload = Omit<OpenAIResponsesCompact
 // (tools/temperature/reasoning/...) cannot leak them onto the compact wire.
 // `model` and `store` are caller-supplied at the dispatch site (model is
 // the resolved upstream id; store is gateway-only).
-export const toCompactPayloadShape = (payload: Omit<CanonicalOpenAIResponsesPayload, 'model'>): Omit<CanonicalOpenAIResponsesCompactPayload, 'model' | 'store'> => ({
+export const toCompactPayloadShape = (payload: Omit<CanonicalOpenAIResponsesCompactPayload, 'model'>): Omit<CanonicalOpenAIResponsesCompactPayload, 'model' | 'store'> => ({
   input: payload.input,
   ...(payload.instructions !== undefined && { instructions: payload.instructions }),
   ...(payload.previous_response_id !== undefined && { previous_response_id: payload.previous_response_id }),

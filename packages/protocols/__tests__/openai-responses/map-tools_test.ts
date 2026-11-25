@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { collectOpenAIResponsesToolEntries, collectOpenAIResponsesTools, mapOpenAIResponsesTools, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesTool } from '../../src/openai-responses/index.ts';
+import { collectOpenAIResponsesToolEntries, collectOpenAIResponsesTools, mapOpenAIResponsesTools, type CanonicalOpenAIResponsesCompactPayload, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesTool } from '../../src/openai-responses/index.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const functionTool = {
@@ -62,4 +62,18 @@ test('collects declarations in top-level and input carrier order', () => {
   assertEquals(collectOpenAIResponsesToolEntries(payload).map(entry => entry.path), [
     'tools[0]', 'input[0].tools[0]', 'input[1].tools[0]',
   ]);
+});
+
+test('maps tools inside a compact input while retaining its nullable cache option', () => {
+  const payload: CanonicalOpenAIResponsesCompactPayload = {
+    model: 'gpt-test',
+    prompt_cache_options: null,
+    input: [{ type: 'additional_tools', role: 'developer', tools: [functionTool] }],
+  };
+  const mapped: CanonicalOpenAIResponsesCompactPayload = mapOpenAIResponsesTools(payload, tool => ({ ...tool, description: 'Mapped tool.' }));
+
+  assertEquals(mapped, {
+    ...payload,
+    input: [{ type: 'additional_tools', role: 'developer', tools: [{ ...functionTool, description: 'Mapped tool.' }] }],
+  });
 });

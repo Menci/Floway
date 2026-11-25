@@ -25,10 +25,10 @@ export const collectOpenAIResponsesToolEntries = (
 export const collectOpenAIResponsesTools = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesTool[] =>
   collectOpenAIResponsesToolEntries(payload).map(entry => entry.tool);
 
-export const mapOpenAIResponsesTools = (
-  payload: CanonicalOpenAIResponsesPayload,
+export const mapOpenAIResponsesTools = <Payload extends Pick<CanonicalOpenAIResponsesPayload, 'input' | 'tools'>>(
+  payload: Payload,
   transform: (tool: OpenAIResponsesTool) => OpenAIResponsesTool,
-): CanonicalOpenAIResponsesPayload => {
+): Payload => {
   const mapTools = (tools: OpenAIResponsesTool[]): OpenAIResponsesTool[] => tools.map(transform);
   const input = payload.input.map(item => {
     switch (item.type) {

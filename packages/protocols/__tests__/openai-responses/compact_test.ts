@@ -17,3 +17,7 @@ test('toCompactPayloadShape preserves compact cache controls', () => {
     prompt_cache_retention: '24h',
   });
 });
+
+test('toCompactPayloadShape honors a null compact cache option', () => {
+  assertEquals(toCompactPayloadShape({ input: [], prompt_cache_options: null }), { input: [], prompt_cache_options: null });
+});
