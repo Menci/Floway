@@ -1,6 +1,6 @@
 import { gatewayFactSpace } from '../../../pipeline/facts.ts';
 import { responseHead } from '../../../pipeline/response.ts';
-import { prepareJsonModelRequest } from '../../../shared/passthrough-request.ts';
+import { prepareJsonModelRequest } from '../../../shared/json-model-request.ts';
 import { readHttpBody } from '@floway-dev/http';
 import { move } from '@floway-dev/pipeline';
 import { formatOpenAIImagesGenerationsError, type OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';

@@ -4,6 +4,7 @@ import type { UsageRecord } from '../../repo/types.ts';
 import { usageMetrics } from '../../repo/usage-metrics.ts';
 import { currentHour } from '../shared/telemetry/hour.ts';
 import type { UsageMeasurement } from '../shared/telemetry/usage.ts';
+import type { HttpResponseFact } from '@floway-dev/http';
 import { move, type ManagedStream } from '@floway-dev/pipeline';
 import { priceRequest } from '@floway-dev/protocols/common';
 import type { ProtocolStreamError } from '@floway-dev/provider';
@@ -13,12 +14,18 @@ export interface StreamUsageObserver<Event> {
   readonly finish: () => UsageMeasurement | null;
 }
 
+export interface UsageObserverContext {
+  readonly candidate: ServeCandidate;
+  readonly http: HttpResponseFact | null;
+}
+
 export type UsageObserver<Key extends ProtocolResponseKey> =
   | { readonly kind: 'unbillable' }
   | {
     readonly kind: 'billable';
-    readonly result?: (result: ProtocolResult<Key>) => UsageMeasurement | null;
-    readonly stream?: () => StreamUsageObserver<ProtocolEvent<Key>>;
+    readonly result?: (result: ProtocolResult<Key>, context: UsageObserverContext) => UsageMeasurement | null;
+    readonly stream?: (context: UsageObserverContext) => StreamUsageObserver<ProtocolEvent<Key>>;
+    readonly error?: (body: unknown, context: UsageObserverContext) => UsageMeasurement | null;
   };
 
 type UsageObservation =
@@ -43,7 +50,7 @@ export const computeUsage = <const Key extends ProtocolResponseKey>(
   const through = {
     request: { needs: ['request.auth.apiKeyId', 'serve.candidate'], provides: [], consumes: [] },
     response: {
-      needs: ['response.modelKey', responseKey],
+      needs: ['response.http', 'response.modelKey', responseKey],
       provides: ['response.usage', responseKey],
       consumes: [],
     },
@@ -57,6 +64,7 @@ export const computeUsage = <const Key extends ProtocolResponseKey>(
       const back = await scope.next(facts);
       const outcome = back[responseKey] as GatewayPipelineFacts[Key];
       const usage = scope.deferred<ComputedUsage>();
+      const context = { candidate: facts['serve.candidate'], http: back['response.http'] };
       const settle = (observation: UsageObservation): void => {
         const row = observer.kind === 'billable'
           ? computeRow(observation, facts['request.auth.apiKeyId'], facts['serve.candidate'], back['response.modelKey'])
@@ -69,18 +77,22 @@ export const computeUsage = <const Key extends ProtocolResponseKey>(
         const kind = source === 'local'
           ? 'no-upstream-call'
           : isHttpStreamError(cause) && cause.kind === 'abort' ? 'cancelled-before-usage' : 'failed-before-usage';
-        settle({ kind });
+        const status = context.http?.status;
+        const measurement = kind === 'failed-before-usage' && status !== undefined && status >= 200 && status < 300 && observer.kind === 'billable'
+          ? observer.error?.(outcome.error, context)
+          : null;
+        settle(measurement ? { kind: 'reported', measurement } : { kind });
         return { ...back, 'response.usage': usage.deferred } as MeteredAnswer;
       }
 
       if (outcome.kind === 'result') {
-        const measurement = observer.kind === 'unbillable' ? null : observer.result?.(outcome.result as ProtocolResult<Key>);
+        const measurement = observer.kind === 'unbillable' ? null : observer.result?.(outcome.result as ProtocolResult<Key>, context);
         if (measurement === undefined) throw new TypeError(`The ${responseKey} usage stage needs a result observer`);
         settle(measurement === null ? { kind: 'omitted' } : { kind: 'reported', measurement });
         return { ...back, 'response.usage': usage.deferred } as MeteredAnswer;
       }
 
-      const measure = observer.kind === 'unbillable' ? null : observer.stream?.();
+      const measure = observer.kind === 'unbillable' ? null : observer.stream?.(context);
       if (measure === undefined) throw new TypeError(`The ${responseKey} usage stage needs a stream observer`);
       const source = outcome.stream as ManagedStream<ProtocolEvent<Key>, ProtocolStreamError>;
       const stream = scope.wrapStream(source, async function* (items, producer) {

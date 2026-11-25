@@ -1,27 +1,43 @@
-import { test } from 'vitest';
+import { afterEach, expect, test } from 'vitest';
 
-import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
+import type { ArchiveMetadata } from '../../../src/dump/archive-metadata.ts';
+import { getDumpStore, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
-import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
+import { decodeDump } from '@floway-dev/dump/browser';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-// A custom upstream is the easiest fixture to assert /completions against:
-// the operator declares the endpoint capability per-model, and the path
-// resolves to /v1/completions through the default pathOverrides table.
-const registerOpenAICompletionsUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
-  await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_completions',
-    name: 'Passthrough Completions Provider',
-    sortOrder: 100,
+const initialDumpStore = getDumpStore();
+afterEach(() => { initDumpStore(initialDumpStore); });
+
+const captureArchives = () => {
+  const archives: { metadata: ArchiveMetadata; contents: string }[] = [];
+  initDumpStore({
+    ...initialDumpStore,
+    archives: {
+      async writeArchive(_keyId, _id, bytes) {
+        const contents = await new Response(bytes).text();
+        return async metadata => { archives.push({ metadata, contents }); };
+      },
+      async list() { return []; },
+      async get() { return null; },
+    },
+  });
+  return archives;
+};
+
+const saveCompletionsUpstream = (repo: Awaited<ReturnType<typeof setupAppTest>>['repo'], id: string, host: string, sortOrder: number) =>
+  saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    id,
+    name: 'Completions Provider',
+    sortOrder,
     config: {
-      baseUrl: 'https://passthrough.example.com',
+      baseUrl: `https://${host}`,
       ingressHeadersRules: [],
-      apiKey: 'sk-passthrough',
+      apiKey: 'sk-completions',
       endpoints: {},
       modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{
@@ -30,6 +46,11 @@ const registerOpenAICompletionsUpstream = async (repo: Awaited<ReturnType<typeof
       }],
     },
   }));
+
+const registerOpenAICompletionsUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+  await saveCompletionsUpstream(repo, 'up_completions', 'completions.example.com', 100);
 };
 
 const completionStream = (): Response => {
@@ -52,7 +73,7 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/completions') {
+      if (url.hostname === 'completions.example.com' && url.pathname === '/v1/completions') {
         return Promise.resolve(completionStream());
       }
       throw new Error(`Unhandled fetch ${request.url}`);
@@ -77,12 +98,6 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
   );
 });
 
-// Dual-path coverage: usage + performance + dump telemetry must land
-// equivalently on both the non-streaming JSON and the streaming SSE
-// branches. The handler does not force `stream: true` upstream the way
-// openai-chat-completions does (no interceptor framework to feed), so the two
-// paths really do exercise different scaffold branches and the assertions
-// here keep them honest.
 test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/completions sends a data-only failure after partial output on %s', async mode => {
   const { apiKey, repo } = await setupAppTest();
   await registerOpenAICompletionsUpstream(repo);
@@ -117,16 +132,16 @@ test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/complet
       assertEquals((await reader.read()).done, true);
     },
   );
-  await flushAsyncWork();
+  await flushBackground();
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
 });
 
-test('/v1/completions non-streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a bytes-body dump record', async () => {
+test('/v1/completions records JSON completion usage, neutral performance, and the rendered response in its archive', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerOpenAICompletionsUpstream(repo);
-  const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const archives = captureArchives();
 
   await withMockedFetch(
     () => Promise.resolve(jsonResponse({
@@ -148,7 +163,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
     },
   );
 
-  await flushAsyncWork();
+  await flushBackground();
 
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
@@ -161,26 +176,26 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(performance[0]?.requests, 1);
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
-  assertEquals(dumpStubs.stored.length, 1);
-  const dump = dumpStubs.stored[0]!.record;
-  assertEquals(dump.meta.path, '/v1/completions');
-  assertEquals(dump.meta.status, 200);
-  assertEquals(dump.meta.model, 'davinci-002');
-  assertEquals(dump.meta.inputTokens, 7);
-  assertEquals(dump.meta.outputTokens, 2);
-  // Non-streaming: the upstream sent a one-shot JSON, so the dump
-  // captures the bytes (not a frame log).
-  assertEquals(dump.response.body.type, 'bytes');
+  expect(archives).toHaveLength(1);
+  const { metadata, contents } = archives[0]!;
+  expect(metadata).toMatchObject({ path: '/v1/completions', status: 200, model: 'davinci-002', inputTokens: 7, outputTokens: 2 });
+  const dump = decodeDump(contents);
+  expect(dump.stages.get(dump.rootStageIds[0]!)?.responseFacts).toMatchObject({
+    'response.http': { status: 200, body: expect.any(Uint8Array) },
+  });
 });
 
-test('/v1/completions streaming strips the unrequested usage chunk yet records usage and a frame-log dump', async () => {
+test('/v1/completions archives and bills the usage frame even when the client omits it from delivery', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerOpenAICompletionsUpstream(repo);
-  const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const archives = captureArchives();
 
   await withMockedFetch(
-    () => Promise.resolve(completionStream()),
+    async request => {
+      expect(await request.json()).toMatchObject({ stream: true, stream_options: { include_usage: true } });
+      return completionStream();
+    },
     async () => {
       const response = await requestAppWithWarmModels('/v1/completions', {
         method: 'POST',
@@ -195,7 +210,7 @@ test('/v1/completions streaming strips the unrequested usage chunk yet records u
     },
   );
 
-  await flushAsyncWork();
+  await flushBackground();
 
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
@@ -206,27 +221,60 @@ test('/v1/completions streaming strips the unrequested usage chunk yet records u
   assertEquals(performance[0]?.requests, 1);
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
-  assertEquals(dumpStubs.stored.length, 1);
-  const dump = dumpStubs.stored[0]!.record;
-  assertEquals(dump.meta.path, '/v1/completions');
-  assertEquals(dump.meta.status, 200);
-  assertEquals(dump.meta.model, 'davinci-002');
-  assertEquals(dump.meta.inputTokens, 4);
-  assertEquals(dump.meta.outputTokens, 2);
-  // Streaming: dump stores the protocol frames the gateway saw from
-  // upstream BEFORE transformFrame ran. The fixture stream emits two
-  // content events, one usage-only event (which the client did not opt
-  // into and so it was stripped from the forwarded stream), and a done
-  // terminator.
-  assertEquals(dump.response.body.type, 'stream');
-  if (dump.response.body.type === 'stream') {
-    const frames = dump.response.body.events.map(e => e.frame);
-    // Upstream's usage chunk is preserved in the dump even though it was
-    // stripped from the client-facing stream.
-    const usageFrame = frames[2];
-    if (usageFrame?.type === 'event') {
-      const event = usageFrame.event as { choices: unknown[]; usage: { prompt_tokens: number } };
-      assertEquals(event.usage.prompt_tokens, 4);
-    } else throw new Error('expected the usage event frame');
-  }
+  expect(archives).toHaveLength(1);
+  const { metadata, contents } = archives[0]!;
+  expect(metadata).toMatchObject({ path: '/v1/completions', status: 200, model: 'davinci-002', inputTokens: 4, outputTokens: 2 });
+  const frames = [...decodeDump(contents).streams.values()].flatMap(stream => stream.frames);
+  expect(frames).toContainEqual({ ok: true, value: expect.objectContaining({ choices: [], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } }) });
+});
+
+const completionResult = { id: 'cmpl_x', object: 'text_completion', created: 1, model: 'davinci-002', choices: [] };
+
+test.each([
+  {
+    name: 'JSON error',
+    second: () => jsonResponse({ error: { code: 'vendor_failure' } }, 400),
+    status: 400,
+    body: { error: { code: 'vendor_failure' } },
+  },
+  {
+    name: 'text error',
+    second: () => new Response('upstream unavailable', { status: 503 }),
+    status: 503,
+    body: { error: { message: 'upstream unavailable', type: 'api_error' } },
+  },
+  {
+    name: 'completion',
+    second: () => jsonResponse(completionResult),
+    status: 200,
+    body: completionResult,
+  },
+])('/completions meters failed candidates and renders the selected $name', async ({ second, status, body }) => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerOpenAICompletionsUpstream(repo);
+  await saveCompletionsUpstream(repo, 'second', 'second.example.com', 200);
+  const calls: string[] = [];
+
+  await withMockedFetch(async request => {
+    const url = new URL(request.url);
+    expect(await request.json()).toEqual({ model: 'davinci-002', prompt: 'hello' });
+    calls.push(url.hostname);
+    return url.hostname === 'completions.example.com' ? new Response('first failure', { status: 500 }) : second();
+  }, async () => {
+    const response = await requestAppWithWarmModels('/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+      body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
+    });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual(body);
+  });
+  await flushBackground();
+
+  expect(calls).toEqual(['completions.example.com', 'second.example.com']);
+  expect(await repo.performance.listAll()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ upstream: 'up_completions', operation: 'text_completion', errorsNoOutput: 1, requests: 1 }),
+    expect.objectContaining({ upstream: 'second', operation: 'text_completion', errorsNoOutput: status === 200 ? 0 : 1, requests: 1 }),
+  ]));
+  expect(await repo.usage.listAll()).toMatchObject(status === 200 ? [{ upstream: 'second', metrics: [], requests: 1 }] : []);
 });

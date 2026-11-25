@@ -1,6 +1,9 @@
 import type { TokenUsage } from '../../repo/types.ts';
-import { foldsExclusiveCacheTokens, openAICacheTokensFromUsage, tokenUsage } from '../shared/telemetry/usage.ts';
-import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/protocols/common';
+import type { StreamUsageObserver, UsageObserverContext } from '../pipeline/compute-usage.ts';
+import type { ServeCandidate } from '../pipeline/facts.ts';
+import { foldsExclusiveCacheTokens, openAICacheTokensFromUsage, tokenUsage, tokenUsageMeasurement } from '../shared/telemetry/usage.ts';
+import { billableServiceTier, isOpenAIUsageOnlyEventShape, splitInclusiveInputTokens } from '@floway-dev/protocols/common';
+import type { OpenAICompletionsResult, OpenAICompletionsStreamEvent } from '@floway-dev/protocols/openai-completions';
 
 // `/v1/completions` shares OpenAI's CompletionUsage schema with
 // `/v1/chat/completions`. Both routes hand off to the shared
@@ -16,12 +19,6 @@ import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/prot
 // non-streaming /v1/completions body (observed null on a Zhipu/GLM
 // fork); the streaming path was observed to omit the field.
 //
-// This endpoint is a passthrough with no interceptor chain, so the fold the
-// chat targets apply to the usage chunk itself happens here instead, on the
-// one read that consumes it. `declaredExclusive` carries the serving
-// upstream's `usage-exclusive-cached-tokens` flag and `identity` names it in
-// whatever `foldsExclusiveCacheTokens` raises.
-
 export const tokenUsageFromOpenAICompletionsUsage = (
   usage: unknown,
   serviceTier: string | null | undefined,
@@ -51,4 +48,27 @@ export const tokenUsageFromOpenAICompletionsUsage = (
     output: completionTokens,
     tier: billableServiceTier(serviceTier),
   });
+};
+
+type WithServiceTier<T> = T & { readonly service_tier?: string | null };
+
+const measureUsage = (usage: unknown, serviceTier: string | null | undefined, { model, upstream }: ServeCandidate) => {
+  const tokens = tokenUsageFromOpenAICompletionsUsage(usage, serviceTier, model.enabledFlags.includes('usage-exclusive-cached-tokens'), `${upstream.id}/${model.id}`);
+  return tokens === null ? null : tokenUsageMeasurement(tokens);
+};
+
+export const measureOpenAICompletionsUsage = ({ usage, service_tier: tier }: WithServiceTier<OpenAICompletionsResult>, { candidate }: UsageObserverContext) =>
+  measureUsage(usage, tier, candidate);
+
+export const observeOpenAICompletionsUsage = ({ candidate }: UsageObserverContext): StreamUsageObserver<OpenAICompletionsStreamEvent> => {
+  let usage: unknown;
+  let tier: string | null | undefined;
+  return {
+    observe(event: WithServiceTier<OpenAICompletionsStreamEvent>) {
+      if (event.service_tier !== undefined) tier = event.service_tier;
+      if (isOpenAIUsageOnlyEventShape(event)) usage = event.usage;
+      return null;
+    },
+    finish: () => measureUsage(usage, tier, candidate),
+  };
 };

@@ -1,8 +1,3 @@
-// Preflight shared by the JSON passthrough endpoints. Each of them accepts an
-// arbitrary JSON object and forwards it upstream verbatim, so the only field
-// the gateway insists on is a non-empty `model` string — routing depends on
-// it. `requestName` prefixes the 400 messages so each endpoint names itself.
-
 interface JsonModelRequestBody {
   model?: unknown;
   [key: string]: unknown;
