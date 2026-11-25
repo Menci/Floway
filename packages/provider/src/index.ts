@@ -70,6 +70,9 @@ export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest
 export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
+export type { GatewayFacts, ProtocolError, ProtocolOutcome, ProtocolStreamError, ProviderModelFact, ProviderOperation, ProviderPipelines, ProviderServices, ProviderUpstream } from './pipelines.ts';
+export { toProviderModelFact } from './pipelines.ts';
+export { stripHeaders } from './headers.ts';
 
 export { formatUpstreamMetricIdentity, groupUpstreamMetricSamples, quotaPercentDisplay, recordUpstreamMetric, recordUpstreamMetrics, resolveUpstreamMetricDisplaySeries, upstreamMetricAxisPriority } from './upstream-metrics.ts';
 export type { GroupedUpstreamMetricSamples, UpstreamMetrics, UpstreamMetricDisplay, UpstreamMetricDisplayOptions, UpstreamMetricDisplaySeries, UpstreamMetricLabelKey, UpstreamMetricObservation, UpstreamMetricSample, UpstreamMetricUnit } from './upstream-metrics.ts';
