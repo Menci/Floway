@@ -1,254 +1,204 @@
-import { type Context, Hono } from 'hono';
-import { test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
-import type { AuthVars } from '../../../../src/middleware/auth.ts';
-import { initRepo } from '../../../../src/repo/index.ts';
-import type { ApiKey, User } from '../../../../src/repo/types.ts';
-import { installDumpStubs } from '../../../dump/test-fixtures.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
+import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
+import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
+import { buildCustomUpstreamRecord, parseSSEText, requestAppWithWarmModels, setupAppTest, sseAnthropicMessagesResponse, sseOpenAIResponsesResponse, sseResponse } from '../../../test-utils/app.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
-import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import type { ModelEndpoints } from '@floway-dev/protocols/common';
+import { withMockedFetch } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
-  return {
-    ...original,
-    enumerateModelCandidates: vi.fn(async () => {
-      const next = candidatesQueue.shift();
-      if (next === undefined) throw new Error('http_test: no candidates enqueued');
-      return next;
-    }),
-  };
+const model = 'chat-model';
+const messages = [{ role: 'user', content: 'hello' }];
+type Repo = Awaited<ReturnType<typeof setupAppTest>>['repo'];
+
+const saveUpstream = (
+  repo: Repo, id: string, endpoints: ModelEndpoints, sortOrder = 100, flagOverrides = {},
+) => saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+  id,
+  sortOrder,
+  flagOverrides,
+  config: {
+    baseUrl: `https://${id}.example.com`,
+    ingressHeadersRules: [],
+    apiKey: 'chat-upstream-key',
+    endpoints: {},
+    modelsFetch: { enabled: false, authStyle: 'bearer' },
+    models: [{ upstreamModelId: model, endpoints }],
+  },
+}));
+
+const request = (key: string, payload: Record<string, unknown> = {}) => requestAppWithWarmModels('/v1/chat/completions', {
+  method: 'POST',
+  headers: { 'content-type': 'application/json', 'x-api-key': key },
+  body: JSON.stringify({ model, messages, ...payload }),
 });
 
-const { openaiChatCompletionsHttp } = await import('../../../../src/data-plane/chat/openai-chat-completions/http.ts');
-
-const API_KEY_ID = 'key_chat_completions_http_test';
-
-const queueCandidates = (candidates: readonly ModelCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
-};
-
-const installRepo = (): InMemoryRepo => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  return repo;
-};
-
-const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
-  id: API_KEY_ID,
-  userId: 1,
-  name: 'http_test',
-  key: 'sk-http-test',
-  serverSecret: '00'.repeat(32),
-  createdAt: '2026-01-01T00:00:00.000Z',
-  upstreamIds: null,
-  randomizeUpstreams: false,
-  deletedAt: null,
-  dumpRetentionSeconds: null,
-  openaiResponsesRetentionSeconds: 0,
-  ...overrides,
-});
-
-const buildUser = (overrides: Partial<User> = {}): User => ({
-  id: 1,
-  username: 'http_test',
-  passwordHash: null,
-  isAdmin: false,
-  createdAt: '2026-01-01T00:00:00.000Z',
-  deletedAt: null,
-  ...overrides,
-});
-
-const makeApp = (middleware?: (c: Context) => void, apiKeyOverrides: Partial<ApiKey> = {}): Hono<{ Variables: AuthVars }> => {
-  const app = new Hono<{ Variables: AuthVars }>();
-  app.use('*', async (c, next) => {
-    c.set('apiKey', buildApiKey(apiKeyOverrides));
-    c.set('user', buildUser());
-    middleware?.(c);
-    await next();
-  });
-  app.post('/v1/chat/completions', openaiChatCompletionsHttp.generate);
-  return app;
-};
-
-const makeOpenAIChatCompletionsEvents = (): readonly OpenAIChatCompletionsStreamEvent[] => [
-  {
-    id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{  index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+const nativeStream = () => sseResponse([{
+  data: {
+    id: 'chatcmpl_http',
+    object: 'chat.completion.chunk',
+    created: 1,
+    model,
+    choices: [{ index: 0, delta: { content: 'hello' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 12, prompt_tokens_details: { cached_tokens: 6 } },
+    extension: { mode: 'verbatim' },
   },
-  {
-    id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{  index: 0, delta: { content: 'hi' }, finish_reason: null }],
-  },
-  {
-    id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
-  },
-  {
-    id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [],
-    usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
-  },
-];
+}]);
 
-const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): AsyncGenerator<ProtocolFrame<TEvent>> {
-  for (const event of events) yield eventFrame(event);
-  yield doneFrame();
-};
-
-const makeCandidate = (overrides: {
-  upstream?: string;
-  endpoints?: ModelEndpoints;
-  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
-} = {}): ModelCandidate => {
-  const upstream = overrides.upstream ?? 'up_test';
-  const provider = stubProvider({ callOpenAIChatCompletions: overrides.callOpenAIChatCompletions });
-  return {
-    provider: {
-      upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
+test.each(['prompt_cache_options', 'user'] as const)('Chat Completions rejects a null %s before routing', async field => {
+  const { apiKey } = await setupAppTest();
+  const response = await request(apiKey.key, { [field]: null });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toEqual({
+    error: {
+      message: `Invalid '${field}': expected ${field === 'user' ? 'a string' : 'an object'} when present.`,
+      type: 'invalid_request_error',
+      param: field,
+      code: null,
     },
-    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
-    fetcher: directFetcher,
-  };
-};
-
-test.each(['prompt_cache_options', 'user'] as const)('POST /v1/chat/completions rejects a null %s', async field => {
-  installRepo();
-  const response = await makeApp().request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }], [field]: null }),
-  });
-
-  assertEquals(response.status, 400);
-  assertEquals((await response.json() as { error: { param: string; type: string; code: null } }).error, {
-    message: `Invalid '${field}': expected ${field === 'user' ? 'a string' : 'an object'} when present.`,
-    type: 'invalid_request_error',
-    param: field,
-    code: null,
   });
 });
 
-test('client-carried opaque state restores the exact preferred candidate on the next turn', async () => {
-  installRepo();
-  const observedBodies: Array<{ messages?: Array<{ reasoning_opaque?: string }> }> = [];
-  const callA = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    observedBodies.push(body as { messages?: Array<{ reasoning_opaque?: string }> });
-    const turn = observedBodies.length;
-    return {
-      ok: true,
-      events: makeProtocolFrames([
-        {
-          id: `chatcmpl_affinity_${turn}`,
-          object: 'chat.completion.chunk',
-          created: 0,
-          model: 'test-model',
-          choices: [{  index: 0, delta: { content: `turn ${turn}`, ...(turn === 1 ? { reasoning_opaque: 'opaque-a' } : {}) }, finish_reason: null }],
-        },
-        {
-          id: `chatcmpl_affinity_${turn}`,
-          object: 'chat.completion.chunk',
-          created: 0,
-          model: 'test-model',
-          choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
-        },
-      ]),
-      modelKey: 'a',
-      http: { status: 200, headers: new Headers() },
-    };
+test('Chat Completions preserves native extensions, normalizes usage before metering and completes at native EOF', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstream(repo, 'native-chat', { openaiChatCompletions: {} });
+
+  const calls: unknown[] = [];
+  await withMockedFetch(async upstream => {
+    expect(upstream.url).toBe('https://native-chat.example.com/v1/chat/completions');
+    expect(upstream.headers.get('authorization')).toBe('Bearer chat-upstream-key');
+    calls.push(await upstream.json());
+    return nativeStream();
+  }, async () => {
+    const streamed = await request(apiKey.key, { stream: true, extension: { request: 'verbatim' } });
+    expect(streamed.status).toBe(200);
+    const frames = parseSSEText(await streamed.text());
+    expect(frames.at(-1)?.data).toBe('[DONE]');
+    expect(frames.some(frame => frame.data.includes('"extension":{"mode":"verbatim"}'))).toBe(true);
+    expect(frames.some(frame => frame.data.includes('"usage"'))).toBe(false);
+
+    const withUsage = await request(apiKey.key, { stream: true, stream_options: { include_usage: true } });
+    const usageFrame = parseSSEText(await withUsage.text()).find(frame => frame.data.includes('"usage"'));
+    expect(JSON.parse(usageFrame!.data)).toMatchObject({ choices: [], usage: { prompt_tokens: 10 } });
+
+    const collected = await request(apiKey.key);
+    expect(collected.status).toBe(200);
+    expect(await collected.json()).toMatchObject({
+      choices: [{ message: { content: 'hello' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
+    });
   });
-  const callB = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    throw new Error('affinity should have reordered candidate A before B');
-  });
-  const candidateA = makeCandidate({ upstream: 'up-a', callOpenAIChatCompletions: callA });
-  const candidateB = makeCandidate({ upstream: 'up-b', callOpenAIChatCompletions: callB });
-  queueCandidates([candidateA, candidateB]);
-
-  const first = await makeApp().request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'first' }] }),
-  });
-  const firstBody = await first.json() as { choices: Array<{ message: { content: string; reasoning_opaque: string } }> };
-  const assistant = firstBody.choices[0].message;
-  assert(assistant.reasoning_opaque !== 'opaque-a');
-
-  queueCandidates([candidateB, candidateA]);
-  const second = await makeApp().request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      messages: [
-        { role: 'user', content: 'first' },
-        assistant,
-        { role: 'user', content: 'continue' },
-      ],
-    }),
-  });
-
-  assertEquals(second.status, 200);
-  assertEquals(callB.mock.calls.length, 0);
-  assertEquals(callA.mock.calls.length, 2);
-  assertEquals(observedBodies[1].messages?.[1].reasoning_opaque, 'opaque-a');
-});
-
-test.each([false, true])('POST /v1/chat/completions emits the usage-only chunk only when stream_options.include_usage is set (%s)', async includeUsage => {
-  installRepo();
-  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
-  }));
-  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
-
-  const response = await makeApp().request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      stream: true,
-      ...(includeUsage ? { stream_options: { include_usage: true } } : {}),
-      messages: [{ role: 'user', content: 'hello' }],
-    }),
-  });
-
-  assertEquals(response.status, 200);
-  const body = await response.text();
-  assertEquals(body.includes('"choices":[]'), includeUsage);
-});
-
-test('POST /v1/chat/completions stamps TTFT on a streamed record', async () => {
-  installRepo();
-  const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
-  const callOpenAIChatCompletions = vi.fn(async (
-    _model: unknown,
-    _body: unknown,
-    _signal?: AbortSignal,
-    opts?: UpstreamCallOptions,
-  ): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    return await (opts?.wrapUpstreamCall ?? (d => d()))(async () => ({
-      ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
-    }));
-  });
-  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
-
-  const app = makeApp(undefined, { dumpRetentionSeconds: 3600 });
-  const response = await app.request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
-  });
-
-  assertEquals(response.status, 200);
-  await response.text();
   await flushBackground();
-  assertEquals(dumpStubs.stored.length, 1);
-  const meta = dumpStubs.stored[0]!.record.meta;
-  assert(meta.ttftMs !== null && meta.ttftMs !== undefined && meta.ttftMs >= 0);
+  expect(calls).toMatchObject([
+    { stream: true, stream_options: { include_usage: true }, extension: { request: 'verbatim' } },
+    { stream: true, stream_options: { include_usage: true } },
+    { stream: true, stream_options: { include_usage: true } },
+  ]);
+  const [usage] = await repo.usage.listAll();
+  expect(usage).toMatchObject({ model, upstream: 'native-chat', requests: 3 });
+  expect(tokenCountsFromUsage(usage)).toEqual({ input: 12, input_cache_read: 18, output: 6 });
+  expect(await repo.performance.listAll()).toMatchObject([{ operation: 'chat', requests: 3, errorsNoOutput: 0 }]);
+});
+
+test('Chat Completions translates into the Anthropic Messages body and collects source protocol output', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstream(repo, 'anthropic-chat', { anthropicMessages: {} });
+
+  await withMockedFetch(async upstream => {
+    expect(upstream.url).toBe('https://anthropic-chat.example.com/v1/messages');
+    expect(await upstream.json()).toMatchObject({ model, stream: true, messages: [{ role: 'user' }] });
+    return sseAnthropicMessagesResponse({
+      type: 'message', id: 'msg_1', model, role: 'assistant',
+      content: [{ type: 'text', text: 'anthropic answer' }], stop_reason: 'end_turn', usage: { input_tokens: 3, output_tokens: 2 },
+    });
+  }, async () => {
+    const response = await request(apiKey.key);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ object: 'chat.completion', choices: [{ message: { content: 'anthropic answer' } }] });
+  });
+  await flushBackground();
+  expect(await repo.usage.listAll()).toMatchObject([{ model, upstream: 'anthropic-chat', requests: 1 }]);
+});
+
+test('Chat Completions translates into the Responses body and keeps client stream delivery', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstream(repo, 'responses-chat', { openaiResponses: {} });
+
+  await withMockedFetch(async upstream => {
+    expect(upstream.url).toBe('https://responses-chat.example.com/v1/responses');
+    expect(await upstream.json()).toMatchObject({ model, stream: true, input: [{ role: 'user' }] });
+    return sseOpenAIResponsesResponse({
+      id: 'resp_chat', model, object: 'response', status: 'completed', created_at: 1,
+      output: [{ id: 'msg_1', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'responses answer', annotations: [] }] }],
+      usage: { input_tokens: 3, output_tokens: 2, total_tokens: 5 },
+      error: null,
+      incomplete_details: null,
+    });
+  }, async () => {
+    const response = await request(apiKey.key, { stream: true });
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain('responses answer');
+    expect(body).toContain('data: [DONE]');
+  });
+  await flushBackground();
+  expect(await repo.usage.listAll()).toMatchObject([{ model, upstream: 'responses-chat', requests: 1 }]);
+});
+
+test('Chat Completions sends an alias reasoning choice through DeepSeek request normalization', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstream(repo, 'deepseek-chat', { openaiChatCompletions: {} }, 100, { 'vendor-deepseek': true });
+  await repo.modelAliases.insert({
+    id: 'alias_no_reasoning',
+    name: 'no-reasoning',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: null,
+    visibleInModelsList: true,
+    targets: [{ target_model_id: model, rules: { reasoning: { effort: 'none' } } }],
+    announcedMetadata: null,
+    sortOrder: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  });
+
+  await withMockedFetch(async upstream => {
+    const wire = await upstream.json();
+    expect(wire).toMatchObject({ model, thinking: { type: 'disabled' } });
+    expect(wire).not.toHaveProperty('reasoning_effort');
+    return nativeStream();
+  }, async () => {
+    const response = await request(apiKey.key, { model: 'no-reasoning' });
+    expect(response.status).toBe(200);
+    await response.json();
+  });
+  await flushBackground();
+});
+
+test.each([
+  { status: 400, upstream: () => Response.json({ error: { code: 'vendor_failure', detail: 'keep' } }, { status: 400, headers: { 'retry-after': '5' } }), body: { error: { code: 'vendor_failure', detail: 'keep' } } },
+  { status: 503, upstream: () => new Response('upstream unavailable', { status: 503, headers: { 'retry-after': '5' } }), body: { error: { message: 'upstream unavailable', type: 'api_error' } } },
+])('Chat Completions retries a candidate 400 and preserves the selected $status error and retry hint', async ({ status, upstream, body }) => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstream(repo, 'first-chat', { openaiChatCompletions: {} });
+  await saveUpstream(repo, 'second-chat', { openaiChatCompletions: {} }, 200);
+  const calls: string[] = [];
+  await withMockedFetch(fetch => {
+    const { hostname } = new URL(fetch.url);
+    calls.push(hostname);
+    return hostname === 'first-chat.example.com' ? new Response('first candidate rejects input', { status: 400 }) : upstream();
+  }, async () => {
+    const response = await request(apiKey.key, { stream: true });
+    expect(response.status).toBe(status);
+    expect(response.headers.get('retry-after')).toBe('5');
+    expect(await response.json()).toEqual(body);
+  });
+  await flushBackground();
+  expect(calls).toEqual(['first-chat.example.com', 'second-chat.example.com']);
+  expect(await repo.usage.listAll()).toEqual([]);
 });

@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { wrapOpenAIChatCompletionsAffinityEgress } from '../../../../../src/data-plane/chat/openai-chat-completions/affinity/egress.ts';
 import { analyzeOpenAIChatCompletionsAffinity } from '../../../../../src/data-plane/chat/openai-chat-completions/affinity/ingress.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
+import { acceptedAffinityEvaluation, projectAffinityTestCandidate } from '../../shared/affinity/helpers.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsAssistantMessageEx, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -62,8 +62,8 @@ test('a carrier a real codec emits on reasoning_opaque decodes on the next turn'
 
   const prepared = await analyzeOpenAIChatCompletionsAffinity({ model: 'model', messages: [message] }, codec);
 
-  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  const projectionA = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA));
+  const projectionB = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB));
   expect(projectionA.degrades).toBe(false);
   expect(projectionB.degrades).toBe(true);
   expect(projectionA.materialize().messages[0]).toMatchObject({
@@ -93,8 +93,8 @@ test('encrypted reasoning detail data follows affinity without changing the opaq
   ]), { codec, affinity: targetFor(candidateA) }));
 
   const prepared = await analyzeOpenAIChatCompletionsAffinity({ model: 'model', messages: [message] }, codec);
-  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  const projectionA = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA));
+  const projectionB = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB));
 
   expect(projectionA.degrades).toBe(false);
   expect(projectionA.materialize().messages[0]).toMatchObject({
@@ -132,13 +132,13 @@ test('strips reasoning extensions from a turn with only a routing carrier', asyn
   ];
   const prepared = await analyzeOpenAIChatCompletionsAffinity({ model: 'model', messages }, codec);
 
-  const compatible = acceptedAffinityEvaluation(prepared, candidateA);
-  const incompatible = acceptedAffinityEvaluation(prepared, candidateB);
+  const compatible = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA));
+  const incompatible = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB));
   expect(compatible.degrades).toBe(false);
   expect(compatible.materialize().messages).toEqual([{ ...message, ...reasoning }, message]);
   expect(incompatible.degrades).toBe(true);
   expect(incompatible.materialize().messages).toEqual([message, message]);
 
   const ordinaryOnly = await analyzeOpenAIChatCompletionsAffinity({ model: 'model', messages: messages.slice(1) }, codec);
-  expect(acceptedAffinityEvaluation(ordinaryOnly, candidateB).degrades).toBe(false);
+  expect(acceptedAffinityEvaluation(ordinaryOnly, projectAffinityTestCandidate(candidateB)).degrades).toBe(false);
 });

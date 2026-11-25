@@ -6,9 +6,6 @@ import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cache
 import { withUsageNormalized } from './normalize-usage.ts';
 import { withPromptCacheKeyStripped } from './strip-prompt-cache-key.ts';
 import type { OpenAIChatCompletionsInterceptor } from './types.ts';
-import { withVendorDeepSeekOpenAIChatCompletionsNormalize } from './vendor-deepseek-normalize.ts';
-import { withVendorKimiOpenAIChatCompletionsNormalize } from './vendor-kimi-normalize.ts';
-import { withVendorQwenOpenAIChatCompletionsNormalize } from './vendor-qwen-normalize.ts';
 
 // Unified OpenAI Chat Completions interceptor list. All entries are attached to
 // every candidate; each interceptor's body decides whether to act (flag-gated
@@ -43,13 +40,6 @@ import { withVendorQwenOpenAIChatCompletionsNormalize } from './vendor-qwen-norm
 //     input rather than a gate. Registered before the vendor normalizers so
 //     that on the inbound path it runs after them, on usage whose cache fields
 //     already carry OpenAI's names.
-//   - withVendor*OpenAIChatCompletionsNormalize: gated by `vendor-<X>`. Registered
-//     LAST so that on the outbound path each gets the final say on the wire
-//     body and on the inbound path each gets the first say on the upstream
-//     stream — the generic interceptors above only see OpenAI-canonical form.
-//     Vendor flags are mutually exclusive in practice, but the interceptors
-//     are independent and run in declared order if more than one is somehow
-//     enabled.
 export const openaiChatCompletionsInterceptors: readonly OpenAIChatCompletionsInterceptor[] = [
   withUsageStreamOptionsIncluded,
   withUsageNormalized,
@@ -58,7 +48,4 @@ export const openaiChatCompletionsInterceptors: readonly OpenAIChatCompletionsIn
   withRoleCompatibilityApplied,
   withPromptCacheKeyStripped,
   withExclusiveCachedTokensNormalized,
-  withVendorDeepSeekOpenAIChatCompletionsNormalize,
-  withVendorQwenOpenAIChatCompletionsNormalize,
-  withVendorKimiOpenAIChatCompletionsNormalize,
 ];
