@@ -2,10 +2,10 @@ import { expect, test } from 'vitest';
 
 import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
-import { expandShimCompactionItems } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import { hydrateOpenAIResponsesPayload } from '../../../../../src/data-plane/chat/openai-responses/items/hydrate.ts';
 import { wrapOpenAIResponsesClientOutput } from '../../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import { createOpenAIResponsesHttpStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
+import { expandOpenAIResponsesCompactionItems } from '../../../../../src/data-plane/chat/openai-responses/pipeline/compact/items.ts';
 import { AffinityCodec, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import type { ServeCandidate } from '../../../../../src/data-plane/pipeline/facts.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
@@ -222,5 +222,5 @@ test('gateway-owned compaction round-trips across affinity targets and expands w
   if (evaluation.kind === 'rejected') throw new Error('Expected portable compaction to be accepted');
   const materialized = evaluation.materialize();
   expect(materialized.input).toEqual([compaction]);
-  expect(expandShimCompactionItems(materialized).input).toEqual(recovered);
+  expect(expandOpenAIResponsesCompactionItems(materialized).input).toEqual(recovered);
 });

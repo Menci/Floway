@@ -1,5 +1,6 @@
 import { openAIResponsesExit, openAIResponsesFactSpace } from './facts.ts';
 import type { OpenAIResponsesServices } from './services.ts';
+import { completeInterruptedOpenAIResponses } from './websocket-interrupt.ts';
 import { readProtocolFrames } from '../../pipeline/protocol-frames.ts';
 import { affinityIdentityForCandidate } from '../../shared/affinity/index.ts';
 import { wrapOpenAIResponsesAffinityEgress } from '../affinity/egress.ts';
@@ -30,7 +31,8 @@ export const completeOpenAIResponsesClientOutput = defineStage({
     const { request, store } = scope.services.openAIResponsesState(facts['request.openaiResponses']);
     const delivery = facts['request.delivery'];
     if (delivery.kind !== 'openaiResponses') throw new TypeError('OpenAI Responses ingress requires Responses delivery');
-    const responseId = facts['request.ws.responseId'] ?? createOpenAIResponsesResponseId();
+    const websocketResponseId = facts['request.ws.responseId'];
+    const responseId = websocketResponseId ?? createOpenAIResponsesResponseId();
     const affinity = {
       codec: scope.services.affinityCodec(),
       affinity: affinityIdentityForCandidate(facts['serve.candidate']),
@@ -49,7 +51,13 @@ export const completeOpenAIResponsesClientOutput = defineStage({
       const source = readProtocolFrames(items);
       let failure;
       try {
-        const frames = wrapResponseResourceCompletion(statefulOutput(source.frames()), {
+        const upstream = source.frames();
+        const interrupted = websocketResponseId === undefined ? upstream : completeInterruptedOpenAIResponses(upstream, {
+          signal: producer.signal,
+          responseId,
+          model: request.model,
+        });
+        const frames = wrapResponseResourceCompletion(statefulOutput(interrupted), {
           request,
           createdAt: delivery.createdAt,
           stored: store.writesState,

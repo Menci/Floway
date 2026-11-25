@@ -2,11 +2,12 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { expect, test } from 'vitest';
 
-import { chatTargetPicker } from '../../src/data-plane/chat/shared/target-picker.ts';
+import { openAIResponsesTargetFor } from '../../src/data-plane/chat/openai-responses/pipeline/target.ts';
 import { decodeUpstreamConfig } from '../../src/repo/upstream-codecs.ts';
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import { toProviderModelFact, type UpstreamRecord } from '@floway-dev/provider';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
+import { stubProviderModel } from '@floway-dev/test-utils';
 
 const MIGRATION = '0083_canonical_protocol_names.sql';
 
@@ -88,7 +89,10 @@ test('the canonical endpoint-key migration keeps every configured endpoint routa
     'wire-g': ['rerank'],
   });
 
-  const picker = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions']);
-  expect(picker.canServe({ openaiResponses: {} })).toBe(true);
-  expect(picker.pick({ openaiResponses: {} })).toBe('openaiResponses');
+  const record = assertCustomUpstreamRecord({ id: 'up_legacy_chat', kind: 'custom', config: configs.up_legacy_chat } as unknown as UpstreamRecord);
+  const upstream = { id: record.id, kind: 'custom', name: 'Legacy', config: {} } as const;
+  expect(record.config.models.map(config => openAIResponsesTargetFor({
+    upstream,
+    model: toProviderModelFact(stubProviderModel({ endpoints: config.endpoints })),
+  }))).toEqual(['openaiResponses', 'anthropicMessages', undefined]);
 });

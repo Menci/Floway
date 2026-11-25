@@ -1,21 +1,14 @@
-import type { AlphaSearchDispatcher } from './upstream.ts';
 import { type WebSearchCallIR, UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME, unsupportedLocalWebSearchFeatureIr } from '../operations.ts';
-import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
 
 interface UpstreamErrorDetails {
   message: string;
   name?: string;
 }
 
-const upstreamErrorDetails = (raw: string): UpstreamErrorDetails | undefined => {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-  if (parsed === null || typeof parsed !== 'object') return undefined;
-  const error = (parsed as { error?: unknown }).error;
+const upstreamErrorDetails = (body: unknown): UpstreamErrorDetails | undefined => {
+  if (body === null || typeof body !== 'object') return undefined;
+  const error = 'error' in body ? body.error : body;
   if (error === null || typeof error !== 'object') return undefined;
   const { message, name } = error as { message?: unknown; name?: unknown };
   if (typeof message !== 'string') return undefined;
@@ -25,48 +18,18 @@ const upstreamErrorDetails = (raw: string): UpstreamErrorDetails | undefined => 
   };
 };
 
-export const executeAlphaSearch = async ({
-  dispatcher,
-  sessionId,
-  commands,
-  settings,
-  input,
-  action,
-  signal,
-}: {
-  dispatcher: AlphaSearchDispatcher;
-  sessionId: string;
-  commands: Record<string, unknown>;
-  settings: Record<string, unknown>;
-  input: CanonicalOpenAIResponsesInputItem[];
-  action: OpenAIResponsesWebSearchAction;
-  signal: AbortSignal | undefined;
-}): Promise<WebSearchCallIR> => {
-  const response = await dispatcher({
-    id: sessionId,
-    input,
-    commands,
-    settings,
-  }, signal, new Headers());
-  const raw = await response.text();
-  if (!response.ok) {
-    const upstreamError = upstreamErrorDetails(raw);
+export const alphaSearchResultToWebSearchCall = (body: unknown, status: number, action: OpenAIResponsesWebSearchAction): WebSearchCallIR => {
+  if (status < 200 || status >= 300) {
+    const upstreamError = upstreamErrorDetails(body);
     if (upstreamError?.name === UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME) {
       return unsupportedLocalWebSearchFeatureIr(action, upstreamError.message);
     }
-    throw new Error(upstreamError?.message ?? `OpenAI search upstream returned HTTP ${response.status}: ${raw}`);
+    throw new Error(upstreamError?.message ?? `OpenAI search upstream returned HTTP ${status}: ${typeof body === 'string' ? body : JSON.stringify(body)}`);
   }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error('OpenAI search upstream returned a non-JSON success body');
-  }
-  if (parsed === null || typeof parsed !== 'object' || typeof (parsed as { output?: unknown }).output !== 'string') {
+  if (body === null || typeof body !== 'object' || !('output' in body) || typeof body.output !== 'string') {
     throw new Error('OpenAI search upstream response must include an output string');
   }
-  const body = parsed as { output: string };
+  const { output } = body;
   return {
     action,
     // Alpha results are opaque UI metadata (`ref_id`, `domain`, optional
@@ -74,9 +37,9 @@ export const executeAlphaSearch = async ({
     // `snippet` field. The model-facing output is the only lossless bridge;
     // this explicitly synthetic entry serves OpenAI Responses clients that request
     // `web_search_call.results` without pretending alpha DTOs were preserved.
-    results: body.output === ''
+    results: output === ''
       ? []
-      : [{ type: 'text_result', url: '', title: 'OpenAI search output', snippet: body.output }],
-    outputText: body.output,
+      : [{ type: 'text_result', url: '', title: 'OpenAI search output', snippet: output }],
+    outputText: output,
   };
 };

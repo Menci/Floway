@@ -1,10 +1,10 @@
 import { gatewayFactSpace } from '../../../pipeline/facts.ts';
-import { responseHead } from '../../../pipeline/response.ts';
+import { jsonResponseBody, responseHead } from '../../../pipeline/response.ts';
 import { prepareJsonModelRequest } from '../../../shared/json-model-request.ts';
 import { getHeader, readHttpBody } from '@floway-dev/http';
 import { move } from '@floway-dev/pipeline';
 import { isJsonMediaType, isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
-import { formatOpenAIImagesEditsError, type OpenAIImageEditReference } from '@floway-dev/protocols/openai-images';
+import { formatOpenAIImagesEditsError, openAIImagesStreamRequested, type OpenAIImageEditReference } from '@floway-dev/protocols/openai-images';
 import { isBase64ImageDataUrl, readUploadedFile, type OpenAIImagesEditsRequest, type OpenAIImagesEditsSource, type UploadedFile } from '@floway-dev/provider';
 
 const { defineStage } = gatewayFactSpace<{}>();
@@ -96,10 +96,10 @@ export const openAIImagesEditsError = (status: number, message: string) => ({
 export const parseOpenAIImagesEdits = defineStage({
   name: 'openaiImagesEdits.parse-request',
   through: {
-    request: { needs: ['request.http'], provides: ['request.openaiImagesEdits', 'serve.model'], consumes: [] },
-    response: { needs: ['response.http', 'response.openaiImagesEdits'], provides: [], consumes: [] },
+    request: { needs: ['request.http'], provides: ['request.openaiImagesEdits', 'serve.model', 'request.delivery'], consumes: [] },
+    response: { needs: ['response.http'], provides: [], consumes: [] },
   },
-  return: { provides: ['response.http', 'response.openaiImagesEdits'] },
+  return: { provides: ['response.http'] },
   async execute(facts, scope) {
     const request = facts['request.http'];
     const raw = await readHttpBody(request.body);
@@ -112,11 +112,14 @@ export const parseOpenAIImagesEdits = defineStage({
     } else {
       parsed = invalid('OpenAI Images Edits request body must use application/json or multipart/form-data.');
     }
-    if (parsed.type === 'invalid') return openAIImagesEditsError(400, parsed.message);
+    if (parsed.type === 'invalid') return {
+      'response.http': move(jsonResponseBody(responseHead(400), formatOpenAIImagesEditsError(400, parsed.message))),
+    };
 
     return await scope.next({
       ...facts,
       'request.openaiImagesEdits': move(parsed.request),
+      'request.delivery': move(openAIImagesStreamRequested(parsed.request.parameters.stream) ? { kind: 'sse', includeUsage: true } as const : { kind: 'json' } as const),
       'serve.model': parsed.model,
     });
   },

@@ -1,10 +1,7 @@
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../../shared/json-helpers.ts';
-import { loadWebSearchConfig } from '../../../../tools/web-search/config.ts';
-import { resolveConfiguredWebSearchProvider } from '../../../../tools/web-search/provider.ts';
 import { runWebSearchAndRecordUsage } from '../../../../tools/web-search/search.ts';
 import type { WebSearchProvider, WebSearchProviderName, WebSearchProviderRequest, WebSearchProviderResult } from '../../../../tools/web-search/types.ts';
-import type { AnthropicMessagesCountTokensInterceptor, AnthropicMessagesInterceptor, AnthropicMessagesInvocation } from '../../interceptors/types.ts';
 import type {
   AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesAssistantInputContentBlock,
@@ -25,7 +22,6 @@ import type {
 } from '@floway-dev/protocols/anthropic-messages';
 import { ANTHROPIC_MESSAGES_WEB_SEARCH_ERROR_CODES } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { providerModelOf, internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 
 const MAX_QUERY_LENGTH = 1000;
 const WEB_SEARCH_TOOL_NAME = 'web_search';
@@ -882,107 +878,4 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
   if (activeWebSearchIndex !== undefined || deferredFrames.length > 0) {
     throw new Error('intercepted web search ended before its content block closed.');
   }
-};
-
-const anthropicMessagesWebSearchInvalidRequestBody = (message: string) => ({
-  type: 'error',
-  error: {
-    type: 'invalid_request_error',
-    message,
-  },
-});
-
-const buildSyntheticInvalidRequestUpstreamError = (message: string) => ({
-  type: 'api-error' as const,
-  source: 'gateway' as const,
-  http: { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
-  body: new TextEncoder().encode(JSON.stringify(anthropicMessagesWebSearchInvalidRequestBody(message))),
-});
-
-const buildInvalidRequestResponse = (message: string): Response =>
-  Response.json(anthropicMessagesWebSearchInvalidRequestBody(message), { status: 400 });
-
-const resolveActiveAnthropicMessagesWebSearchProvider = async (apiKeyId: string): Promise<{ type: 'ok'; provider: ActiveAnthropicMessagesWebSearchProvider } | ReturnType<typeof internalErrorResult>> => {
-  const webSearchConfig = await loadWebSearchConfig();
-  const configuredProvider = resolveConfiguredWebSearchProvider(webSearchConfig);
-
-  if (configuredProvider.type === 'enabled') {
-    return {
-      type: 'ok',
-      provider: {
-        providerName: configuredProvider.provider,
-        impl: configuredProvider.impl,
-        apiKeyId,
-      },
-    };
-  }
-
-  return internalErrorResult(
-    500,
-    toInternalDebugError(
-      new Error(
-        configuredProvider.type === 'disabled'
-          ? 'Native Anthropic Messages web search requires an enabled search provider.'
-          : `Native Anthropic Messages web search is missing the configured ${configuredProvider.provider} credential.`,
-      ),
-    ),
-  );
-};
-
-type PreparedAnthropicMessagesWebSearchShimState = Exclude<AnthropicMessagesWebSearchShimState, { mode: 'inactive' }>;
-
-type PrepareAnthropicMessagesWebSearchInvocationResult =
-  | { type: 'inactive' }
-  | { type: 'invalid-request'; message: string }
-  | { type: 'prepared'; state: PreparedAnthropicMessagesWebSearchShimState };
-
-const prepareAnthropicMessagesWebSearchInvocation = (ctx: AnthropicMessagesInvocation): PrepareAnthropicMessagesWebSearchInvocationResult => {
-  if (ctx.targetApi === 'anthropicMessages' && !providerModelOf(ctx.candidate).enabledFlags.has('anthropic-messages-web-search-shim')) {
-    return { type: 'inactive' };
-  }
-
-  const prepared = prepareAnthropicMessagesWebSearchShimRequest(ctx.payload);
-  if (prepared.type === 'invalid-request') return prepared;
-  if (prepared.state.mode === 'inactive') return { type: 'inactive' };
-
-  ctx.payload = prepared.payload;
-  return { type: 'prepared', state: prepared.state };
-};
-
-/**
- * Anthropic exposes native `web_search_*` server tools, but non-Anthropic-Messages
- * targets cannot run Anthropic server tools. This shim rewrites the native tool
- * definition into an ordinary client `web_search` tool, executes each search
- * the model issues using the gateway's configured provider, and rewrites the
- * response back to the Anthropic native `server_tool_use` /
- * `web_search_tool_result` / `web_search_result_location` shape.
- *
- * The shim is unconditional for non-native Anthropic Messages targets (OpenAI Responses /
- * OpenAI Chat Completions cannot carry Anthropic server tools), and gated by the
- * `anthropic-messages-web-search-shim` flag for native Anthropic Messages targets (the upstream
- * may or may not be able to serve web_search natively).
- */
-export const withAnthropicMessagesWebSearchShim: AnthropicMessagesInterceptor = async (ctx, gatewayCtx, run) => {
-  const prepared = prepareAnthropicMessagesWebSearchInvocation(ctx);
-  if (prepared.type === 'inactive') return await run();
-  if (prepared.type === 'invalid-request') return buildSyntheticInvalidRequestUpstreamError(prepared.message);
-
-  const provider = prepared.state.mode === 'active' ? await resolveActiveAnthropicMessagesWebSearchProvider(gatewayCtx.apiKeyId) : { type: 'ok' as const, provider: undefined };
-  if (provider.type !== 'ok') return provider;
-
-  const result = await run();
-  if (result.type !== 'events') return result;
-
-  return {
-    ...result,
-    events: rewriteAnthropicMessagesWebSearchEventsToNative(result.events, prepared.state, provider.provider),
-  };
-};
-
-// count_tokens has no stream to rewrite, but it must measure the same client-
-// tool and replay-history request shape that generation sends upstream.
-export const withAnthropicMessagesWebSearchRequestPrepared: AnthropicMessagesCountTokensInterceptor = async (ctx, _gatewayCtx, run) => {
-  const prepared = prepareAnthropicMessagesWebSearchInvocation(ctx);
-  if (prepared.type === 'invalid-request') return buildInvalidRequestResponse(prepared.message);
-  return await run();
 };

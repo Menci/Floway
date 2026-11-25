@@ -367,10 +367,6 @@ export const createOpenAIResponsesHttpStore = (apiKey: OpenAIResponsesStatePolic
   });
 };
 
-// Translated source protocols do not own Responses item persistence.
-export const createNonOpenAIResponsesSourceStore = (apiKeyId: string): OpenAIResponsesStatefulStore =>
-  new LayeredOpenAIResponsesStatefulStore({ apiKeyId, reads: [], writes: [] });
-
 export const createOpenAIResponsesWsSession = (): {
   createStore(apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): OpenAIResponsesStatefulStore;
   evictSnapshot(apiKeyId: string, id: string): void;

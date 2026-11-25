@@ -333,6 +333,8 @@ export interface WebSearchExecutionSession {
   // paths (OpenAI Responses shim echoing prior items with no live op) never call
   // this, so an unconfigured search provider does not 500 the request.
   getProvider: () => Promise<ConfiguredWebSearchProvider>;
+  search?: typeof runWebSearchAndRecordUsage;
+  fetchPage?: typeof fetchPageAndRecordUsage;
   filters: WebSearchFilters;
   apiKeyId: string;
   pageCache: Map<string, PageCacheEntry>;
@@ -643,7 +645,7 @@ const runOneSearchQuery = async (
       ...(op.recencyDays !== undefined ? { recencyDays: op.recencyDays } : {}),
       ...(session.signal !== undefined ? { signal: session.signal } : {}),
     };
-    const result = await runWebSearchAndRecordUsage({
+    const result = await (session.search ?? runWebSearchAndRecordUsage)({
       provider: active.provider,
       providerName: active.providerName,
       keyId: session.apiKeyId,
@@ -766,7 +768,7 @@ const runBatchFetch = async (
       urls: needFetch,
       ...(session.signal !== undefined ? { signal: session.signal } : {}),
     };
-    const result = await fetchPageAndRecordUsage({
+    const result = await (session.fetchPage ?? fetchPageAndRecordUsage)({
       provider: active.provider,
       providerName: active.providerName,
       keyId: session.apiKeyId,

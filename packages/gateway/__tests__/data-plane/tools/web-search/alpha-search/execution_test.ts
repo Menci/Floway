@@ -1,66 +1,32 @@
-import { expect, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { executeAlphaSearch } from '../../../../../src/data-plane/tools/web-search/alpha-search/execution.ts';
-import type { AlphaSearchDispatcher } from '../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { alphaSearchResultToWebSearchCall } from '../../../../../src/data-plane/tools/web-search/alpha-search/execution.ts';
 
-test('executeAlphaSearch preserves model-facing output without retyping opaque alpha results', async () => {
-  const call = vi.fn<AlphaSearchDispatcher>(async () => new Response(JSON.stringify({
+test('Alpha Search preserves model-facing output and keeps opaque metadata off Responses wire results', () => {
+  const result = alphaSearchResultToWebSearchCall({
     encrypted_output: 'opaque',
     output: 'rendered output',
     results: [{ type: 'text_result', ref_id: 'turn0search0', url: 'https://example.com', title: 'Example', domain: 'example.com', future: true }],
-  }), { status: 200, headers: { 'content-type': 'application/json' } }));
-  const ir = await executeAlphaSearch({
-    dispatcher: call,
-    sessionId: 'session-search',
-    commands: { search_query: [{ q: 'Floway' }] },
-    settings: { external_web_access: true },
-    input: [{ type: 'message', role: 'user', content: 'Search' }],
+  }, 200, { type: 'search', query: 'Floway' });
+  expect(result).toEqual({
     action: { type: 'search', query: 'Floway' },
-    signal: undefined,
-  });
-
-  assertEquals(ir.outputText, 'rendered output');
-  assertEquals(ir.results, [{ type: 'text_result', url: '', title: 'OpenAI search output', snippet: 'rendered output' }]);
-  assertEquals(call.mock.calls[0]?.[0], {
-    id: 'session-search',
-    input: [{ type: 'message', role: 'user', content: 'Search' }],
-    commands: { search_query: [{ q: 'Floway' }] },
-    settings: { external_web_access: true },
+    outputText: 'rendered output',
+    results: [{ type: 'text_result', url: '', title: 'OpenAI search output', snippet: 'rendered output' }],
   });
 });
 
-test('executeAlphaSearch exposes upstream failure without fallback', async () => {
-  await expect(executeAlphaSearch({
-    dispatcher: async () => new Response('unavailable', { status: 503 }),
-    sessionId: 'session-search',
-    commands: { search_query: [{ q: 'Floway' }] },
-    settings: {},
-    input: [],
-    action: { type: 'search', query: 'Floway' },
-    signal: undefined,
-  })).rejects.toThrow();
+test('Alpha Search retains the original upstream error text', () => {
+  expect(() => alphaSearchResultToWebSearchCall('unavailable', 503, { type: 'search', query: 'Floway' }))
+    .toThrow('OpenAI search upstream returned HTTP 503: unavailable');
 });
 
-test('executeAlphaSearch returns a cascaded Floway capability error as exact model-facing output', async () => {
+test('Alpha Search exposes a Floway capability error as exact model-facing output', () => {
   const message = 'The configured web search provider does not implement OpenAI search feature `commands.image_query`.';
-  const ir = await executeAlphaSearch({
-    dispatcher: async () => new Response(JSON.stringify({
-      error: {
-        type: 'internal_error',
-        name: 'UnsupportedLocalWebSearchFeatureError',
-        message,
-      },
-    }), { status: 500, headers: { 'content-type': 'application/json' } }),
-    sessionId: 'session-search',
-    commands: { image_query: [{ q: 'cat' }] },
-    settings: {},
-    input: [],
-    action: { type: 'search', query: 'image_query' },
-    signal: undefined,
-  });
-  assertEquals(ir.outputText, message);
-  assertEquals(ir.results, [{
+  const result = alphaSearchResultToWebSearchCall({
+    error: { type: 'internal_error', name: 'UnsupportedLocalWebSearchFeatureError', message },
+  }, 500, { type: 'search', query: 'image_query' });
+  expect(result.outputText).toBe(message);
+  expect(result.results).toEqual([{
     type: 'text_result',
     url: '',
     title: 'Unsupported search feature',

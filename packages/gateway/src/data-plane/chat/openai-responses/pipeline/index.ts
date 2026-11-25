@@ -5,6 +5,7 @@ import { renderOpenAIResponses } from './encode-response.ts';
 import { openAIResponsesError } from './error.ts';
 import { openAIResponsesBodyEntry, openAIResponsesExit, openAIResponsesFactSpace, type OpenAIResponsesAction } from './facts.ts';
 import { hydrateOpenAIResponsesItems } from './hydrate-items.ts';
+import { normalizeOpenAIResponsesUpstreamError } from './normalize-upstream-error.ts';
 import { parseOpenAIResponsesRequest } from './parse-request.ts';
 import { serializeOpenAIResponsesStreamItems } from './serialize-stream-items.ts';
 import type { OpenAIResponsesServices } from './services.ts';
@@ -16,6 +17,7 @@ import { failover } from '../../../pipeline/failover.ts';
 import { requestBody } from '../../../pipeline/request-body.ts';
 import { stripFlowayAuth } from '../../../pipeline/strip-floway-auth.ts';
 import { appendFailedUpstreams } from '../../../shared/failed-upstreams.ts';
+import { normalizeDamagedUpstreamResponse } from '../../../shared/normalize-damaged-upstream-response.ts';
 import { prepareChatAffinity } from '../../pipeline/affinity.ts';
 import { analyzeOpenAIResponsesAffinity } from '../affinity/ingress.ts';
 
@@ -64,6 +66,8 @@ export const openAIResponsesClientPipeline = compose('openaiResponses.client', {
     stripFlowayAuth,
     hydrateOpenAIResponsesItems,
     discoverCandidates('chat'),
+    normalizeOpenAIResponsesUpstreamError,
+    normalizeDamagedUpstreamResponse('response.openaiResponses'),
     attempt,
     completeOpenAIResponsesClientOutput,
     serializeOpenAIResponsesStreamItems,

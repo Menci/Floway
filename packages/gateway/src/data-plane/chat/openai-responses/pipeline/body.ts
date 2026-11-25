@@ -7,6 +7,7 @@ import { openAIResponsesCompactEgress, openAIResponsesEgress } from './egress.ts
 import { openAIResponsesInputErrorBody } from './error.ts';
 import { openAIResponsesBodyEntry, openAIResponsesExit, openAIResponsesFactSpace, type OpenAIResponsesAnswer, type OpenAIResponsesBodyInput } from './facts.ts';
 import { forceOpenAIResponsesStoreFalse } from './force-store-false.ts';
+import { hostOpenAIResponsesTools } from './hosted-tools.ts';
 import { normalizeOpenAIResponsesAssistantInput } from './normalize-assistant-input.ts';
 import { normalizeOpenAIResponsesEmptyToolsToolChoice } from './normalize-empty-tools-tool-choice.ts';
 import { nullOpenAIResponsesUnresolvedFunctionCallNamespace } from './null-unresolved-function-call-namespace.ts';
@@ -56,6 +57,7 @@ export const openAIResponsesBody: Pipeline<OpenAIResponsesBodyInput, OpenAIRespo
     lowerOpenAIResponsesStandaloneToolOutput,
     compactOpenAIResponses,
     projectOpenAIResponsesCollaboration,
+    hostOpenAIResponsesTools,
     nullOpenAIResponsesUnresolvedFunctionCallNamespace,
     disableOpenAIResponsesReasoningOnForcedToolChoice,
     normalizeOpenAIResponsesEmptyToolsToolChoice,

@@ -42,7 +42,7 @@ const unpack = (item: { readonly type: string; readonly encrypted_content?: unkn
   return Array.isArray(value) && value.every(item => isJsonObject(item) && typeof item.type === 'string') ? value : undefined;
 };
 
-export const isOpenAIResponsesCompactShimItem = (item: Parameters<typeof unpack>[0]): boolean => unpack(item) !== undefined;
+export const isPortableOpenAIResponsesCompactionItem = (item: Parameters<typeof unpack>[0]): boolean => unpack(item) !== undefined;
 
 export const packOpenAIResponsesCompactionText = (text: string): string =>
   encodeBase64UrlJson([summaryMessage('user', text)]);
