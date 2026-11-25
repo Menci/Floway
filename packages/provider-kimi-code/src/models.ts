@@ -1,10 +1,16 @@
-import type { KimiCodeUpstreamConfig } from './config.ts';
+import { assertKimiCodeUpstreamRecord, type KimiCodeUpstreamConfig } from './config.ts';
+import { KIMI_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { kimiCodeFetch } from './fetch.ts';
 import type { KimiCodeProviderData } from './model-selection.ts';
 import { pricingForKimiCodePublicModelId } from './pricing.ts';
 import { kimiCodeModelLabel, parseKimiCodeModelName, publicKimiCodeModelId } from './public-model-id.ts';
 import { object, string, number } from './validation.ts';
-import { fetchUpstreamModels, identityWrapUpstreamCall, ProviderModelsUnavailableError, type Fetcher, type FlagId, type ProviderModel } from '@floway-dev/provider';
+import { fetchUpstreamModels, identityWrapUpstreamCall, ProviderModelsUnavailableError, resolveEffectiveFlags, type Fetcher, type FlagId, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
+
+export const fetchKimiCodeProvidedModels = (record: UpstreamRecord, fetcher: Fetcher): Promise<ProviderModel[]> => {
+  const { config, flagOverrides } = assertKimiCodeUpstreamRecord(record);
+  return fetchKimiCodeModels(config, fetcher, resolveEffectiveFlags([KIMI_CODE_DEFAULT_FLAGS, flagOverrides]));
+};
 
 // Capability and effort metadata are authoritative; display names establish
 // public presentation ids and model-version identity. Only catalog ids are
