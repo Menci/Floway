@@ -157,6 +157,19 @@ describe('provider response parsing', () => {
     await incomplete.done;
   });
 
+  it('requires a done frame when the caller selects that EOF policy', async () => {
+    const pipeline = composeChat({ kind: 'doneFrame' });
+    const exchange = run(pipeline, facts, { services: services({ ok: true, value: sse(event) }) });
+    const outcome = (await exchange.result)['response.openaiChatCompletions'];
+    assert(outcome.kind === 'stream');
+
+    expect(await Array.fromAsync(outcome.stream)).toEqual([
+      { ok: true, value: chunk },
+      { ok: false, error: { kind: 'protocol', cause: 'Upstream SSE ended without a [DONE] sentinel' } },
+    ]);
+    await exchange.done;
+  });
+
   it('aborts the child after an SSE terminator and joins native done', async () => {
     const cancel = vi.fn();
     const body = new ReadableStream({ start(controller) { controller.enqueue(encode(`${event}data: [DONE]\n\n`)); }, cancel });

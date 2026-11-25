@@ -1,3 +1,5 @@
+import { isJsonObject } from './json.ts';
+
 export interface OpenAIErrorFields {
   readonly type?: string;
   readonly code?: string | null;
@@ -11,3 +13,6 @@ export const formatOpenAIError = (
   message: string,
   fields: OpenAIErrorFields = { type: 'api_error' },
 ) => ({ error: { message, ...fields } });
+
+export const isOpenAIErrorPayload = (value: unknown): value is { readonly error: { readonly message: string } } =>
+  isJsonObject(value) && isJsonObject(value.error) && typeof value.error.message === 'string';

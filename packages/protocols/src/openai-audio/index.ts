@@ -20,3 +20,4 @@ export const isOpenAIAudioTranscriptionDoneEvent = (event: unknown): event is Op
   && typeof (event as { text?: unknown }).text === 'string';
 
 export { formatOpenAIError as formatOpenAIAudioTranscriptionsError } from '../common/openai-error.ts';
+export { parseOpenAIAudioTranscriptionStream } from './stream.ts';

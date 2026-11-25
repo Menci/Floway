@@ -1,11 +1,12 @@
 import type { TokenUsage } from '../../repo/types.ts';
-import { isOpenAIErrorPayload, openaiSseFailure } from '../shared/openai-errors.ts';
+import { openaiSseFailure } from '../shared/openai-errors.ts';
 import { passthroughApiError, type PassthroughResponseStrategyContext } from '../shared/passthrough-serve.ts';
 import { serializeSseFrame, serveSse } from '../shared/sse.ts';
 import { recordFailedRequest } from '../shared/telemetry/performance.ts';
 import { recordSseOutcome, settle } from '../shared/telemetry/settle.ts';
 import { forwardUpstreamHeaders, forwardUpstreamResponse } from '../shared/upstream-response.ts';
-import { doneFrame, eventFrame, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
+import { eventFrame, isOpenAIErrorPayload, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
+import { parseOpenAICompletionsStream } from '@floway-dev/protocols/openai-completions';
 
 export const respondOpenAICompletionsSse = (
   { c, ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext,
@@ -24,21 +25,20 @@ export const respondOpenAICompletionsSse = (
     return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
   }
 
-  const events = parseTargetStreamFrames<unknown>(
-    parseSSEStream(response.body, { signal: ctx.abortSignal }),
-    { protocol: sourceApi },
-  );
   return serveSse(c, {
     http: response,
-    events,
+    events: parseOpenAICompletionsStream(response.body, { signal: ctx.abortSignal }),
     downstreamAbortController: ctx.downstreamAbortController,
     protocol: {
-      encode: parsed => {
-        if (parsed.type === 'error') throw new Error(parsed.cause.message, { cause: parsed.cause.cause });
-        const input = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
+      encode: input => {
+        if (input.type === 'error') {
+          const { cause } = input.cause;
+          if (!isOpenAIErrorPayload(cause)) throw new Error(input.cause.message, { cause });
+          ctx.dump?.frame(eventFrame(cause));
+          return { wire: serializeSseFrame(sseFrame(JSON.stringify(cause))), end: { type: 'protocol-error' } };
+        }
         ctx.dump?.frame(input);
         if (input.type === 'done') return { wire: serializeSseFrame(sseFrame('[DONE]')), end: { type: 'completed' } };
-        if (isOpenAIErrorPayload(input.event)) return { wire: serializeSseFrame(sseFrame(JSON.stringify(input.event))), end: { type: 'protocol-error' } };
         const output = transformFrame(input);
         return { wire: output?.type === 'event' ? serializeSseFrame(sseFrame(JSON.stringify(output.event))) : null };
       },

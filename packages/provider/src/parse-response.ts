@@ -9,6 +9,7 @@ export type FormatProviderError<Body> = (status: number | null, message: string)
 
 export type ProviderSseEof<Event> =
   | { readonly kind: 'complete' }
+  | { readonly kind: 'doneFrame' }
   | { readonly kind: 'terminalEvent'; readonly isTerminal: (event: Event) => boolean };
 
 interface Parsed<Outcome> {
@@ -169,8 +170,12 @@ const parseSse = async function* <Event>(
       yield { ok: false, error: failure };
     }
   }
-  if (!failure && !completed && !sawTerminalEvent && eof.kind === 'terminalEvent') {
-    yield { ok: false, error: { kind: 'protocol', cause: 'Upstream SSE ended before a terminal event' } };
+  if (!failure && !completed) {
+    if (eof.kind === 'doneFrame') {
+      yield { ok: false, error: { kind: 'protocol', cause: 'Upstream SSE ended without a [DONE] sentinel' } };
+    } else if (eof.kind === 'terminalEvent' && !sawTerminalEvent) {
+      yield { ok: false, error: { kind: 'protocol', cause: 'Upstream SSE ended before a terminal event' } };
+    }
   }
 };
 

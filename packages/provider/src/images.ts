@@ -1,5 +1,6 @@
 import { base64ToBytes, bytesToBase64, parseBase64ImageDataUrl } from './image-helpers.ts';
 import { jsonRequestBody } from './json-request.ts';
+import { serializeMultipartHttpBody } from './multipart.ts';
 import type { ReplayableBody } from './options.ts';
 import type { OpenAIImageEditReference } from '@floway-dev/protocols/openai-images';
 
@@ -102,10 +103,6 @@ export const serializeOpenAIImagesEditsHttpBody = async (
   model: string,
 ): Promise<{ readonly body: Uint8Array<ArrayBuffer>; readonly contentType: string }> => {
   const serialized = await serializeOpenAIImagesEditsRequest(request, model);
-  const response = serialized instanceof FormData
-    ? new Response(serialized)
-    : new Response(serialized.open(), { headers: { 'content-type': 'application/json' } });
-  const contentType = response.headers.get('content-type');
-  if (contentType === null) throw new TypeError('Image edit serialization did not produce a Content-Type');
-  return { body: new Uint8Array(await response.arrayBuffer()), contentType };
+  if (serialized instanceof FormData) return await serializeMultipartHttpBody(serialized);
+  return { body: new Uint8Array(await new Response(serialized.open()).arrayBuffer()), contentType: 'application/json' };
 };
