@@ -4,8 +4,8 @@ import type { ChatGPTUpstreamFact } from '../../upstream-fact.ts';
 import { authorizedCall, parseJsonObject, withoutTransportResponse } from '../authorized-call.ts';
 import { codexImageRequest } from '../request.ts';
 import { factSpace, move } from '@floway-dev/pipeline';
-import { formatOpenAIImagesGenerationsError } from '@floway-dev/protocols/openai-images';
-import { parseResultBody, type ProviderOperationFacts, type ProviderTransportFacts } from '@floway-dev/provider';
+import { formatOpenAIImagesGenerationsError, isOpenAIImagesTerminalEvent, openAIImagesStreamRequested, parseOpenAIImagesStream } from '@floway-dev/protocols/openai-images';
+import { parseResultBody, parseSseBody, type ProviderOperationFacts, type ProviderTransportFacts } from '@floway-dev/provider';
 
 export const { defineStage, compose } = factSpace<ProviderOperationFacts<'openaiImagesGenerations', ChatGPTUpstreamFact> & ProviderTransportFacts, ChatGPTServices>();
 
@@ -27,7 +27,10 @@ export const call = defineStage({
     const prepareRequest = () => codexImageRequest(request, CHATGPT_OPENAI_IMAGES_GENERATIONS_PATH, { ...payload, model: modelKey });
     const back = await authorizedCall(upstream, prepareRequest, true, scope,
       next => scope.next({ ...facts, 'request.http': next }), formatOpenAIImagesGenerationsError);
-    const { http, outcome } = 'outcome' in back ? back : await parseResultBody(back, parseJsonObject, formatOpenAIImagesGenerationsError);
+    const parse = (facts: ProviderTransportFacts) => openAIImagesStreamRequested(payload.stream)
+      ? parseSseBody(facts, scope, parseOpenAIImagesStream, { kind: 'terminalEvent' as const, isTerminal: isOpenAIImagesTerminalEvent }, formatOpenAIImagesGenerationsError)
+      : parseResultBody(facts, parseJsonObject, formatOpenAIImagesGenerationsError);
+    const { http, outcome } = 'outcome' in back ? back : await parse(back);
     return {
       ...withoutTransportResponse(back),
       'response.http': move(http),

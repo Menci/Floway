@@ -34,3 +34,4 @@ export {
   formatOpenAIError as formatOpenAIImagesEditsError,
   formatOpenAIError as formatOpenAIImagesGenerationsError,
 } from '../common/openai-error.ts';
+export { isOpenAIImagesCompletedEvent, isOpenAIImagesTerminalEvent, openAIImagesStreamRequested, parseOpenAIImagesStream, type OpenAIImagesStreamEvent } from './stream.ts';

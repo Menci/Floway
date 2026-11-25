@@ -4,8 +4,8 @@ import type { ChatGPTUpstreamFact } from '../../upstream-fact.ts';
 import { authorizedCall, parseJsonObject, withoutTransportResponse } from '../authorized-call.ts';
 import { codexImageRequest } from '../request.ts';
 import { factSpace, move } from '@floway-dev/pipeline';
-import { formatOpenAIImagesEditsError } from '@floway-dev/protocols/openai-images';
-import { parseResultBody, serializeOpenAIImagesEditsJsonPayload, type ProviderOperationFacts, type ProviderTransportFacts } from '@floway-dev/provider';
+import { formatOpenAIImagesEditsError, isOpenAIImagesTerminalEvent, openAIImagesStreamRequested, parseOpenAIImagesStream } from '@floway-dev/protocols/openai-images';
+import { parseResultBody, parseSseBody, serializeOpenAIImagesEditsJsonPayload, type ProviderOperationFacts, type ProviderTransportFacts } from '@floway-dev/provider';
 
 export const { defineStage, compose } = factSpace<ProviderOperationFacts<'openaiImagesEdits', ChatGPTUpstreamFact> & ProviderTransportFacts, ChatGPTServices>();
 
@@ -27,7 +27,10 @@ export const call = defineStage({
     const prepareRequest = () => codexImageRequest(request, CHATGPT_OPENAI_IMAGES_EDITS_PATH, serializeOpenAIImagesEditsJsonPayload(payload, modelKey));
     const back = await authorizedCall(upstream, prepareRequest, true, scope,
       next => scope.next({ ...facts, 'request.http': next }), formatOpenAIImagesEditsError);
-    const { http, outcome } = 'outcome' in back ? back : await parseResultBody(back, parseJsonObject, formatOpenAIImagesEditsError);
+    const parse = (facts: ProviderTransportFacts) => openAIImagesStreamRequested(payload.parameters.stream)
+      ? parseSseBody(facts, scope, parseOpenAIImagesStream, { kind: 'terminalEvent' as const, isTerminal: isOpenAIImagesTerminalEvent }, formatOpenAIImagesEditsError)
+      : parseResultBody(facts, parseJsonObject, formatOpenAIImagesEditsError);
+    const { http, outcome } = 'outcome' in back ? back : await parse(back);
     return {
       ...withoutTransportResponse(back),
       'response.http': move(http),

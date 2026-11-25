@@ -12,7 +12,7 @@ import type { OpenAIAudioTranscriptionStreamEvent } from '@floway-dev/protocols/
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsResultEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload, OpenAICompletionsResult, OpenAICompletionsStreamEvent } from '@floway-dev/protocols/openai-completions';
 import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
-import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
+import type { OpenAIImagesGenerationsPayload, OpenAIImagesStreamEvent } from '@floway-dev/protocols/openai-images';
 import type { CanonicalOpenAIResponsesCompactPayload, CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { CanonicalRerankRequest, CanonicalRerankResponse } from '@floway-dev/protocols/rerank';
 
@@ -65,8 +65,8 @@ interface Operations {
   readonly openaiChatCompletions: Operation<'openaiChatCompletions', OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, never>;
   readonly openaiCompletions: Operation<'openaiCompletions', OpenAICompletionsPayload, OpenAICompletionsStreamEvent, OpenAICompletionsResult>;
   readonly openaiEmbeddings: Operation<'openaiEmbeddings', OpenAIEmbeddingsPayload, never, JsonObject>;
-  readonly openaiImagesEdits: Operation<'openaiImagesEdits', OpenAIImagesEditsRequest, never, JsonObject>;
-  readonly openaiImagesGenerations: Operation<'openaiImagesGenerations', OpenAIImagesGenerationsPayload, never, JsonObject>;
+  readonly openaiImagesEdits: Operation<'openaiImagesEdits', OpenAIImagesEditsRequest, OpenAIImagesStreamEvent, JsonObject>;
+  readonly openaiImagesGenerations: Operation<'openaiImagesGenerations', OpenAIImagesGenerationsPayload, OpenAIImagesStreamEvent, JsonObject>;
   readonly openaiResponses: Operation<'openaiResponses', CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx, never>;
   readonly openaiResponsesCompact: Operation<'openaiResponses', CanonicalOpenAIResponsesCompactPayload, never, OpenAIResponsesCompactionResultEx>;
   readonly rerank: Operation<'rerank', CanonicalRerankRequest, never, CanonicalRerankResponse>;

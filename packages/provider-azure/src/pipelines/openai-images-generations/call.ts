@@ -3,8 +3,8 @@ import { parseJsonObject } from '../parse-json-object.ts';
 import { prepareRequest, upstreamConfig } from '../prepare-request.ts';
 import { stripAzureHeaders } from '../strip-headers.ts';
 import { factSpace, move, transform } from '@floway-dev/pipeline';
-import { formatOpenAIImagesGenerationsError } from '@floway-dev/protocols/openai-images';
-import { httpTerminal, type ProviderOperationFacts, type ProviderTransportFacts, type ProviderServices, joinBaseAndPath, parseResultBody } from '@floway-dev/provider';
+import { formatOpenAIImagesGenerationsError, isOpenAIImagesTerminalEvent, openAIImagesStreamRequested, parseOpenAIImagesStream } from '@floway-dev/protocols/openai-images';
+import { httpTerminal, type ProviderOperationFacts, type ProviderTransportFacts, type ProviderServices, joinBaseAndPath, parseResultBody, parseSseBody } from '@floway-dev/provider';
 
 const { compose, defineStage } = factSpace<ProviderOperationFacts<'openaiImagesGenerations'> & ProviderTransportFacts, ProviderServices>();
 
@@ -22,20 +22,24 @@ const call = defineStage({
       consumes: ['response.transport'],
     },
   },
-  execute: transform(() => {
+  execute: transform(scope => {
     let modelKey: string;
+    let stream: boolean;
     return {
       request: facts => {
         const config = upstreamConfig(facts['provider.upstream']);
         const { upstreamModelId } = facts['provider.model'];
         modelKey = upstreamModelId;
+        stream = openAIImagesStreamRequested(facts['request.openaiImagesGenerations'].stream);
         const body = { ...facts['request.openaiImagesGenerations'], model: modelKey };
         // https://learn.microsoft.com/en-us/azure/foundry/openai/reference-preview-latest
         const request = prepareRequest(facts['request.http'], config, joinBaseAndPath(azureOpenAiV1BaseUrl(config.endpoint), '/images/generations?api-version=preview'), body);
         return { ...facts, 'request.http': move(request) };
       },
       response: async back => {
-        const { http, outcome } = await parseResultBody(back, bytes => parseJsonObject(bytes), formatOpenAIImagesGenerationsError);
+        const { http, outcome } = stream
+          ? await parseSseBody(back, scope, parseOpenAIImagesStream, { kind: 'terminalEvent' as const, isTerminal: isOpenAIImagesTerminalEvent }, formatOpenAIImagesGenerationsError)
+          : await parseResultBody(back, bytes => parseJsonObject(bytes), formatOpenAIImagesGenerationsError);
         const { 'response.transport': _transport, ...response } = back;
         return { ...response, 'response.http': move(http), 'response.modelKey': modelKey, 'response.openaiImagesGenerations': move(outcome) };
       },

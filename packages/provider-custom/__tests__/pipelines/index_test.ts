@@ -418,6 +418,25 @@ verifyOperation(customPipelines.openaiImagesGenerations, {
   'request.openaiImagesGenerations': move({ model: 'public', prompt: 'Draw a circle' }),
 }, 'response.openaiImagesGenerations', () => Response.json({ data: [] }), 'result');
 
+test('streams requested OpenAI Images generations through the completed event', async () => {
+  const partial = { type: 'image_generation.partial_image', partial_image_index: 0, b64_json: 'preview' };
+  const complete = { type: 'image_generation.completed', b64_json: 'final', usage: { input_tokens: 4, output_tokens: 5, total_tokens: 9 } };
+  const { services, fetch } = transport(new Response(
+    `event: ${partial.type}\ndata: ${JSON.stringify(partial)}\n\nevent: ${complete.type}\ndata: ${JSON.stringify(complete)}\n\n`,
+    { headers: { 'content-type': 'text/event-stream' } },
+  ));
+  const handle = run(customPipelines.openaiImagesGenerations, {
+    ...facts,
+    'request.openaiImagesGenerations': move({ model: 'public', prompt: 'Draw a circle', stream: true, partial_images: 1 }),
+  }, { services });
+  const outcome = (await handle.result)['response.openaiImagesGenerations'];
+  assert(outcome.kind === 'stream');
+  expect(await Array.fromAsync(outcome.stream)).toEqual([{ ok: true, value: partial }, { ok: true, value: complete }]);
+  await handle.done;
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(JSON.parse(String(fetch.mock.calls[0][1].body))).toMatchObject({ model: 'publisher/model', stream: true, partial_images: 1 });
+});
+
 verifyOperation(customPipelines.openaiResponses, {
   ...facts,
   'request.openaiResponses': move({ model: 'public', input: [] }),
