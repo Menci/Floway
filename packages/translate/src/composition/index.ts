@@ -10,7 +10,7 @@ import { roundTripAssistantTurn } from '../round-trip/resolve.ts';
 import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
 import type { RoundTripWriter } from '../round-trip/writer.ts';
 import { TranslateInputException } from '../shared/input-error.ts';
-import type { ApiErrorTranslator, TranslateOptions, Translator } from '../types.ts';
+import type { ApiErrorTranslator, TranslateOptions, TranslationFrame, Translator } from '../types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 export interface SourceProtocol<Name extends AssistantTurnProtocol, Payload, Event> {
@@ -48,7 +48,7 @@ export interface TargetProtocol<Name extends AssistantTurnProtocol, Payload, Eve
   ) => { readonly payload: Payload; readonly context: Context };
   /** Where request writing allocates names, this context preserves their logical identities for event reading. */
   readonly readEvents: (
-    frames: AsyncIterable<ProtocolFrame<Event>>,
+    frames: AsyncIterable<TranslationFrame<Event>>,
     context: Context,
     roundTripReader: RoundTripReader<Name>,
   ) => AsyncIterable<IRRecord>;

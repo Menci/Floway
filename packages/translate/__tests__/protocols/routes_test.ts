@@ -69,6 +69,24 @@ const gemini: GeminiGenerateContentRequest = {
   generationConfig: { responseSchema: formatSchema, stopSequences: ['END'], maxOutputTokens: 16 },
 };
 
+test('explicit upstream failures terminate each target reader before the first event', async () => {
+  const options = { sidecarCodec: createTestSidecarCodec('test-codec-scope') };
+  const failed = { ok: false as const, error: new Error('upstream connection closed') };
+  const viaMessages = expectTrip(await routeOpenAIResponsesViaAnthropicMessages(responses, options));
+  const viaChat = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(responses, options));
+  const viaResponses = expectTrip(await routeAnthropicMessagesViaOpenAIResponses(anthropic, options));
+
+  await expect(collect(viaMessages.events(iterate([failed])))).resolves.toMatchObject([
+    { type: 'event', event: { type: 'error', message: 'upstream connection closed' } },
+  ]);
+  await expect(collect(viaChat.events(iterate([failed])))).resolves.toMatchObject([
+    { type: 'event', event: { type: 'error', message: 'upstream connection closed' } },
+  ]);
+  await expect(collect(viaResponses.events(iterate([failed])))).resolves.toMatchObject([
+    { type: 'event', event: { type: 'error', error: { message: 'upstream connection closed' } } },
+  ]);
+});
+
 const objectsIn = (value: unknown): Set<object> => {
   const objects = new Set<object>();
   const visit = (current: unknown): void => {

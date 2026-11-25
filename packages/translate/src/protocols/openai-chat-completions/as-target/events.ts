@@ -10,7 +10,7 @@ import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, type ReadFieldStates, type ReadFieldState, type TextFragmentId } from '../../../round-trip/reference/reference-builder.ts';
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { TranslationFrame } from '../../../types.ts';
 import {
   createOpenAIChatCompletionsEventAccumulator,
   type OpenAIChatCompletionsAnnotation,
@@ -119,7 +119,7 @@ interface ChatChoiceState {
 }
 
 export const readOpenAIChatCompletionsEvents = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
+  frames: AsyncIterable<TranslationFrame<OpenAIChatCompletionsStreamEvent>>,
   options: Partial<ToolNameContext> & {
     roundTrip: RoundTripReader<'openaiChatCompletions'>;
   },
@@ -511,6 +511,14 @@ export const readOpenAIChatCompletionsEvents = async function* (
   };
 
   for await (const frame of frames) {
+    if ('ok' in frame) {
+      const event: ChatChunk | undefined = frame.event;
+      const error = event === undefined ? { message: frame.error instanceof Error ? frame.error.message : String(frame.error) } : event.error;
+      if (error === undefined) throw new TypeError('Chat Completions stream failure must carry a native error event');
+      ir.event({ type: 'error', error });
+      yield* ir.drain();
+      return;
+    }
     if (frame.type === 'done') { yield* finish(); return; }
     const chunk: ChatChunk = frame.event;
     if (chunk.error !== undefined) { ir.event({ type: 'error', error: chunk.error }); yield* ir.drain(); return; }

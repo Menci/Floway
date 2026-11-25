@@ -8,6 +8,7 @@ import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
+import type { TranslationFrame } from '../../../types.ts';
 import {
   type AnthropicMessagesAssistantContentBlock,
   type AnthropicMessagesStreamEventEx,
@@ -15,7 +16,6 @@ import {
   type AnthropicMessagesUsageDeltaEx,
   createAnthropicMessagesEventAccumulator,
 } from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 const messagesCitationToIR = (citation: AnthropicMessagesTextCitation): IROutputSourceCitation | undefined => {
   const isSearchLocation = citation.type === 'web_search_result_location' || citation.type === 'search_result_location';
@@ -63,7 +63,7 @@ interface MessagesBlockState {
 }
 
 export const readAnthropicMessagesEvents = async function* (
-  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
+  frames: AsyncIterable<TranslationFrame<AnthropicMessagesStreamEventEx>>,
   options: Partial<ToolNameContext> & {
     roundTrip: RoundTripReader<'anthropicMessages'>;
   },
@@ -130,6 +130,14 @@ export const readAnthropicMessagesEvents = async function* (
   };
 
   for await (const frame of frames) {
+    if ('ok' in frame) {
+      const { event } = frame;
+      if (event !== undefined && event.type !== 'error') throw new TypeError('Messages stream failure must carry a native error event');
+      const error = event === undefined ? { message: frame.error instanceof Error ? frame.error.message : String(frame.error) } : event.error;
+      ir.event({ type: 'error', error });
+      yield* ir.drain();
+      return;
+    }
     if (frame.type === 'done') throw new Error('Messages done arrived without message_stop');
     const e = frame.event;
     if (e.type !== 'error') nativeAccumulator.accept(e);

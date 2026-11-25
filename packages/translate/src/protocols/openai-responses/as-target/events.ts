@@ -7,7 +7,7 @@ import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, invalidateReadField, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { errorPayloadFromEvent, errorPayloadFromWire } from '../../../shared/api-error.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { TranslationFrame } from '../../../types.ts';
 import type {
   OpenAIResponsesAnnotation,
   OpenAIResponsesStreamLogprobEx,
@@ -142,7 +142,7 @@ const irItemSeed = (item: OpenAIResponsesOutputItemEx): Record<string, unknown> 
 const itemId = (item: OpenAIResponsesOutputItemEx): unknown => 'id' in item ? item.id : undefined;
 
 export const readOpenAIResponsesEvents = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  frames: AsyncIterable<TranslationFrame<OpenAIResponsesStreamEventEx>>,
   options: { roundTrip: RoundTripReader<'openaiResponses'> },
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder();
@@ -551,8 +551,16 @@ export const readOpenAIResponsesEvents = async function* (
   };
 
   for await (const frame of frames) {
-    if (frame.type === 'done') throw new Error('Responses done arrived without a terminal response');
+    if ('type' in frame && frame.type === 'done') throw new Error('Responses done arrived without a terminal response');
     const e = frame.event;
+    if ('ok' in frame && e === undefined) {
+      ir.event({ type: 'error', error: { message: frame.error instanceof Error ? frame.error.message : String(frame.error) } });
+      yield* ir.drain();
+      return;
+    }
+    if (e === undefined || ('ok' in frame && e.type !== 'error' && e.type !== 'response.failed')) {
+      throw new TypeError('Responses stream failure must carry a native error event');
+    }
     if (e.type === 'error') {
       ir.event({ type: 'error', error: errorPayloadFromEvent(e) });
       yield* ir.drain();

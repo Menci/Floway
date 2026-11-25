@@ -14,10 +14,12 @@ export type ApiErrorTranslator = (status: number, headers: Headers, body: Uint8A
   readonly body: unknown;
 } | undefined;
 
+export type TranslationFrame<Event> = ProtocolFrame<Event> | { ok: false; error: unknown; event?: Event };
+
 export interface TranslateTrip<TargetPayload, SourceEvent, TargetEvent> {
   readonly type: 'trip';
   readonly target: TargetPayload;
-  readonly events: (frames: AsyncIterable<ProtocolFrame<TargetEvent>>) => AsyncIterable<ProtocolFrame<SourceEvent>>;
+  readonly events: (frames: AsyncIterable<TranslationFrame<TargetEvent>>) => AsyncIterable<ProtocolFrame<SourceEvent>>;
   readonly error: ApiErrorTranslator;
 }
 
