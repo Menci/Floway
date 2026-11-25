@@ -1,24 +1,16 @@
 import { test } from 'vitest';
 
-import { withInlineImagesCompressed } from '../../../src/interceptors/openai-chat-completions/compress-images.ts';
-import type { OpenAIChatCompletionsBoundaryCtx } from '../../../src/interceptors/openai-chat-completions/types.ts';
+import { compressImages } from '../../../src/pipelines/openai-chat-completions/compress-images.ts';
+import { runStage, type StageRequest } from '../stage.ts';
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
-import type { ExecuteResult } from '@floway-dev/provider';
-import { eventResult } from '@floway-dev/provider';
-import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-
-const stubRequest = {};
-
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {})(), testTelemetryModelIdentity));
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
+import { assert, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 const fixedProcessor: ImageProcessor = {
   compressToWebp: () => Promise.resolve(new Uint8Array([1, 2, 3])),
 };
 
-const invocation = (payload: OpenAIChatCompletionsPayloadEx): OpenAIChatCompletionsBoundaryCtx => ({
+const requestFor = (payload: OpenAIChatCompletionsPayloadEx): StageRequest<'openaiChatCompletions'> => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
@@ -45,17 +37,17 @@ test('rewrites a base64 image_url data URL to a WebP data URL', async () => {
       untouchedMessage,
     ],
   };
-  const ctx = invocation(payload);
+  const request = requestFor(payload);
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  const result = await runStage(compressImages, 'openaiChatCompletions', request);
 
-  assertEquals(imageUrl(ctx.payload), 'data:image/webp;base64,AQID');
+  assertEquals(imageUrl(result.payload), 'data:image/webp;base64,AQID');
   assertEquals(imageUrl(payload), 'data:image/png;base64,AAAA');
-  assert(ctx.payload !== payload);
-  assert(ctx.payload.messages !== payload.messages);
-  assert(ctx.payload.messages[0] !== payload.messages[0]);
-  assert(ctx.payload.messages[1] === untouchedMessage);
-  const rewritten = ctx.payload.messages[0].content;
+  assert(result.payload !== payload);
+  assert(result.payload.messages !== payload.messages);
+  assert(result.payload.messages[0] !== payload.messages[0]);
+  assert(result.payload.messages[1] === untouchedMessage);
+  const rewritten = result.payload.messages[0].content;
   if (!Array.isArray(rewritten)) throw new Error('expected rewritten multipart content');
   assert(rewritten !== payload.messages[0].content);
   assert(rewritten[0] === textPart);

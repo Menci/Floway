@@ -1,28 +1,19 @@
 import { test } from 'vitest';
 
-import { withInlineImagesCompressed } from '../../../src/interceptors/openai-responses/compress-images.ts';
-import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
+import { compressImages } from '../../../src/pipelines/openai-responses/compress-images.ts';
+import { runStage, type StageRequest } from '../stage.ts';
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesAssistantInputContent, OpenAIResponsesInputImage, CanonicalOpenAIResponsesInputItem, OpenAIResponsesStreamEventEx, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
-import type { ExecuteResult } from '@floway-dev/provider';
-import { eventResult } from '@floway-dev/provider';
-import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-
-const stubRequest = {};
-
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {})(), testTelemetryModelIdentity));
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputContent, OpenAIResponsesAssistantInputContent, OpenAIResponsesInputImage, CanonicalOpenAIResponsesInputItem, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
+import { assert, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 const fixedProcessor: ImageProcessor = {
   compressToWebp: () => Promise.resolve(new Uint8Array([1, 2, 3])),
 };
 
-const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBoundaryCtx => ({
+const requestFor = (payload: CanonicalOpenAIResponsesPayload): StageRequest<'openaiResponses'> => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { openaiResponses: {} } }),
-  action: 'generate',
 });
 
 const contentContainers = {
@@ -52,17 +43,17 @@ test.each(Object.entries(contentContainers))('compresses inline images in %s', a
     model: 'gpt-test',
     input: [sourceItem, untouchedItem],
   };
-  const ctx = invocation(payload);
+  const request = requestFor(payload);
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  const result = await runStage(compressImages, 'openaiResponses', request);
 
-  assertEquals(imageUrlOf(ctx.payload.input[0]), 'data:image/webp;base64,AQID');
+  assertEquals(imageUrlOf(result.payload.input[0]), 'data:image/webp;base64,AQID');
   assertEquals(imageUrlOf(sourceItem), 'data:image/png;base64,AAAA');
-  assert(ctx.payload !== payload);
-  assert(ctx.payload.input !== payload.input);
-  assert(ctx.payload.input[0] !== sourceItem);
-  assert(ctx.payload.input[1] === untouchedItem);
-  const rewrittenContent = contentOf(ctx.payload.input[0]);
+  assert(result.payload !== payload);
+  assert(result.payload.input !== payload.input);
+  assert(result.payload.input[0] !== sourceItem);
+  assert(result.payload.input[1] === untouchedItem);
+  const rewrittenContent = contentOf(result.payload.input[0]);
   const sourceContent = contentOf(sourceItem);
   if (!Array.isArray(rewrittenContent) || !Array.isArray(sourceContent)) throw new Error('expected multipart OpenAI Responses content');
   assert(rewrittenContent !== sourceContent);
@@ -79,7 +70,7 @@ test('compresses each unique inline image only once when the same data URL appea
     },
   });
 
-  const ctx = invocation({
+  const request = requestFor({
     model: 'gpt-test',
     input: [
       {
@@ -108,40 +99,8 @@ test('compresses each unique inline image only once when the same data URL appea
     ],
   });
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await runStage(compressImages, 'openaiResponses', request);
 
   // Two unique data URLs across five targets → exactly two compress calls.
-  assertEquals(calls, 2);
-});
-
-test('reuses its compressed image when the same attempt payload is retried', async () => {
-  let calls = 0;
-  initImageProcessor({
-    compressToWebp: () => {
-      calls += 1;
-      return Promise.resolve(new Uint8Array([1, 2, 3]));
-    },
-  });
-
-  const ctx = invocation({
-    model: 'gpt-test',
-    input: [{
-      type: 'message',
-      role: 'user',
-      content: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'auto' }],
-    }],
-  });
-
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
-
-  assertEquals(calls, 1);
-  assertEquals(imageUrlOf(ctx.payload.input[0]), 'data:image/webp;base64,AQID');
-
-  const item = ctx.payload.input[0];
-  if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
-  item.content[0].image_url = 'data:image/png;base64,BBBB';
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
-
   assertEquals(calls, 2);
 });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { unwrapCopilotItemId, wrapCopilotItemId } from '../../../src/interceptors/openai-responses/item-id-carrier.ts';
+import { unwrapCopilotItemId, wrapCopilotItemId } from '../../../src/pipelines/openai-responses/item-id-carrier.ts';
 
 describe('Copilot item id carrier', () => {
   test.each([

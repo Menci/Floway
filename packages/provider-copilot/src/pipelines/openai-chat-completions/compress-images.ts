@@ -20,7 +20,9 @@ const compressRequests = async (payload: OpenAIChatCompletionsPayloadEx, model: 
   const compressed = new Map(await Promise.all([...sources].map(async url => [url, await compressImageDataUrlToWebp(compress, url, size)] as const)));
   return {
     ...payload,
-    messages: payload.messages.map(message => message.role !== 'user' || !Array.isArray(message.content)
+    messages: payload.messages.map(message => message.role !== 'user'
+      || !Array.isArray(message.content)
+      || !message.content.some(part => part.type === 'image_url' && compressed.has(part.image_url.url))
       ? message
       : {
           ...message,

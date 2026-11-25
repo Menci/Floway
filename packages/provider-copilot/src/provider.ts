@@ -371,7 +371,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       // URL is the one shape it refuses with
       // `400 external image URLs are not supported`; that response is relayed
       // to the caller unchanged rather than pre-empted here.
-      const body = await serializeOpenAIImagesEditsRequest(request, rawModel.id);
+      const body = serializeOpenAIImagesEditsRequest(request, rawModel.id);
       const response = await copilotFetchOpenAIImagesEdits(
         upstreamConfig,
         { method: 'POST', body, signal },

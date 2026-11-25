@@ -1,23 +1,13 @@
 import { test } from 'vitest';
 
-import { withCompactHeadersSet } from '../../../src/interceptors/anthropic-messages/set-compact-headers.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ExecuteResult } from '@floway-dev/provider';
-import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { setCompactHeaders } from '../../../src/pipelines/anthropic-messages/set-compact-headers.ts';
+import { runStage, type StageRequest } from '../stage.ts';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import { assertEquals } from '@floway-dev/test-utils';
 
-const stubRequest = {};
-
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {})(), testTelemetryModelIdentity));
-
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
+const requestFor = (payload: AnthropicMessagesPayload): StageRequest<'anthropicMessages'> => ({
   payload,
   headers: new Headers(),
-  anthropicBeta: [],
-  model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
 });
 
 const COMPACT_LAST_MESSAGE_TEXT =
@@ -26,30 +16,30 @@ const COMPACT_LAST_MESSAGE_TEXT =
   'Pending Tasks:\n- finish refactor\n\nCurrent Work:\n- reviewing diff';
 
 test('Compact headers set when the last user message carries all three markers', async () => {
-  const ctx = invocation({
+  const request = requestFor({
     model: 'claude-test',
     max_tokens: 10,
     messages: [{ role: 'user', content: COMPACT_LAST_MESSAGE_TEXT }],
   });
 
-  await withCompactHeadersSet(ctx, stubRequest, okEvents);
+  const result = await runStage(setCompactHeaders, 'anthropicMessages', request);
 
-  assertEquals(ctx.headers.get('x-initiator'), 'agent');
-  assertEquals(ctx.headers.get('x-interaction-type'), 'conversation-compaction');
+  assertEquals(result.headers.get('x-initiator'), 'agent');
+  assertEquals(result.headers.get('x-interaction-type'), 'conversation-compaction');
 });
 
 test('Compact headers set when the system prompt starts with a compact summarization prefix', async () => {
-  const ctx = invocation({
+  const request = requestFor({
     model: 'claude-test',
     max_tokens: 10,
     system: 'You are a helpful AI assistant tasked with summarizing conversations and other things.',
     messages: [{ role: 'user', content: 'go ahead' }],
   });
 
-  await withCompactHeadersSet(ctx, stubRequest, okEvents);
+  const result = await runStage(setCompactHeaders, 'anthropicMessages', request);
 
-  assertEquals(ctx.headers.get('x-initiator'), 'agent');
-  assertEquals(ctx.headers.get('x-interaction-type'), 'conversation-compaction');
+  assertEquals(result.headers.get('x-initiator'), 'agent');
+  assertEquals(result.headers.get('x-interaction-type'), 'conversation-compaction');
 });
 
 // Real client scenario: clients that round-trip the previous request's user
@@ -58,7 +48,7 @@ test('Compact headers set when the system prompt starts with a compact summariza
 // for any non-user role; we mirror that so the tagging stays anchored to the
 // turn the human actually authored.
 test('Compact headers absent when the last message is assistant-role with compact-summary text', async () => {
-  const ctx = invocation({
+  const request = requestFor({
     model: 'claude-test',
     max_tokens: 10,
     messages: [
@@ -67,14 +57,14 @@ test('Compact headers absent when the last message is assistant-role with compac
     ],
   });
 
-  await withCompactHeadersSet(ctx, stubRequest, okEvents);
+  const result = await runStage(setCompactHeaders, 'anthropicMessages', request);
 
-  assertEquals(ctx.headers.has('x-initiator'), false);
-  assertEquals(ctx.headers.has('x-interaction-type'), false);
+  assertEquals(result.headers.has('x-initiator'), false);
+  assertEquals(result.headers.has('x-interaction-type'), false);
 });
 
 test('Auto-continue marks Claude Code resume prompts with x-initiator: agent only', async () => {
-  const ctx = invocation({
+  const request = requestFor({
     model: 'claude-test',
     max_tokens: 10,
     messages: [
@@ -85,8 +75,8 @@ test('Auto-continue marks Claude Code resume prompts with x-initiator: agent onl
     ],
   });
 
-  await withCompactHeadersSet(ctx, stubRequest, okEvents);
+  const result = await runStage(setCompactHeaders, 'anthropicMessages', request);
 
-  assertEquals(ctx.headers.get('x-initiator'), 'agent');
-  assertEquals(ctx.headers.has('x-interaction-type'), false);
+  assertEquals(result.headers.get('x-initiator'), 'agent');
+  assertEquals(result.headers.has('x-interaction-type'), false);
 });

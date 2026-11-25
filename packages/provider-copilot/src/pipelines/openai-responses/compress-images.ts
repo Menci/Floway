@@ -23,6 +23,8 @@ const compressRequests = async <Payload extends Pick<CanonicalOpenAIResponsesPay
 
   const size = openAIImageSize(model);
   const compressed = new Map(await Promise.all([...sources].map(async url => [url, await compressImageDataUrlToWebp(compress, url, size)] as const)));
+  const hasCompressedImage = (part: OpenAIResponsesInputContent | OpenAIResponsesToolOutputContent | OpenAIResponsesOutputRefusal): boolean =>
+    part.type === 'input_image' && typeof part.image_url === 'string' && compressed.has(part.image_url);
   const rewrite = <Part extends OpenAIResponsesInputContent | OpenAIResponsesToolOutputContent | OpenAIResponsesOutputRefusal>(parts: Part[]): Part[] => parts.map(part => {
     if (part.type !== 'input_image' || typeof part.image_url !== 'string') return part;
     const url = compressed.get(part.image_url);
@@ -32,10 +34,10 @@ const compressRequests = async <Payload extends Pick<CanonicalOpenAIResponsesPay
   return {
     ...payload,
     input: payload.input.map(item => {
-      if (item.type === 'message' && Array.isArray(item.content)) {
+      if (item.type === 'message' && Array.isArray(item.content) && item.content.some(hasCompressedImage)) {
         return { ...item, content: rewrite(item.content) } as CanonicalOpenAIResponsesInputItem;
       }
-      if ((item.type === 'function_call_output' || item.type === 'custom_tool_call_output') && Array.isArray(item.output)) {
+      if ((item.type === 'function_call_output' || item.type === 'custom_tool_call_output') && Array.isArray(item.output) && item.output.some(hasCompressedImage)) {
         return { ...item, output: rewrite(item.output) };
       }
       return item;

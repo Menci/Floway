@@ -3,7 +3,7 @@ import { defineCopilotStage } from '../facts.ts';
 import { compressBase64ImageToWebp } from '../shared/image-compression.ts';
 import { move, transform } from '@floway-dev/pipeline';
 import { fitWithin, type SizeCaps } from '@floway-dev/platform';
-import type { AnthropicMessagesCountTokensPayload, AnthropicMessagesPayload, AnthropicMessagesToolResultContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesCountTokensPayload, AnthropicMessagesPayload, AnthropicMessagesToolResultBlock, AnthropicMessagesToolResultContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 
 // Per-model image caps for the Claude (Anthropic Messages) egress, measured from the real
 // /v1/messages generation path (count_tokens misreports the downscale here).
@@ -51,6 +51,10 @@ const compressRequests = async <Request extends Payload>(payload: Request, model
 
   const caps = claudeImageCaps(model);
   const compressed = new Map(await Promise.all([...sources].map(async base64 => [base64, await compressBase64ImageToWebp(compress, base64, source => fitWithin(source, caps))] as const)));
+  const hasCompressedImage = (block: ContentBlock): boolean =>
+    block.type === 'image' && block.source.type === 'base64' && compressed.has(block.source.data);
+  const hasCompressedToolResult = (block: AnthropicMessagesUserContentBlock): block is AnthropicMessagesToolResultBlock & { content: AnthropicMessagesToolResultContentBlock[] } =>
+    block.type === 'tool_result' && Array.isArray(block.content) && block.content.some(hasCompressedImage);
   const rewrite = <Block extends ContentBlock>(block: Block): Block => {
     if (block.type !== 'image' || block.source.type !== 'base64') return block;
     const data = compressed.get(block.source.data);
@@ -59,12 +63,14 @@ const compressRequests = async <Request extends Payload>(payload: Request, model
 
   return {
     ...payload,
-    messages: payload.messages.map(message => message.role !== 'user' || !Array.isArray(message.content)
+    messages: payload.messages.map(message => message.role !== 'user'
+      || !Array.isArray(message.content)
+      || !message.content.some(block => hasCompressedImage(block) || hasCompressedToolResult(block))
       ? message
       : {
           ...message,
           content: message.content.map(block =>
-            block.type === 'tool_result' && Array.isArray(block.content)
+            hasCompressedToolResult(block)
               ? { ...block, content: block.content.map(rewrite) }
               : rewrite(block)),
         }),

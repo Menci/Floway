@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { parseUserIdMetadata } from '../../../src/interceptors/anthropic-messages/detect-claude-code-metadata.ts';
+import { parseUserIdMetadata } from '../../../src/pipelines/anthropic-messages/detect-claude-code-metadata.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('parseUserIdMetadata extracts both halves from the legacy textual form', () => {

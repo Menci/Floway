@@ -1,18 +1,10 @@
 import { test } from 'vitest';
 
-import { withInlineImagesCompressed } from '../../../src/interceptors/anthropic-messages/compress-images.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import { compressImages } from '../../../src/pipelines/anthropic-messages/compress-images.ts';
+import { runStage, type StageRequest } from '../stage.ts';
 import { type ImageDimensions, type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
-import type { AnthropicMessagesImageBlock, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesToolResultBlock } from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ExecuteResult } from '@floway-dev/provider';
-import { eventResult } from '@floway-dev/provider';
-import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-
-const stubRequest = {};
-
-const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> =>
-  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {})(), testTelemetryModelIdentity));
+import type { AnthropicMessagesImageBlock, AnthropicMessagesPayload, AnthropicMessagesToolResultBlock } from '@floway-dev/protocols/anthropic-messages';
+import { assert, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 // Records the bytes and resolved target dimensions handed to the processor and
 // returns a fixed [1,2,3] WebP payload, which base64-encodes to "AQID".
@@ -29,10 +21,9 @@ const spyProcessor = (): { processor: ImageProcessor; inputs: Uint8Array[]; targ
   return { processor, inputs, targets };
 };
 
-const invocation = (payload: AnthropicMessagesPayload, upstreamModelId = 'claude-test'): AnthropicMessagesBoundaryCtx => ({
+const requestFor = (payload: AnthropicMessagesPayload, upstreamModelId = 'claude-test'): StageRequest<'anthropicMessages'> => ({
   payload,
   headers: new Headers(),
-  anthropicBeta: [],
   model: stubProviderModel({ id: upstreamModelId, endpoints: { anthropicMessages: {} } }),
 });
 
@@ -63,11 +54,11 @@ test('compresses an image nested inside tool_result content', async () => {
       untouchedMessage,
     ],
   };
-  const ctx = invocation(payload);
+  const request = requestFor(payload);
 
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  const result = await runStage(compressImages, 'anthropicMessages', request);
 
-  const rewrittenContent = ctx.payload.messages[0].content;
+  const rewrittenContent = result.payload.messages[0].content;
   if (!Array.isArray(rewrittenContent)) throw new Error('expected rewritten user content');
   const rewrittenToolResult = rewrittenContent[1];
   if (rewrittenToolResult?.type !== 'tool_result' || !Array.isArray(rewrittenToolResult.content)) throw new Error('expected rewritten tool result');
@@ -78,9 +69,9 @@ test('compresses an image nested inside tool_result content', async () => {
   assertEquals(rewrittenImage.source.data, 'AQID');
   assertEquals(nestedImage.source.media_type, 'image/png');
   assertEquals(nestedImage.source.data, 'AAAA');
-  assert(ctx.payload !== payload);
-  assert(ctx.payload.messages[0] !== payload.messages[0]);
-  assert(ctx.payload.messages[1] === untouchedMessage);
+  assert(result.payload !== payload);
+  assert(result.payload.messages[0] !== payload.messages[0]);
+  assert(result.payload.messages[1] === untouchedMessage);
   assert(rewrittenContent[0] === outerText);
   assert(rewrittenToolResult !== toolResult);
   assert(rewrittenToolResult.content !== toolResult.content);
@@ -97,14 +88,14 @@ test('selects the high-res Claude cap for Opus >= 4.7 and the standard cap other
   assertEquals(await capTargetFor('claude-opus-4.6', source), { width: 1084, height: 1084 });
 });
 
-// Drives the interceptor end-to-end with a header-only PNG of the requested
+// Drives the image stage end-to-end with a header-only PNG of the requested
 // dimensions and reads back the target the per-model cap resolved to. The
 // PNG carries no pixel payload — image-size reads dimensions from IHDR and
 // does not validate the rest of the file.
 const capTargetFor = async (upstreamModelId: string, source: ImageDimensions): Promise<ImageDimensions | null> => {
   const { processor, targets } = spyProcessor();
   initImageProcessor(processor);
-  const ctx = invocation({
+  const request = requestFor({
     model: 'claude-test',
     max_tokens: 10,
     messages: [
@@ -114,7 +105,7 @@ const capTargetFor = async (upstreamModelId: string, source: ImageDimensions): P
       },
     ],
   }, upstreamModelId);
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await runStage(compressImages, 'anthropicMessages', request);
   return targets[0];
 };
 

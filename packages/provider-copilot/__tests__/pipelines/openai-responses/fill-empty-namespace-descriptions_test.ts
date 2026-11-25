@@ -1,15 +1,13 @@
 import { test } from 'vitest';
 
-import { withEmptyNamespaceDescriptionsFilled } from '../../../src/interceptors/openai-responses/fill-empty-namespace-descriptions.ts';
-import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
+import { fillEmptyNamespaceDescriptions } from '../../../src/pipelines/openai-responses/fill-empty-namespace-descriptions.ts';
+import { runStage, type StageRequest } from '../stage.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
-const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBoundaryCtx => ({
+const requestFor = (payload: CanonicalOpenAIResponsesPayload): StageRequest<'openaiResponses'> => ({
   payload,
   headers: new Headers(),
-  model: stubProviderModel({ endpoints: { openaiResponses: {} } }),
-  action: 'generate',
 });
 
 test('fills Codex OpenAI Responses Lite namespace descriptions before Copilot dispatch', async () => {
@@ -19,7 +17,7 @@ test('fills Codex OpenAI Responses Lite namespace descriptions before Copilot di
     description: 'Tools for spawning and managing sub-agents.',
     tools: [{ type: 'function' as const, name: 'spawn_agent', description: 'Spawn an agent.' }],
   };
-  const ctx = invocation({
+  const request = requestFor({
     model: 'gpt-5.6-sol',
     input: [{
       type: 'additional_tools',
@@ -36,9 +34,9 @@ test('fills Codex OpenAI Responses Lite namespace descriptions before Copilot di
     }],
   });
 
-  await withEmptyNamespaceDescriptionsFilled(ctx, {}, async () => {});
+  const result = await runStage(fillEmptyNamespaceDescriptions, 'openaiResponses', request);
 
-  const [item] = ctx.payload.input;
+  const [item] = result.payload.input;
   if (item?.type !== 'additional_tools') throw new Error('expected additional_tools input');
   assertEquals(item.tools, [
     {
