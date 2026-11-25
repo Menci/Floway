@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
+    "./alpha-search": { "import": "./src/alpha-search/index.ts", "types": "./src/alpha-search/index.ts" },
     "./common": { "import": "./src/common/index.ts", "types": "./src/common/index.ts" },
     "./openai-completions": { "import": "./src/openai-completions/index.ts", "types": "./src/openai-completions/index.ts" },
     "./openai-chat-completions": { "import": "./src/openai-chat-completions/index.ts", "types": "./src/openai-chat-completions/index.ts" },

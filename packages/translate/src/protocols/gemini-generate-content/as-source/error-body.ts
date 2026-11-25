@@ -10,5 +10,5 @@ export const restateGeminiGenerateContentError: ApiErrorTranslator = (upstreamSt
   const error = irErrorPayloadFromBody(upstreamBody);
   if (error === undefined) return undefined;
   const restated = geminiGenerateContentErrorFromIR(error, upstreamStatus);
-  return restateError(restated.code, headers, { error: restated });
+  return restateError(restated.error.code, headers, restated);
 };

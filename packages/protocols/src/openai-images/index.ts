@@ -29,3 +29,8 @@ export interface OpenAIImagesGenerationsPayload {
 export type OpenAIImageEditReference =
   | { image_url: string; file_id?: never; [key: string]: unknown }
   | { file_id: string; image_url?: never; [key: string]: unknown };
+
+export {
+  formatOpenAIError as formatOpenAIImagesEditsError,
+  formatOpenAIError as formatOpenAIImagesGenerationsError,
+} from '../common/openai-error.ts';

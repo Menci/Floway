@@ -40,6 +40,7 @@ export interface ParsedRerankRequest {
 }
 
 export { DEFAULT_RERANK_PATHS } from './default-paths.ts';
+export { formatOpenAIError as formatRerankError } from '../common/openai-error.ts';
 export {
   parseRerankRequest,
   parseRerankResponse,

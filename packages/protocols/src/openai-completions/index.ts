@@ -74,3 +74,4 @@ export interface OpenAICompletionsResult {
 
 export { reassembleOpenAICompletionsEvents } from './reassemble.ts';
 export { openaiCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';
+export { formatOpenAIError as formatOpenAICompletionsError } from '../common/openai-error.ts';

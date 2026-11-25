@@ -168,7 +168,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
   for await (const { record, collector } of consumeIRRecords(records)) {
     const { state } = collector;
     if (record.type === 'error') {
-      yield eventFrame({ error: openaiChatCompletionsErrorFromIR(record.error) } as unknown as OpenAIChatCompletionsStreamEvent);
+      yield eventFrame(openaiChatCompletionsErrorFromIR(record.error) as unknown as OpenAIChatCompletionsStreamEvent);
       return;
     }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;

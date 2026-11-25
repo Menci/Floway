@@ -170,6 +170,7 @@ export interface ParsedDecisionRequest {
 }
 
 export { DEFAULT_DECISION_PATHS } from './default-paths.ts';
+export { formatOpenAIError as formatDecisionError } from '../common/openai-error.ts';
 export {
   parseDecisionRequest,
   parseDecisionResponse,

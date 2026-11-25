@@ -3,3 +3,5 @@ export interface OpenAIEmbeddingsPayload {
   input?: unknown;
   [key: string]: unknown;
 }
+
+export { formatOpenAIError as formatOpenAIEmbeddingsError } from '../common/openai-error.ts';

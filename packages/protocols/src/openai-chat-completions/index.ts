@@ -130,6 +130,7 @@ export type OpenAIChatCompletionsStreamEvent = Omit<OpenWire<Official.ChatComple
 
 export * from './errors.ts';
 export { parseOpenAIChatCompletionsStream, type ParseOpenAIChatCompletionsStreamOptions } from './stream.ts';
+export { formatOpenAIError as formatOpenAIChatCompletionsError } from '../common/openai-error.ts';
 export { collectOpenAIChatCompletionsProtocolEventsToResult } from './to-result.ts';
 export { createOpenAIChatCompletionsEventAccumulator, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsEventAccumulator } from './reassemble.ts';
 export { openaiChatCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';

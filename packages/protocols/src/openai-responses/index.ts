@@ -986,6 +986,7 @@ export { openaiResponsesResultToEvents } from './from-result.ts';
 export { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
 export { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
 export { parseOpenAIResponsesStream, type ParseOpenAIResponsesStreamOptions } from './stream.ts';
+export { formatOpenAIResponsesError } from './error.ts';
 
 export type {
   ClientResponseResource,

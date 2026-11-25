@@ -206,7 +206,7 @@ export const writeAnthropicMessagesEvents = async function* (
 
   for await (const { record, collector } of consumeIRRecords(records)) {
     const { state } = collector;
-    if (record.type === 'error') { yield emit({ type: 'error', error: anthropicMessagesErrorFromIR(record.error) }); return; }
+    if (record.type === 'error') { yield emit(anthropicMessagesErrorFromIR(record.error)); return; }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
       if (state.model === undefined) throw new TypeError('Messages output requires an IR model before start');

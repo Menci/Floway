@@ -149,4 +149,5 @@ export { parseGeminiGenerateContentStream, type ParseGeminiGenerateContentStream
 
 export { geminiGenerateContentPartKind, type GeminiGenerateContentPartKind } from './part.ts';
 export { geminiGenerateContentStatusForHttpStatus } from './error-status.ts';
+export { formatGeminiGenerateContentError } from './error.ts';
 export { billableUsageFromGeminiGenerateContentEvent, billableUsageFromGeminiGenerateContentUsage } from './usage.ts';

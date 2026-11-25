@@ -356,7 +356,7 @@ export const writeGeminiGenerateContentEvents = async function* (
 
   for await (const { record, collector } of consumeIRRecords(records)) {
     const { state } = collector;
-    if (record.type === 'error') { yield eventFrame({ error: geminiGenerateContentErrorFromIR(record.error) }); return; }
+    if (record.type === 'error') { yield eventFrame(geminiGenerateContentErrorFromIR(record.error)); return; }
     if (record.type === 'write' && record.path[0] === 'model' && typeof record.value === 'string') metadata.model = record.value;
     if (record.type === 'start') {
       if (state.model === undefined) throw new TypeError('GenerateContent output requires an IR model before start');
