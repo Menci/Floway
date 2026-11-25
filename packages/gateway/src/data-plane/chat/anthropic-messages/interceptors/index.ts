@@ -4,7 +4,7 @@ import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-
 import { withEmptyToolsToolChoiceNormalized } from './normalize-empty-tools-tool-choice.ts';
 import { stripBillingAttribution } from './strip-billing-attribution.ts';
 import type { AnthropicMessagesCountTokensInterceptor, AnthropicMessagesInterceptor, AnthropicMessagesPayloadInterceptor } from './types.ts';
-import { withAnthropicMessagesWebSearchRequestPrepared, withAnthropicMessagesWebSearchShim } from './web-search-shim.ts';
+import { withAnthropicMessagesWebSearchRequestPrepared, withAnthropicMessagesWebSearchShim } from '../pipeline/web-search-shim/mechanics.ts';
 
 // Unified Anthropic Messages generation chain. All entries are attached to every
 // candidate; each interceptor decides whether to act — from the candidate's

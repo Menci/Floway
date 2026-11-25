@@ -1,10 +1,10 @@
-import type { AnthropicMessagesCountTokensInterceptor, AnthropicMessagesInterceptor, AnthropicMessagesInvocation } from './types.ts';
-import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
-import { isJsonObject } from '../../../../shared/json-helpers.ts';
-import { loadWebSearchConfig } from '../../../tools/web-search/config.ts';
-import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
-import { runWebSearchAndRecordUsage } from '../../../tools/web-search/search.ts';
-import type { WebSearchProvider, WebSearchProviderName, WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
+import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../../shared/base64url-json.ts';
+import { isJsonObject } from '../../../../../shared/json-helpers.ts';
+import { loadWebSearchConfig } from '../../../../tools/web-search/config.ts';
+import { resolveConfiguredWebSearchProvider } from '../../../../tools/web-search/provider.ts';
+import { runWebSearchAndRecordUsage } from '../../../../tools/web-search/search.ts';
+import type { WebSearchProvider, WebSearchProviderName, WebSearchProviderRequest, WebSearchProviderResult } from '../../../../tools/web-search/types.ts';
+import type { AnthropicMessagesCountTokensInterceptor, AnthropicMessagesInterceptor, AnthropicMessagesInvocation } from '../../interceptors/types.ts';
 import type {
   AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesAssistantInputContentBlock,
@@ -29,6 +29,10 @@ import { providerModelOf, internalErrorResult, toInternalDebugError } from '@flo
 
 const MAX_QUERY_LENGTH = 1000;
 const WEB_SEARCH_TOOL_NAME = 'web_search';
+const MAX_SEARCH_INPUT_LENGTH = 1024 * 1024;
+const MAX_DEFERRED_FRAMES = 100_000;
+const MAX_DEFERRED_BYTES = 16 * 1024 * 1024;
+const utf8 = new TextEncoder();
 
 // vLLM v0.29.1rc0 models stream-event usage as optional and synthesizes zero
 // counters when its underlying usage is absent. Preserve that wire compatibility
@@ -724,7 +728,16 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
   const activeBlocks = new Map<number, ActiveBlock>();
   let activeWebSearchIndex: number | undefined;
   let deferredFrames: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
+  let deferredBytes = 0;
   let terminated = false;
+
+  const deferFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEventEx>): void => {
+    deferredBytes += utf8.encode(JSON.stringify(frame)).byteLength;
+    if (deferredFrames.length === MAX_DEFERRED_FRAMES || deferredBytes > MAX_DEFERRED_BYTES) {
+      throw new RangeError(`Anthropic Messages web search exceeded ${MAX_DEFERRED_FRAMES} deferred frames or ${MAX_DEFERRED_BYTES} bytes`);
+    }
+    deferredFrames.push(frame);
+  };
 
   const processFrame = async function* (
     frame: ProtocolFrame<AnthropicMessagesStreamEventEx>,
@@ -734,11 +747,11 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
       const belongsToSearch = (event.type === 'content_block_delta' || event.type === 'content_block_stop')
         && event.index === activeWebSearchIndex;
       if (!belongsToSearch && event.type !== 'error' && event.type !== 'ping') {
-        deferredFrames.push(frame);
+        deferFrame(frame);
         return;
       }
     } else if (activeWebSearchIndex !== undefined) {
-      deferredFrames.push(frame);
+      deferFrame(frame);
       return;
     }
 
@@ -787,7 +800,11 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
 
       if (activeBlock.kind === 'web-search-tool-use') {
         if (event.delta.type === 'input_json_delta') {
-          activeBlocks.set(event.index, { ...activeBlock, inputJson: activeBlock.inputJson + event.delta.partial_json });
+          const inputJson = activeBlock.inputJson + event.delta.partial_json;
+          if (inputJson.length > MAX_SEARCH_INPUT_LENGTH) {
+            throw new RangeError(`Anthropic Messages web search arguments exceeded ${MAX_SEARCH_INPUT_LENGTH} characters`);
+          }
+          activeBlocks.set(event.index, { ...activeBlock, inputJson });
         }
         return;
       }
@@ -815,6 +832,7 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
         activeWebSearchIndex = undefined;
         const resume = deferredFrames;
         deferredFrames = [];
+        deferredBytes = 0;
         for (const deferred of resume) {
           yield* processFrame(deferred);
           if (terminated) return;

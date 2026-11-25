@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { wrapAnthropicMessagesAffinityEgress } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/egress.ts';
 import { analyzeAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
+import { acceptedAffinityEvaluation, projectAffinityTestCandidate } from '../../shared/affinity/helpers.ts';
 import { createAnthropicMessagesUsage, reassembleAnthropicMessagesEvents, type AnthropicMessagesAssistantContentBlock, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -62,8 +62,8 @@ test('carriers a real codec emits on both Anthropic Messages slots decode on the
     messages: [{ role: 'assistant', content }],
   }, codec);
 
-  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  const projectionA = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA));
+  const projectionB = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB));
   expect(projectionA.degrades).toBe(false);
   expect(projectionB.degrades).toBe(true);
   expect(projectionA.materialize().messages[0].content).toEqual([
@@ -102,12 +102,12 @@ test.each([
       max_tokens: 100,
       messages: [{ role: 'assistant', content }],
     }, codec);
-    const sameCandidate = acceptedAffinityEvaluation(prepared, candidateA);
+    const sameCandidate = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA));
     expect(sameCandidate.degrades).toBe(false);
     const restored = sameCandidate.materialize().messages[0].content;
     expect(Array.isArray(restored) && restored.find(part => part.type === 'thinking')).toStrictEqual(original);
 
-    const otherCandidate = acceptedAffinityEvaluation(prepared, candidateB);
+    const otherCandidate = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB));
     expect(otherCandidate.degrades).toBe(true);
     const remaining = otherCandidate.materialize().messages.flatMap(message => typeof message.content === 'string' ? [] : message.content);
     expect(remaining).toEqual(index === 0 ? [] : [{ type: 'text', text: 'answer', citations: null }]);

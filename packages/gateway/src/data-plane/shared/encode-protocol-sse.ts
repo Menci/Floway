@@ -8,9 +8,9 @@ import { toInternalDebugError, type ProtocolStreamError } from '@floway-dev/prov
 
 const encoder = new TextEncoder();
 const frameBytes = (frame: SseWritableFrame): Uint8Array => encoder.encode(serializeSseFrame(frame));
-const keepAlive = frameBytes(sseCommentFrame('keepalive'));
+const defaultKeepAlive = sseCommentFrame('keepalive');
 
-const errorFrame = ({ cause }: ProtocolStreamError) => {
+const openAIErrorFrame = ({ cause }: ProtocolStreamError) => {
   const parsed = cause && typeof cause === 'object' && !(cause instanceof Error) && 'cause' in cause ? cause.cause : cause;
   const error = isOpenAIErrorPayload(parsed) ? parsed : openaiInternalErrorPayload(toInternalDebugError(
     cause && typeof cause === 'object' && !(cause instanceof Error) && 'message' in cause && typeof cause.message === 'string'
@@ -19,6 +19,13 @@ const errorFrame = ({ cause }: ProtocolStreamError) => {
   ));
   return sseFrame(JSON.stringify(error));
 };
+
+interface ProtocolSsePolicy<Event> {
+  readonly errorFrame?: (error: ProtocolStreamError) => SseWritableFrame;
+  readonly keepAlive?: SseWritableFrame;
+  readonly terminal?: (event: Event) => boolean;
+  readonly eof?: () => ProtocolStreamError | undefined;
+}
 
 const readWithKeepAlive = async function* <Item>(iterator: AsyncIterator<Item>, signal: AbortSignal) {
   type Next = Result<IteratorResult<Item>, unknown>;
@@ -58,27 +65,37 @@ export const encodeProtocolSse = <Event>(
   scope: EncoderScope,
   frame: (event: Event) => SseWritableFrame | null,
   trailer?: SseWritableFrame,
+  { errorFrame = openAIErrorFrame, keepAlive = defaultKeepAlive, terminal, eof }: ProtocolSsePolicy<Event> = {},
 ): HttpResponseFact => ({
   ...http,
   headers: setHeader(setHeader(http.headers, 'content-type', 'text/event-stream'), 'cache-control', 'no-cache'),
-  body: scope.wrapStream(stream, async function* (items, { signal }) {
-    let failed = false;
+  body: scope.wrapStream(stream, async function* (items, { signal, abort }) {
+    let ended = false;
+    const heartbeat = frameBytes(keepAlive);
     for await (const item of readWithKeepAlive(items[Symbol.asyncIterator](), signal)) {
-      if (signal.aborted) continue;
+      if (ended || signal.aborted) continue;
       if (item.kind === 'keepalive') {
-        yield { ok: true, value: keepAlive };
+        yield { ok: true, value: heartbeat };
         continue;
       }
 
       const event = item.value;
       if (!event.ok) {
-        failed = true;
+        ended = true;
+        abort();
         if (event.error.kind !== 'abort') yield { ok: true, value: frameBytes(errorFrame(event.error)) };
       } else {
         const output = frame(event.value);
+        if (terminal?.(event.value) === true) {
+          ended = true;
+          abort();
+        }
         if (output !== null) yield { ok: true, value: frameBytes(output) };
       }
     }
-    if (!failed && !signal.aborted && trailer !== undefined) yield { ok: true, value: frameBytes(trailer) };
+    if (ended || signal.aborted) return;
+    const failure = eof?.();
+    if (failure !== undefined) yield { ok: true, value: frameBytes(errorFrame(failure)) };
+    else if (trailer !== undefined) yield { ok: true, value: frameBytes(trailer) };
   }),
 });

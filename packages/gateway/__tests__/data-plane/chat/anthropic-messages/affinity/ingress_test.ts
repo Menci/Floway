@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { analyzeAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
+import { acceptedAffinityEvaluation, projectAffinityTestCandidate } from '../../shared/affinity/helpers.ts';
 import type { AnthropicMessagesAssistantContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
@@ -42,14 +42,14 @@ test('removes thinking and redacted blocks whose affinity belongs to another can
     }],
   }, codec);
 
-  expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().messages[0]).toEqual({
+  expect(acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA)).materialize().messages[0]).toEqual({
     role: 'assistant',
     content: [
       { type: 'thinking', thinking: 'visible reasoning', signature: 'signature' },
       { citations: null, type: 'text', text: 'answer' },
     ],
   });
-  expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().messages[0]).toEqual({
+  expect(acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB)).materialize().messages[0]).toEqual({
     role: 'assistant',
     content: [
       { citations: null, type: 'text', text: 'answer' },
@@ -81,8 +81,8 @@ test('discards marker-only and unsigned thinking on an incompatible turn', async
     }],
   }, codec);
 
-  const compatible = acceptedAffinityEvaluation(prepared, candidateA);
-  const incompatible = acceptedAffinityEvaluation(prepared, candidateB);
+  const compatible = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA));
+  const incompatible = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB));
   expect(compatible.degrades).toBe(false);
   expect(compatible.materialize().messages[0].content).toEqual([
     { type: 'thinking', thinking: 'marked reasoning' },

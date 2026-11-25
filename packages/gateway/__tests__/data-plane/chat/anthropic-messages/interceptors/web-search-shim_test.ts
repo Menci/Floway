@@ -11,7 +11,7 @@ import {
   rewriteAnthropicMessagesWebSearchEventsToNative,
   withAnthropicMessagesWebSearchRequestPrepared,
   withAnthropicMessagesWebSearchShim,
-} from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/web-search-shim.ts';
+} from '../../../../../src/data-plane/chat/anthropic-messages/pipeline/web-search-shim/mechanics.ts';
 import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../../../src/data-plane/tools/web-search/config.ts';
 import type { WebSearchProvider } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
