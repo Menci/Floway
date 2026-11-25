@@ -1,8 +1,9 @@
-import { ensureChatGPTAccessToken, mintChatGPTAccessToken } from './access-token.ts';
+import { mintChatGPTAccessToken } from './access-token.ts';
 import { ChatGPTOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { assertChatGPTUpstreamRecord } from './config.ts';
 import { CHATGPT_BACKEND_BASE, CHATGPT_USER_AGENT } from './constants.ts';
 import { putChatGPTQuota } from './quota.ts';
+import { ensureChatGPTAccessToken, type ChatGPTService } from './service.ts';
 import { readChatGPTUpstreamState, persistChatGPTRefreshTokenRotation, persistChatGPTTerminalState, type ChatGPTQuotaSnapshot } from './state.ts';
 import { runScheduledUsageRefresh, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -65,7 +66,7 @@ export const parseChatGPTUsage = (value: unknown, now: Date): ChatGPTQuotaSnapsh
   return snapshots;
 };
 
-export const runChatGPTScheduledTask = async (record: UpstreamRecord, options: ProviderScheduledOptions): Promise<void> => {
+export const runChatGPTScheduledTask = async (record: UpstreamRecord, options: ProviderScheduledOptions, service: ChatGPTService): Promise<void> => {
   const account = readChatGPTUpstreamState(record.state).accounts[0];
   if (account.state !== 'active') return;
   const observations = Object.values(account.quotaSnapshot ?? {}).map(snapshot => snapshot.fetchedAt);
@@ -74,7 +75,7 @@ export const runChatGPTScheduledTask = async (record: UpstreamRecord, options: P
     const accountId = fresh.config.accounts[0].chatgptAccountId;
     let access;
     try {
-      access = await ensureChatGPTAccessToken(fresh.id, accountId, refreshToken => mintChatGPTAccessToken(refreshToken, fetcher,
+      access = await ensureChatGPTAccessToken(service, fresh.id, accountId, refreshToken => mintChatGPTAccessToken(refreshToken, fetcher,
         token => persistChatGPTRefreshTokenRotation(fresh.id, accountId, token)));
     } catch (error) {
       if (error instanceof ChatGPTOAuthSessionTerminatedError) await persistChatGPTTerminalState(fresh.id, accountId, 'refresh_failed', error.upstreamMessage, { onMissing: 'throw' });

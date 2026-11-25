@@ -1,19 +1,25 @@
 import { v5 as uuidV5 } from 'uuid';
 
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { chatgptModelUsesResponsesLite } from '../../models.ts';
+import { chatgptFactSpace } from '../facts.ts';
+import { responsesIdentity, type ChatGPTResponsesRequestBody } from './request.ts';
+import type { HttpHeaders } from '@floway-dev/http';
 import type {
   CanonicalOpenAIResponsesPayload,
+  OpenAIResponsesAssistantInputContent,
   OpenAIResponsesInputAdditionalToolsItem,
   CanonicalOpenAIResponsesInputItem,
+  OpenAIResponsesInputContent,
   OpenAIResponsesInputMessage,
   OpenAIResponsesStreamEventEx,
   OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
+import type { ProviderModelFact } from '@floway-dev/provider';
 
 export type ChatGPTResponsesBody = Omit<CanonicalOpenAIResponsesPayload, 'model'>;
 
-export interface ChatGPTResponsesLiteRequest {
-  body: ChatGPTResponsesBody;
+export interface ChatGPTResponsesLiteRequest<Body = ChatGPTResponsesBody> {
+  body: Body;
   movedFields: {
     tools?: OpenAIResponsesTool[];
     instructions?: string;
@@ -117,70 +123,60 @@ const makeBaseInstructionsMessage = (
 
 // Codex strips image detail only from message and callable-output image content.
 // https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/client_common.rs#L59-L117
-const removeInputImageDetail = <T extends { type: string }>(part: T): T => {
-  if (part.type !== 'input_image' || !('detail' in part)) return part;
-  const next = { ...part };
-  delete (next as { detail?: unknown }).detail;
-  return next;
-};
+const hasInputImageDetail = (part: OpenAIResponsesAssistantInputContent): boolean =>
+  part.type === 'input_image' && 'detail' in part;
 
-const removeInputImageDetails = <T extends { type: string }>(parts: T[]): T[] =>
-  parts.some(part => part.type === 'input_image' && 'detail' in part)
-    ? parts.map(removeInputImageDetail)
-    : parts;
+const removeInputImageDetail = (part: OpenAIResponsesInputContent): OpenAIResponsesInputContent => {
+  if (part.type !== 'input_image' || !hasInputImageDetail(part)) return part;
+  const { detail: _detail, ...image } = part;
+  return image;
+};
 
 const removeLiteImageDetail = (item: CanonicalOpenAIResponsesInputItem): CanonicalOpenAIResponsesInputItem => {
   if (item.type === 'message' && Array.isArray(item.content)) {
-    const content = removeInputImageDetails(item.content);
-    // The role conditions `content`'s shape, so an assistant turn keeps its
-    // refusal arm while a client role cannot gain one here.
-    return content === item.content ? item : { ...item, content } as CanonicalOpenAIResponsesInputItem;
+    if (!item.content.some(hasInputImageDetail)) return item;
+    return item.role === 'assistant'
+      ? { ...item, content: item.content.map(part => part.type === 'refusal' ? part : removeInputImageDetail(part)) }
+      : { ...item, content: item.content.map(removeInputImageDetail) };
   }
-  if ((item.type === 'function_call_output' || item.type === 'custom_tool_call_output') && Array.isArray(item.output)) {
-    const output = removeInputImageDetails(item.output);
-    return output === item.output ? item : { ...item, output };
+  if ((item.type === 'function_call_output' || item.type === 'custom_tool_call_output') && Array.isArray(item.output) && item.output.some(hasInputImageDetail)) {
+    return { ...item, output: item.output.map(removeInputImageDetail) };
   }
   return item;
 };
 
-export const encodeChatGPTResponsesLiteRequest = (
-  body: ChatGPTResponsesBody,
+type LiteBody<Body> = Omit<Body, 'tools' | 'instructions' | 'input' | 'parallel_tool_calls' | 'reasoning'> &
+  Pick<ChatGPTResponsesRequestBody, 'input' | 'parallel_tool_calls' | 'reasoning'>;
+
+export const encodeChatGPTResponsesLiteRequest = <Body extends ChatGPTResponsesRequestBody>(
+  { tools, instructions, input: originalInput, parallel_tool_calls: _parallelToolCalls, reasoning, ...body }: Body,
   threadId: string,
-): ChatGPTResponsesLiteRequest => {
-  const next: ChatGPTResponsesBody = { ...body };
-  const topLevelTools = Array.isArray(body.tools) ? body.tools : [];
-  const input: CanonicalOpenAIResponsesInputItem[] = [...body.input];
+): ChatGPTResponsesLiteRequest<LiteBody<Body>> => {
+  const topLevelTools = Array.isArray(tools) ? tools : [];
+  const input: CanonicalOpenAIResponsesInputItem[] = [...originalInput];
   const threadNamespace = uuidV5(threadId, UUID_NAMESPACE_OID);
 
   // Existing `additional_tools` items are positional Responses input. A new
   // prefix contains only tools that came from the request's top-level field.
   // https://developers.openai.com/api/docs/guides/tools-tool-search#add-tools-at-a-specific-point-in-the-input
-  const needsToolsPrefix = Array.isArray(body.tools) || !body.input.some(isAdditionalToolsItem)
-    || (typeof body.instructions === 'string' && body.instructions.length > 0);
+  const hasInstructions = typeof instructions === 'string' && instructions.length > 0;
+  const needsToolsPrefix = Array.isArray(tools) || !originalInput.some(isAdditionalToolsItem) || hasInstructions;
   if (needsToolsPrefix) input.unshift(makeAdditionalToolsItem(toolsForLite(topLevelTools), threadNamespace));
-  if (Array.isArray(body.tools) || body.tools === null) delete next.tools;
+  if (hasInstructions) input.splice(1, 0, makeBaseInstructionsMessage(instructions, threadNamespace));
 
-  if (typeof body.instructions === 'string' && body.instructions.length > 0) {
-    input.splice(1, 0, makeBaseInstructionsMessage(body.instructions, threadNamespace));
-    delete next.instructions;
-  } else if (body.instructions === undefined || body.instructions === null || body.instructions === '') {
-    delete next.instructions;
-  }
-
-  next.input = input.map(removeLiteImageDetail);
   // These are model-side Lite wire controls set by official Codex. Other
   // request fields, including tool_choice, retain their caller values.
   // https://github.com/openai/codex/blob/b1e72963c3b71a9265a551e54beff078384efed9/codex-rs/core/src/client.rs#L876-L1000
-  next.parallel_tool_calls = false;
-  next.reasoning = {
-    ...(isRecord(body.reasoning) ? body.reasoning : {}),
-    context: 'all_turns',
-  };
   return {
-    body: next,
+    body: {
+      ...body,
+      input: input.map(removeLiteImageDetail),
+      parallel_tool_calls: false,
+      reasoning: { ...(isRecord(reasoning) ? reasoning : {}), context: 'all_turns' },
+    },
     movedFields: {
-      ...(Array.isArray(body.tools) ? { tools: body.tools } : {}),
-      ...(typeof body.instructions === 'string' && body.instructions.length > 0 ? { instructions: body.instructions } : {}),
+      ...(Array.isArray(tools) ? { tools } : {}),
+      ...(hasInstructions ? { instructions } : {}),
     },
   };
 };
@@ -189,19 +185,54 @@ export const encodeChatGPTResponsesLiteRequest = (
 // those fields in its response resource; preserve output items, event families,
 // and all other response fields. Positional Lite callers move no top-level
 // fields and bypass this projection entirely.
-export const projectMovedChatGPTResponsesFields = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+const projectMovedChatGPTResponsesFields = (
+  event: OpenAIResponsesStreamEventEx,
   movedFields: ChatGPTResponsesLiteRequest['movedFields'],
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-  for await (const frame of frames) {
-    if (frame.type !== 'event') {
-      yield frame;
-      continue;
-    }
-    const event = frame.event;
-    if (event.type === 'response.queued' || event.type === 'response.created' || event.type === 'response.in_progress'
-      || event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
-      yield { ...frame, event: { ...event, response: { ...event.response, ...movedFields } } };
-    } else yield frame;
+): OpenAIResponsesStreamEventEx => {
+  if (event.type === 'response.queued' || event.type === 'response.created' || event.type === 'response.in_progress'
+    || event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
+    return { ...event, response: { ...event.response, ...movedFields } };
   }
+  return event;
 };
+
+const prepare = <Body extends ChatGPTResponsesRequestBody>(body: Body, headers: HttpHeaders, model: ProviderModelFact, compact: boolean) => {
+  const identity = responsesIdentity(body, headers, compact);
+  const encoded = chatgptModelUsesResponsesLite(model) ? encodeChatGPTResponsesLiteRequest(body, identity.threadId) : { body, movedFields: {} };
+  return { identity, ...encoded };
+};
+
+const { defineStage } = chatgptFactSpace;
+
+export const openaiResponsesLite = defineStage({
+  name: 'chatgpt.openaiResponses.responses-lite',
+  through: {
+    request: { needs: ['request.http', 'request.openaiResponses', 'provider.model'], provides: ['request.openaiResponses', 'request.chatgptResponsesIdentity'], consumes: [] },
+    response: { needs: ['response.openaiResponses'], provides: ['response.openaiResponses'], consumes: [] },
+  },
+  async execute(facts, scope) {
+    const { body, identity, movedFields } = prepare(facts['request.openaiResponses'], facts['request.http'].headers, facts['provider.model'], false);
+    const answer = await scope.next({ ...facts, 'request.openaiResponses': body, 'request.chatgptResponsesIdentity': identity });
+    const outcome = answer['response.openaiResponses'];
+    if (outcome.kind !== 'stream' || Object.keys(movedFields).length === 0) return answer;
+    const stream = scope.wrapStream(outcome.stream, async function* (source, producer) {
+      for await (const item of producer.read(source)) {
+        if (!item.ok) yield item;
+        else yield { ok: true, value: projectMovedChatGPTResponsesFields(item.value, movedFields) };
+      }
+    });
+    return { ...answer, 'response.openaiResponses': { kind: 'stream', stream } };
+  },
+});
+
+export const openaiResponsesCompactLite = defineStage({
+  name: 'chatgpt.openaiResponsesCompact.responses-lite',
+  through: {
+    request: { needs: ['request.http', 'request.openaiResponsesCompact', 'provider.model'], provides: ['request.openaiResponsesCompact', 'request.chatgptResponsesIdentity'], consumes: [] },
+    response: { needs: [], provides: [], consumes: [] },
+  },
+  async execute(facts, scope) {
+    const { body, identity } = prepare(facts['request.openaiResponsesCompact'], facts['request.http'].headers, facts['provider.model'], true);
+    return await scope.next({ ...facts, 'request.openaiResponsesCompact': body, 'request.chatgptResponsesIdentity': identity });
+  },
+});

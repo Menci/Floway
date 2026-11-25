@@ -200,7 +200,7 @@ export const chatgptCodexModelMetadata = (model: ProviderModel): ChatGPTCodexMod
   };
 };
 
-export const chatgptModelUsesResponsesLite = (model: ProviderModel): boolean => {
+export const chatgptModelUsesResponsesLite = (model: Pick<ProviderModel, 'id' | 'providerData'>): boolean => {
   const providerData = model.providerData;
   if (providerData === undefined) return false;
   if (!isPlainRecord(providerData)) {
@@ -222,7 +222,7 @@ export const chatgptModelUsesResponsesLite = (model: ProviderModel): boolean => 
 //
 // `enabledFlags` is the upstream-resolved flag set (provider defaults
 // merged with the row's `flagOverrides`); it propagates per-model so
-// downstream interceptors can read the effective set without re-resolving.
+// downstream stages can read the effective set without re-resolving.
 export const chatgptRawToProviderModel = (raw: ChatGPTRawModel, enabledFlags: ReadonlySet<FlagId>): ProviderModel => {
   const contextWindow = assertContextWindow(raw.context_window, raw.id, 'context_window');
   const maxContextWindow = raw.max_context_window === undefined

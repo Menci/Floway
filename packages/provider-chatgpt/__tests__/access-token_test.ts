@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import {
-  ensureChatGPTAccessToken,
+  createChatGPTAccessTokenEnsurer,
   mintChatGPTAccessToken,
   putChatGPTAccessToken,
   type ChatGPTAccessTokenEntry,
@@ -13,6 +13,7 @@ import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-de
 
 const accountId = 'acc_1';
 const upstreamId = 'up_a';
+const ensureChatGPTAccessToken = createChatGPTAccessTokenEnsurer();
 
 const makeRecord = (state: ChatGPTUpstreamState): UpstreamRecord => ({
   id: upstreamId,

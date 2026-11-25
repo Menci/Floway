@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { encodeChatGPTResponsesLiteRequest, type ChatGPTResponsesBody } from '../src/responses-lite.ts';
+import { encodeChatGPTResponsesLiteRequest, type ChatGPTResponsesBody } from '../../../src/pipelines/openai-responses/responses-lite.ts';
 import type { OpenAIResponsesInputAdditionalToolsItem, CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 
 const requestBody = (overrides: Partial<ChatGPTResponsesBody> = {}): ChatGPTResponsesBody => ({

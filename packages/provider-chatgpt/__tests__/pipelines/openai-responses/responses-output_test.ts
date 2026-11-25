@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { restoreChatGPTResponsesOutput } from '../src/responses-output.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { createChatGPTResponsesOutputRestore } from '../../../src/pipelines/openai-responses/responses-output.ts';
 import type { OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 const reasoning: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'rs_0', summary: [], encrypted_content: 'reasoning' };
@@ -15,17 +14,9 @@ const response = (output: OpenAIResponsesOutputItemEx[], status: OpenAIResponses
   usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
 });
 
-const restore = async (events: OpenAIResponsesStreamEventEx[]): Promise<ProtocolFrame<OpenAIResponsesStreamEventEx>[]> => {
-  const source = async function* () {
-    for (const event of events) yield eventFrame(event);
-    yield doneFrame();
-  };
-  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-  for await (const frame of restoreChatGPTResponsesOutput(source())) frames.push(frame);
-  return frames;
-};
+const restore = (events: OpenAIResponsesStreamEventEx[]) => events.map(createChatGPTResponsesOutputRestore());
 
-test('restores an empty Codex terminal in output_index order without changing item events or response metadata', async () => {
+test('restores an empty Codex terminal in output_index order without changing item events or response metadata', () => {
   const terminal = response([]);
   const events: OpenAIResponsesStreamEventEx[] = [
     { type: 'response.created', response: { ...terminal, status: 'in_progress' } },
@@ -33,17 +24,16 @@ test('restores an empty Codex terminal in output_index order without changing it
     { type: 'response.output_item.done', output_index: 0, item: reasoning },
     { type: 'response.completed', sequence_number: 12, response: terminal },
   ];
-  const frames = await restore(events);
-  expect(frames.slice(0, 3)).toEqual(events.slice(0, 3).map(eventFrame));
-  expect(frames[3]).toEqual(eventFrame({ ...events[3], response: { ...terminal, output: [reasoning, message] } } as OpenAIResponsesStreamEventEx));
+  const frames = restore(events);
+  expect(frames.slice(0, 3)).toEqual(events.slice(0, 3));
+  expect(frames[3]).toEqual({ ...events[3], response: { ...terminal, output: [reasoning, message] } });
   expect(terminal.output).toEqual([]);
-  expect(frames[4]).toEqual(doneFrame());
 });
 
 test.each([
   ['response.incomplete', 'incomplete'],
   ['response.failed', 'failed'],
-] as const)('preserves an unfinished snapshot item at its added index while repairing %s', async (type, status) => {
+] as const)('preserves an unfinished snapshot item at its added index while repairing %s', (type, status) => {
   const pending = { ...message, status: 'in_progress' };
   const terminalItem = { ...message, status: status === 'incomplete' ? 'incomplete' : 'in_progress' };
   const terminal = {
@@ -52,25 +42,25 @@ test.each([
       ? { incomplete_details: { reason: 'max_output_tokens' } }
       : { error: { type: 'server_error', message: 'upstream failed' } }),
   };
-  const frames = await restore([
+  const frames = restore([
     { type: 'response.output_item.done', output_index: 0, item: reasoning },
     { type: 'response.output_item.added', output_index: 1, item: pending },
     { type, response: terminal } as OpenAIResponsesStreamEventEx,
   ]);
-  expect(frames[2]).toEqual(eventFrame({ type, response: { ...terminal, output: [reasoning, terminalItem] } } as OpenAIResponsesStreamEventEx));
+  expect(frames[2]).toEqual({ type, response: { ...terminal, output: [reasoning, terminalItem] } });
 });
 
-test('rejects a terminal-only item whose position cannot be determined during omission repair', async () => {
-  await expect(restore([
+test('rejects a terminal-only item whose position cannot be determined during omission repair', () => {
+  expect(() => restore([
     { type: 'response.output_item.done', output_index: 0, item: reasoning },
     { type: 'response.completed', response: response([message]) },
-  ])).rejects.toThrow();
+  ])).toThrow();
 });
 
-test('rejects an item ID observed at conflicting output indices', async () => {
-  await expect(restore([
+test('rejects an item ID observed at conflicting output indices', () => {
+  expect(() => restore([
     { type: 'response.output_item.added', output_index: 0, item: reasoning },
     { type: 'response.output_item.done', output_index: 1, item: reasoning },
     { type: 'response.completed', response: response([]) },
-  ])).rejects.toThrow();
+  ])).toThrow();
 });

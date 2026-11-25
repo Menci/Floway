@@ -86,6 +86,12 @@ interface PersistChatGPTAccessTokenOptions {
   entry: ChatGPTAccessTokenEntry | null;
   where: string;
   fallbackPlan?: ChatGPTPlanObservation | undefined;
+  log?: ChatGPTAccessTokenLog | undefined;
+}
+
+export interface ChatGPTAccessTokenLog {
+  warn(message: string): unknown;
+  debug(message: string): unknown;
 }
 
 // The whole change is expressed against the state the repo hands us, so a
@@ -120,11 +126,11 @@ const persistAccessToken = async (opts: PersistChatGPTAccessTokenOptions): Promi
     // operator deleting the upstream mid-request is not worth failing that
     // request over. Every other storage failure still propagates.
     if (!(err instanceof UpstreamGoneError)) throw err;
-    console.warn(`${opts.where}: ChatGPT upstream ${opts.upstreamId} disappeared mid-request`);
+    opts.log?.warn(`${opts.where}: ChatGPT upstream ${opts.upstreamId} disappeared mid-request`);
     return effectiveEntry;
   }
   if (accountMissing) {
-    console.warn(`${opts.where}: ChatGPT account ${opts.accountId} not found in upstream ${opts.upstreamId}`);
+    opts.log?.warn(`${opts.where}: ChatGPT account ${opts.accountId} not found in upstream ${opts.upstreamId}`);
   }
   return effectiveEntry;
 };
@@ -189,30 +195,26 @@ export const invalidateChatGPTAccessToken = async (
 //
 // Scope: per-isolate only. Cross-isolate siblings still race and are
 // caught by `recoverFromRefreshRace` — same trade-off as claude-code.
-const inFlightEnsures = new Map<string, Promise<ChatGPTAccessTokenEntry>>();
-
-export const ensureChatGPTAccessToken = async (
-  upstreamId: string,
-  accountId: string | null,
-  mint: (refreshToken: string) => Promise<ChatGPTAccessTokenEntry>,
-  // When true, skip the "cached access_token is still fresh" fast-path and
-  // always mint a fresh one. Dashboard's Refresh button sets this so the
-  // operator sees the row's tokens actually rotate; the data plane leaves
-  // it false so a live request served from cache stays cheap.
-  force = false,
-): Promise<ChatGPTAccessTokenEntry> => {
-  // `null` is a legitimate account id, so the key has to keep it distinct from
-  // the string "null" a template would produce.
-  const key = JSON.stringify([upstreamId, accountId, force]);
-  const existing = inFlightEnsures.get(key);
-  if (existing) return await existing;
-  const promise = ensureChatGPTAccessTokenInner(upstreamId, accountId, mint, true, force);
-  inFlightEnsures.set(key, promise);
-  try {
-    return await promise;
-  } finally {
-    inFlightEnsures.delete(key);
-  }
+export const createChatGPTAccessTokenEnsurer = () => {
+  const inFlightEnsures = new Map<string, Promise<ChatGPTAccessTokenEntry>>();
+  return async (
+    upstreamId: string,
+    accountId: string | null,
+    mint: (refreshToken: string) => Promise<ChatGPTAccessTokenEntry>,
+    force = false,
+    log?: ChatGPTAccessTokenLog,
+  ): Promise<ChatGPTAccessTokenEntry> => {
+    const key = JSON.stringify([upstreamId, accountId, force]);
+    const existing = inFlightEnsures.get(key);
+    if (existing) return await existing;
+    const pending = ensureChatGPTAccessTokenInner(upstreamId, accountId, mint, true, force, log);
+    inFlightEnsures.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      inFlightEnsures.delete(key);
+    }
+  };
 };
 
 const ensureChatGPTAccessTokenInner = async (
@@ -221,6 +223,7 @@ const ensureChatGPTAccessTokenInner = async (
   mint: (refreshToken: string) => Promise<ChatGPTAccessTokenEntry>,
   recoveryAllowed: boolean,
   force: boolean,
+  log: ChatGPTAccessTokenLog | undefined,
 ): Promise<ChatGPTAccessTokenEntry> => {
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) throw new Error(`ChatGPT upstream ${upstreamId} not found`);
@@ -250,7 +253,7 @@ const ensureChatGPTAccessTokenInner = async (
     minted = await mint(refreshToken);
   } catch (err) {
     if (err instanceof ChatGPTOAuthSessionTerminatedError && err.code === 'invalid_grant' && recoveryAllowed) {
-      const recovered = await recoverFromRefreshRace(upstreamId, accountId, refreshToken, mint);
+      const recovered = await recoverFromRefreshRace(upstreamId, accountId, refreshToken, mint, log);
       if (recovered) return recovered;
     }
     throw err;
@@ -261,6 +264,7 @@ const ensureChatGPTAccessTokenInner = async (
     entry: minted,
     where: 'ensureChatGPTAccessToken',
     fallbackPlan: chatgptPlanObservation(account.accessToken) ?? undefined,
+    log,
   })) ?? minted;
 };
 
@@ -277,6 +281,7 @@ const recoverFromRefreshRace = async (
   accountId: string | null,
   usedRefreshToken: string,
   mint: (refreshToken: string) => Promise<ChatGPTAccessTokenEntry>,
+  log: ChatGPTAccessTokenLog | undefined,
 ): Promise<ChatGPTAccessTokenEntry | null> => {
   const reread = await getProviderRepo().upstreams.getById(upstreamId);
   if (!reread) return null;
@@ -285,7 +290,7 @@ const recoverFromRefreshRace = async (
   if (!rereadAccount) return null;
   if (rereadAccount.state !== 'active') return null;
   if (rereadAccount.refresh_token === usedRefreshToken) return null;
-  console.info(
+  log?.debug(
     `ChatGPT refresh-race recovered for upstream ${upstreamId} account ${accountId}: sibling rotated, using their access token`,
   );
   if (rereadAccount.accessToken && isAccessTokenUsable(rereadAccount.accessToken, rereadAccount.refresh_token !== null)) {
@@ -298,7 +303,7 @@ const recoverFromRefreshRace = async (
   // through the standard mint path. The depth guard suppresses a second
   // recovery attempt — if `invalid_grant` strikes again the refresh token
   // really is dead and we want the terminal flip.
-  return await ensureChatGPTAccessTokenInner(upstreamId, accountId, mint, false, false);
+  return await ensureChatGPTAccessTokenInner(upstreamId, accountId, mint, false, false, log);
 };
 
 // Mints a fresh access token via /oauth/token and routes the rotated
