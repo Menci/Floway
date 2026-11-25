@@ -1,4 +1,4 @@
-import { nonEmptyStringField } from '@floway-dev/provider';
+import { joinBaseAndPath, nonEmptyStringField } from '@floway-dev/provider';
 
 const AZURE_ENDPOINT_HOST_SUFFIXES = ['.openai.azure.com', '.services.ai.azure.com'];
 
@@ -46,7 +46,7 @@ export const azureEndpointField = (value: unknown, label: string): string => {
   return url;
 };
 
-export const azureOpenAiV1BaseUrl = (endpoint: string): string => {
+export const azureOpenAIV1BaseUrl = (endpoint: string): string => {
   const url = new URL(trimTrailingSlash(endpoint));
   const path = trimTrailingSlash(url.pathname);
   if (path.endsWith('/openai/v1')) {
@@ -59,9 +59,7 @@ export const azureOpenAiV1BaseUrl = (endpoint: string): string => {
   return trimTrailingSlash(url.href);
 };
 
-// Microsoft-Decision-1's decision endpoint lives on the resource host, not
-// under the OpenAI v1 base: <host>/providers/microsoft/v1/systemone. Every
-// admitted endpoint shape reduces to its resource host here.
+// The decision route is relative to the resource host for every admitted endpoint shape.
 // https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision
 export const azureResourceRootUrl = (endpoint: string): string => {
   const url = new URL(trimTrailingSlash(endpoint));
@@ -79,4 +77,22 @@ export const azureAnthropicBaseUrl = (endpoint: string): string => {
   // URL — resolves to the same `/anthropic` base.
   url.pathname = '/anthropic';
   return trimTrailingSlash(url.href);
+};
+
+// https://learn.microsoft.com/en-us/azure/foundry/openai/reference-preview-latest
+export const azureOpenAIImagesUrl = (endpoint: string, path: '/images/generations' | '/images/edits'): string => {
+  const url = new URL(joinBaseAndPath(azureOpenAIV1BaseUrl(endpoint), path));
+  url.searchParams.set('api-version', 'preview');
+  return url.href;
+};
+
+// Azure selects the transcription deployment in the path. This version
+// covers both Whisper and GPT transcription deployments.
+// https://github.com/Azure/azure-rest-api-specs/blob/b0a48bcbffead733affe03944ef09f5e8d12f8c8/specification/cognitiveservices/OpenAI.Inference/models/audio/audio_transcription.tsp#L119-L126
+// https://github.com/Azure/azure-rest-api-specs/blob/928047803788f7377fa003a26ba2bdc2e0fcccc0/specification/cognitiveservices/OpenAI.Inference/routes/audio_transcription.tsp#L19-L49
+export const azureOpenAIAudioTranscriptionUrl = (endpoint: string, deployment: string): string => {
+  const url = new URL(azureResourceRootUrl(endpoint));
+  url.pathname = `/openai/deployments/${encodeURIComponent(deployment)}/audio/transcriptions`;
+  url.searchParams.set('api-version', '2025-04-01-preview');
+  return url.href;
 };
