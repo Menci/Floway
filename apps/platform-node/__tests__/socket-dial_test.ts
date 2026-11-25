@@ -1,8 +1,29 @@
+import { EventEmitter } from 'node:events';
 import net from 'node:net';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { socketToWritable } from '../src/node-socket-streams.ts';
 import { nodeSocketDial } from '../src/socket-dial.ts';
+import { UpstreamTransportError } from '@floway-dev/http';
+
+it.each([true, false])('classifies a Node socket write failure when the write confirms a network error=%s', async network => {
+  const failure = network
+    ? Object.assign(new Error('socket reset'), { code: 'ECONNRESET', syscall: 'write', errno: -54 })
+    : new TypeError('bad adapter state');
+  const socket = Object.assign(new EventEmitter(), {
+    write: (_chunk: Uint8Array, callback: (error: Error) => void) => callback(failure),
+  }) as net.Socket;
+  const writer = socketToWritable(socket).getWriter();
+  const result = await writer.write(new Uint8Array([5])).catch((error: unknown) => error);
+  if (network) {
+    expect(result).toBeInstanceOf(UpstreamTransportError);
+    expect(result).toMatchObject({ cause: failure });
+  } else {
+    expect(result).toBe(failure);
+  }
+  writer.releaseLock();
+});
 
 // Loopback echo server lets us verify that DialedSocket teardown actually
 // reaches the underlying net.Socket — Writable.toWeb / Readable.toWeb
@@ -92,6 +113,18 @@ describe('nodeSocketDial', () => {
     } finally {
       await dialed.close();
     }
+  });
+
+  it('propagates the owned close reason through a pending socket read', async () => {
+    const dialed = await nodeSocketDial.connect('127.0.0.1', server.port);
+    const reason = new Error('owned abort');
+    const reader = dialed.readable.getReader();
+    const pending = reader.read().then(() => null, (cause: unknown) => cause);
+    await dialed.close(reason);
+    const failure = await pending;
+    expect(failure).toBe(reason);
+    expect(failure).not.toBeInstanceOf(UpstreamTransportError);
+    reader.releaseLock();
   });
 
   // The proxy URL parser hands `url.hostname` straight through, which keeps

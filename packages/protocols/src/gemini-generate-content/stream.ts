@@ -1,4 +1,7 @@
 import type { GeminiGenerateContentStreamEvent } from './index.ts';
+import { createGeminiGenerateContentCandidateCompletion, GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, isGeminiGenerateContentTerminalEvent } from './to-result.ts';
+import { decodeSseEvents, protocolDecodeError, type ProtocolByteStream, type ProtocolEventStream } from '../common/decode-sse-events.ts';
+import { isJsonObject } from '../common/json.ts';
 import { parseTargetStreamFrames } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
@@ -6,6 +9,30 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
 export interface ParseGeminiGenerateContentStreamOptions {
   signal?: AbortSignal | undefined;
 }
+
+export const decodeGeminiGenerateContentStream = async function* <Failure>(
+  body: ProtocolByteStream<Failure>,
+): ProtocolEventStream<GeminiGenerateContentStreamEvent, Failure> {
+  const completion = createGeminiGenerateContentCandidateCompletion();
+  let ended = false;
+  for await (const item of decodeSseEvents<GeminiGenerateContentStreamEvent, Failure>(body, {
+    protocol: 'Gemini generateContent', onRawFrame: true, onDone: () => { ended = true; }, ignoreEvents: () => ended,
+  })) {
+    if (!item.ok) {
+      yield item;
+      return;
+    }
+    const event = item.value.data;
+    if ('candidates' in event && event.candidates !== undefined && (!Array.isArray(event.candidates) || !event.candidates.every(isJsonObject))) {
+      yield protocolDecodeError('Expected an array of candidates in the Gemini stream event', event);
+      return;
+    }
+    ended = isGeminiGenerateContentTerminalEvent(event);
+    yield { ok: true, value: event };
+    completion.observe(event);
+  }
+  if (!ended && !completion.isComplete()) yield protocolDecodeError(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
+};
 
 // `streamGenerateContent?alt=sse` writes one JSON GenerateContentResponse per
 // `data:` event and closes without a `[DONE]` sentinel; the terminal chunk is

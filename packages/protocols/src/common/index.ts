@@ -13,6 +13,7 @@ export * from './opaque-value.ts';
 export * from './sse.ts';
 export * from './parse-sse.ts';
 export * from './parse-events.ts';
+export * from './decode-sse-events.ts';
 export * from './preferences.ts';
 
 export { isJsonObject, isRawNumber, jsonInteger, parseJsonNumber, parseJSONWithRawNumbers, type JsonNumber, type JsonObject } from './json.ts';

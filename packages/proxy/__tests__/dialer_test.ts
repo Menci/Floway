@@ -4,11 +4,12 @@ import { dial, runDirectConnectRequest, runProxiedRequest } from '../src/dialer.
 import { dialSocks5 } from '../src/protocols/socks5.ts';
 import type { ProxyConfig } from '../src/proxy-config.ts';
 import type { DialOptions, DialResult, ProxyRequestTarget, SocketDial } from '../src/types.ts';
+import { UpstreamTransportError } from '@floway-dev/http';
 
 const noopStream = (): DialResult => {
   const readable = new ReadableStream<Uint8Array>({ start(c) { c.close(); } });
   const writable = new WritableStream<Uint8Array>();
-  return { readable, writable };
+  return { readable, writable, close: async () => {} };
 };
 
 vi.mock('../src/protocols/socks5.ts', () => ({
@@ -71,6 +72,35 @@ describe('dial deadline', () => {
 });
 
 describe('runProxiedRequest — post-dial teardown', () => {
+  it('passes the caller reason to the established proxy connection during a pending body read', async () => {
+    const controller = new AbortController();
+    const reason = new Error('owned cancellation');
+    const bodyRead = Promise.withResolvers<void>();
+    let responseSource!: ReadableStreamDefaultController<Uint8Array>;
+    const close = vi.fn(async (failure?: Error) => responseSource.error(failure));
+    vi.mocked(dialSocks5).mockImplementationOnce(async () => ({
+      readable: new ReadableStream<Uint8Array>({
+        start(source) {
+          responseSource = source;
+          source.enqueue(new TextEncoder().encode('HTTP/1.1 200 OK\r\n\r\n'));
+        },
+        pull() { bodyRead.resolve(); },
+      }, { highWaterMark: 0 }),
+      writable: new WritableStream<Uint8Array>(),
+      close,
+    }));
+    const response = await runProxiedRequest({ kind: 'socks5', name: 'proxy', host: 'proxy.example', port: 1080 },
+      { host: 'upstream.example', port: 80, tls: false }, { method: 'GET', path: '/', headers: [] },
+      { socketDial: stubSocketDial, signal: controller.signal });
+    const reader = response.body!.getReader();
+    const pending = reader.read();
+    await bodyRead.promise;
+    controller.abort(reason);
+    await expect(pending).rejects.toBe(reason);
+    expect(close).toHaveBeenCalledExactlyOnceWith(reason);
+    reader.releaseLock();
+  });
+
   it('cancels the dialed readable when the inner-TLS step throws past the dial', async () => {
     // Track every cancel attempt directly on the readable so the assertion
     // doesn't depend on cancel-hook semantics (the hook doesn't fire once
@@ -92,7 +122,7 @@ describe('runProxiedRequest — post-dial teardown', () => {
         },
       });
       const writable = new WritableStream<Uint8Array>();
-      return { readable, writable };
+      return { readable, writable, close: async () => {} };
     });
     const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
     await expect(
@@ -143,7 +173,7 @@ describe('runDirectConnectRequest', () => {
   };
 
   it('sends HTTP directly to the target and closes its socket after the body ends', async () => {
-    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nX-Reply: one\r\nx-reply: two\r\nContent-Length: 2\r\n\r\nok');
     const response = await runDirectConnectRequest(
       { host: 'api.example.com', port: 80, tls: false },
       { method: 'POST', path: '/responses?stream=1', headers: [], body: new TextEncoder().encode('body') },
@@ -151,6 +181,7 @@ describe('runDirectConnectRequest', () => {
     );
 
     expect(await response.text()).toBe('ok');
+    expect(response.headerLines.slice(0, 2)).toEqual([['X-Reply', 'one'], ['x-reply', 'two']]);
     expect(direct.written()).toContain('POST /responses?stream=1 HTTP/1.1\r\n');
     expect(direct.written()).toContain('Host: api.example.com\r\n');
     expect(direct.written()).toContain('Content-Length: 4\r\n');
@@ -166,17 +197,17 @@ describe('runDirectConnectRequest', () => {
     // the dial itself still succeeds and the abort lands in the window the
     // listener install would otherwise miss.
     const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok', () => controller.abort('client gone'));
-    await runDirectConnectRequest(
+    await expect(runDirectConnectRequest(
       { host: 'api.example.com', port: 80, tls: false },
       { method: 'GET', path: '/', headers: [] },
       { socketDial: direct.socketDial, signal: controller.signal },
-    );
+    )).rejects.toMatchObject({ name: 'AbortError', message: 'client gone' });
 
     expect(direct.closeCalls()).toBe(1);
   });
 
   it('passes an IPv4 literal through as both the TLS host and verification identity', async () => {
-    const cause = new Error('certificate rejected');
+    const cause = new UpstreamTransportError(new Error('certificate rejected'));
     const direct = makeSocketDial('', () => {}, vi.fn(async () => { throw cause; }));
 
     const failure = runDirectConnectRequest(
@@ -197,6 +228,17 @@ describe('runDirectConnectRequest', () => {
         verifyHost: '192.0.2.10',
       }),
     );
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  it('preserves a programmer error in the platform TLS upgrader', async () => {
+    const cause = new TypeError('invalid TLS adapter');
+    const direct = makeSocketDial('', () => {}, vi.fn(async () => { throw cause; }));
+    await expect(runDirectConnectRequest(
+      { host: 'upstream.example', port: 443, tls: true },
+      { method: 'GET', path: '/', headers: [] },
+      { socketDial: direct.socketDial },
+    )).rejects.toBe(cause);
     expect(direct.closeCalls()).toBe(1);
   });
 });
@@ -234,7 +276,7 @@ describe('runProxiedRequest — Host header synthesis', () => {
               c.close();
             },
           });
-          return { readable, writable };
+          return { readable, writable, close: async () => {} };
         });
       },
     };

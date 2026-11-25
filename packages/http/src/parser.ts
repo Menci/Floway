@@ -3,10 +3,10 @@
 
 import { copy } from './bytes.ts';
 import { decodeChunked } from './chunked.ts';
-import { HttpProtocolError } from './errors.ts';
+import { HttpProtocolError, UnsupportedContentEncodingError } from './errors.ts';
 import { STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes } from './grammar.ts';
 import { readHeadSection } from './read-head-section.ts';
-import type { HttpContentDecoders, RawHttpResponse } from './types.ts';
+import type { HttpContentDecoders, RawHttpResponse, SocketHttpResponse } from './types.ts';
 
 /**
  * Bridge a wire-faithful {@link RawHttpResponse} to a Web `Response`. The
@@ -18,7 +18,7 @@ import type { HttpContentDecoders, RawHttpResponse } from './types.ts';
  * `parseHttpResponse` transparently skips 1xx interim heads, so anything
  * reaching this function should already be a final 2xx..5xx response.
  */
-export const toWebResponse = (raw: RawHttpResponse, contentDecoders?: HttpContentDecoders): Response => {
+export const toWebResponse = (raw: RawHttpResponse, contentDecoders?: HttpContentDecoders): SocketHttpResponse => {
   if (raw.status < 200 || raw.status > 599) {
     // Web Response only models the 200..599 final-status range. A 1xx
     // slipped through is a programmer error inside this package, not an
@@ -37,11 +37,19 @@ export const toWebResponse = (raw: RawHttpResponse, contentDecoders?: HttpConten
   // construct with `null`.
   if (raw.status === 204 || raw.status === 304) {
     raw.body.cancel().catch(() => {});
-    return new Response(null, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
+    return Object.assign(new Response(null, { status: raw.status, statusText: raw.statusText, headers: raw.headers }), {
+      headerLines: raw.headerLines,
+    });
   }
   const headers = new Headers(raw.headers);
-  const body = decodeContentEncoding(raw.body, headers, contentDecoders);
-  return new Response(body, { status: raw.status, statusText: raw.statusText, headers });
+  let body: ReadableStream<Uint8Array>;
+  try {
+    body = decodeContentEncoding(raw.body, headers, contentDecoders);
+  } catch (error) {
+    body = new ReadableStream({ start(controller) { controller.error(error); } });
+  }
+  const headerLines = raw.headerLines.filter(([name]) => headers.has(name));
+  return Object.assign(new Response(body, { status: raw.status, statusText: raw.statusText, headers }), { headerLines });
 };
 
 // Native fetch transparently decodes gzip/deflate responses, but the socket
@@ -71,9 +79,8 @@ const decodeContentEncoding = (
       const factory = contentDecoders?.get(coding) ?? portableContentDecoders.get(coding);
       if (factory === undefined) {
         const supported = [...new Set([...portableContentDecoders.keys(), ...(contentDecoders?.keys() ?? [])])];
-        throw new HttpProtocolError(
+        throw new UnsupportedContentEncodingError(
           `socket transport cannot decode upstream Content-Encoding ${JSON.stringify(coding)}; supported codings are ${supported.join(', ')}`,
-          'UNSUPPORTED_CONTENT_ENCODING',
         );
       }
       return factory;

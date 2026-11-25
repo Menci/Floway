@@ -3,6 +3,7 @@ import tls from 'node:tls';
 
 import { socketToReadable, socketToWritable } from './node-socket-streams.ts';
 import { startNodeTls } from './tls-upgrade.ts';
+import { markTransportFailure, signalAbortReason, transportReadable } from '@floway-dev/http';
 import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
 
 // Idle time before the first keepalive probe. Node then follows the OS
@@ -41,7 +42,7 @@ export const nodeSocketDial: SocketDial = {
       };
       const onError = (err: Error): void => {
         socket.off(readyEvent, onReady);
-        reject(err);
+        reject(markTransportFailure(err, signal));
       };
       socket.once(readyEvent, onReady);
       socket.once('error', onError);
@@ -57,8 +58,14 @@ export const nodeSocketDial: SocketDial = {
     // first token) answers them and is never disturbed.
     socket.setKeepAlive(true, KEEPALIVE_INITIAL_DELAY_MS);
 
-    const readable = socketToReadable(socket);
-    const writable = socketToWritable(socket);
+    const closure = new AbortController();
+    const destroy = (reason?: Error): void => {
+      if (reason !== undefined) closure.abort(reason);
+      socket.destroy(reason);
+    };
+    const readSignal = signal === undefined ? closure.signal : AbortSignal.any([signal, closure.signal]);
+    const readable = transportReadable(socketToReadable(socket), readSignal);
+    const writable = socketToWritable(socket, readSignal);
 
     // Listen on 'close' rather than the toWeb readable's own close signal:
     // the latter fires on read-side EOF and would resolve early whenever the
@@ -82,7 +89,7 @@ export const nodeSocketDial: SocketDial = {
 
     if (opts?.signal) {
       const captured = opts.signal;
-      const onAbort = (): void => { socket.destroy(); };
+      const onAbort = (): void => { destroy(signalAbortReason(captured)); };
       captured.addEventListener('abort', onAbort, { once: true });
       // Drop the listener on natural socket close so a long-lived caller
       // signal (e.g. a request controller shared across dials) doesn't
@@ -103,8 +110,8 @@ export const nodeSocketDial: SocketDial = {
     return {
       readable,
       writable,
-      close: async () => {
-        socket.destroy();
+      close: async reason => {
+        destroy(reason);
         await closed;
       },
     };

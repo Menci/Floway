@@ -29,3 +29,11 @@ export interface OpenAIImagesGenerationsPayload {
 export type OpenAIImageEditReference =
   | { image_url: string; file_id?: never; [key: string]: unknown }
   | { file_id: string; image_url?: never; [key: string]: unknown };
+
+// https://developers.openai.com/api/reference/resources/images
+export interface OpenAIImagesStreamEvent {
+  type: string;
+  [key: string]: unknown;
+}
+
+export { decodeOpenAIImagesEditsStream, decodeOpenAIImagesGenerationsStream } from './stream.ts';

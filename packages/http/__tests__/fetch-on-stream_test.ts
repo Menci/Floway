@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { makeFakeDuplex } from './test-utils.ts';
 import { fetchOnStream } from '../src/fetch-on-stream.ts';
+import { UpstreamTransportError } from '../src/upstream-transport.ts';
 
 const decodeAscii = (b: Uint8Array): string => new TextDecoder().decode(b);
 
@@ -269,9 +270,11 @@ describe('fetchOnStream — request body serialization', () => {
     )).rejects.toThrow(RangeError);
   });
 
-  it('cancels the source with the original writer failure', async () => {
+  it.each([
+    new UpstreamTransportError(new Error('socket reset')),
+    new TypeError('invalid adapter write'),
+  ])('cancels the upload with the original %s writer failure', async failure => {
     const fake = makeFakeDuplex();
-    const failure = new Error('socket write failed');
     const cancel = vi.fn(() => {
       throw new Error('source cancellation failed');
     });
@@ -303,6 +306,15 @@ describe('fetchOnStream — request body serialization', () => {
 
     await expect(promise).rejects.toBe(failure);
     expect(cancel).toHaveBeenCalledWith(failure);
+  });
+
+  it('propagates a request body producer rejection without marking it as transport', async () => {
+    const fake = makeFakeDuplex();
+    const failure = new TypeError('request body producer failed');
+    await expect(fetchOnStream(fake, {
+      method: 'POST', path: '/', headers: [['Host', 'example.com']],
+      body: { contentLength: 1, open: () => new ReadableStream({ pull() { throw failure; } }) },
+    })).rejects.toBe(failure);
   });
 });
 

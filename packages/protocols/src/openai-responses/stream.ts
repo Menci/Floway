@@ -1,4 +1,6 @@
 import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResultEx, openaiResponsesResultToEvents, type OpenAIResponsesStreamEventEx } from './index.ts';
+import { decodeSseEvents, protocolDecodeError, type ProtocolByteStream, type ProtocolEventStream } from '../common/decode-sse-events.ts';
+import { isJsonObject } from '../common/json.ts';
 import { parseTargetStreamFrames } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
@@ -50,33 +52,20 @@ const sequencer = () => {
 // terminal in place via `openaiResponsesResultToEvents` so downstream consumers
 // always observe one canonical full event sequence. Error notifications pass
 // through before the terminal response and do not suppress its expansion.
-export const parseOpenAIResponsesStream = (
-  body: ReadableStream<Uint8Array>,
-  options: ParseOpenAIResponsesStreamOptions = {},
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> => (async function* () {
+const normalizeEvents = () => {
   let sawStructured = false;
   const sentWrapperTypes = new Set<OpenAIResponsesStreamEventEx['type']>();
   const { stamp, stampNext } = sequencer();
-
-  for await (const frame of parseTargetStreamFrames<OpenAIResponsesStreamEventEx>(parseSSEStream(body, options), {
-    protocol: 'OpenAI Responses',
-    malformedJsonEventName: 'response',
-  })) {
-    if (frame.type === 'done') {
-      yield doneFrame();
-      return;
-    }
-
+  return function* (data: OpenAIResponsesStreamEventEx, eventName: string | undefined) {
     // A keep-alive `ping` is neither a delta event nor a state-machine event,
     // so the OpenAI Responses event union admits no such member. Drop it off the raw
     // body, before the body is projected into a typed event, so the union
     // never has to name it; an upstream carries the name either in the JSON
     // body or only in the SSE `event:` header.
     // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L459
-    const frameEvent = frame.frame.type === 'sse' ? frame.frame.event : undefined;
-    if (((frame.data as { type?: string }).type ?? frameEvent) === 'ping') continue;
+    if (((data as { type?: string }).type ?? eventName) === 'ping') return;
 
-    const event = projectSseJsonEvent(frame.data, frameEvent);
+    const event = projectSseJsonEvent(data, eventName);
     const structured = isStructuredOpenAIResponsesEvent(event);
     const terminal = isOpenAIResponsesTerminalEvent(event);
 
@@ -88,10 +77,10 @@ export const parseOpenAIResponsesStream = (
       // through the per-stream sequencer so they continue the same sequence.
       for (const expanded of openaiResponsesResultToEvents((event as { response: OpenAIResponsesResultEx }).response)) {
         if (sentWrapperTypes.has(expanded.event.type)) continue;
-        yield eventFrame(stampNext(expanded.event));
+        yield stampNext(expanded.event);
       }
       sawStructured = true;
-      continue;
+      return;
     }
 
     if (!sawStructured && structured) {
@@ -99,6 +88,82 @@ export const parseOpenAIResponsesStream = (
     }
 
     if (!sawStructured && (event.type === 'response.queued' || event.type === 'response.created' || event.type === 'response.in_progress')) sentWrapperTypes.add(event.type);
-    yield eventFrame(stamp(event));
+    yield stamp(event);
+  };
+};
+
+const isExpandableOutputItem = (item: unknown): boolean => {
+  if (!isJsonObject(item) || typeof item.type !== 'string') return false;
+  switch (item.type) {
+  case 'message':
+    return typeof item.id === 'string' && Array.isArray(item.content) && item.content.every(part =>
+      isJsonObject(part) && (part.type === 'output_text' ? typeof part.text === 'string' : typeof part.refusal === 'string'));
+  case 'reasoning':
+    return typeof item.id === 'string' && Array.isArray(item.summary) && item.summary.every(part =>
+      isJsonObject(part) && typeof part.text === 'string');
+  case 'function_call':
+    return typeof item.id === 'string' && typeof item.arguments === 'string';
+  case 'custom_tool_call':
+    return typeof item.id === 'string' && typeof item.input === 'string';
+  case 'web_search_call':
+  case 'image_generation_call':
+    return typeof item.id === 'string';
+  default:
+    return true;
   }
-})();
+};
+
+export const decodeOpenAIResponsesStream = async function* <Failure>(
+  body: ProtocolByteStream<Failure>,
+): ProtocolEventStream<OpenAIResponsesStreamEventEx, Failure> {
+  const normalize = normalizeEvents();
+  let ended = false;
+  let errored = false;
+  for await (const item of decodeSseEvents<OpenAIResponsesStreamEventEx, Failure>(body, {
+    protocol: 'OpenAI Responses', malformedJsonEventName: 'response', ignoreEvents: () => ended,
+  })) {
+    if (!item.ok) {
+      yield item;
+      return;
+    }
+    const { data, eventName } = item.value;
+    const type = (data as { type?: string }).type ?? eventName;
+    if (type === undefined) {
+      yield protocolDecodeError('Expected an OpenAI Responses SSE event type', data);
+      return;
+    }
+    const projected = projectSseJsonEvent(data, eventName);
+    if (isOpenAIResponsesTerminalEvent(projected)) {
+      const { response } = projected as { response?: unknown };
+      if (!isJsonObject(response) || !Array.isArray(response.output) || !response.output.every(isExpandableOutputItem)
+        || (response.status !== 'completed' && response.status !== 'incomplete' && response.status !== 'failed')) {
+        yield protocolDecodeError('Invalid terminal response resource in OpenAI Responses SSE', projected);
+        return;
+      }
+    }
+    errored ||= type === 'error';
+    for (const event of normalize(data, eventName)) {
+      ended ||= isOpenAIResponsesTerminalEvent(event);
+      yield { ok: true, value: event };
+    }
+  }
+  if (!ended && !errored) yield protocolDecodeError('OpenAI Responses stream ended without a terminal response event');
+};
+
+export const parseOpenAIResponsesStream = async function* (
+  body: ReadableStream<Uint8Array>,
+  options: ParseOpenAIResponsesStreamOptions = {},
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  const normalize = normalizeEvents();
+  for await (const frame of parseTargetStreamFrames<OpenAIResponsesStreamEventEx>(parseSSEStream(body, options), {
+    protocol: 'OpenAI Responses',
+    malformedJsonEventName: 'response',
+  })) {
+    if (frame.type === 'done') {
+      yield doneFrame();
+      return;
+    }
+    const eventName = frame.frame.type === 'sse' ? frame.frame.event : undefined;
+    for (const event of normalize(frame.data, eventName)) yield eventFrame(event);
+  }
+};

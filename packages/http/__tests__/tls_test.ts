@@ -231,7 +231,10 @@ describe('userspaceTls — checkServerIdentity', () => {
         host: 'localhost',
         verifyHost: 'not-in-the-certificate.example',
         checkServerIdentity: () => undefined,
-      })).rejects.toThrow(/does not chain to a trusted root|Missing issuer/);
+      })).rejects.toMatchObject({
+        name: 'UpstreamTransportError',
+        cause: { message: expect.stringMatching(/does not chain to a trusted root|Missing issuer/) },
+      });
     } finally {
       await chain.close();
     }

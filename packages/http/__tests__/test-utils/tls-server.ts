@@ -32,7 +32,7 @@ export interface FixtureTlsServer {
   close: () => Promise<void>;
 }
 
-export const startFixtureTlsServer = async (): Promise<FixtureTlsServer> => {
+export const startFixtureTlsServer = async (onSocket?: (socket: tls.TLSSocket) => void): Promise<FixtureTlsServer> => {
   const keys = await webcrypto.subtle.generateKey(ALGORITHM, true, ['sign', 'verify']);
   const certificate = await X509CertificateGenerator.createSelfSigned({
     serialNumber: '01',
@@ -56,7 +56,8 @@ export const startFixtureTlsServer = async (): Promise<FixtureTlsServer> => {
   const key = toPem('PRIVATE KEY', await webcrypto.subtle.exportKey('pkcs8', keys.privateKey));
 
   const server = tls.createServer({ cert, key }, socket => {
-    socket.on('data', chunk => socket.write(chunk));
+    if (onSocket === undefined) socket.on('data', chunk => socket.write(chunk));
+    else onSocket(socket);
     socket.on('error', () => { /* peer hangup is expected during teardown */ });
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));

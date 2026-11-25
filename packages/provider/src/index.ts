@@ -121,6 +121,16 @@ export { isAbortError } from './abort.ts';
 export { jsonRequestBody } from './json-request.ts';
 export { sha256Json, sha256JsonHex } from './json-hash.ts';
 
+export type {
+  GatewayFacts, HttpTerminalFacts, MultipartFile, OpenAIAudioTranscriptionPayload, OpenAIImagesEditsPayload,
+  ProtocolError, ProtocolOutcome, ProtocolStreamError, ProviderModelFact, ProviderOperation, ProviderOperationFacts,
+  ProviderPipelines, ProviderRequestFacts, ProviderResponseFacts, ProviderServices, ProviderUpstream,
+} from './pipeline-facts.ts';
+export { toProviderModelFact } from './pipeline-facts.ts';
+export { httpTerminal } from './http-terminal.ts';
+export { stripHeaders } from './strip-headers.ts';
+export { httpDialError, parseHttpResponse, parseJsonBody, parseResultResponse, parseSseResponse, type FormatProtocolError, type ProtocolStreamDecoder } from './parse-response.ts';
+
 export {
   base64ToBytes,
   bytesToBase64,

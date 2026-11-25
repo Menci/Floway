@@ -5,13 +5,14 @@
 import { concat, copy, encodeAtypAddress } from '../bytes.ts';
 import { ProxyDialError } from '../dial-error.ts';
 import { hexDecode } from '../encoding.ts';
-import type { DialResult, DialTarget } from '../types.ts';
+import type { DialTarget } from '../types.ts';
+import type { DuplexStream } from '@floway-dev/http';
 
 export const vlessFrameOverStream = async (
   transport: { readable: ReadableStream<Uint8Array>; writable: WritableStream<Uint8Array> },
   uuid: string,
   target: DialTarget,
-): Promise<DialResult> => {
+): Promise<DuplexStream> => {
   const header = buildVlessHeader(uuid, target);
   const writer = transport.writable.getWriter();
   await writer.write(header);

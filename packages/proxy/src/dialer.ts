@@ -11,7 +11,7 @@ import { dialTrojan } from './protocols/trojan.ts';
 import { dialVlessTcpTls, dialVlessWsTls } from './protocols/vless.ts';
 import type { ProxyConfig } from './proxy-config.ts';
 import type { DialedSocket, DialOptions, DialResult, DialTarget, ProxyRequestTarget } from './types.ts';
-import { fetchOnStream, signalAbortReason, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
+import { fetchOnStream, isCausedBy, signalAbortReason, UpstreamTransportError, type DuplexStream, type HttpRequest, type SocketHttpResponse, type TlsStream } from '@floway-dev/http';
 
 /**
  * Open a transport-only duplex byte stream to `target.host:target.port`
@@ -43,11 +43,8 @@ const withDialDeadline = async <T>(
   if (callerSignal?.aborted) {
     throw signalAbortReason(callerSignal);
   }
-  // We multiplex the caller signal and our deadline into a single internal
-  // AbortController. Setting the abort `reason` to a ProxyDialError on
-  // deadline lets us surface the deadline as a typed error after dispatch
-  // unwinds — even if the underlying runner returned a different exception
-  // because abort propagation was racy.
+  // The internal controller owns the handshake deadline. The caller's signal
+  // is attached directly to the connected socket for the HTTP exchange.
   const internal = new AbortController();
   const onCallerAbort = (): void => {
     internal.abort(signalAbortReason(callerSignal!));
@@ -66,7 +63,7 @@ const withDialDeadline = async <T>(
   try {
     return await run(innerOptions);
   } catch (err) {
-    if (internal.signal.aborted && internal.signal.reason instanceof ProxyDialError) {
+    if (internal.signal.reason instanceof ProxyDialError && isCausedBy(err, internal.signal.reason)) {
       throw internal.signal.reason;
     }
     throw err;
@@ -118,7 +115,7 @@ export const runProxiedRequest = async (
   target: ProxyRequestTarget,
   request: HttpRequest,
   options: RunProxiedRequestOptions,
-): Promise<Response> => {
+): Promise<SocketHttpResponse> => {
   const dialed = await dial(config, target, options);
   return await runRequestOnStream(dialed, target, request, options);
 };
@@ -132,7 +129,7 @@ export const runDirectConnectRequest = async (
   target: ProxyRequestTarget,
   request: HttpRequest,
   options: RunDirectConnectRequestOptions,
-): Promise<Response> => {
+): Promise<SocketHttpResponse> => {
   const deadlineMs = options.dialTimeoutMs ?? DEFAULT_DIAL_DEADLINE_MS;
   const socket = await withDialDeadline(
     options,
@@ -148,13 +145,7 @@ export const runDirectConnectRequest = async (
     ),
   );
 
-  try {
-    const response = await runRequestOnStream(socket, target, request, options);
-    return closeSocketWithResponse(response, socket, options.signal);
-  } catch (error) {
-    await socket.close().catch(() => {});
-    throw error;
-  }
+  return await runRequestOnStream(socket, target, request, options);
 };
 
 const runRequestOnStream = async (
@@ -162,9 +153,12 @@ const runRequestOnStream = async (
   target: ProxyRequestTarget,
   request: HttpRequest,
   options: RunProxiedRequestOptions,
-): Promise<Response> => {
+): Promise<SocketHttpResponse> => {
+  const { signal } = options;
+  const close = closeConnection(dialed, signal);
   let stream: DuplexStream = { readable: dialed.readable, writable: dialed.writable };
   try {
+    if (signal?.aborted) throw signalAbortReason(signal);
     // Route DialResult.prefix to the next byte sink: into the TLS upgrade
     // when wrapping, otherwise into the fetch-body prefix.
     let fetchPrefix: Uint8Array | undefined;
@@ -184,7 +178,8 @@ const runRequestOnStream = async (
         // handshake as the underlying transport error. Preserve the original
         // stage rather than mis-tagging it as inner-tls.
         if (cause instanceof ProxyDialError) throw cause;
-        throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
+        if (cause instanceof UpstreamTransportError) throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
+        throw cause;
       }
       stream = tls;
     } else {
@@ -202,7 +197,8 @@ const runRequestOnStream = async (
       const hostValue = target.port === defaultPort ? hostUriPart : `${hostUriPart}:${target.port}`;
       headers = [['Host', hostValue], ...headers];
     }
-    return await fetchOnStream(stream, { ...request, headers }, fetchPrefix, options.contentDecoders);
+    const response = await fetchOnStream(stream, { ...request, headers }, fetchPrefix, options.contentDecoders);
+    return closeSocketWithResponse(response, close);
   } catch (err) {
     // Any throw past `dial()` means the active stream will never be returned
     // to the caller. Cancel the topmost layer (the post-TLS readable when
@@ -212,65 +208,69 @@ const runRequestOnStream = async (
     // protocol's IIFE / framing pump observes the underlying read failure
     // and closes the socket.
     void stream.readable.cancel(err).catch(() => {});
+    await close();
     throw err;
   }
 };
 
-const closeSocketWithResponse = (response: Response, socket: DialedSocket, signal?: AbortSignal): Response => {
+const closeConnection = (socket: DialedSocket, signal: AbortSignal | undefined) => {
   let closePromise: Promise<void> | null = null;
-  const close = (): Promise<void> => {
-    closePromise ??= socket.close().catch(() => {});
+  const close = (reason?: Error): Promise<void> => {
+    closePromise ??= socket.close(reason).catch(() => {});
     if (signal !== undefined) signal.removeEventListener('abort', onAbort);
     return closePromise;
   };
-  const onAbort = (): void => { void close(); };
+  const onAbort = (): void => { void close(signalAbortReason(signal!)); };
 
-  // Reading the body to its end and cancelling it are the ordinary teardown
-  // paths, and both of them require someone to still be holding the body. An
-  // abort raised after the dial resolved has no other way to reach this
-  // socket: the dial-stage listener is detached once `withDialDeadline`
-  // returns, and the runtime's own `signal` support on connect() covers the
-  // handshake only.
-  if (signal !== undefined) {
-    signal.addEventListener('abort', onAbort, { once: true });
-    // addEventListener on an already-aborted signal never fires, so an abort
-    // that landed while the request was in flight would otherwise be lost.
-    if (signal.aborted) void close();
-  }
+  signal?.addEventListener('abort', onAbort, { once: true });
+  if (signal?.aborted) onAbort();
+  return close;
+};
 
+const closeSocketWithResponse = (response: SocketHttpResponse, close: (reason?: Error) => Promise<void>): SocketHttpResponse => {
   if (response.body === null) {
     void close();
     return response;
   }
 
   const reader = response.body.getReader();
+  let cancelled = false;
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
         const result = await reader.read();
+        if (cancelled) return;
         if (result.done) {
+          reader.releaseLock();
           controller.close();
           void close();
         } else {
           controller.enqueue(result.value);
         }
       } catch (error) {
-        controller.error(error);
+        if (cancelled) return;
+        reader.releaseLock();
+        const cause = error instanceof ProxyDialError && error.stage !== 'config'
+          ? new UpstreamTransportError(error)
+          : error;
+        controller.error(cause);
         void close();
       }
     },
     async cancel(reason) {
+      cancelled = true;
       try {
         await reader.cancel(reason);
       } finally {
+        reader.releaseLock();
         await close();
       }
     },
   });
 
-  return new Response(body, {
+  return Object.assign(new Response(body, {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,
-  });
+  }), { headerLines: response.headerLines });
 };

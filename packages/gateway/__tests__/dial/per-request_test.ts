@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createPerRequestFetcher } from '../../src/dial/per-request.ts';
+import { createPerRequestFetcher, createPerRequestProviderFetcher } from '../../src/dial/per-request.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
-import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
+import { initFetch, initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
 import type { ProxyFallbackEntry } from '@floway-dev/provider';
 
 const stubSocketDial: SocketDial = {
@@ -67,6 +67,21 @@ describe('createPerRequestFetcher', () => {
     // fetcher must not throw at build time the way the malformed row did
     // when first parsed.
     fetcherFor('u_ok');
+  });
+
+  it('resolves the typed provider fetch result while retaining native responses for existing callers', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const record = upstream('u', [{ id: 'direct_fetch' }]);
+    await saveUpstreamForTest(repo.upstreams, record);
+    const response = new Response('upstream');
+    const result = { response, identifyBodyTransportFailure: () => undefined };
+    initFetch(async () => response, new Map(), async () => result);
+
+    const fetchFor = await createPerRequestFetcher('TEST', [record]);
+    const providerFetchFor = await createPerRequestProviderFetcher('TEST', [record]);
+    expect(await fetchFor('u')('https://example.com', { method: 'GET' })).toBe(response);
+    expect(await providerFetchFor('u')('https://example.com', { method: 'GET' })).toBe(result);
   });
 
 });

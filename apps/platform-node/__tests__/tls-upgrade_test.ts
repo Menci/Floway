@@ -91,11 +91,18 @@ describe('startNodeTls — handshake', () => {
         await expect(startNodeTls(await dialRaw(server.port), {
           host: 'localhost',
           verifyHost: 'other.example.test',
-        })).rejects.toMatchObject({ code: 'ERR_TLS_CERT_ALTNAME_INVALID' });
+        })).rejects.toMatchObject({ name: 'UpstreamTransportError', cause: { code: 'ERR_TLS_CERT_ALTNAME_INVALID' } });
       } finally {
         await server.close();
       }
     });
+  });
+
+  it.each(['read', 'write'])('preserves the source %s failure through the TLS duplex adapter', async operation => {
+    const failure = new TypeError(`adapter ${operation} failed`);
+    const readable = new ReadableStream<Uint8Array>({ pull() { if (operation === 'read') throw failure; } });
+    const writable = new WritableStream<Uint8Array>({ write() { if (operation === 'write') throw failure; } });
+    await expect(startNodeTls({ readable, writable }, { host: 'upstream.example' })).rejects.toBe(failure);
   });
 });
 

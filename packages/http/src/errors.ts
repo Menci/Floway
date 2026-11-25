@@ -39,3 +39,9 @@ export class HttpProtocolError extends Error {
     this.rfc = opts?.rfc;
   }
 }
+
+export class UnsupportedContentEncodingError extends HttpProtocolError {
+  constructor(message: string) {
+    super(message, 'UNSUPPORTED_CONTENT_ENCODING');
+  }
+}

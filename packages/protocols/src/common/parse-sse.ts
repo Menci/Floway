@@ -1,17 +1,15 @@
 import { createParser } from 'eventsource-parser';
 
 import { type SseReadableFrame, sseFrame, sseRawFrame } from './sse.ts';
+import type { Result } from '@floway-dev/pipeline';
 
 interface ParseSSEStreamOptions {
   signal?: AbortSignal | undefined;
 }
 
-export const parseSSEStream = async function* (body: ReadableStream<Uint8Array>, options: ParseSSEStreamOptions = {}): AsyncGenerator<SseReadableFrame> {
-  const reader = body.getReader();
-  const { signal } = options;
+const sseDecoder = () => {
   const decoder = new TextDecoder();
   let pendingFrames: SseReadableFrame[] = [];
-  let cancelPromise: Promise<void> | undefined;
 
   const parser = createParser({
     onEvent: event => {
@@ -27,6 +25,39 @@ export const parseSSEStream = async function* (body: ReadableStream<Uint8Array>,
     pendingFrames = [];
     return frames;
   };
+
+  return {
+    feed(bytes: Uint8Array) {
+      parser.feed(decoder.decode(bytes, { stream: true }));
+      return takePendingFrames();
+    },
+    finish() {
+      // Some upstreams close immediately after their final data line.
+      parser.feed(`${decoder.decode()}\n\n`);
+      return takePendingFrames();
+    },
+  };
+};
+
+export const parseSseFrames = async function* <Failure>(
+  body: AsyncIterable<Result<Uint8Array, Failure>>,
+): AsyncGenerator<Result<SseReadableFrame, Failure>, void, unknown> {
+  const decoder = sseDecoder();
+  for await (const item of body) {
+    if (!item.ok) {
+      yield item;
+      return;
+    }
+    for (const frame of decoder.feed(item.value)) yield { ok: true, value: frame };
+  }
+  for (const frame of decoder.finish()) yield { ok: true, value: frame };
+};
+
+export const parseSSEStream = async function* (body: ReadableStream<Uint8Array>, options: ParseSSEStreamOptions = {}): AsyncGenerator<SseReadableFrame> {
+  const reader = body.getReader();
+  const { signal } = options;
+  const decoder = sseDecoder();
+  let cancelPromise: Promise<void> | undefined;
 
   const cancelReader = (reason?: unknown): Promise<void> => {
     cancelPromise ??= reader.cancel(reason).catch(() => {});
@@ -51,16 +82,10 @@ export const parseSSEStream = async function* (body: ReadableStream<Uint8Array>,
       if (signal?.aborted) return;
       if (done) break;
 
-      parser.feed(decoder.decode(value, { stream: true }));
-      yield* takePendingFrames();
+      yield* decoder.feed(value);
     }
 
-    const finalChunk = decoder.decode();
-    if (finalChunk) parser.feed(finalChunk);
-    // Preserve the existing contract that a final data line is consumable even
-    // when its peer closes without writing the terminating blank line.
-    parser.feed('\n\n');
-    yield* takePendingFrames();
+    yield* decoder.finish();
   } finally {
     signal?.removeEventListener('abort', cancelReaderOnAbort);
     await (cancelPromise ?? reader.cancel());

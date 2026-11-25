@@ -1,8 +1,9 @@
-import { createFetcher } from './fetcher.ts';
+import { createFetcher, createProviderFetcher } from './fetcher.ts';
 import { loadProxyCatalog } from './proxy-catalog.ts';
 import { getRepo } from '../repo/index.ts';
 import { entryMatchesColo, isDirectFallbackId, normalizeProxyFallbackList } from '../repo/proxy-fallback-list.ts';
-import { getFetch, getHttpContentDecoders, getSocketDial } from '@floway-dev/platform';
+import type { FetchInit, ProviderFetcher } from '@floway-dev/http';
+import { getFetch, getHttpContentDecoders, getProviderFetch, getSocketDial } from '@floway-dev/platform';
 import type { Fetcher, ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
 
@@ -19,11 +20,15 @@ export class InvalidProxyConfigurationError extends Error {
 //
 // `preFetchedUpstreams` lets a caller reuse a list it already loaded on
 // this request instead of paying a second `upstreams.list()` round-trip.
-const createFetcherResolver = async (
+type RequestFetcherOptions = Omit<Parameters<typeof createFetcher>[0], 'runDirectFetch'>;
+type FetchOperation<Response> = (url: string, init: FetchInit) => Promise<Response>;
+
+const createFetcherResolver = async <Response>(
   runtimeLocation: string | null,
   preFetchedUpstreams: readonly UpstreamRecord[] | undefined,
   validation: 'lazy' | 'eager',
-): Promise<(upstreamId: string) => Fetcher> => {
+  create: (input: RequestFetcherOptions) => FetchOperation<Response>,
+): Promise<(upstreamId: string) => FetchOperation<Response>> => {
   const repo = getRepo();
   const upstreams = preFetchedUpstreams ?? await repo.upstreams.list();
   const configuredById = new Map(upstreams.map(u => [u.id, u.proxyFallbackList] as const));
@@ -61,14 +66,13 @@ const createFetcherResolver = async (
     }
     const unknown = validationList.find(entry => !isDirectFallbackId(entry.id) && !proxyById.has(entry.id));
     if (validation === 'eager' && unknown !== undefined) throw new InvalidProxyConfigurationError(`unknown proxy id in fallback list: ${unknown.id}`);
-    return createFetcher({
+    return create({
       repo,
       upstreamId,
       fallbackList: configuredById.get(upstreamId)!,
       runtimeLocation,
       proxyById,
       runProxied: runProxiedRequest,
-      runDirectFetch: getFetch(),
       runDirectConnect: runDirectConnectRequest,
       socketDial: getSocketDial,
       contentDecoders: getHttpContentDecoders,
@@ -76,15 +80,23 @@ const createFetcherResolver = async (
   };
 };
 
+const createRuntimeFetcher = (input: RequestFetcherOptions): Fetcher => createFetcher({ ...input, runDirectFetch: getFetch() });
+
 export const createPerRequestFetcher = (
   runtimeLocation: string | null,
   preFetchedUpstreams?: readonly UpstreamRecord[],
-): Promise<(upstreamId: string) => Fetcher> => createFetcherResolver(runtimeLocation, preFetchedUpstreams, 'lazy');
+): Promise<(upstreamId: string) => Fetcher> => createFetcherResolver(runtimeLocation, preFetchedUpstreams, 'lazy', createRuntimeFetcher);
 
 export const createValidatedPerRequestFetcher = (
   runtimeLocation: string | null,
   preFetchedUpstreams?: readonly UpstreamRecord[],
-): Promise<(upstreamId: string) => Fetcher> => createFetcherResolver(runtimeLocation, preFetchedUpstreams, 'eager');
+): Promise<(upstreamId: string) => Fetcher> => createFetcherResolver(runtimeLocation, preFetchedUpstreams, 'eager', createRuntimeFetcher);
+
+export const createPerRequestProviderFetcher = (
+  runtimeLocation: string | null,
+  preFetchedUpstreams?: readonly UpstreamRecord[],
+): Promise<(upstreamId: string) => ProviderFetcher> => createFetcherResolver(runtimeLocation, preFetchedUpstreams, 'lazy',
+  input => createProviderFetcher({ ...input, runDirectFetch: getProviderFetch() }));
 
 // A fallback policy that no saved upstream owns, such as an edit form's
 // in-progress list. Every referenced proxy must resolve before any dial, and

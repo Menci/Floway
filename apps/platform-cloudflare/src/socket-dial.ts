@@ -1,6 +1,8 @@
 import { connect } from 'cloudflare:sockets';
 
-import { userspaceTls } from '@floway-dev/http';
+import { isCloudflareNetworkFailure } from './network-failure.ts';
+import { cloudflareSocketReadable } from './socket-readable.ts';
+import { isCausedBy, markTransportFailure, signalAbortReason, UpstreamTransportError, userspaceTls } from '@floway-dev/http';
 import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
 
 // workerd reports every non-2xx outbound CONNECT proxy status with this same
@@ -9,7 +11,7 @@ import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } fro
 // https://github.com/cloudflare/workerd/blob/c889d1dd2322420cb5c58740dc28ab20b6a7f681/src/workerd/api/sockets.c%2B%2B#L969-L1017
 const PROXY_CONNECT_REJECTION = 'proxy request failed, cannot connect to the specified address';
 
-class ProxyConnectRejection extends Error {}
+class ProxyConnectRejection extends UpstreamTransportError {}
 
 // AbortSignal handling: cloudflare:sockets doesn't accept a signal on connect
 // itself, so we honour it ourselves. A pre-aborted signal short-circuits
@@ -44,15 +46,36 @@ export const cloudflareSocketDial: SocketDial = {
       try { await socket.close(); } catch { /* already closed/errored */ }
     };
     let abortListener: (() => void) | null = null;
+    const read = cloudflareSocketReadable(socket.readable);
+    let closePromise: Promise<void> | undefined;
+    let openingCancellation: Error | undefined;
+    const opening = Promise.withResolvers<void>();
+    void socket.opened.then(() => opening.resolve(), opening.reject);
     const removeAbortListener = (): void => {
       if (abortListener && opts?.signal) {
         opts.signal.removeEventListener('abort', abortListener);
         abortListener = null;
       }
     };
+    const close = (reason?: Error): Promise<void> => {
+      removeAbortListener();
+      closePromise ??= (async () => {
+        try {
+          if (reason !== undefined) await read.abortPendingRead(reason);
+        } finally {
+          await safeClose();
+        }
+      })();
+      return closePromise;
+    };
     if (opts?.signal) {
       const signal = opts.signal;
-      abortListener = (): void => { void safeClose(); };
+      abortListener = (): void => {
+        const reason = signalAbortReason(signal);
+        openingCancellation = reason;
+        queueMicrotask(() => { opening.reject(reason); });
+        void close(reason).catch(error => console.error('Cloudflare socket cancellation failed', error));
+      };
       signal.addEventListener('abort', abortListener, { once: true });
     }
     // Explicit catch so an unhandled-rejection observer doesn't see
@@ -60,32 +83,25 @@ export const cloudflareSocketDial: SocketDial = {
     void socket.closed.catch(() => { /* errors observed via opened/streams */ }).finally(removeAbortListener);
 
     try {
-      await socket.opened;
+      await opening.promise;
     } catch (cause) {
-      removeAbortListener();
-      await safeClose();
-      // If the failure was caused by the caller's abort, surface as
-      // AbortError (preserving the original reason if it was an Error)
-      // instead of an opaque connect failure.
-      if (opts?.signal?.aborted) throwAbort(opts.signal);
-      const ConnectError = cause instanceof Error && cause.message.startsWith(PROXY_CONNECT_REJECTION)
-        ? ProxyConnectRejection
-        : Error;
-      throw new ConnectError(`dial ${host}:${port} failed`, { cause });
+      await close();
+      if (isCausedBy(cause, openingCancellation)) throw cause;
+      const message = `dial ${host}:${port} failed`;
+      if (cause instanceof Error && cause.message.startsWith(PROXY_CONNECT_REJECTION)) throw new ProxyConnectRejection(cause, message);
+      if (isCloudflareNetworkFailure(cause)) throw new UpstreamTransportError(cause, message);
+      throw cause;
     }
 
     if (opts?.signal?.aborted) {
-      await safeClose();
+      await close();
       throwAbort(opts.signal);
     }
 
     return {
-      readable: socket.readable,
-      writable: socket.writable,
-      close: async () => {
-        removeAbortListener();
-        await safeClose();
-      },
+      readable: read.readable,
+      writable: socketWritable(socket.writable, opts?.signal),
+      close,
     };
   },
 
@@ -97,4 +113,25 @@ export const cloudflareSocketDial: SocketDial = {
   // workerd.
   // https://github.com/cloudflare/workerd/issues/2712
   startTls: userspaceTls,
+};
+
+const socketWritable = (source: WritableStream<Uint8Array>, signal?: AbortSignal): WritableStream<Uint8Array> => {
+  let writer: WritableStreamDefaultWriter<Uint8Array> | undefined;
+  const getWriter = () => writer ??= source.getWriter();
+  const finish = async (action: (writer: WritableStreamDefaultWriter<Uint8Array>) => Promise<void>): Promise<void> => {
+    const active = getWriter();
+    try { await action(active); } finally { active.releaseLock(); }
+  };
+  return new WritableStream({
+    write(chunk) {
+      const active = getWriter();
+      const pending = active.write(chunk);
+      return pending.catch((cause: unknown) => {
+        active.releaseLock();
+        throw isCloudflareNetworkFailure(cause) ? markTransportFailure(cause, signal) : cause;
+      });
+    },
+    close: () => finish(active => active.close()),
+    abort: reason => finish(active => active.abort(reason)),
+  });
 };

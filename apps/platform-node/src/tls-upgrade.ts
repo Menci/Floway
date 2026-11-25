@@ -3,17 +3,34 @@ import { Duplex } from 'node:stream';
 import tls from 'node:tls';
 
 import { socketToReadable, socketToWritable } from './node-socket-streams.ts';
-import type { DuplexStream } from '@floway-dev/http';
+import { isCausedBy, markTransportFailure, trackReadableFailure, transportReadable, type DuplexStream } from '@floway-dev/http';
 import { normalizeDialHost, throwAbort, type TlsUpgradeOptions } from '@floway-dev/platform';
 
 // Serialize the transport's Web-Streams duplex as a Node duplex so
 // `tls.connect()` can wrap it. A TLSSocket is itself a Duplex, so an inner
 // upgrade over an outer one — trojan's inner TLS over the visit to the proxy
 // — is the same shape as an upgrade over a raw socket.
-const transportToDuplex = (transport: DuplexStream): Duplex => {
+const transportToDuplex = (transport: DuplexStream) => {
+  const input = trackReadableFailure(transport.readable);
+  const writer = transport.writable.getWriter();
+  let writeFailure: { cause: unknown } | undefined;
+  const finish = async (operation: Promise<void>) => {
+    try { await operation; } finally { writer.releaseLock(); }
+  };
+  const output = new WritableStream<Uint8Array>({
+    write(chunk) {
+      return writer.write(chunk).catch((cause: unknown) => {
+        writeFailure = { cause };
+        writer.releaseLock();
+        throw cause;
+      });
+    },
+    close: () => finish(writer.close()),
+    abort: reason => finish(writer.abort(reason)),
+  });
   const duplex = Duplex.fromWeb({
-    readable: transport.readable,
-    writable: transport.writable,
+    readable: input.body,
+    writable: output,
   } as Parameters<typeof Duplex.fromWeb>[0]);
   // A rejected transport write surfaces as an 'error' event on this duplex
   // with no listener of its own, which terminates the process: `Duplex.fromWeb`
@@ -21,7 +38,8 @@ const transportToDuplex = (transport: DuplexStream): Duplex => {
   // wraps the stream nothing re-emits it. Hold it here so the handshake or the
   // stream consumer reports the failure instead.
   duplex.on('error', () => { /* reported by the TLS socket or its consumer */ });
-  return duplex;
+  const isForwardedFailure = (cause: unknown) => isCausedBy(cause, input.failure?.cause) || isCausedBy(cause, writeFailure?.cause);
+  return { duplex, isForwardedFailure };
 };
 
 // Node verifies the peer against `servername` when it is set and against
@@ -43,7 +61,7 @@ export const startNodeTls = async (
   const identity = normalizeDialHost(opts.verifyHost ?? opts.host);
   const signal = opts.signal;
 
-  const duplex = transportToDuplex(transport);
+  const { duplex, isForwardedFailure } = transportToDuplex(transport);
 
   // Bytes that have to precede the ClientHello — a proxy request header the
   // peer reads before it starts relaying TLS — go out first, so the handshake
@@ -79,14 +97,14 @@ export const startNodeTls = async (
     };
     const onError = (err: Error): void => {
       socket.off('secureConnect', onReady);
-      reject(err);
+      reject(isForwardedFailure(err) ? err : markTransportFailure(err, signal));
     };
     socket.once('secureConnect', onReady);
     socket.once('error', onError);
   });
 
-  const readable = socketToReadable(socket);
-  const writable = socketToWritable(socket);
+  const readable = transportReadable(socketToReadable(socket), signal, isForwardedFailure);
+  const writable = socketToWritable(socket, signal);
 
   // Without a permanent listener, any post-handshake socket error escalates
   // to uncaughtException and crashes the process. The streams carry the error

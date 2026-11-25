@@ -69,7 +69,7 @@ index c168ac3..97dea81 100644
  import { decryptWrappedRecord, encryptWrappedRecord } from "./utils/wrapped-record.js";
  const RECORD_LENGTH_BYTES = 3;
 -export function makeTLSClient({ host, verifyServerCertificate = true, rootCAs, logger: _logger, cipherSuites, namedCurves = SUPPORTED_NAMED_CURVES, supportedProtocolVersions, signatureAlgorithms, applicationLayerProtocols, fetchCertificateBytes, write, onRead, onApplicationData, onSessionTicket, onTlsEnd, onHandshake, onRecvCertificates }) {
-+export function makeTLSClient({ host, verifyHost, verifyServerCertificate = true, checkServerIdentity, rootCAs, logger: _logger, cipherSuites, namedCurves = SUPPORTED_NAMED_CURVES, supportedProtocolVersions, signatureAlgorithms, applicationLayerProtocols, fetchCertificateBytes, write, onRead, onApplicationData, onSessionTicket, onTlsEnd, onHandshake, onRecvCertificates, onClientHelloPack, onRecvCertificateVerify, onKeyPairGenerated }) {
++export function makeTLSClient({ host, verifyHost, verifyServerCertificate = true, checkServerIdentity, mapCertificateVerificationError = error => error, rootCAs, logger: _logger, cipherSuites, namedCurves = SUPPORTED_NAMED_CURVES, supportedProtocolVersions, signatureAlgorithms, applicationLayerProtocols, fetchCertificateBytes, write, onRead, onApplicationData, onSessionTicket, onTlsEnd, onHandshake, onRecvCertificates, onClientHelloPack, onRecvCertificateVerify, onKeyPairGenerated }) {
      const logger = _logger || LOGGER;
      const processor = makeMessageProcessor(logger);
      const { enqueue: enqueueServerPacket } = makeQueue();
@@ -95,7 +95,7 @@ index c168ac3..97dea81 100644
 +                        }
                          if (verifyServerCertificate && !certificatesVerified) {
 -                            await verifyCertificateChain(certificates, host, logger, fetchCertificateBytes, rootCAs);
-+                            await verifyCertificateChain(certificates, verifyHost ?? host, logger, fetchCertificateBytes, rootCAs, identityChecked);
++                            await verifyCertificateChain(certificates, verifyHost ?? host, logger, fetchCertificateBytes, rootCAs, identityChecked).catch(error => { throw mapCertificateVerificationError(error); });
                              logger.debug('verified certificate chain');
                              certificatesVerified = true;
                          }
@@ -147,7 +147,7 @@ index c168ac3..97dea81 100644
 +                        }
                          if (verifyServerCertificate && !certificatesVerified) {
 -                            await verifyCertificateChain(certificates, host, logger, fetchCertificateBytes, rootCAs);
-+                            await verifyCertificateChain(certificates, verifyHost ?? host, logger, fetchCertificateBytes, rootCAs, identityChecked);
++                            await verifyCertificateChain(certificates, verifyHost ?? host, logger, fetchCertificateBytes, rootCAs, identityChecked).catch(error => { throw mapCertificateVerificationError(error); });
                              logger.debug('verified certificate chain');
                              certificatesVerified = true;
                          }

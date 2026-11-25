@@ -1,6 +1,6 @@
 import { EventTargetChannelBroker } from './event-target-channel-broker.ts';
 import { createNodeExternalResourceFetcher } from './external-resource-fetcher.ts';
-import { nodeFetch } from './fetch.ts';
+import { nodeFetch, nodeProviderFetch } from './fetch.ts';
 import { FsFileStore } from './fs-file-store.ts';
 import { nodeHttpContentDecoders } from './http-content-decoders.ts';
 import { createNodeSqliteDatabase } from './node-sqlite-database.ts';
@@ -31,7 +31,7 @@ export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   initRuntimeKind('node');
   initTimingSafeEqual(timingSafeEqual);
   initExternalResourceFetcher(createNodeExternalResourceFetcher());
-  initFetch(nodeFetch, nodeHttpContentDecoders);
+  initFetch(nodeFetch, nodeHttpContentDecoders, nodeProviderFetch);
 
   const filesDir = getEnvOptional('FLOWAY_FILES_DIR', './data/files');
   const dbPath = getEnvOptional('FLOWAY_DB_PATH', './data/floway.db');

@@ -18,3 +18,22 @@ export const isOpenAIAudioTranscriptionDoneEvent = (event: unknown): event is Op
   && event !== null
   && (event as { type?: unknown }).type === 'transcript.text.done'
   && typeof (event as { text?: unknown }).text === 'string';
+
+// https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create/index.md
+export interface OpenAIAudioSpeechPayload {
+  model: string;
+  input: string;
+  voice: string | { id: string };
+  instructions?: string;
+  response_format?: string;
+  speed?: number;
+  stream_format?: string;
+  [key: string]: unknown;
+}
+
+export interface OpenAIAudioSpeechStreamEvent {
+  type: string;
+  [key: string]: unknown;
+}
+
+export { decodeOpenAIAudioSpeechStream, decodeOpenAIAudioTranscriptionsStream } from './stream.ts';

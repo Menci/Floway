@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createFetcher } from '../../src/dial/fetcher.ts';
+import { createFetcher, createProviderFetcher } from '../../src/dial/fetcher.ts';
 import type { ProxyEntry } from '../../src/dial/proxy-catalog.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import { buildCustomUpstreamRecord } from '../test-utils/app.ts';
+import { UpstreamTransportError } from '@floway-dev/http';
 import { isReplayableBody, type ReplayableBody } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type SocketDial } from '@floway-dev/proxy';
 
@@ -107,6 +108,47 @@ describe('createFetcher', () => {
     expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
   });
 
+  it('only advances a native-fetch fallback after a marked transport rejection', async () => {
+    const repo = await seededRepo();
+    const direct = vi.fn(async () => new Response('fallback'));
+    const bug = new TypeError('invalid fetch input');
+    const fetch = (cause: unknown) => createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'direct_fetch' }, { id: 'direct_connect' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map(),
+      runProxied: async () => { throw new Error('unreachable'); },
+      runDirectFetch: async () => { throw cause; },
+      runDirectConnect: direct,
+      socketDial: () => stubSocketDial,
+    });
+    await expect(fetch(bug)('https://api.openai.com', { method: 'GET' })).rejects.toBe(bug);
+    expect(direct).not.toHaveBeenCalled();
+    expect(await (await fetch(new UpstreamTransportError(new Error('connection reset')))('https://api.openai.com', { method: 'GET' })).text()).toBe('fallback');
+    expect(direct).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the native body classifier only when the native attempt wins', async () => {
+    const repo = await seededRepo();
+    const native = { response: new Response('native'), identifyBodyTransportFailure: () => undefined };
+    const socket = new Response('socket');
+    const options = {
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'direct_fetch' }, { id: 'direct_connect' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map<string, ProxyEntry>(),
+      runProxied: async () => { throw new Error('unreachable'); },
+      runDirectConnect: async () => socket,
+      socketDial: () => stubSocketDial,
+    };
+    const direct = createProviderFetcher({ ...options, runDirectFetch: async () => native });
+    expect(await direct('https://example.com', { method: 'GET' })).toBe(native);
+    const fallback = createProviderFetcher({ ...options, runDirectFetch: async () => { throw new UpstreamTransportError(new Error('network failed')); } });
+    expect(await fallback('https://example.com', { method: 'GET' })).toEqual({ response: socket });
+  });
+
   it('uses one implicit fetch for a Cloudflare CONNECT rejection when the current colo has no fetch entry', async () => {
     const repo = await seededRepo();
     const blocked = new Error('blocked by workerd');
@@ -162,9 +204,9 @@ describe('createFetcher', () => {
     });
     const cloudflareDial = { ...stubSocketDial, shouldConnectErrorFallbackToFetch: (error: unknown) => error === blocked };
 
-    await expect(run('inner-tls', blocked, cloudflareDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
-    await expect(run('tcp-connect', new Error('connection refused'), cloudflareDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
-    await expect(run('tcp-connect', blocked, stubSocketDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
+    await expect(run('inner-tls', blocked, cloudflareDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(UpstreamTransportError);
+    await expect(run('tcp-connect', new Error('connection refused'), cloudflareDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(UpstreamTransportError);
+    await expect(run('tcp-connect', blocked, stubSocketDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(UpstreamTransportError);
     expect(fetch).not.toHaveBeenCalled();
   });
 

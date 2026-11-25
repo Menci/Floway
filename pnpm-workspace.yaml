@@ -98,6 +98,9 @@ patchedDependencies:
   # https://github.com/guiiai/logg/blob/191ed0f6c763fd49d402a3f936b29e6322396782/src/logger.ts#L295-L311
   '@guiiai/logg@1.2.12': patches/@guiiai__logg@1.2.12.patch
   '@hono/node-server@2.0.4': patches/@hono__node-server@2.0.4.patch
+  # Carry the peer certificate verification failure separately from adapter exceptions.
+  # https://github.com/reclaimprotocol/tls/blob/93b9a3e39660af8ea86ce3926c9a6dc2a23d50ec/src/make-tls-client.ts#L246-L249
+  # https://github.com/reclaimprotocol/tls/blob/93b9a3e39660af8ea86ce3926c9a6dc2a23d50ec/src/make-tls-client.ts#L346-L349
   '@reclaimprotocol/tls@0.1.5': patches/@reclaimprotocol__tls@0.1.5.patch
   'overlayscrollbars@2.13.0': patches/overlayscrollbars@2.13.0.patch
   'eventsource-parser@3.1.0': patches/eventsource-parser@3.1.0.patch

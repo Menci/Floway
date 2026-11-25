@@ -1,5 +1,6 @@
 import { ProxyDialError } from './dial-error.ts';
 import type { DialedSocket, SocketDial, SocketDialOptions } from './types.ts';
+import { UpstreamTransportError } from '@floway-dev/http';
 
 /**
  * Reject a port outside the 1..65535 range used by TCP. Port 0 is
@@ -63,10 +64,8 @@ export const assertValidTargetHost = (
 };
 
 /**
- * Open a TCP socket and rewrap any failure as a typed `tcp-connect`
- * ProxyDialError. Every dialer's outer `socket = await socketDial.connect(…)`
- * needs the same wrap so the fallback chain sees a uniform discriminant —
- * this is that wrap, centralised.
+ * Open a TCP socket and attribute a confirmed transport failure to the
+ * `tcp-connect` stage for proxy fallback.
  */
 export const connectOrDialError = async (
   socketDial: SocketDial,
@@ -77,6 +76,7 @@ export const connectOrDialError = async (
   try {
     return await socketDial.connect(host, port, opts);
   } catch (cause) {
-    throw new ProxyDialError(`tcp connect to ${host}:${port} failed`, 'tcp-connect', { cause });
+    if (cause instanceof UpstreamTransportError) throw new ProxyDialError(`tcp connect to ${host}:${port} failed`, 'tcp-connect', { cause });
+    throw cause;
   }
 };

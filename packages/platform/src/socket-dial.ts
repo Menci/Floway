@@ -27,7 +27,7 @@ export interface DialedSocket {
   readable: ReadableStream<Uint8Array>;
   writable: WritableStream<Uint8Array>;
   /** Idempotent close. */
-  close(): Promise<void>;
+  close(reason?: Error): Promise<void>;
 }
 
 export interface TlsUpgradeOptions {

@@ -1,5 +1,7 @@
 // Portable runtime-fetch and HTTP/1.1-over-stream request contracts.
 
+import type { UpstreamTransportError } from './upstream-transport.ts';
+
 /**
  * A duplex byte transport. Both halves are owned by the caller; the
  * primitives in this package borrow them through getReader/getWriter and
@@ -23,7 +25,16 @@ export type FetchInit = Omit<RequestInit, 'body' | 'signal'> & {
   signal?: AbortSignal | null | undefined;
 };
 
-export type Fetcher = (url: string, init: FetchInit) => Promise<Response>;
+export type FetchResponse = Response & { readonly headerLines?: HttpHeaderLines };
+
+export type Fetcher = (url: string, init: FetchInit) => Promise<FetchResponse>;
+
+export interface ProviderFetchResult {
+  readonly response: FetchResponse;
+  readonly identifyBodyTransportFailure?: (cause: unknown) => UpstreamTransportError | undefined;
+}
+
+export type ProviderFetcher = (url: string, init: FetchInit) => Promise<ProviderFetchResult>;
 
 /** Runtime codecs supplementing the portable gzip/deflate response decoders. */
 export type HttpContentDecoders = ReadonlyMap<string, () => ReadableWritablePair<Uint8Array, Uint8Array>>;
@@ -36,6 +47,8 @@ export type HttpContentDecoders = ReadonlyMap<string, () => ReadableWritablePair
  * https://www.rfc-editor.org/rfc/rfc9110.html#section-5.3
  */
 export type HttpHeaderLines = readonly (readonly [name: string, value: string])[];
+
+export type SocketHttpResponse = Response & { readonly headerLines: HttpHeaderLines };
 
 /**
  * HTTP/1.1 request shape, transport-agnostic. The caller has already

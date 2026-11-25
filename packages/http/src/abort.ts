@@ -6,3 +6,14 @@ export const signalAbortReason = (signal: AbortSignal): Error => {
   if (reason instanceof Error) return reason;
   return new DOMException(String(reason ?? 'aborted'), 'AbortError');
 };
+
+export const isCausedBy = (cause: unknown, reason: unknown): boolean => {
+  if (reason === undefined) return false;
+  const seen = new Set<Error>();
+  while (cause instanceof Error && !seen.has(cause)) {
+    if (cause === reason) return true;
+    seen.add(cause);
+    cause = cause.cause;
+  }
+  return cause === reason;
+};

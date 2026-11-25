@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { connectOrDialError } from '../../src/dial-target.ts';
 import { dialHttpConnect } from '../../src/protocols/http-connect.ts';
 import { dialReality } from '../../src/protocols/reality.ts';
 import { dialShadowsocks2022 } from '../../src/protocols/shadowsocks-2022.ts';
@@ -19,6 +20,7 @@ import type {
 } from '../../src/proxy-config.ts';
 import type { DialTarget, SocketDial } from '../../src/types.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
+import { UpstreamTransportError } from '@floway-dev/http';
 
 // Every dialer reaches the target through the same two guards in
 // `src/dial-target.ts`, so each guard needs one witness per dialer and not one
@@ -62,7 +64,7 @@ describe('pre-dial target validation reaches every dialer', () => {
   // than as whatever the socket threw.
   it.each(dialers.filter(({ name }) => ['http-connect', 'ss', 'socks5'].includes(name)))('$name classifies tcp-connect failures with the underlying cause', async ({ dial }) => {
     const fake = makeFakeSocketDial();
-    const cause = new Error('ECONNREFUSED');
+    const cause = new UpstreamTransportError(new Error('ECONNREFUSED'));
     fake.failNextConnect(cause);
     await expect(dial({ host: 'api.openai.com', port: 443 }, fake.socketDial)).rejects.toMatchObject({
       name: 'ProxyDialError',
@@ -84,6 +86,13 @@ describe('pre-dial target validation reaches every dialer', () => {
       expect(fake.connectCount()).toBe(0);
     },
   );
+});
+
+it('preserves an asynchronous platform connect failure without assigning a dial stage', async () => {
+  const fake = makeFakeSocketDial();
+  const failure = new TypeError('platform connect bug');
+  fake.failNextConnect(failure);
+  await expect(connectOrDialError(fake.socketDial, 'example.com', 443)).rejects.toBe(failure);
 });
 
 const httpConfig = (): HttpProxyConfig => ({ kind: 'http', host: 'proxy.example', port: 8080, name: 'http', tls: false });

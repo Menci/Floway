@@ -201,7 +201,7 @@ const dialShadowsocks2022Inner = async (
     async abort() { try { await socket.close(); } catch { /* socket already closed */ } },
   });
 
-  return { readable: ssReadable, writable: ssWritable };
+  return { readable: ssReadable, writable: ssWritable, close: reason => socket.close(reason) };
 };
 
 /**

@@ -20,7 +20,7 @@
 // the rest of the workspace happens to call — a root export with no in-repo
 // consumer is deliberate public API, not dead surface.
 
-export type { DuplexStream, Fetcher, FetchInit, HttpContentDecoders, HttpHeaderLines, HttpRequest, RawHttpResponse, ReplayableBody } from './types.ts';
+export type { DuplexStream, Fetcher, FetchInit, FetchResponse, HttpContentDecoders, HttpHeaderLines, HttpRequest, ProviderFetcher, ProviderFetchResult, RawHttpResponse, ReplayableBody, SocketHttpResponse } from './types.ts';
 export { isReplayableBody, toRequestInit } from './request-body.ts';
 
 export { fetchOnStream } from './fetch-on-stream.ts';
@@ -33,9 +33,14 @@ export type { CheckServerIdentity, PeerCertificateIdentity, UserspaceTlsOptions,
 export { wsUpgradeAndFrame } from './ws-upgrade.ts';
 export type { WsUpgradeOptions } from './ws-upgrade.ts';
 
-export { signalAbortReason } from './abort.ts';
+export { isCausedBy, signalAbortReason } from './abort.ts';
 
 export { HttpProtocolError } from './errors.ts';
 export type { HttpProtocolErrorCode } from './errors.ts';
 
 export { STATUS_LINE } from './grammar.ts';
+
+export type { HttpBodyError, HttpHeaderEntry, HttpHeaders, HttpRequestFact, HttpResponseFact, HttpStreamError } from './facts.ts';
+export { sendHttpRequest } from './fact-transport.ts';
+export { fetchWithTransportErrors, markTransportFailure, trackReadableFailure, transportReadable, UpstreamTransportError } from './upstream-transport.ts';
+export { appendHeader, deleteHeader, filterHeaders, getHeader, getHeaders, hasHeader, responseHeaderEntries, setHeader } from './headers.ts';

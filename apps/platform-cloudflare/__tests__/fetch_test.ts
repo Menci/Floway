@@ -1,6 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { cloudflareFetch } from '../src/fetch.ts';
+import { cloudflareFetch, cloudflareProviderFetch } from '../src/fetch.ts';
+import { sendHttpRequest, UpstreamTransportError } from '@floway-dev/http';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -61,4 +62,21 @@ test('returns an early response when the upstream stops consuming the upload', a
 
   expect(response.status).toBe(413);
   await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith(stopped));
+});
+
+test.each(['disconnect', 'unmarked', 'type error'] as const)('checks the exact workerd disconnect shape for %s', async kind => {
+  const failure = kind === 'type error' ? new TypeError('Network connection lost.') : new Error('Network connection lost.');
+  if (kind !== 'unmarked') Object.assign(failure, { retryable: true });
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({
+    pull(controller) { controller.error(failure); },
+  }))));
+  const result = await sendHttpRequest(cloudflareProviderFetch, { url: 'https://example.com', method: 'GET', headers: [], body: null }, new AbortController().signal);
+  if (!result.ok || result.value.body === null) throw new Error('Expected HTTP response bytes');
+  const pending = result.value.body.next();
+  if (kind === 'disconnect') {
+    await expect(pending).resolves.toMatchObject({ done: false, value: { ok: false, error: { kind: 'transport', cause: expect.any(UpstreamTransportError) } } });
+    await expect(result.value.body.next()).resolves.toMatchObject({ done: true });
+  } else {
+    await expect(pending).rejects.toBe(failure);
+  }
 });

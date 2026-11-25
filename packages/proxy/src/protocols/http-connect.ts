@@ -120,15 +120,12 @@ const dialHttpConnectInner = async (
     }
   })();
   // Always-on terminal handler routes peel errors into the forward stream
-  // so the next consumer sees them as transport failures rather than an
-  // unhandled rejection. The outer dial-time try/catch has already exited
-  // by the time this fires, so we ALSO close the socket here — once we
-  // return, the caller only holds wrapper streams and has no way to reach
-  // the raw socket.
+  // so the next consumer sees the failure. Close the socket here as well,
+  // since the tunnel can fail while no caller is reading its output.
   peelDone.catch(e => {
     fwdWriter.abort(e).catch(() => {});
     void socket.close().catch(() => {});
   });
 
-  return { readable: postConnect, writable: socket.writable };
+  return { readable: postConnect, writable: socket.writable, close: reason => socket.close(reason) };
 };

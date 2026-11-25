@@ -985,7 +985,7 @@ export { type CanonicalOpenAIResponsesCompactPayload, type OpenAIResponsesCompac
 export { openaiResponsesResultToEvents } from './from-result.ts';
 export { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
 export { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
-export { parseOpenAIResponsesStream, type ParseOpenAIResponsesStreamOptions } from './stream.ts';
+export { decodeOpenAIResponsesStream, parseOpenAIResponsesStream, type ParseOpenAIResponsesStreamOptions } from './stream.ts';
 
 export type {
   ClientResponseResource,

@@ -1,6 +1,9 @@
 import type net from 'node:net';
 import { PassThrough, pipeline, Readable } from 'node:stream';
 
+import { isNodeSocketFailure } from './network-failure.ts';
+import { markTransportFailure } from '@floway-dev/http';
+
 // Shared projection of a Node duplex socket (net.Socket or tls.TLSSocket)
 // onto the Web Streams duplex the rest of the workspace consumes. Both the
 // raw dialer and the native TLS upgrader need the same teardown and
@@ -37,9 +40,10 @@ export const socketToReadable = (socket: net.Socket): ReadableStream<Uint8Array>
 // is flushed and naturally backpressures behind socket buffering), close
 // half-closes the write side, abort destroys the socket, and a socket
 // 'error' propagates into the writer via controller.error().
-export const socketToWritable = (socket: net.Socket): WritableStream<Uint8Array> => {
+export const socketToWritable = (socket: net.Socket, signal?: AbortSignal): WritableStream<Uint8Array> => {
   let controller: WritableStreamDefaultController | null = null;
-  const onError = (err: Error): void => { controller?.error(err); };
+  const identify = (error: Error) => isNodeSocketFailure(error) ? markTransportFailure(error, signal) : error;
+  const onError = (err: Error): void => { controller?.error(identify(err)); };
   socket.on('error', onError);
   socket.once('close', () => { socket.off('error', onError); });
   return new WritableStream<Uint8Array>({
@@ -47,7 +51,7 @@ export const socketToWritable = (socket: net.Socket): WritableStream<Uint8Array>
     write(chunk) {
       return new Promise<void>((resolve, reject) => {
         socket.write(chunk, err => {
-          if (err) reject(err);
+          if (err) reject(identify(err));
           else resolve();
         });
       });

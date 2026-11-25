@@ -4,7 +4,8 @@ import { concat, utf8Bytes } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import { TCHAR, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
 import { parseHttpResponse, toWebResponse } from './parser.ts';
-import type { DuplexStream, HttpContentDecoders, HttpRequest, ReplayableBody } from './types.ts';
+import type { DuplexStream, HttpContentDecoders, HttpRequest, ReplayableBody, SocketHttpResponse } from './types.ts';
+import { UpstreamTransportError } from './upstream-transport.ts';
 
 // Plaintext chunk size used when streaming the request body to the writer.
 // Each writer.write() maps 1:1 to one record on a record-framed writer, so
@@ -58,7 +59,7 @@ export const fetchOnStream = async (
   request: HttpRequest,
   prefix?: Uint8Array,
   contentDecoders?: HttpContentDecoders,
-): Promise<Response> => {
+): Promise<SocketHttpResponse> => {
   // RFC 9110 §6.4.1: a HEAD response carries no body even when
   // Content-Length is set. Detecting that here is a one-line carve-out,
   // but the chunked/length body parsers below would otherwise hang
@@ -163,5 +164,9 @@ export const fetchOnStream = async (
     writer.releaseLock();
   }
 
-  return toWebResponse(await parseHttpResponse(stream.readable), contentDecoders);
+  const parsed = await parseHttpResponse(stream.readable).catch((cause: unknown) => {
+    if (cause instanceof HttpProtocolError) throw new UpstreamTransportError(cause);
+    throw cause;
+  });
+  return toWebResponse(parsed, contentDecoders);
 };

@@ -66,6 +66,7 @@ const dialTrojanInner = async (
   return {
     readable: outerTls.readable,
     writable: outerTls.writable,
+    close: reason => socket.close(reason),
     prefix: buildTrojanRequestHeader(config.password, target),
   };
 };

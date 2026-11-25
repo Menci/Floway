@@ -98,7 +98,7 @@ export const dialReality = async (
 
   try {
     const post = await runRealityHandshake(socket, config, serverPub, shortId, options.signal);
-    return await vlessFrameOverStream(post, config.uuid, target);
+    return { ...await vlessFrameOverStream(post, config.uuid, target), close: reason => socket.close(reason) };
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;

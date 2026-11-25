@@ -17,6 +17,7 @@ import { webcryptoCrypto } from '@reclaimprotocol/tls/webcrypto';
 import { signalAbortReason } from './abort.ts';
 import { copy } from './bytes.ts';
 import type { DuplexStream } from './types.ts';
+import { UpstreamTransportError } from './upstream-transport.ts';
 
 let cryptoInstalled = false;
 const ensureCrypto = (): void => {
@@ -77,7 +78,7 @@ export interface UserspaceTlsOptions {
    * Cancellation. Aborting before or during the handshake rejects the
    * userspaceTls promise, cancels the read pump, and releases the writer
    * lock so the caller can close the transport. After the handshake, the
-   * caller's ReadableStream cancel/WritableStream abort drive teardown.
+   * underlying transport drives the read outcome and stream teardown.
    */
   signal?: AbortSignal | undefined;
 }
@@ -232,6 +233,7 @@ export const userspaceTls = async (
   type PatchedTLSOptions = Parameters<typeof makeTLSClient>[0] & {
     verifyHost?: string | undefined;
     checkServerIdentity?: (identity: string, certificate: LibraryCertificate) => Promise<void>;
+    mapCertificateVerificationError?: (error: unknown) => unknown;
     onTlsEnd?: (error?: unknown) => void;
   };
   // A caller-supplied check runs only when the certificate is actually being
@@ -241,6 +243,7 @@ export const userspaceTls = async (
     host: opts.host,
     verifyHost: opts.verifyHost,
     verifyServerCertificate: !opts.insecure,
+    mapCertificateVerificationError: error => new UpstreamTransportError(error),
     // The library runs this before its chain walk and skips the hostname
     // match when it is present, so exactly one identity check happens and a
     // rejection is reported as an identity failure rather than a trust one.
@@ -357,9 +360,9 @@ export const userspaceTls = async (
   if (opts.signal) {
     const captured = opts.signal;
     const onAbort = (): void => {
+      if (handshakeOk) return;
       const reason = signalAbortReason(captured);
-      if (!handshakeOk) handshakeReject(reason);
-      else closePlain(reason);
+      handshakeReject(reason);
       void reader.cancel(reason).catch(() => {});
     };
     captured.addEventListener('abort', onAbort, { once: true });
@@ -374,6 +377,7 @@ export const userspaceTls = async (
   try {
     await tlsClient.startHandshake();
     await handshakeDone;
+    cleanupSignal();
   } catch (err) {
     cleanupSignal();
     // Handshake never completed: the reader still holds the transport.readable

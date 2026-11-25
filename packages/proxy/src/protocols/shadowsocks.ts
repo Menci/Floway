@@ -149,7 +149,7 @@ const dialShadowsocksInner = async (
     },
   });
 
-  return { readable: ssReadable, writable: ssWritable };
+  return { readable: ssReadable, writable: ssWritable, close: reason => socket.close(reason) };
 };
 
 const encryptFrame = (cipher: Aead, payload: Uint8Array, baseNonce: bigint): Uint8Array<ArrayBuffer> => {

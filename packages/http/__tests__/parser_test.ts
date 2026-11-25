@@ -10,6 +10,7 @@ import { brotliCompressSync, createBrotliDecompress, gzipSync } from 'node:zlib'
 import { describe, expect, it, vi } from 'vitest';
 
 import { collectBodyBytes, makeFakeDuplex, respondAndEnd } from './test-utils.ts';
+import { responseHeaderEntries } from '../src/headers.ts';
 import { parseHttpResponse, toWebResponse } from '../src/parser.ts';
 
 describe('parseHttpResponse — status-line grammar', () => {
@@ -74,6 +75,9 @@ describe('parseHttpResponse — header name grammar (RFC 9110 §5.1 token)', () 
     // The Headers view merges the repeated name; headerLines is the view that
     // does not.
     expect(r.headers.get('x-route')).toBe('one, two');
+    const response = toWebResponse(r);
+    expect(responseHeaderEntries(response)).toEqual(r.headerLines);
+    await response.body?.cancel();
   });
 
   it('drops the decoded Transfer-Encoding from both header views', async () => {
@@ -245,12 +249,13 @@ describe('toWebResponse', () => {
     expect(r.body).toBeNull();
   });
 
-  it('rejects a content coding the socket transport cannot decode', async () => {
-    await expect(async () => {
-      toWebResponse(await parseHttpResponse(respondAndEnd(
-        'HTTP/1.1 200 OK\r\nContent-Encoding: br\r\nContent-Length: 0\r\n\r\n',
-      )));
-    }).rejects.toMatchObject({
+  it('preserves the head while the body rejects an unsupported content coding', async () => {
+    const response = toWebResponse(await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 429 Too Many Requests\r\nContent-Encoding: br\r\nContent-Length: 0\r\n\r\n',
+    )));
+    expect(response.status).toBe(429);
+    expect(response.headers.get('content-encoding')).toBe('br');
+    await expect(response.text()).rejects.toMatchObject({
       name: 'HttpProtocolError',
       code: 'UNSUPPORTED_CONTENT_ENCODING',
     });
@@ -260,7 +265,7 @@ describe('toWebResponse', () => {
     const text = '{"error":{"type":"rate_limit_error"}}';
     const compressed = brotliCompressSync(gzipSync(text));
     const fake = makeFakeDuplex();
-    fake.respond(`HTTP/1.1 429 Too Many Requests\r\nContent-Encoding: gzip, Br\r\nContent-Length: ${compressed.length}\r\n\r\n`);
+    fake.respond(`HTTP/1.1 429 Too Many Requests\r\nContent-Encoding: gzip, Br\r\nContent-Length: ${compressed.length}\r\nX-Reply: one\r\nx-reply: two\r\n\r\n`);
     fake.respond(compressed);
     fake.endResponse();
     const response = toWebResponse(await parseHttpResponse(fake.readable), new Map([
@@ -270,15 +275,17 @@ describe('toWebResponse', () => {
     expect(await response.text()).toBe(text);
     expect(response.headers.get('content-encoding')).toBeNull();
     expect(response.headers.get('content-length')).toBeNull();
+    expect(responseHeaderEntries(response)).toEqual([['X-Reply', 'one'], ['x-reply', 'two']]);
   });
 
   it('preserves a codec initialization failure and cancels its input', async () => {
     const failure = new Error('codec initialization failed');
     const cancel = vi.fn();
     const body = new ReadableStream<Uint8Array>({ cancel });
-    expect(() => toWebResponse({
+    const response = toWebResponse({
       status: 429, statusText: 'Too Many Requests', headers: new Headers({ 'content-encoding': 'br' }), headerLines: [], body,
-    }, new Map([['br', () => { throw failure; }]]))).toThrow(failure);
+    }, new Map([['br', () => { throw failure; }]]));
+    await expect(response.text()).rejects.toBe(failure);
     expect(cancel).toHaveBeenCalledWith(failure);
   });
 });
