@@ -3,7 +3,7 @@ import type { ManagedStream } from '@floway-dev/pipeline';
 
 const encoder = new TextEncoder();
 
-export const responseHead = (status: number): HttpResponseFact => ({ status, statusText: '', headers: [], body: null });
+export const responseHead = (status: number, statusText = ''): HttpResponseFact => ({ status, statusText, headers: [], body: null });
 
 export const jsonResponseBody = (http: HttpResponseFact, value: unknown): HttpResponseFact => {
   const contentType = getHeader(http.headers, 'content-type');

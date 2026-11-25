@@ -78,7 +78,7 @@ const initialHttpFacts = (c: AuthedContext): GatewayHttpInput => {
 export const servePipeline = async <S extends RequestBodyService>(
   c: AuthedContext,
   pipeline: Pipeline<GatewayHttpInput, GatewayHttpOutput, S>,
-  createServices: (input: GatewayHostServicesInput) => Promise<NoInfer<S>>,
+  createServices: (input: GatewayHostServicesInput) => NoInfer<S> | Promise<NoInfer<S>>,
 ): Promise<Response> => {
   const facts = initialHttpFacts(c);
   const request = c.req.raw;

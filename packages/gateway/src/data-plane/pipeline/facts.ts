@@ -1,5 +1,6 @@
+import type { ComputedUsage } from './compute-usage.ts';
 import type { User } from '../../repo/types.ts';
-import { factSpace } from '@floway-dev/pipeline';
+import { factSpace, type Deferred } from '@floway-dev/pipeline';
 import type { DecisionProtocol, RerankSourceProtocol, AliasRules } from '@floway-dev/protocols/common';
 import type { GatewayFacts, ProviderModelFact, ProviderUpstream } from '@floway-dev/provider';
 
@@ -36,6 +37,7 @@ export type GatewayPipelineFacts = GatewayFacts & PipelineAuthFacts & {
   readonly 'serve.model': string;
   readonly 'serve.candidates': ServeCandidates;
   readonly 'serve.candidate': ServeCandidate;
+  readonly 'response.usage': Deferred<ComputedUsage>;
 };
 
 export type ProtocolResponseKey = Exclude<Extract<keyof GatewayFacts, `response.${string}`>, 'response.http' | 'response.modelKey'>;

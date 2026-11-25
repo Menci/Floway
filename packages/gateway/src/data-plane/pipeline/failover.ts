@@ -1,7 +1,7 @@
 import { gatewayFactSpace, type GatewayPipelineFacts, type ProtocolResponseKey, type ServeCandidate, type ServeCandidates } from './facts.ts';
 import { retryTime } from '../shared/iterate-candidates.ts';
 import { getHeader, type HttpResponseFact } from '@floway-dev/http';
-import { move, type Facts } from '@floway-dev/pipeline';
+import { isManagedStream, move, type Facts, type ManagedStream } from '@floway-dev/pipeline';
 
 const { defineStage } = gatewayFactSpace<{}>();
 
@@ -74,11 +74,11 @@ const chooseCandidate = async <Answer extends { readonly 'response.http': HttpRe
 
 const drainAnswer = async (answer: Facts): Promise<void> => {
   const visited = new WeakSet<object>();
-  const streams: AsyncIterable<unknown>[] = [];
+  const streams: ManagedStream<unknown, unknown>[] = [];
   const visit = (value: unknown) => {
     if (typeof value !== 'object' || value === null || ArrayBuffer.isView(value) || visited.has(value)) return;
     visited.add(value);
-    if (Symbol.asyncIterator in value) streams.push(value as AsyncIterable<unknown>);
+    if (isManagedStream(value)) streams.push(value);
     else for (const child of Object.values(value)) visit(child);
   };
   visit(answer);

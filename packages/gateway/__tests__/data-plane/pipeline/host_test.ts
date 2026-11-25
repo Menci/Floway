@@ -53,6 +53,45 @@ test('the HTTP host aborts on client cancellation and waits through native done'
   expect(finish).toHaveBeenCalledOnce();
 });
 
+test('a response body failure aborts the HTTP root before joining native done', async () => {
+  const client = new AbortController();
+  const failure = new Error('upstream response body failed');
+  const allowNativeDone = Promise.withResolvers<void>();
+  let drained = false;
+  const ending = defineStage({
+    name: 'test.failing-body',
+    request: { needs: [] },
+    return: { provides: ['response.http'] },
+    async execute(_facts, scope) {
+      const body = scope.createStream(async function* ({ signal }): AsyncIterable<Result<Uint8Array, HttpStreamError>> {
+        yield { ok: true, value: new TextEncoder().encode('first') };
+        yield { ok: false, error: { kind: 'transport', cause: failure } };
+        expect(signal.reason).toBe(failure);
+        await allowNativeDone.promise;
+        drained = true;
+      });
+      return { 'response.http': move({ ...responseHead(200), body }) };
+    },
+  });
+  const pipeline = compose('test.failing-body', { entry: [], exit: ['response.http'], stages: [], ending });
+  const finish = vi.fn();
+  const handle = startPipeline(pipeline, {}, {}, client.signal, { event: () => {}, finish });
+  const response = writeHttpResponse((await handle.result)['response.http']!, handle.root);
+
+  const reader = response.body!.getReader();
+  expect(new TextDecoder().decode((await reader.read()).value)).toBe('first');
+  try {
+    await expect(reader.read()).rejects.toBe(failure);
+    expect(handle.root.signal.reason).toBe(failure);
+    expect(finish).not.toHaveBeenCalled();
+  } finally {
+    allowNativeDone.resolve();
+  }
+  await handle.done;
+  expect(drained).toBe(true);
+  expect(finish).toHaveBeenCalledOnce();
+});
+
 test('the HTTP host renders a pre-response pipeline panic with its stack and joins finalization', async () => {
   const { apiKey } = await setupAppTest();
   const background: Promise<unknown>[] = [];

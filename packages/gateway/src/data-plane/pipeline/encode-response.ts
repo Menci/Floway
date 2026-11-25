@@ -1,8 +1,10 @@
 import { gatewayFactSpace, type ClientDelivery, type GatewayPipelineFacts, type ProtocolResponseKey } from './facts.ts';
+import { isHttpStreamError } from './protocol-outcome.ts';
 import { jsonResponseBody, responseHead } from './response.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
-import { filterHeaders, isHttpBodyStream, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
+import { filterHeaders, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
 import { move, type ManagedStream, type Result } from '@floway-dev/pipeline';
+import { toInternalDebugError, type ProtocolError } from '@floway-dev/provider';
 
 const { defineStage } = gatewayFactSpace<{}>();
 
@@ -30,7 +32,19 @@ export type ProtocolRenderer<Key extends ProtocolResponseKey> = (
 export const renderJsonResult = (outcome: { readonly kind: 'result'; readonly result: unknown }, http: HttpResponseFact): HttpResponseFact =>
   jsonResponseBody(http, outcome.result);
 
-export const encodeResponse = <const Key extends ProtocolResponseKey>(responseKey: Key, render: ProtocolRenderer<Key>) => {
+const renderTransportError = (outcome: ProtocolError): HttpResponseFact => {
+  const head = responseHead(502, 'Bad Gateway');
+  const { cause } = outcome;
+  return jsonResponseBody(head, outcome.source === 'upstream' && isHttpStreamError(cause)
+    ? { error: toInternalDebugError(cause.cause) }
+    : outcome.error);
+};
+
+export const encodeResponse = <const Key extends ProtocolResponseKey>(
+  responseKey: Key,
+  render: ProtocolRenderer<Key>,
+  renderWithoutHttp: (outcome: ProtocolError) => HttpResponseFact = renderTransportError,
+) => {
   const through = {
     request: { needs: ['request.delivery'], provides: [], consumes: [] },
     response: { needs: ['response.http', responseKey], provides: ['response.http'], consumes: [responseKey] },
@@ -50,22 +64,13 @@ export const encodeResponse = <const Key extends ProtocolResponseKey>(responseKe
         body: null,
       };
 
-      const abort = (): void => { scope.abort(call); };
-      if (http !== null && isHttpBodyStream(http.body)) {
-        if (outcome.kind === 'stream') throw new TypeError('A protocol stream requires an empty HTTP body');
-        abort();
-        for await (const _ of http.body) {
-          // The protocol result replaces this branch's HTTP body.
-        }
-      }
-
       const renderOutcome = async (): Promise<HttpResponseFact> => {
-        if (outcome.kind === 'error') return jsonResponseBody(head ?? responseHead(502), outcome.error);
+        if (outcome.kind === 'error') return head === null ? renderWithoutHttp(outcome) : jsonResponseBody(head, outcome.error);
         if (head === null) throw new TypeError('A protocol success requires an HTTP response head');
 
         return await render(outcome as Success<Key>, head, facts['request.delivery'], {
           signal: scope.signal,
-          abort,
+          abort: () => { scope.abort(call); },
           wrapStream: (stream, produce) => scope.wrapStream(stream, (source, producer) => produce(source, {
             signal: producer.signal,
             abort: () => { producer.abort(call); },

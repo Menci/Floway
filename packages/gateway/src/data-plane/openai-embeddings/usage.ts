@@ -1,10 +1,9 @@
-import type { TokenUsage } from '../../repo/types.ts';
-import { tokenUsage } from '../shared/telemetry/usage.ts';
+import { tokenUsageMeasurement, type UsageMeasurement } from '../shared/telemetry/usage.ts';
+import { isJsonObject, isRawNumber, type JsonObject } from '@floway-dev/protocols/common';
 
-export const tokenUsageFromOpenAIEmbeddingsBody = (body: unknown): TokenUsage | null => {
-  if (!body || typeof body !== 'object') return null;
-  const { usage } = body as { usage?: unknown };
-  if (!usage || typeof usage !== 'object') return null;
-  const promptTokens = (usage as { prompt_tokens?: unknown }).prompt_tokens;
-  return typeof promptTokens === 'number' ? tokenUsage({ input: promptTokens }) : null;
+export const measureOpenAIEmbeddingsUsage = ({ usage }: JsonObject): UsageMeasurement | null => {
+  if (!isJsonObject(usage)) return null;
+  const reported = usage.prompt_tokens;
+  const tokens = isRawNumber(reported) ? Number((reported as { rawJSON: string }).rawJSON) : reported;
+  return typeof tokens === 'number' && Number.isFinite(tokens) && tokens >= 0 ? tokenUsageMeasurement({ input: tokens }) : null;
 };

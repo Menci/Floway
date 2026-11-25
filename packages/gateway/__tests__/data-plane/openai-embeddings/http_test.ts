@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
@@ -122,4 +123,110 @@ test('/v1/embeddings reports a missing model when /v1/models rejects', async () 
       expect(await response.json()).toMatchObject({ error: { type: 'api_error' } });
     },
   );
+});
+
+const registerEmbeddingUpstream = async (
+  repo: Awaited<ReturnType<typeof setupAppTest>>['repo'],
+  id: string,
+  sortOrder: number,
+): Promise<void> => {
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    id,
+    sortOrder,
+    config: {
+      baseUrl: `https://${id}.example.com`,
+      apiKey: 'upstream-credential',
+      endpoints: {},
+      ingressHeadersRules: [{ key: 'x-trace', value: null }],
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
+      models: [{ upstreamModelId: 'embedding-model', endpoints: { openaiEmbeddings: {} } }],
+    },
+  }));
+};
+
+const requestEmbedding = (apiKey: string): Promise<Response> => requestAppWithWarmModels('/v1/embeddings', {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/json',
+    'x-api-key': apiKey,
+    'x-goog-api-key': 'unused-floway-credential',
+    'x-trace': 'trace-value',
+  },
+  body: JSON.stringify({ model: 'embedding-model', input: 'hello' }),
+});
+
+test('/v1/embeddings meters both candidates and records upstream-reported zero', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await registerEmbeddingUpstream(repo, 'first', 1);
+  await registerEmbeddingUpstream(repo, 'second', 2);
+  const calls: string[] = [];
+
+  await withMockedFetch(async request => {
+    const url = new URL(request.url);
+    expect(url.pathname).toBe('/v1/embeddings');
+    expect(request.headers.get('x-goog-api-key')).toBeNull();
+    expect(request.headers.get('x-api-key')).toBeNull();
+    expect(request.headers.get('authorization')).toBe('Bearer upstream-credential');
+    expect(request.headers.get('x-trace')).toBe('trace-value');
+    expect(await request.json()).toEqual({ model: 'embedding-model', input: 'hello' });
+    calls.push(url.hostname);
+    if (url.hostname === 'first.example.com') return jsonResponse({ error: { message: 'rejected' } }, 400);
+    return new Response('{"data":[],"usage":{"prompt_tokens":0}}', { headers: { 'x-upstream-request-id': 'kept' } });
+  }, async () => {
+    const response = await requestEmbedding(apiKey.key);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-upstream-request-id')).toBe('kept');
+    expect(await response.json()).toEqual({ data: [], usage: { prompt_tokens: 0 } });
+  });
+  await flushBackground();
+
+  expect(calls).toEqual(['first.example.com', 'second.example.com']);
+  expect(await repo.usage.listAll()).toMatchObject([{
+    upstream: 'second', modelKey: 'embedding-model', requests: 1, metrics: [{ metric: 'input_tokens', quantity: '0' }],
+  }]);
+  expect(await repo.performance.listAll()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ upstream: 'first', operation: 'embeddings', requests: 1, errorsNoOutput: 1 }),
+    expect.objectContaining({ upstream: 'second', operation: 'embeddings', requests: 1, neutral: 1 }),
+  ]));
+});
+
+test.each([
+  { wire: '{"vendor_code":9007199254740993}', type: 'application/problem+json', expected: '{"vendor_code":9007199254740993}' },
+  { wire: 'vendor declined', type: 'text/plain', expected: '{"error":{"message":"vendor declined","type":"api_error"}}' },
+])('/v1/embeddings renders $type upstream failures into JSON', async ({ wire, type, expected }) => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await registerEmbeddingUpstream(repo, 'rejecting', 1);
+  await withMockedFetch(() => new Response(wire, {
+    status: 422,
+    headers: { 'content-type': type, 'x-upstream-request-id': 'failure-id' },
+  }), async () => {
+    const response = await requestEmbedding(apiKey.key);
+    expect(response.status).toBe(422);
+    expect(response.headers.get('x-upstream-request-id')).toBe('failure-id');
+    expect(await response.text()).toBe(expected);
+  });
+  await flushBackground();
+
+  expect(await repo.usage.listAll()).toEqual([]);
+  expect(await repo.performance.listAll()).toMatchObject([{ upstream: 'rejecting', errorsNoOutput: 1 }]);
+});
+
+test('/v1/embeddings renders the terminal dial failure with its diagnostic envelope', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await registerEmbeddingUpstream(repo, 'unreachable', 1);
+  await withMockedFetch(() => { throw new TypeError('connection refused'); }, async () => {
+    const response = await requestEmbedding(apiKey.key);
+    expect(response.status).toBe(502);
+    expect(response.statusText).toBe('Bad Gateway');
+    expect(await response.json()).toMatchObject({
+      error: { type: 'internal_error', name: 'UpstreamTransportError', message: 'connection refused', cause: { name: 'TypeError' } },
+    });
+  });
+  await flushBackground();
+
+  expect(await repo.usage.listAll()).toEqual([]);
+  expect(await repo.performance.listAll()).toMatchObject([{ upstream: 'unreachable', errorsNoOutput: 1 }]);
 });

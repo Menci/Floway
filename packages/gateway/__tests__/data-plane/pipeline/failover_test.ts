@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import { gatewayFactSpace, type ServeCandidate } from '../../../src/data-plane/pipeline/facts.ts';
 import { failover } from '../../../src/data-plane/pipeline/failover.ts';
+import { providerSupportsOperation } from '../../../src/data-plane/pipeline/provider-pipelines.ts';
 import { responseHead } from '../../../src/data-plane/pipeline/response.ts';
 import { getHeader, type HttpStreamError } from '@floway-dev/http';
 import { move, run, type Result } from '@floway-dev/pipeline';
@@ -108,4 +109,39 @@ test('failover aborts the losing child, awaits its native completion, and stops 
   expect((await answer)[responseKey]).toEqual({ kind: 'result', result: { id: 'winner' } });
   await handle.done;
   expect(drained).toBe(true);
+});
+
+test('failover skips providers without a handle for the discovered operation', async () => {
+  const calls: string[] = [];
+  const wrongKind = candidate('wrong-kind');
+  const unsupported: ServeCandidate = { ...wrongKind, upstream: { ...wrongKind.upstream, kind: 'claude-code' } };
+  const ending = defineStage({
+    name: 'test.return-supported-result',
+    request: { needs: ['serve.candidate'] },
+    return: { provides: ['response.http', responseKey] },
+    async execute(facts) {
+      const { id } = facts['serve.candidate'].upstream;
+      calls.push(id);
+      return {
+        'response.http': move(responseHead(200)),
+        [responseKey]: move({ kind: 'result', result: { id } }),
+      };
+    },
+  });
+  const select = failover(responseKey, () => { throw new Error('Expected the supported candidate'); },
+    item => providerSupportsOperation(item.upstream.kind, 'openaiEmbeddings'));
+  const pipeline = compose('test.operation-selection', {
+    entry: ['serve.model', 'serve.candidates'], exit: ['response.http', responseKey], stages: [select], ending,
+  });
+  const handle = run(pipeline, {
+    'serve.model': 'public-model',
+    'serve.candidates': move({
+      candidates: [unsupported, candidate('supported')],
+      sawModel: true,
+      failedUpstreams: [],
+    }),
+  }, { services: {} });
+  expect((await handle.result)[responseKey]).toEqual({ kind: 'result', result: { id: 'supported' } });
+  expect(calls).toEqual(['supported']);
+  await handle.done;
 });
