@@ -1,4 +1,4 @@
-import { extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
+import { extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, readWebSearchIo, readWebSearchJson, toWebSearchTextBlocks, validateWebSearchQuery, webSearchUnavailable } from './shared.ts';
 import { truncateUtf8 } from './truncate.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { normalizeDomainList } from '../domain-normalize.ts';
@@ -109,44 +109,43 @@ type ReadOutcome =
   | { kind: 'fail'; url: string; httpStatus: number; message: string };
 
 const readOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string, signal?: AbortSignal): Promise<ReadOutcome> => {
-  try {
-    const response = await fetchWithRetry(
-      () => httpFetch(JINA_READER_URL, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          accept: 'application/json',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ url }),
-        ...(signal !== undefined ? { signal } : {}),
-      }),
-      signal,
-    );
+  const fetched = await fetchWithRetry(
+    () => httpFetch(JINA_READER_URL, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        accept: 'application/json',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ url }),
+      ...(signal !== undefined ? { signal } : {}),
+    }),
+    signal,
+  );
+  if (!fetched.ok) return { kind: 'fail', url, httpStatus: 0, message: webSearchUnavailable(fetched.error).message };
+  const response = fetched.value;
 
-    if (!response.ok) {
-      const message = (await extractWebSearchProviderErrorMessage(response)) ?? `HTTP ${response.status}`;
-      return { kind: 'fail', url, httpStatus: response.status, message };
-    }
-
-    const payload = await response.json();
-    const envelope = parseEnvelope(payload);
-    if (envelope === null) {
-      return { kind: 'fail', url, httpStatus: response.status, message: 'Jina reader returned an unexpected payload shape.' };
-    }
-
-    const page = extractReaderPage(envelope, url);
-    if (page === null) {
-      return { kind: 'fail', url, httpStatus: response.status, message: envelope.message ?? 'Jina reader returned no content.' };
-    }
-
-    return { kind: 'ok', ...page };
-  } catch (error) {
-    // httpStatus=0 signals a transport-level failure (network, abort, etc.)
-    // so the batch collapsing rule downstream can distinguish "Jina is
-    // unreachable" from "one URL was rejected".
-    return { kind: 'fail', url, httpStatus: 0, message: error instanceof Error ? error.message : String(error) };
+  if (!response.ok) {
+    const diagnostic = await extractWebSearchProviderErrorMessage(response, signal);
+    if (!diagnostic.ok) return { kind: 'fail', url, httpStatus: 0, message: webSearchUnavailable(diagnostic.error).message };
+    const message = diagnostic.value ?? `HTTP ${response.status}`;
+    return { kind: 'fail', url, httpStatus: response.status, message };
   }
+
+  const parsed = await readWebSearchJson(response, signal);
+  if (!parsed.ok) return { kind: 'fail', url, httpStatus: 0, message: webSearchUnavailable(parsed.error).message };
+  const payload = parsed.value;
+  const envelope = parseEnvelope(payload);
+  if (envelope === null) {
+    return { kind: 'fail', url, httpStatus: response.status, message: 'Jina reader returned an unexpected payload shape.' };
+  }
+
+  const page = extractReaderPage(envelope, url);
+  if (page === null) {
+    return { kind: 'fail', url, httpStatus: response.status, message: envelope.message ?? 'Jina reader returned no content.' };
+  }
+
+  return { kind: 'ok', ...page };
 };
 
 export const createJinaWebSearchProvider = (apiKey: string, deps?: { fetch?: typeof fetch }): WebSearchProvider => {
@@ -193,52 +192,47 @@ export const createJinaWebSearchProvider = (apiKey: string, deps?: { fetch?: typ
     // more results, even ones it might filter post-hoc, beats failing a
     // call it could have used.
 
-    try {
-      const response = await httpFetch(`${JINA_SEARCH_URL}?${params.toString()}`, {
-        method: 'GET',
-        headers,
-        ...(request.signal !== undefined ? { signal: request.signal } : {}),
-      });
+    const fetched = await readWebSearchIo(httpFetch(`${JINA_SEARCH_URL}?${params.toString()}`, {
+      method: 'GET',
+      headers,
+      ...(request.signal !== undefined ? { signal: request.signal } : {}),
+    }), request.signal);
+    if (!fetched.ok) return webSearchUnavailable(fetched.error);
+    const response = fetched.value;
 
-      const payload = await response.json().catch(() => null);
-      const envelope = parseEnvelope(payload);
+    const parsed = await readWebSearchJson(response, request.signal);
+    if (!parsed.ok && !(parsed.error instanceof SyntaxError)) return webSearchUnavailable(parsed.error);
+    const envelope = parsed.ok ? parseEnvelope(parsed.value) : null;
 
-      if (!response.ok) {
-        // Jina returns "no results" as an HTTP 4xx with
-        // `AssertionFailureError`. Surface that as an empty result list
-        // instead of a hard error, matching how Tavily and Microsoft Web IQ
-        // hand back an empty `results` array on no hits.
-        if (envelope !== null && isAssertionEmptyResults(envelope)) {
-          return { type: 'ok', results: [] };
-        }
-        return {
-          type: 'error',
-          errorCode: httpStatusToErrorCode(response.status),
-          message: envelope?.message ?? `Jina search failed (HTTP ${response.status}).`,
-        };
+    if (!response.ok) {
+      // Jina returns "no results" as an HTTP 4xx with
+      // `AssertionFailureError`. Surface that as an empty result list
+      // instead of a hard error, matching how Tavily and Microsoft Web IQ
+      // hand back an empty `results` array on no hits.
+      if (envelope !== null && isAssertionEmptyResults(envelope)) {
+        return { type: 'ok', results: [] };
       }
+      return {
+        type: 'error',
+        errorCode: httpStatusToErrorCode(response.status),
+        message: envelope?.message ?? `Jina search failed (HTTP ${response.status}).`,
+      };
+    }
 
-      if (envelope === null || !Array.isArray(envelope.data)) {
-        return {
-          type: 'error',
-          errorCode: 'unavailable',
-          message: 'Jina search returned an unexpected payload shape; check provider status.',
-        };
-      }
-
-      const results = envelope.data
-        .map(normalizeSearchResult)
-        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-        .slice(0, limit);
-
-      return { type: 'ok', results };
-    } catch (error) {
+    if (envelope === null || !Array.isArray(envelope.data)) {
       return {
         type: 'error',
         errorCode: 'unavailable',
-        message: error instanceof Error ? error.message : 'Jina search failed.',
+        message: 'Jina search returned an unexpected payload shape; check provider status.',
       };
     }
+
+    const results = envelope.data
+      .map(normalizeSearchResult)
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      .slice(0, limit);
+
+    return { type: 'ok', results };
   };
 
   const fetchPage = async (request: WebSearchFetchPageRequest): Promise<WebSearchFetchPageResult> => {

@@ -704,7 +704,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative synthesizes usage omitted 
   });
 });
 
-test('rewriteAnthropicMessagesWebSearchEventsToNative surfaces unavailable when provider throws on second search', async () => {
+test('rewriteAnthropicMessagesWebSearchEventsToNative surfaces unavailable when the second search returns an error', async () => {
   let providerCalls = 0;
   const events = await runStreamingShim(
     [
@@ -716,7 +716,7 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative surfaces unavailable when 
     activeAnthropicMessagesWebSearchShimState({ priorSearchUseCount: 0 }),
     activeProvider(searchOnlyProvider(() => {
       providerCalls += 1;
-      if (providerCalls === 2) return Promise.reject(new Error('boom'));
+      if (providerCalls === 2) return Promise.resolve({ type: 'error', errorCode: 'unavailable' });
       return Promise.resolve({ type: 'ok', results: [] });
     })),
   );
@@ -728,6 +728,15 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative surfaces unavailable when 
 
   const messageDelta = events.find(event => event.type === 'message_delta');
   assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 2, web_fetch_requests: 0 });
+});
+
+test('rewriteAnthropicMessagesWebSearchEventsToNative propagates a provider defect', async () => {
+  const defect = new TypeError('search mapping failed');
+  await expect(runStreamingShim(
+    [upstreamMessageStart(), ...upstreamWebSearchBlock(0, 'toolu_1', 'query'), ...upstreamMessageEnd('tool_use')],
+    activeAnthropicMessagesWebSearchShimState(),
+    activeProvider(searchOnlyProvider(() => Promise.reject(defect))),
+  )).rejects.toBe(defect);
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative emits max_uses_exceeded once limit is hit', async () => {

@@ -68,3 +68,32 @@ test('open_page does not guess when multiple redirected pages are ambiguous', as
     expect(ir.results[0]?.snippet).toContain('No page returned');
   }
 });
+
+test('search maps a provider error to a snippet and propagates a mapping defect', async () => {
+  const parsed = parseWebSearchOperations({ search_query: [{ q: 'test query' }] });
+  assert(parsed.kind === 'ops');
+  const session = sessionFor({ type: 'ok', pages: [], failures: [] });
+  const result = await executeOperationToIr(parsed.ops[0], {
+    ...session,
+    search: () => Promise.resolve({ type: 'error', errorCode: 'unavailable', message: 'Search upstream offline' }),
+  }, new Map());
+  expect(result.results[0]?.snippet).toContain('Search upstream offline');
+
+  const defect = new TypeError('unexpected search result access');
+  await expect(executeOperationToIr(parsed.ops[0], {
+    ...session,
+    search: () => Promise.resolve({ type: 'ok', get results(): never { throw defect; } }),
+  }, new Map())).rejects.toBe(defect);
+});
+
+test('open_page maps a provider error to a snippet and propagates a mapping defect', async () => {
+  const url = 'https://example.com/page';
+  const { parsed, ops } = openOps([url]);
+  const session = sessionFor({ type: 'error', errorCode: 'unavailable', message: 'Page upstream offline' });
+  const result = await executeOperationToIr(ops[0], session, await startBatchFetch(parsed, session));
+  expect(result.results[0]?.snippet).toContain('Page upstream offline');
+
+  const defect = new TypeError('unexpected page result access');
+  const brokenSession = sessionFor({ type: 'ok', get pages(): never { throw defect; }, failures: [] });
+  await expect(startBatchFetch(parsed, brokenSession)).rejects.toBe(defect);
+});

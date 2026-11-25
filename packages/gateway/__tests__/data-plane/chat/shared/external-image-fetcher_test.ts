@@ -1,8 +1,8 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { createExternalImageFetcher } from '../../../../src/data-plane/chat/shared/external-image-fetcher.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
-import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assert, assertEquals } from '@floway-dev/test-utils';
 
 test('external image fetcher follows relative redirects and memoizes one request chain', async () => {
   const requested: string[] = [];
@@ -63,14 +63,56 @@ test('external image fetcher cancels a streamed body beyond the byte limit', asy
   assertEquals(cancelled, true);
 });
 
-test('external image fetcher propagates downstream cancellation', async () => {
+test('external image fetcher returns the downstream cancellation reason as a failure value', async () => {
   const controller = new AbortController();
-  controller.abort(new Error('downstream cancelled'));
+  const reason = new Error('downstream cancelled');
+  controller.abort(reason);
   initExternalResourceFetcher(() => Promise.reject(new Error('should not fetch')));
 
-  await assertRejects(
-    () => createExternalImageFetcher(controller.signal)('https://example.com/image.png'),
-    Error,
-    'downstream cancelled',
-  );
+  const result = await createExternalImageFetcher(controller.signal)('https://example.com/image.png');
+  expect(result).toEqual({ type: 'transport-error', error: reason });
+});
+
+test('external image fetcher returns I/O failures and propagates an unrelated error after abort', async () => {
+  const controller = new AbortController();
+  const transport = new TypeError('fetch failed');
+  initExternalResourceFetcher(() => Promise.reject(transport));
+  expect(await createExternalImageFetcher()('https://example.com/image.png'))
+    .toEqual({ type: 'transport-error', error: transport });
+
+  const terminated = new TypeError('terminated');
+  initExternalResourceFetcher(() => Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+    start(stream) { stream.error(terminated); },
+  }))));
+  expect(await createExternalImageFetcher()('https://example.com/image.png'))
+    .toEqual({ type: 'transport-error', error: terminated });
+
+  initExternalResourceFetcher(() => Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+    cancel() { return Promise.reject(terminated); },
+  }), { status: 404 })));
+  expect(await createExternalImageFetcher()('https://example.com/image.png'))
+    .toEqual({ type: 'transport-error', error: terminated });
+
+  const defect = new TypeError('unexpected egress failure');
+  initExternalResourceFetcher(() => {
+    controller.abort();
+    return Promise.reject(defect);
+  });
+  await expect(createExternalImageFetcher(controller.signal)('https://example.com/image.png'))
+    .rejects.toBe(defect);
+});
+
+test('external image fetcher matches its timeout by reason', async () => {
+  const timeout = new AbortController();
+  const timer = vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(timeout.signal);
+  try {
+    initExternalResourceFetcher((_url, signal) => {
+      timeout.abort(new DOMException('download timeout', 'TimeoutError'));
+      expect(signal.reason).toBe(timeout.signal.reason);
+      return Promise.reject(signal.reason);
+    });
+    await expect(createExternalImageFetcher()('https://example.com/image.png')).resolves.toEqual({ type: 'timeout' });
+  } finally {
+    timer.mockRestore();
+  }
 });

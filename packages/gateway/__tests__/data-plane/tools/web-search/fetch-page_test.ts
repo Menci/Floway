@@ -1,4 +1,4 @@
-import { beforeEach, test } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 import { fetchPageAndRecordUsage } from '../../../../src/data-plane/tools/web-search/fetch-page.ts';
 import type { WebSearchFetchPageResult, WebSearchProvider } from '../../../../src/data-plane/tools/web-search/types.ts';
@@ -53,4 +53,24 @@ test('fetchPageAndRecordUsage rethrows AND records when provider call throws (tr
   const records = await repo.webSearchUsage.listAll();
   assertEquals(records.length, 1);
   assertEquals(records[0].requests, 1);
+});
+
+test('fetchPageAndRecordUsage logs a write rejection and propagates a telemetry argument defect', async () => {
+  const writeError = new Error('write failed');
+  repo.webSearchUsage.record = () => Promise.reject(writeError);
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const args = { provider: stubProvider(okResult), providerName: 'tavily' as const, keyId: 'k1' };
+  try {
+    await expect(fetchPageAndRecordUsage({ ...args, request: { urls: ['https://a.com'] } })).resolves.toEqual(okResult);
+    expect(log).toHaveBeenCalledWith('Web search usage record error:', writeError);
+
+    const defect = new TypeError('unexpected URLs access');
+    await expect(fetchPageAndRecordUsage({
+      ...args,
+      request: { get urls(): never { throw defect; } },
+    })).rejects.toBe(defect);
+    expect(log).toHaveBeenCalledOnce();
+  } finally {
+    log.mockRestore();
+  }
 });

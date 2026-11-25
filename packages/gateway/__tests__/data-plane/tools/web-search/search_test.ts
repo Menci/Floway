@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { runWebSearchAndRecordUsage } from '../../../../src/data-plane/tools/web-search/search.ts';
 import type { WebSearchProvider } from '../../../../src/data-plane/tools/web-search/types.ts';
@@ -9,6 +9,17 @@ import { assertEquals } from '@floway-dev/test-utils';
 const stubProvider = (search: WebSearchProvider['search']): WebSearchProvider => ({
   search,
   fetchPage: () => Promise.reject(new Error('fetchPage should not be called from search test')),
+});
+
+test('runWebSearchAndRecordUsage propagates a telemetry argument defect', async () => {
+  initRepo(new InMemoryRepo());
+  const defect = new TypeError('unexpected provider name access');
+  await expect(runWebSearchAndRecordUsage({
+    get providerName(): never { throw defect; },
+    keyId: 'key_d',
+    request: { query: 'React' },
+    provider: stubProvider(() => Promise.resolve({ type: 'ok', results: [] })),
+  })).rejects.toBe(defect);
 });
 
 test('runWebSearchAndRecordUsage returns provider result when recording fails', async () => {

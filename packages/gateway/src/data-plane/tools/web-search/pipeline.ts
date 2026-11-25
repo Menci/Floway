@@ -1,7 +1,7 @@
 import { fetchPageAndRecordUsage } from './fetch-page.ts';
 import { runWebSearchAndRecordUsage } from './search.ts';
 import type { GatewayServices } from '../../pipeline/services.ts';
-import { factSpace, move, type Pipeline, type Result } from '@floway-dev/pipeline';
+import { factSpace, move, type Pipeline } from '@floway-dev/pipeline';
 
 interface Runner {
   readonly run: <I, O>(pipeline: Pipeline<I, O, GatewayServices>, facts: NoInfer<I>) => Promise<O>;
@@ -16,7 +16,7 @@ const backendCall = async <Request extends { signal?: AbortSignal | undefined },
   const { compose, defineStage } = factSpace<{
     readonly 'request.auth.apiKeyId': string;
     readonly 'request.webSearch': Omit<Request, 'signal'>;
-    readonly 'response.webSearch': Result<Output, unknown>;
+    readonly 'response.webSearch': Output;
   }, GatewayServices>();
   const entry = ['request.webSearch', 'request.auth.apiKeyId'] as const;
   const exit = ['response.webSearch'] as const;
@@ -30,24 +30,17 @@ const backendCall = async <Request extends { signal?: AbortSignal | undefined },
       request: { needs: entry },
       return: { provides: exit },
       async execute(facts, scope) {
-        let response: Result<Output, unknown>;
-        try {
-          response = {
-            ok: true,
-            value: await execute({ ...facts['request.webSearch'], signal: scope.signal } as Request, facts['request.auth.apiKeyId']),
-          };
-        } catch (error) {
-          response = { ok: false, error };
-        }
+        const response = await execute(
+          { ...facts['request.webSearch'], signal: scope.signal } as Request,
+          facts['request.auth.apiKeyId'],
+        );
         return { 'response.webSearch': move(response) };
       },
     }),
   });
   const { signal: _signal, ...request } = args.request;
   const answer = await runner.run(pipeline, { 'request.webSearch': move(request), 'request.auth.apiKeyId': args.keyId });
-  const response = answer['response.webSearch'];
-  if (!response.ok) throw response.error;
-  return response.value;
+  return answer['response.webSearch'];
 };
 
 export const runWebSearchSubrequest = (runner: Runner, args: Parameters<typeof runWebSearchAndRecordUsage>[0]) =>

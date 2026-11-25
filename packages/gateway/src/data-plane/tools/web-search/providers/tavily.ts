@@ -1,4 +1,4 @@
-import { extractWebSearchProviderErrorMessage, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
+import { extractWebSearchProviderErrorMessage, httpStatusToErrorCode, readWebSearchIo, readWebSearchJson, toWebSearchTextBlocks, validateWebSearchQuery, webSearchUnavailable } from './shared.ts';
 import { truncateUtf8 } from './truncate.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { normalizeDomainList } from '../domain-normalize.ts';
@@ -89,156 +89,152 @@ export const createTavilyWebSearchProvider = (apiKey: string, deps?: { fetch?: t
             : 'year';
     }
 
-    try {
-      const response = await httpFetch(TAVILY_SEARCH_URL, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        ...(request.signal !== undefined ? { signal: request.signal } : {}),
-      });
+    const fetched = await readWebSearchIo(httpFetch(TAVILY_SEARCH_URL, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      ...(request.signal !== undefined ? { signal: request.signal } : {}),
+    }), request.signal);
+    if (!fetched.ok) return webSearchUnavailable(fetched.error);
+    const response = fetched.value;
 
-      if (!response.ok) {
-        const message = await extractWebSearchProviderErrorMessage(response);
-        if (response.status === 429) {
-          return {
-            type: 'error',
-            errorCode: httpStatusToErrorCode(response.status),
-            message: message ?? 'Tavily rate limited the request.',
-          };
-        }
-
-        if (response.status === 400) {
-          return {
-            type: 'error',
-            errorCode: httpStatusToErrorCode(response.status),
-            message: message ?? 'Tavily rejected the search query.',
-          };
-        }
-
-        if (response.status === 413) {
-          return {
-            type: 'error',
-            errorCode: httpStatusToErrorCode(response.status),
-            message: message ?? 'Tavily rejected the request as too large.',
-          };
-        }
-
+    if (!response.ok) {
+      const diagnostic = await extractWebSearchProviderErrorMessage(response, request.signal);
+      if (!diagnostic.ok) return webSearchUnavailable(diagnostic.error);
+      const message = diagnostic.value;
+      if (response.status === 429) {
         return {
           type: 'error',
           errorCode: httpStatusToErrorCode(response.status),
-          message: message ?? 'Tavily search failed.',
+          message: message ?? 'Tavily rate limited the request.',
         };
       }
 
-      const payload = await response.json();
-      const limit = request.maxResults ?? DEFAULT_WEB_SEARCH_RESULT_COUNT;
-      // Unexpected payload shape is a backend contract violation;
-      // returning empty results would mask a real Tavily outage.
-      if (!isJsonObject(payload) || !Array.isArray(payload.results)) {
+      if (response.status === 400) {
         return {
           type: 'error',
-          errorCode: 'unavailable',
-          message: 'Tavily returned an unexpected payload shape; check provider status.',
+          errorCode: httpStatusToErrorCode(response.status),
+          message: message ?? 'Tavily rejected the search query.',
         };
       }
-      const results = payload.results.map(normalizeResult).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+      if (response.status === 413) {
+        return {
+          type: 'error',
+          errorCode: httpStatusToErrorCode(response.status),
+          message: message ?? 'Tavily rejected the request as too large.',
+        };
+      }
 
       return {
-        type: 'ok',
-        results: results.slice(0, limit),
+        type: 'error',
+        errorCode: httpStatusToErrorCode(response.status),
+        message: message ?? 'Tavily search failed.',
       };
-    } catch (error) {
+    }
+
+    const parsed = await readWebSearchJson(response, request.signal);
+    if (!parsed.ok) return webSearchUnavailable(parsed.error);
+    const payload = parsed.value;
+    const limit = request.maxResults ?? DEFAULT_WEB_SEARCH_RESULT_COUNT;
+    // Unexpected payload shape is a backend contract violation;
+    // returning empty results would mask a real Tavily outage.
+    if (!isJsonObject(payload) || !Array.isArray(payload.results)) {
       return {
         type: 'error',
         errorCode: 'unavailable',
-        message: error instanceof Error ? error.message : 'Tavily search failed.',
+        message: 'Tavily returned an unexpected payload shape; check provider status.',
       };
     }
+    const results = payload.results.map(normalizeResult).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+    return {
+      type: 'ok',
+      results: results.slice(0, limit),
+    };
   };
 
   const fetchPage = async (request: WebSearchFetchPageRequest): Promise<WebSearchFetchPageResult> => {
-    try {
-      const response = await httpFetch(TAVILY_EXTRACT_URL, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          urls: request.urls,
-          extract_depth: 'basic',
-          format: 'markdown',
-        }),
-        ...(request.signal !== undefined ? { signal: request.signal } : {}),
-      });
+    const fetched = await readWebSearchIo(httpFetch(TAVILY_EXTRACT_URL, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        urls: request.urls,
+        extract_depth: 'basic',
+        format: 'markdown',
+      }),
+      ...(request.signal !== undefined ? { signal: request.signal } : {}),
+    }), request.signal);
+    if (!fetched.ok) return webSearchUnavailable(fetched.error);
+    const response = fetched.value;
 
-      if (!response.ok) {
-        const message = await extractWebSearchProviderErrorMessage(response);
-        const errorCode: WebSearchProviderErrorCode = httpStatusToErrorCode(response.status);
-        // Tavily extract is one batch call, so non-2xx applies to the
-        // whole batch. Per-URL granularity only comes through
-        // `failed_results` inside a 200.
-        return {
-          type: 'error',
-          errorCode,
-          message: message ?? `Tavily extract failed (HTTP ${response.status}).`,
-        };
-      }
+    if (!response.ok) {
+      const diagnostic = await extractWebSearchProviderErrorMessage(response, request.signal);
+      if (!diagnostic.ok) return webSearchUnavailable(diagnostic.error);
+      const message = diagnostic.value;
+      const errorCode: WebSearchProviderErrorCode = httpStatusToErrorCode(response.status);
+      // Tavily extract is one batch call, so non-2xx applies to the
+      // whole batch. Per-URL granularity only comes through
+      // `failed_results` inside a 200.
+      return {
+        type: 'error',
+        errorCode,
+        message: message ?? `Tavily extract failed (HTTP ${response.status}).`,
+      };
+    }
 
-      const payload = await response.json();
-      if (!isJsonObject(payload)) {
-        return { type: 'error', errorCode: 'unavailable', message: 'Tavily extract returned an unexpected payload.' };
-      }
+    const parsed = await readWebSearchJson(response, request.signal);
+    if (!parsed.ok) return webSearchUnavailable(parsed.error);
+    const payload = parsed.value;
+    if (!isJsonObject(payload)) {
+      return { type: 'error', errorCode: 'unavailable', message: 'Tavily extract returned an unexpected payload.' };
+    }
 
-      // 200 with neither `results` nor `failed_results` is a Tavily
-      // outage masquerading as success. Tavily routinely omits one of
-      // the two depending on outcome, so missing-one is fine; missing
-      // both isn't.
-      const resultsIsArray = Array.isArray(payload.results);
-      const failedIsArray = Array.isArray(payload.failed_results);
-      if (!resultsIsArray && !failedIsArray) {
-        return {
-          type: 'error',
-          errorCode: 'unavailable',
-          message: 'Tavily extract returned an unexpected payload shape; check provider status.',
-        };
-      }
-
-      const rawResults: TavilyExtractResultEntry[] = resultsIsArray
-        ? (payload.results as unknown[]).filter((entry): entry is TavilyExtractResultEntry => isJsonObject(entry) && typeof entry.url === 'string')
-        : [];
-      const rawFailures: TavilyExtractFailedEntry[] = failedIsArray
-        ? (payload.failed_results as unknown[]).filter((entry): entry is TavilyExtractFailedEntry => isJsonObject(entry) && typeof entry.url === 'string')
-        : [];
-
-      const pages = rawResults.map(entry => {
-        const truncated = truncateUtf8(typeof entry.raw_content === 'string' ? entry.raw_content : '', MAX_FETCH_PAGE_BYTES);
-        return {
-          url: entry.url,
-          ...(typeof entry.title === 'string' && entry.title.length > 0 ? { title: entry.title } : {}),
-          content: truncated.content,
-          truncated: truncated.truncated,
-          fullContentBytes: truncated.fullContentBytes,
-        };
-      });
-
-      const failures = rawFailures.map(entry => ({
-        url: entry.url,
-        errorCode: 'unavailable' as const,
-        ...(typeof entry.error === 'string' && entry.error.length > 0 ? { message: entry.error } : {}),
-      }));
-
-      return { type: 'ok', pages, failures };
-    } catch (error) {
+    // 200 with neither `results` nor `failed_results` is a Tavily
+    // outage masquerading as success. Tavily routinely omits one of
+    // the two depending on outcome, so missing-one is fine; missing
+    // both isn't.
+    const resultsIsArray = Array.isArray(payload.results);
+    const failedIsArray = Array.isArray(payload.failed_results);
+    if (!resultsIsArray && !failedIsArray) {
       return {
         type: 'error',
         errorCode: 'unavailable',
-        message: error instanceof Error ? error.message : 'Tavily extract failed.',
+        message: 'Tavily extract returned an unexpected payload shape; check provider status.',
       };
     }
+
+    const rawResults: TavilyExtractResultEntry[] = resultsIsArray
+      ? (payload.results as unknown[]).filter((entry): entry is TavilyExtractResultEntry => isJsonObject(entry) && typeof entry.url === 'string')
+      : [];
+    const rawFailures: TavilyExtractFailedEntry[] = failedIsArray
+      ? (payload.failed_results as unknown[]).filter((entry): entry is TavilyExtractFailedEntry => isJsonObject(entry) && typeof entry.url === 'string')
+      : [];
+
+    const pages = rawResults.map(entry => {
+      const truncated = truncateUtf8(typeof entry.raw_content === 'string' ? entry.raw_content : '', MAX_FETCH_PAGE_BYTES);
+      return {
+        url: entry.url,
+        ...(typeof entry.title === 'string' && entry.title.length > 0 ? { title: entry.title } : {}),
+        content: truncated.content,
+        truncated: truncated.truncated,
+        fullContentBytes: truncated.fullContentBytes,
+      };
+    });
+
+    const failures = rawFailures.map(entry => ({
+      url: entry.url,
+      errorCode: 'unavailable' as const,
+      ...(typeof entry.error === 'string' && entry.error.length > 0 ? { message: entry.error } : {}),
+    }));
+
+    return { type: 'ok', pages, failures };
   };
 
   return { search, fetchPage };

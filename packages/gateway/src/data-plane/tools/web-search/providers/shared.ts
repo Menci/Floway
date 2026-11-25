@@ -1,24 +1,58 @@
+import { isNativeFetchTransportError, isUpstreamTransportError } from '../../../../dial/transport-error.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { sleep } from '../../../../shared/sleep.ts';
 import type { WebSearchProviderErrorCode, WebSearchProviderResult } from '../types.ts';
-import { discardUpstreamResponse } from '@floway-dev/provider';
+import type { Result } from '@floway-dev/pipeline';
+import { isAbortError } from '@floway-dev/provider';
 
 const MAX_WEB_SEARCH_QUERY_LENGTH = 1000;
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000] as const;
 const RETRYABLE_HTTP_STATUS: ReadonlySet<number> = new Set([429, 500, 502, 503, 504]);
 
+export const readWebSearchIo = async <T>(pending: Promise<T>, signal?: AbortSignal): Promise<Result<T, unknown>> => {
+  try {
+    return { ok: true, value: await pending };
+  } catch (error) {
+    if ((signal?.aborted && error === signal.reason) || isAbortError(error) || isUpstreamTransportError(error) || isNativeFetchTransportError(error)) {
+      return { ok: false, error };
+    }
+    throw error;
+  }
+};
+
+export const webSearchUnavailable = (error: unknown) => ({
+  type: 'error' as const,
+  errorCode: 'unavailable' as const,
+  message: error instanceof Error ? error.message : String(error),
+});
+
 export const fetchWithRetry = async (
   doFetch: () => Promise<Response>,
   signal?: AbortSignal,
-): Promise<Response> => {
+): Promise<Result<Response, unknown>> => {
   let attempt = 0;
   while (true) {
-    const response = await doFetch();
-    if (!RETRYABLE_HTTP_STATUS.has(response.status)) return response;
-    if (attempt >= RETRY_DELAYS_MS.length) return response;
-    await discardUpstreamResponse(response);
-    await sleep(RETRY_DELAYS_MS[attempt], signal);
+    const fetched = await readWebSearchIo(doFetch(), signal);
+    if (!fetched.ok || !RETRYABLE_HTTP_STATUS.has(fetched.value.status) || attempt >= RETRY_DELAYS_MS.length) return fetched;
+    const body = fetched.value.body;
+    if (body !== null) {
+      const discarded = await readWebSearchIo(body.cancel(), signal);
+      if (!discarded.ok) return discarded;
+    }
+    const waited = await readWebSearchIo(sleep(RETRY_DELAYS_MS[attempt], signal), signal);
+    if (!waited.ok) return waited;
     attempt += 1;
+  }
+};
+
+export const readWebSearchJson = async (response: Response, signal?: AbortSignal): Promise<Result<unknown, unknown>> => {
+  const text = await readWebSearchIo(response.text(), signal);
+  if (!text.ok) return text;
+  try {
+    return { ok: true, value: JSON.parse(text.value) };
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return { ok: false, error };
   }
 };
 
@@ -67,11 +101,10 @@ export const toWebSearchTextBlocks = (content: unknown): Array<{ type: 'text'; t
 // Content-Length.
 const MAX_PROVIDER_ERROR_BODY_BYTES = 8 * 1024;
 
-const readBodyCapped = async (response: Response, maxBytes: number): Promise<string> => {
-  // Some Response shims (test doubles, oddball runtimes) leave `body`
-  // null even when `text()` works; fall back to a post-read slice.
+const readBodyCapped = async (response: Response, maxBytes: number, signal?: AbortSignal): Promise<Result<string, unknown>> => {
   if (response.body === null) {
-    return (await response.text()).slice(0, maxBytes);
+    const text = await readWebSearchIo(response.text(), signal);
+    return text.ok ? { ok: true, value: text.value.slice(0, maxBytes) } : text;
   }
 
   const reader = response.body.getReader();
@@ -79,7 +112,9 @@ const readBodyCapped = async (response: Response, maxBytes: number): Promise<str
   let totalBytes = 0;
   try {
     while (totalBytes < maxBytes) {
-      const { value, done } = await reader.read();
+      const read = await readWebSearchIo(reader.read(), signal);
+      if (!read.ok) return read;
+      const { value, done } = read.value;
       if (done) break;
       if (value === undefined) continue;
       const remaining = maxBytes - totalBytes;
@@ -92,13 +127,14 @@ const readBodyCapped = async (response: Response, maxBytes: number): Promise<str
       }
     }
   } finally {
-    // Drop the reader lock so cancel() can release the body; otherwise
-    // cancel() rejects.
     reader.releaseLock();
-    await response.body.cancel().catch(() => undefined);
   }
 
-  return new TextDecoder().decode(concatChunks(chunks, totalBytes));
+  if (totalBytes === maxBytes) {
+    const discarded = await readWebSearchIo(response.body.cancel(), signal);
+    if (!discarded.ok) return discarded;
+  }
+  return { ok: true, value: new TextDecoder().decode(concatChunks(chunks, totalBytes)) };
 };
 
 const concatChunks = (chunks: Uint8Array[], totalBytes: number): Uint8Array => {
@@ -111,46 +147,33 @@ const concatChunks = (chunks: Uint8Array[], totalBytes: number): Uint8Array => {
   return out;
 };
 
-export const extractWebSearchProviderErrorMessage = async (response: Response): Promise<string | undefined> => {
-  const text = await readBodyCapped(response, MAX_PROVIDER_ERROR_BODY_BYTES);
-  if (text.length === 0) {
-    return undefined;
-  }
-
+export const extractWebSearchProviderErrorMessage = async (
+  response: Response,
+  signal?: AbortSignal,
+): Promise<Result<string | undefined, unknown>> => {
+  const body = await readBodyCapped(response, MAX_PROVIDER_ERROR_BODY_BYTES, signal);
+  if (!body.ok) return body;
+  const text = body.value;
+  if (text.length === 0) return { ok: true, value: undefined };
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(text);
-    if (!isJsonObject(parsed)) {
-      return text;
-    }
-
-    if (typeof parsed.detail === 'string') {
-      return parsed.detail;
-    }
-    if (typeof parsed.error === 'string') {
-      return parsed.error;
-    }
-    if (isJsonObject(parsed.error) && typeof parsed.error.message === 'string') {
-      return parsed.error.message;
-    }
-    if (typeof parsed.message === 'string') {
-      return parsed.message;
-    }
-    // Microsoft Web IQ writes the human-readable half of its envelope to `userMessage`
-    // and the diagnostic half to `technicalDetails`, alongside `errorCode`,
-    // `errorCategory`, `requestId`, and `traceId`. Without this rung the whole
-    // envelope reaches the operator as raw JSON. Observed on
-    // POST https://api.microsoft.ai/v3/search/web with an invalid key:
-    // {"errorCode":"AuthInvalidApiKey","errorCategory":"UserError",
-    //  "userMessage":"Invalid API key provided.","technicalDetails":"Invalid API key",…}
-    if (typeof parsed.userMessage === 'string') {
-      return parsed.userMessage;
-    }
-    if (typeof parsed.technicalDetails === 'string') {
-      return parsed.technicalDetails;
-    }
-  } catch {
-    return text;
+    parsed = JSON.parse(text);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return { ok: true, value: text };
   }
+  if (!isJsonObject(parsed)) return { ok: true, value: text };
 
-  return text;
+  // Microsoft Web IQ reports userMessage and technicalDetails on error.
+  // https://api.microsoft.ai/v3/search/web
+  for (const candidate of [
+    parsed.detail,
+    isJsonObject(parsed.error) ? parsed.error.message : parsed.error,
+    parsed.message,
+    parsed.userMessage,
+    parsed.technicalDetails,
+  ]) {
+    if (typeof candidate === 'string') return { ok: true, value: candidate };
+  }
+  return { ok: true, value: text };
 };

@@ -1,4 +1,4 @@
-import { extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, toWebSearchTextBlocks, validateWebSearchQuery } from './shared.ts';
+import { extractWebSearchProviderErrorMessage, fetchWithRetry, httpStatusToErrorCode, readWebSearchJson, toWebSearchTextBlocks, validateWebSearchQuery, webSearchUnavailable } from './shared.ts';
 import { truncateUtf8 } from './truncate.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { normalizeDomainList } from '../domain-normalize.ts';
@@ -70,54 +70,56 @@ type BrowseOutcome =
   | { kind: 'fail'; url: string; httpStatus: number; message: string };
 
 const browseOneUrl = async (httpFetch: typeof fetch, apiKey: string, url: string, signal?: AbortSignal): Promise<BrowseOutcome> => {
-  try {
-    const response = await fetchWithRetry(() => httpFetch(MICROSOFT_WEB_IQ_BROWSE_URL, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-apikey': apiKey,
-      },
-      body: JSON.stringify({
-        url,
-        maxLength: 50_000,
-        liveCrawl: 'fallback',
-        contentFormat: 'markdown',
-        renderDynamicPages: true,
-      }),
-      ...(signal !== undefined ? { signal } : {}),
-    }), signal);
-
-    // Microsoft Web IQ returns 202 with `retryAfter` when the page isn't
-    // cached and a live crawl was kicked off. Don't poll — Workers
-    // can't afford the budget and re-issuing from the next model turn
-    // is fine.
-    if (response.status === 202) {
-      return { kind: 'cold', url };
-    }
-
-    if (!response.ok) {
-      const message = (await extractWebSearchProviderErrorMessage(response)) ?? `HTTP ${response.status}`;
-      return { kind: 'fail', url, httpStatus: response.status, message };
-    }
-
-    const payload = await response.json();
-    if (!isJsonObject(payload) || typeof payload.url !== 'string') {
-      return { kind: 'fail', url, httpStatus: response.status, message: 'Microsoft Web IQ browse returned an unexpected payload.' };
-    }
-    return {
-      kind: 'ok',
+  const fetched = await fetchWithRetry(() => httpFetch(MICROSOFT_WEB_IQ_BROWSE_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-apikey': apiKey,
+    },
+    body: JSON.stringify({
       url,
-      data: {
-        url: payload.url,
-        ...(typeof payload.title === 'string' ? { title: payload.title } : {}),
-        ...(typeof payload.content === 'string' ? { content: payload.content } : {}),
-        ...(typeof payload.lastUpdatedAt === 'string' ? { lastUpdatedAt: payload.lastUpdatedAt } : {}),
-        ...(typeof payload.crawledAt === 'string' ? { crawledAt: payload.crawledAt } : {}),
-      },
-    };
-  } catch (error) {
-    return { kind: 'fail', url, httpStatus: 0, message: error instanceof Error ? error.message : String(error) };
+      maxLength: 50_000,
+      liveCrawl: 'fallback',
+      contentFormat: 'markdown',
+      renderDynamicPages: true,
+    }),
+    ...(signal !== undefined ? { signal } : {}),
+  }), signal);
+  if (!fetched.ok) return { kind: 'fail', url, httpStatus: 0, message: webSearchUnavailable(fetched.error).message };
+  const response = fetched.value;
+
+  // Microsoft Web IQ returns 202 with `retryAfter` when the page isn't
+  // cached and a live crawl was kicked off. Don't poll — Workers
+  // can't afford the budget and re-issuing from the next model turn
+  // is fine.
+  if (response.status === 202) {
+    return { kind: 'cold', url };
   }
+
+  if (!response.ok) {
+    const diagnostic = await extractWebSearchProviderErrorMessage(response, signal);
+    if (!diagnostic.ok) return { kind: 'fail', url, httpStatus: 0, message: webSearchUnavailable(diagnostic.error).message };
+    const message = diagnostic.value ?? `HTTP ${response.status}`;
+    return { kind: 'fail', url, httpStatus: response.status, message };
+  }
+
+  const parsed = await readWebSearchJson(response, signal);
+  if (!parsed.ok) return { kind: 'fail', url, httpStatus: 0, message: webSearchUnavailable(parsed.error).message };
+  const payload = parsed.value;
+  if (!isJsonObject(payload) || typeof payload.url !== 'string') {
+    return { kind: 'fail', url, httpStatus: response.status, message: 'Microsoft Web IQ browse returned an unexpected payload.' };
+  }
+  return {
+    kind: 'ok',
+    url,
+    data: {
+      url: payload.url,
+      ...(typeof payload.title === 'string' ? { title: payload.title } : {}),
+      ...(typeof payload.content === 'string' ? { content: payload.content } : {}),
+      ...(typeof payload.lastUpdatedAt === 'string' ? { lastUpdatedAt: payload.lastUpdatedAt } : {}),
+      ...(typeof payload.crawledAt === 'string' ? { crawledAt: payload.crawledAt } : {}),
+    },
+  };
 };
 
 export const createMicrosoftWebIqWebSearchProvider = (apiKey: string, deps?: { fetch?: typeof fetch }): WebSearchProvider => {
@@ -140,74 +142,72 @@ export const createMicrosoftWebIqWebSearchProvider = (apiKey: string, deps?: { f
       body.region = region;
     }
 
-    try {
-      const response = await fetchWithRetry(() => httpFetch(MICROSOFT_WEB_IQ_SEARCH_URL, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-apikey': apiKey,
-        },
-        body: JSON.stringify(body),
-        ...(request.signal !== undefined ? { signal: request.signal } : {}),
-      }), request.signal);
+    const fetched = await fetchWithRetry(() => httpFetch(MICROSOFT_WEB_IQ_SEARCH_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-apikey': apiKey,
+      },
+      body: JSON.stringify(body),
+      ...(request.signal !== undefined ? { signal: request.signal } : {}),
+    }), request.signal);
+    if (!fetched.ok) return webSearchUnavailable(fetched.error);
+    const response = fetched.value;
 
-      if (response.ok) {
-        const payload = await response.json();
-        // Unexpected payload shape is a backend contract violation;
-        // returning empty results would mask a real Microsoft Web IQ outage.
-        if (!isJsonObject(payload) || !Array.isArray(payload.webResults)) {
-          return {
-            type: 'error',
-            errorCode: 'unavailable',
-            message: 'Microsoft Web IQ returned an unexpected payload shape; check provider status.',
-          };
-        }
-        const results = payload.webResults.map(normalizeResult).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-
-        return {
-          type: 'ok',
-          results: results.slice(0, limit),
-        };
-      }
-
-      const message = await extractWebSearchProviderErrorMessage(response);
-
-      if (response.status === 429) {
+    if (response.ok) {
+      const parsed = await readWebSearchJson(response, request.signal);
+      if (!parsed.ok) return webSearchUnavailable(parsed.error);
+      const payload = parsed.value;
+      // Unexpected payload shape is a backend contract violation;
+      // returning empty results would mask a real Microsoft Web IQ outage.
+      if (!isJsonObject(payload) || !Array.isArray(payload.webResults)) {
         return {
           type: 'error',
-          errorCode: httpStatusToErrorCode(response.status),
-          message: message ?? 'Microsoft Web IQ rate limited the request.',
+          errorCode: 'unavailable',
+          message: 'Microsoft Web IQ returned an unexpected payload shape; check provider status.',
         };
       }
+      const results = payload.webResults.map(normalizeResult).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
-      if (response.status === 400) {
-        return {
-          type: 'error',
-          errorCode: httpStatusToErrorCode(response.status),
-          message: message ?? 'Microsoft Web IQ rejected the search query.',
-        };
-      }
+      return {
+        type: 'ok',
+        results: results.slice(0, limit),
+      };
+    }
 
-      if (response.status === 413) {
-        return {
-          type: 'error',
-          errorCode: httpStatusToErrorCode(response.status),
-          message: message ?? 'Microsoft Web IQ rejected the request as too large.',
-        };
-      }
+    const diagnostic = await extractWebSearchProviderErrorMessage(response, request.signal);
+    if (!diagnostic.ok) return webSearchUnavailable(diagnostic.error);
+    const message = diagnostic.value;
 
+    if (response.status === 429) {
       return {
         type: 'error',
         errorCode: httpStatusToErrorCode(response.status),
-        message: message ?? 'Microsoft Web IQ search failed.',
-      };
-    } catch (error) {
-      return {
-        type: 'error',
-        errorCode: 'unavailable',
-        message: error instanceof Error ? error.message : 'Microsoft Web IQ search failed.',
+        message: message ?? 'Microsoft Web IQ rate limited the request.',
       };
     }
+
+    if (response.status === 400) {
+      return {
+        type: 'error',
+        errorCode: httpStatusToErrorCode(response.status),
+        message: message ?? 'Microsoft Web IQ rejected the search query.',
+      };
+    }
+
+    if (response.status === 413) {
+      return {
+        type: 'error',
+        errorCode: httpStatusToErrorCode(response.status),
+        message: message ?? 'Microsoft Web IQ rejected the request as too large.',
+      };
+    }
+
+    return {
+      type: 'error',
+      errorCode: httpStatusToErrorCode(response.status),
+      message: message ?? 'Microsoft Web IQ search failed.',
+    };
   };
 
   const fetchPage = async (request: WebSearchFetchPageRequest): Promise<WebSearchFetchPageResult> => {

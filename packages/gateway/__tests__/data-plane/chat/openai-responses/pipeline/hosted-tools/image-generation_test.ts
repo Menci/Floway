@@ -15,7 +15,7 @@ import {
 import type { HostedToolContext, HostedToolInvocation, HostedToolRunner } from '../../../../../../src/data-plane/chat/openai-responses/pipeline/hosted-tools.ts';
 import { initRepo } from '../../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
-import { initExternalResourceFetcher } from '@floway-dev/platform';
+import { initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputImage, OpenAIResponsesInputImageGenerationCall, CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 import { toProviderModelFact } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, assertThrows, stubProviderModel } from '@floway-dev/test-utils';
@@ -259,7 +259,7 @@ test('registerImageGeneration enforces the aggregate limit across distinct succe
 test.each([
   {
     name: 'DNS failure',
-    fetcher: () => Promise.reject(new TypeError('getaddrinfo ENOTFOUND')),
+    fetcher: () => Promise.reject(new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND') })),
   },
   {
     name: 'HTTP 404',
@@ -392,6 +392,29 @@ test('image dispatcher exposes a newly introduced invalid edit source as an inva
     Error,
     'image_generation live source invariant violated after request validation: remote image URL was not materialized',
   );
+});
+
+test('image edit preparation propagates a local image processor defect', async () => {
+  const defect = new TypeError('unexpected image processor failure');
+  initImageProcessor({ compressToWebp: () => Promise.reject(defect) });
+  const result = await registerImageGeneration(makeInvocation({
+    tools: [{ type: 'image_generation', action: 'edit' }],
+    input: [imageInputContainers.message({
+      type: 'input_image',
+      image_url: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+      detail: 'auto',
+    })],
+  }), toolContext);
+  assert(result.type === 'active' && result.hosted !== undefined);
+  const [slot] = result.hosted.dispatcher({
+    intercepted: {
+      functionCall: { type: 'function_call', call_id: 'edit-call', name: SHIM_TOOL_NAME, arguments: '{"prompt":"edit it"}', status: 'completed' },
+      parsedArguments: { prompt: 'edit it' },
+    },
+    loopState: { iterationCount: 1, remainingToolCalls: undefined },
+    runner,
+  });
+  await expect(slot.run().next()).rejects.toBe(defect);
 });
 
 // ── registerImageGeneration: per-response dispatch budget ──

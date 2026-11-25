@@ -635,12 +635,14 @@ const runWebSearchStopHandler = async function* (
 ): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   const parsedInput = (() => {
     if (block.inputJson === '') return null;
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(block.inputJson);
-      return isJsonObject(parsed) ? parsed : null;
-    } catch {
+      parsed = JSON.parse(block.inputJson);
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
       return null;
     }
+    return isJsonObject(parsed) ? parsed : null;
   })();
 
   const query = parsedInput ? (typeof parsedInput.query === 'string' ? parsedInput.query.trim() : null) : null;
@@ -670,19 +672,14 @@ const runWebSearchStopHandler = async function* (
     shimState.executedSearchCount += 1;
     shimState.currentSearchUseCount += 1;
 
-    try {
-      const request: WebSearchProviderRequest = {
-        query,
-        allowedDomains: state.allowedDomains,
-        blockedDomains: state.blockedDomains,
-        userLocation: state.userLocation,
-      };
-      const providerResult = await runWebSearchAndRecordUsage({ provider: provider.impl, providerName: provider.providerName, keyId: provider.apiKeyId, request });
-      return buildNativeWebSearchResultBlockFromProviderResult(providerResult, block.upstreamToolUseId);
-    } catch {
-      // TODO: Add gateway-side recent web-search error-log storage so operators can inspect detailed provider/runtime failures even though the client-visible native error intentionally collapses them to `unavailable`.
-      return buildNativeWebSearchErrorResultBlock(block.upstreamToolUseId, 'unavailable');
-    }
+    const request: WebSearchProviderRequest = {
+      query,
+      allowedDomains: state.allowedDomains,
+      blockedDomains: state.blockedDomains,
+      userLocation: state.userLocation,
+    };
+    const providerResult = await runWebSearchAndRecordUsage({ provider: provider.impl, providerName: provider.providerName, keyId: provider.apiKeyId, request });
+    return buildNativeWebSearchResultBlockFromProviderResult(providerResult, block.upstreamToolUseId);
   })();
 
   yield eventFrame({

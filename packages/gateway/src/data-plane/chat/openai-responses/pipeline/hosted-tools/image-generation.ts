@@ -1115,13 +1115,9 @@ const executeImageOperation = async function* (
 ): AsyncGenerator<ServerToolLifecycleEvent, ServerToolSlotResult> {
   const wantsPartials = (config.partial_images ?? 0) > 0;
   let editRequest: OpenAIImagesEditsRequest | null = null;
-  try {
-    if (action === 'edit') {
-      const prepared = await prepareEditRequest(sources, config);
-      editRequest = buildEditsRequest(prompt, config, prepared.sources, prepared.mask, wantsPartials);
-    }
-  } catch (error) {
-    return imageTerminal(prompt, action, { ok: false, error: serverError(error) });
+  if (action === 'edit') {
+    const prepared = await prepareEditRequest(sources, config);
+    editRequest = buildEditsRequest(prompt, config, prepared.sources, prepared.mask, wantsPartials);
   }
 
   const facts = {
