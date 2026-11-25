@@ -18,10 +18,6 @@ export const measureRerankUsage = ({ searchUnits, totalTokens }: Pick<CanonicalR
 export const measureDamagedRerankUsage = (body: unknown, { candidate }: UsageObserverContext): UsageMeasurement | null => {
   const { rerankTarget } = candidate.model;
   if (rerankTarget === undefined) throw new TypeError('Cannot measure a rerank call without its target');
-  try {
-    return measureRerankUsage(parseRerankUsage(rerankTarget.protocol, body));
-  } catch {
-    // The provider outcome already carries the parse failure for this invalid usage.
-    return null;
-  }
+  const usage = parseRerankUsage(rerankTarget.protocol, body);
+  return usage.ok ? measureRerankUsage(usage.value) : null;
 };

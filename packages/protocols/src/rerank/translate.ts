@@ -1,77 +1,73 @@
 import type { ParsedRerankRequest, CanonicalRerankRequest, CanonicalRerankResponse, CanonicalRerankResult, RerankInput } from './index.ts';
 import type { RerankProtocol, RerankSourceProtocol } from '../common/models.ts';
+import type { Result } from '@floway-dev/pipeline';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const requiredString = (value: unknown, field: string): string => {
-  if (typeof value !== 'string' || value.length === 0) throw new Error(`${field} must be a non-empty string`);
-  return value;
+const optionalBoolean = (value: unknown, field: string): Result<boolean | undefined, string> => {
+  if (value !== undefined && typeof value !== 'boolean') return { ok: false, error: `${field} must be a boolean` };
+  return { ok: true, value };
 };
 
-const optionalBoolean = (value: unknown, field: string): boolean | undefined => {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'boolean') throw new Error(`${field} must be a boolean`);
-  return value;
+const optionalFiniteNumber = (value: unknown, field: string): Result<number | undefined, string> => {
+  if (value !== undefined && (typeof value !== 'number' || !Number.isFinite(value))) {
+    return { ok: false, error: `${field} must be a finite number` };
+  }
+  return { ok: true, value };
 };
 
-const optionalNullableBoolean = (value: unknown, field: string): boolean | undefined =>
-  value === null ? undefined : optionalBoolean(value, field);
-
-const optionalFiniteNumber = (value: unknown, field: string): number | undefined => {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${field} must be a finite number`);
-  return value;
-};
-
-const optionalNullableFiniteNumber = (value: unknown, field: string): number | undefined =>
-  value === null ? undefined : optionalFiniteNumber(value, field);
-
-const optionalPositiveInteger = (value: unknown, field: string): number | undefined => {
+const optionalPositiveInteger = (value: unknown, field: string): Result<number | undefined, string> => {
   const number = optionalFiniteNumber(value, field);
-  if (number !== undefined && (!Number.isInteger(number) || number < 1)) throw new Error(`${field} must be a positive integer`);
+  if (number.ok && number.value !== undefined && (!Number.isInteger(number.value) || number.value < 1)) {
+    return { ok: false, error: `${field} must be a positive integer` };
+  }
   return number;
 };
 
-const optionalNullablePositiveInteger = (value: unknown, field: string): number | undefined =>
-  value === null ? undefined : optionalPositiveInteger(value, field);
-
-const optionalInteger = (value: unknown, field: string): number | undefined => {
+const optionalInteger = (value: unknown, field: string): Result<number | undefined, string> => {
   const number = optionalFiniteNumber(value, field);
-  if (number !== undefined && !Number.isInteger(number)) throw new Error(`${field} must be an integer`);
+  if (number.ok && number.value !== undefined && !Number.isInteger(number.value)) {
+    return { ok: false, error: `${field} must be an integer` };
+  }
   return number;
 };
 
-const stringArray = (value: unknown, field: string): string[] => {
+const stringArray = (value: unknown, field: string): Result<string[], string> => {
   if (!Array.isArray(value) || value.length === 0 || value.some(item => typeof item !== 'string')) {
-    throw new Error(`${field} must be a non-empty array of strings`);
+    return { ok: false, error: `${field} must be a non-empty array of strings` };
   }
-  return value as string[];
+  return { ok: true, value: value as string[] };
 };
 
-const stringRecord = (value: unknown, field: string): Record<string, string> => {
-  if (!isRecord(value) || Object.values(value).some(item => typeof item !== 'string')) {
-    throw new Error(`${field} must be a string or an object whose values are strings`);
+const cohereV1Documents = (value: unknown): Result<RerankInput[], string> => {
+  if (!Array.isArray(value) || value.length === 0) return { ok: false, error: 'documents must be a non-empty array' };
+  const documents: RerankInput[] = [];
+  for (const [index, document] of value.entries()) {
+    if (typeof document !== 'string' && (!isRecord(document) || Object.values(document).some(item => typeof item !== 'string'))) {
+      return { ok: false, error: `documents[${index}] must be a string or an object whose values are strings` };
+    }
+    documents.push(document);
   }
-  return value as Record<string, string>;
+  return { ok: true, value: documents };
 };
 
-const cohereV1Documents = (value: unknown): RerankInput[] => {
-  if (!Array.isArray(value) || value.length === 0) throw new Error('documents must be a non-empty array');
-  return value.map((document, index) => typeof document === 'string' ? document : stringRecord(document, `documents[${index}]`));
-};
-
-const jinaStructuredInput = (value: unknown, field: string, keys: readonly ('text' | 'image')[]): RerankInput => {
-  if (typeof value === 'string') return value;
-  if (!isRecord(value) || !keys.some(key => typeof value[key] === 'string')) {
-    throw new Error(`${field} must be a string or an object with a string ${keys.join(' or ')} field`);
+const jinaStructuredInput = (value: unknown, field: string, keys: readonly ('text' | 'image')[]): Result<RerankInput, string> => {
+  if (typeof value !== 'string' && (!isRecord(value) || !keys.some(key => typeof value[key] === 'string'))) {
+    return { ok: false, error: `${field} must be a string or an object with a string ${keys.join(' or ')} field` };
   }
-  return value;
+  return { ok: true, value };
 };
 
-const jinaDocuments = (value: unknown): RerankInput[] => {
-  if (!Array.isArray(value) || value.length === 0) throw new Error('documents must be a non-empty array');
-  return value.map((document, index) => jinaStructuredInput(document, `documents[${index}]`, ['text', 'image']));
+const jinaDocuments = (value: unknown): Result<RerankInput[], string> => {
+  if (!Array.isArray(value) || value.length === 0) return { ok: false, error: 'documents must be a non-empty array' };
+  const documents: RerankInput[] = [];
+  for (const [index, document] of value.entries()) {
+    const parsed = jinaStructuredInput(document, `documents[${index}]`, ['text', 'image']);
+    if (!parsed.ok) return parsed;
+    documents.push(parsed.value);
+  }
+  return { ok: true, value: documents };
 };
 
 const baseRequest = (body: Record<string, unknown>, sourceProtocol: RerankSourceProtocol): Omit<CanonicalRerankRequest, 'query' | 'documents'> => ({
@@ -79,91 +75,140 @@ const baseRequest = (body: Record<string, unknown>, sourceProtocol: RerankSource
   raw: body,
 });
 
-const rejectFields = (body: Record<string, unknown>, protocol: RerankSourceProtocol, fields: readonly string[]): void => {
+const rejectFields = (body: Record<string, unknown>, protocol: RerankSourceProtocol, fields: readonly string[]): Result<void, string> => {
   const unsupported = fields.filter(field => body[field] !== undefined);
-  if (unsupported.length > 0) throw new Error(`${protocol} does not support ${unsupported.join(', ')}`);
+  if (unsupported.length > 0) return { ok: false, error: `${protocol} does not support ${unsupported.join(', ')}` };
+  return { ok: true, value: undefined };
 };
 
-export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknown): ParsedRerankRequest => {
-  if (!isRecord(value)) throw new Error('Rerank request body must be an object');
-  const model = requiredString(value.model, 'model');
+export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknown): Result<ParsedRerankRequest, string> => {
+  if (!isRecord(value)) return { ok: false, error: 'Rerank request body must be an object' };
+  const { model } = value;
+  if (typeof model !== 'string' || model.length === 0) return { ok: false, error: 'model must be a non-empty string' };
   switch (protocol) {
   case 'cohere-v1': {
-    rejectFields(value, protocol, ['max_tokens_per_doc', 'priority', 'top_k']);
-    const rankFields = value.rank_fields === undefined ? undefined : stringArray(value.rank_fields, 'rank_fields');
+    const supported = rejectFields(value, protocol, ['max_tokens_per_doc', 'priority', 'top_k']);
+    if (!supported.ok) return supported;
+    const rankFields = value.rank_fields === undefined ? { ok: true, value: undefined } as const : stringArray(value.rank_fields, 'rank_fields');
+    if (!rankFields.ok) return rankFields;
     const topN = optionalPositiveInteger(value.top_n, 'top_n');
+    if (!topN.ok) return topN;
     const returnDocuments = optionalBoolean(value.return_documents, 'return_documents');
+    if (!returnDocuments.ok) return returnDocuments;
     const maxChunksPerDocument = optionalPositiveInteger(value.max_chunks_per_doc, 'max_chunks_per_doc');
+    if (!maxChunksPerDocument.ok) return maxChunksPerDocument;
+    const { query } = value;
+    if (typeof query !== 'string' || query.length === 0) return { ok: false, error: 'query must be a non-empty string' };
+    const documents = cohereV1Documents(value.documents);
+    if (!documents.ok) return documents;
     return {
-      model,
-      request: {
-        ...baseRequest(value, protocol),
-        query: requiredString(value.query, 'query'),
-        documents: cohereV1Documents(value.documents),
-        ...(topN === undefined ? {} : { topN }),
-        ...(rankFields === undefined ? {} : { rankFields }),
-        ...(returnDocuments === undefined ? {} : { returnDocuments }),
-        ...(maxChunksPerDocument === undefined ? {} : { maxChunksPerDocument }),
+      ok: true,
+      value: {
+        model,
+        request: {
+          ...baseRequest(value, protocol),
+          query,
+          documents: documents.value,
+          ...(topN.value === undefined ? {} : { topN: topN.value }),
+          ...(rankFields.value === undefined ? {} : { rankFields: rankFields.value }),
+          ...(returnDocuments.value === undefined ? {} : { returnDocuments: returnDocuments.value }),
+          ...(maxChunksPerDocument.value === undefined ? {} : { maxChunksPerDocument: maxChunksPerDocument.value }),
+        },
       },
     };
   }
   case 'cohere-v2': {
-    rejectFields(value, protocol, ['rank_fields', 'return_documents', 'max_chunks_per_doc', 'top_k']);
+    const supported = rejectFields(value, protocol, ['rank_fields', 'return_documents', 'max_chunks_per_doc', 'top_k']);
+    if (!supported.ok) return supported;
     const topN = optionalPositiveInteger(value.top_n, 'top_n');
+    if (!topN.ok) return topN;
     const maxTokensPerDocument = optionalPositiveInteger(value.max_tokens_per_doc, 'max_tokens_per_doc');
+    if (!maxTokensPerDocument.ok) return maxTokensPerDocument;
     const priority = optionalInteger(value.priority, 'priority');
+    if (!priority.ok) return priority;
+    const { query } = value;
+    if (typeof query !== 'string' || query.length === 0) return { ok: false, error: 'query must be a non-empty string' };
+    const documents = stringArray(value.documents, 'documents');
+    if (!documents.ok) return documents;
     return {
-      model,
-      request: {
-        ...baseRequest(value, protocol),
-        query: requiredString(value.query, 'query'),
-        documents: stringArray(value.documents, 'documents'),
-        ...(topN === undefined ? {} : { topN }),
-        ...(maxTokensPerDocument === undefined ? {} : { maxTokensPerDocument }),
-        ...(priority === undefined ? {} : { priority }),
+      ok: true,
+      value: {
+        model,
+        request: {
+          ...baseRequest(value, protocol),
+          query,
+          documents: documents.value,
+          ...(topN.value === undefined ? {} : { topN: topN.value }),
+          ...(maxTokensPerDocument.value === undefined ? {} : { maxTokensPerDocument: maxTokensPerDocument.value }),
+          ...(priority.value === undefined ? {} : { priority: priority.value }),
+        },
       },
     };
   }
   case 'jina-v1': {
-    rejectFields(value, protocol, ['top_k', 'rank_fields', 'max_chunks_per_doc', 'max_tokens_per_doc', 'priority']);
+    const supported = rejectFields(value, protocol, ['top_k', 'rank_fields', 'max_chunks_per_doc', 'max_tokens_per_doc', 'priority']);
+    if (!supported.ok) return supported;
     // Jina returns documents unless explicitly disabled. Its live OpenAPI is
     // the authority for the model-discriminated text and multimodal inputs:
     // https://api.jina.ai/openapi.json
-    const returnDocuments = optionalNullableBoolean(value.return_documents, 'return_documents') ?? true;
-    const topN = optionalNullablePositiveInteger(value.top_n, 'top_n');
-    const truncation = optionalNullableBoolean(value.truncation, 'truncation');
+    const returnDocuments = optionalBoolean(value.return_documents ?? undefined, 'return_documents');
+    if (!returnDocuments.ok) return returnDocuments;
+    const topN = optionalPositiveInteger(value.top_n ?? undefined, 'top_n');
+    if (!topN.ok) return topN;
+    const truncation = optionalBoolean(value.truncation ?? undefined, 'truncation');
+    if (!truncation.ok) return truncation;
     const maxDocumentLength = optionalPositiveInteger(value.max_doc_length, 'max_doc_length');
-    const returnEmbeddings = optionalNullableBoolean(value.return_embeddings, 'return_embeddings');
+    if (!maxDocumentLength.ok) return maxDocumentLength;
+    const returnEmbeddings = optionalBoolean(value.return_embeddings ?? undefined, 'return_embeddings');
+    if (!returnEmbeddings.ok) return returnEmbeddings;
+    const query = jinaStructuredInput(value.query, 'query', ['image']);
+    if (!query.ok) return query;
+    const documents = jinaDocuments(value.documents);
+    if (!documents.ok) return documents;
     return {
-      model,
-      request: {
-        ...baseRequest(value, protocol),
-        query: jinaStructuredInput(value.query, 'query', ['image']),
-        documents: jinaDocuments(value.documents),
-        ...(topN === undefined ? {} : { topN }),
-        returnDocuments,
-        ...(truncation === undefined ? {} : { truncation }),
-        ...(maxDocumentLength === undefined ? {} : { maxDocumentLength }),
-        ...(returnEmbeddings === undefined ? {} : { returnEmbeddings }),
+      ok: true,
+      value: {
+        model,
+        request: {
+          ...baseRequest(value, protocol),
+          query: query.value,
+          documents: documents.value,
+          ...(topN.value === undefined ? {} : { topN: topN.value }),
+          returnDocuments: returnDocuments.value ?? true,
+          ...(truncation.value === undefined ? {} : { truncation: truncation.value }),
+          ...(maxDocumentLength.value === undefined ? {} : { maxDocumentLength: maxDocumentLength.value }),
+          ...(returnEmbeddings.value === undefined ? {} : { returnEmbeddings: returnEmbeddings.value }),
+        },
       },
     };
   }
   case 'voyage-v1': {
-    rejectFields(value, protocol, ['top_n', 'rank_fields', 'max_chunks_per_doc', 'max_tokens_per_doc', 'priority', 'max_doc_length', 'return_embeddings']);
+    const supported = rejectFields(value, protocol, ['top_n', 'rank_fields', 'max_chunks_per_doc', 'max_tokens_per_doc', 'priority', 'max_doc_length', 'return_embeddings']);
+    if (!supported.ok) return supported;
     // Voyage REST defaults return_documents=false and truncation=true:
     // https://docs.voyageai.com/reference/reranker-api.md
-    const returnDocuments = optionalBoolean(value.return_documents, 'return_documents') ?? false;
-    const truncation = optionalBoolean(value.truncation, 'truncation') ?? true;
-    const topN = optionalNullablePositiveInteger(value.top_k, 'top_k');
+    const returnDocuments = optionalBoolean(value.return_documents, 'return_documents');
+    if (!returnDocuments.ok) return returnDocuments;
+    const truncation = optionalBoolean(value.truncation, 'truncation');
+    if (!truncation.ok) return truncation;
+    const topN = optionalPositiveInteger(value.top_k ?? undefined, 'top_k');
+    if (!topN.ok) return topN;
+    const { query } = value;
+    if (typeof query !== 'string' || query.length === 0) return { ok: false, error: 'query must be a non-empty string' };
+    const documents = stringArray(value.documents, 'documents');
+    if (!documents.ok) return documents;
     return {
-      model,
-      request: {
-        ...baseRequest(value, protocol),
-        query: requiredString(value.query, 'query'),
-        documents: stringArray(value.documents, 'documents'),
-        ...(topN === undefined ? {} : { topN }),
-        returnDocuments,
-        truncation,
+      ok: true,
+      value: {
+        model,
+        request: {
+          ...baseRequest(value, protocol),
+          query,
+          documents: documents.value,
+          ...(topN.value === undefined ? {} : { topN: topN.value }),
+          returnDocuments: returnDocuments.value ?? false,
+          truncation: truncation.value ?? true,
+        },
       },
     };
   }
@@ -274,83 +319,82 @@ export const serializeRerankRequest = (
   }
 };
 
-const optionalEmbedding = (value: unknown, field: string): number[] | undefined => {
-  if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value) || value.some(item => typeof item !== 'number' || !Number.isFinite(item))) {
-    throw new Error(`${field} must be an array of finite numbers`);
+const invalidResponse = (message: string): Result<never, Error> => ({ ok: false, error: new Error(message) });
+
+const resultItem = (value: unknown, field: string): Result<CanonicalRerankResult, Error> => {
+  if (!isRecord(value)) return invalidResponse(`${field} must be an object`);
+  if (typeof value.index !== 'number' || !Number.isInteger(value.index) || value.index < 0) return invalidResponse(`${field}.index must be a non-negative integer`);
+  if (typeof value.relevance_score !== 'number' || !Number.isFinite(value.relevance_score)) return invalidResponse(`${field}.relevance_score must be a finite number`);
+  const { document, embedding } = value;
+  if (embedding != null && (!Array.isArray(embedding) || embedding.some(item => typeof item !== 'number' || !Number.isFinite(item)))) {
+    return invalidResponse(`${field}.embedding must be an array of finite numbers`);
   }
-  return value as number[];
-};
-
-const resultDocument = (value: unknown, field: string): RerankInput => {
-  if (typeof value === 'string' || isRecord(value)) return value;
-  throw new Error(`${field} must be a string or an object`);
-};
-
-const resultItem = (value: unknown, field: string): CanonicalRerankResult => {
-  if (!isRecord(value)) throw new Error(`${field} must be an object`);
-  if (typeof value.index !== 'number' || !Number.isInteger(value.index) || value.index < 0) throw new Error(`${field}.index must be a non-negative integer`);
-  if (typeof value.relevance_score !== 'number' || !Number.isFinite(value.relevance_score)) throw new Error(`${field}.relevance_score must be a finite number`);
-  const embedding = optionalEmbedding(value.embedding, `${field}.embedding`);
+  if (document != null && typeof document !== 'string' && !isRecord(document)) return invalidResponse(`${field}.document must be a string or an object`);
   return {
-    index: value.index,
-    relevanceScore: value.relevance_score,
-    ...(value.document === undefined || value.document === null ? {} : { document: resultDocument(value.document, `${field}.document`) }),
-    ...(embedding === undefined ? {} : { embedding }),
+    ok: true,
+    value: {
+      index: value.index,
+      relevanceScore: value.relevance_score,
+      ...(document == null ? {} : { document }),
+      ...(embedding == null ? {} : { embedding: embedding as number[] }),
+    },
   };
 };
 
-const resultsArray = (value: unknown, field: string): CanonicalRerankResult[] => {
-  if (!Array.isArray(value)) throw new Error(`${field} must be an array`);
-  return value.map((item, index) => resultItem(item, `${field}[${index}]`));
+const resultsArray = (value: unknown, field: string): Result<CanonicalRerankResult[], Error> => {
+  if (!Array.isArray(value)) return invalidResponse(`${field} must be an array`);
+  const results: CanonicalRerankResult[] = [];
+  for (const [index, item] of value.entries()) {
+    const parsed = resultItem(item, `${field}[${index}]`);
+    if (!parsed.ok) return parsed;
+    results.push(parsed.value);
+  }
+  return { ok: true, value: results };
 };
 
-const requiredTotalTokensFrom = (value: unknown): number => {
+const requiredTotalTokensFrom = (value: unknown): Result<number, string> => {
   if (!isRecord(value) || typeof value.total_tokens !== 'number' || !Number.isFinite(value.total_tokens)) {
-    throw new Error('usage.total_tokens must be a finite number');
+    return { ok: false, error: 'usage.total_tokens must be a finite number' };
   }
   const totalTokens = value.total_tokens;
-  if (totalTokens < 0) throw new Error('usage.total_tokens must not be negative');
-  return totalTokens;
+  if (totalTokens < 0) return { ok: false, error: 'usage.total_tokens must not be negative' };
+  return { ok: true, value: totalTokens };
 };
 
-const optionalUsage = (
-  value: Record<string, unknown>,
-  parser: (usage: unknown) => number,
-): Pick<CanonicalRerankResponse, 'totalTokens'> =>
-  value.usage === undefined ? {} : { totalTokens: parser(value.usage) };
-
-const listEnvelopeModel = (value: Record<string, unknown>): string => {
-  if (value.object !== 'list') throw new Error('object must be "list"');
-  return requiredString(value.model, 'model');
+const optionalRecord = (value: unknown, field: string): Result<Record<string, unknown> | undefined, string> => {
+  if (value === undefined || value === null) return { ok: true, value: undefined };
+  if (!isRecord(value)) return { ok: false, error: `${field} must be an object or null` };
+  return { ok: true, value };
 };
 
-const optionalRecord = (value: unknown, field: string): Record<string, unknown> | undefined => {
-  if (value === undefined || value === null) return undefined;
-  if (!isRecord(value)) throw new Error(`${field} must be an object or null`);
-  return value;
-};
-
-const cohereUsage = (meta: unknown): Pick<CanonicalRerankResponse, 'totalTokens' | 'searchUnits'> => {
+const cohereUsage = (meta: unknown): Result<Pick<CanonicalRerankResponse, 'totalTokens' | 'searchUnits'>, string> => {
   const metadata = optionalRecord(meta, 'meta');
-  if (metadata === undefined) return {};
-  const billedUnits = optionalRecord(metadata.billed_units, 'meta.billed_units');
-  const tokens = optionalRecord(metadata.tokens, 'meta.tokens');
-  const searchUnits = optionalNullableFiniteNumber(billedUnits?.search_units, 'meta.billed_units.search_units');
-  const inputTokens = optionalNullableFiniteNumber(tokens?.input_tokens, 'meta.tokens.input_tokens');
-  if (searchUnits !== undefined && searchUnits < 0) throw new Error('meta.billed_units.search_units must not be negative');
-  if (inputTokens !== undefined && inputTokens < 0) throw new Error('meta.tokens.input_tokens must not be negative');
+  if (!metadata.ok) return metadata;
+  if (metadata.value === undefined) return { ok: true, value: {} };
+  const billedUnits = optionalRecord(metadata.value.billed_units, 'meta.billed_units');
+  if (!billedUnits.ok) return billedUnits;
+  const tokens = optionalRecord(metadata.value.tokens, 'meta.tokens');
+  if (!tokens.ok) return tokens;
+  const searchUnits = optionalFiniteNumber(billedUnits.value?.search_units ?? undefined, 'meta.billed_units.search_units');
+  if (!searchUnits.ok) return searchUnits;
+  const inputTokens = optionalFiniteNumber(tokens.value?.input_tokens ?? undefined, 'meta.tokens.input_tokens');
+  if (!inputTokens.ok) return inputTokens;
+  if (searchUnits.value !== undefined && searchUnits.value < 0) return { ok: false, error: 'meta.billed_units.search_units must not be negative' };
+  if (inputTokens.value !== undefined && inputTokens.value < 0) return { ok: false, error: 'meta.tokens.input_tokens must not be negative' };
   return {
-    ...(inputTokens === undefined ? {} : { totalTokens: inputTokens }),
-    ...(searchUnits === undefined ? {} : { searchUnits }),
+    ok: true,
+    value: {
+      ...(inputTokens.value === undefined ? {} : { totalTokens: inputTokens.value }),
+      ...(searchUnits.value === undefined ? {} : { searchUnits: searchUnits.value }),
+    },
   };
 };
 
 export const parseRerankUsage = (
   protocol: RerankProtocol,
   value: unknown,
-): Pick<CanonicalRerankResponse, 'totalTokens' | 'searchUnits'> => {
-  if (!isRecord(value)) return {};
+): Result<Pick<CanonicalRerankResponse, 'totalTokens' | 'searchUnits'>, string> => {
+  if (!isRecord(value)) return { ok: true, value: {} };
   switch (protocol) {
   case 'cohere-v1':
   case 'cohere-v2':
@@ -358,56 +402,59 @@ export const parseRerankUsage = (
   case 'jina-v1':
   case 'voyage-v1':
   case 'dashscope-compatible':
-  case 'dashscope-native':
-    return optionalUsage(value, requiredTotalTokensFrom);
+  case 'dashscope-native': {
+    if (value.usage === undefined) return { ok: true, value: {} };
+    const totalTokens = requiredTotalTokensFrom(value.usage);
+    if (!totalTokens.ok) return totalTokens;
+    return { ok: true, value: { totalTokens: totalTokens.value } };
+  }
   }
 };
 
-export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): CanonicalRerankResponse => {
-  if (!isRecord(value)) throw new Error('Rerank response body must be an object');
-  const base = { targetProtocol: protocol, raw: value, ...parseRerankUsage(protocol, value) };
+export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): Result<CanonicalRerankResponse, Error> => {
+  if (!isRecord(value)) return invalidResponse('Rerank response body must be an object');
+  const usage = parseRerankUsage(protocol, value);
+  if (!usage.ok) return invalidResponse(usage.error);
+  let model: string | undefined;
+  let id: string | undefined;
+  let results: Result<CanonicalRerankResult[], Error>;
   switch (protocol) {
   case 'cohere-v1':
   case 'cohere-v2':
-    return {
-      ...base,
-      ...(typeof value.id === 'string' ? { id: value.id } : {}),
-      results: resultsArray(value.results, 'results'),
-    };
-  case 'jina-v1': {
-    const model = listEnvelopeModel(value);
-    return {
-      ...base,
-      model,
-      results: resultsArray(value.results, 'results'),
-    };
+    if (typeof value.id === 'string') id = value.id;
+    results = resultsArray(value.results, 'results');
+    break;
+  case 'jina-v1':
+  case 'voyage-v1':
+  case 'dashscope-compatible':
+    if (value.object !== 'list') return invalidResponse('object must be "list"');
+    if (typeof value.model !== 'string' || value.model.length === 0) return invalidResponse('model must be a non-empty string');
+    model = value.model;
+    if (protocol === 'dashscope-compatible') {
+      if (typeof value.id !== 'string' || value.id.length === 0) return invalidResponse('id must be a non-empty string');
+      id = value.id;
+    }
+    results = protocol === 'voyage-v1' ? resultsArray(value.data, 'data') : resultsArray(value.results, 'results');
+    break;
+  case 'dashscope-native':
+    if (!isRecord(value.output)) return invalidResponse('output must be an object');
+    if (typeof value.request_id !== 'string' || value.request_id.length === 0) return invalidResponse('request_id must be a non-empty string');
+    id = value.request_id;
+    results = resultsArray(value.output.results, 'output.results');
+    break;
   }
-  case 'voyage-v1': {
-    const model = listEnvelopeModel(value);
-    return {
-      ...base,
-      model,
-      results: resultsArray(value.data, 'data'),
-    };
-  }
-  case 'dashscope-compatible': {
-    const model = listEnvelopeModel(value);
-    return {
-      ...base,
-      id: requiredString(value.id, 'id'),
-      model,
-      results: resultsArray(value.results, 'results'),
-    };
-  }
-  case 'dashscope-native': {
-    if (!isRecord(value.output)) throw new Error('output must be an object');
-    return {
-      ...base,
-      id: requiredString(value.request_id, 'request_id'),
-      results: resultsArray(value.output.results, 'output.results'),
-    };
-  }
-  }
+  if (!results.ok) return results;
+  return {
+    ok: true,
+    value: {
+      targetProtocol: protocol,
+      raw: value,
+      ...usage.value,
+      ...(id === undefined ? {} : { id }),
+      ...(model === undefined ? {} : { model }),
+      results: results.value,
+    },
+  };
 };
 
 const sourceDocument = (request: CanonicalRerankRequest, result: CanonicalRerankResult): RerankInput => {

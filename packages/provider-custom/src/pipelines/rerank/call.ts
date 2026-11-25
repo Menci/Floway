@@ -44,17 +44,19 @@ const call = defineStage({
         const parse = (bytes: Uint8Array) => {
           const json = parseJsonObject(bytes);
           if (!json.ok) return json;
-          try {
-            const value = parseRerankResponse(target.protocol, json.value);
-            if (value.targetProtocol !== payload.sourceProtocol && payload.returnDocuments === true) {
-              const invalid = value.results.find(({ index }) => payload.documents[index] === undefined);
-              if (invalid !== undefined) throw new Error(`Rerank response result index ${invalid.index} is outside the request documents array`);
-            }
-            return { ok: true, value } as const;
-          } catch (error) {
+          const parsed = parseRerankResponse(target.protocol, json.value);
+          if (!parsed.ok) {
             invalidBody = json.value;
-            return { ok: false, error } as const;
+            return parsed;
           }
+          if (parsed.value.targetProtocol !== payload.sourceProtocol && payload.returnDocuments === true) {
+            const invalid = parsed.value.results.find(({ index }) => payload.documents[index] === undefined);
+            if (invalid !== undefined) {
+              invalidBody = json.value;
+              return { ok: false, error: new Error(`Rerank response result index ${invalid.index} is outside the request documents array`) } as const;
+            }
+          }
+          return parsed;
         };
         const { http, outcome } = await parseResultBody(back, parse, formatRerankError);
         const { 'response.transport': _transport, ...response } = back;
