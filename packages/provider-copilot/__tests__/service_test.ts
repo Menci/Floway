@@ -158,6 +158,56 @@ test('Copilot merges a refreshed catalog into the state written during its fetch
   expect(readCopilotUpstreamState(record().state).knownModels).toEqual(state.knownModels);
 });
 
+test('Copilot dispatches the Responses wire variant for each requested service tier', async () => {
+  const { record } = setup();
+  const service = createCopilotService();
+  const models = await getCopilotProvidedModels(service, record(), async url => {
+    if (url === tokenApi) return exchangeResponse();
+    if (url !== `${copilotApi}/models`) throw new Error(`Unexpected URL ${url}`);
+    return Response.json({
+      object: 'list',
+      data: [
+        { id: 'gpt-5.6-sol', supported_endpoints: ['/responses'] },
+        { id: 'gpt-5.6-sol-fast', supported_endpoints: ['/responses'] },
+        { id: 'grok-code-fast', supported_endpoints: ['/responses'] },
+      ],
+    });
+  });
+  expect(models.map(model => model.id)).toEqual(['gpt-5.6-sol', 'grok-code-fast']);
+  const [model] = models;
+  const fetcher = vi.fn(async (_url: string, _init: FetchInit) => ({
+    ok: true,
+    value: new Response('data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } }),
+  } as const));
+  const tiers = [undefined, 'priority', 'fast', 'flex'] as const;
+  const wireModels: string[] = [];
+
+  for (const tier of tiers) {
+    const started = run(copilotPipelines.openaiResponses, {
+      'provider.upstream': move(copilotUpstreamFact(record())),
+      'provider.model': move(toProviderModelFact(model)),
+      'request.http': move({ url: 'https://floway.test', method: 'POST', headers: [], body: null }),
+      'request.openaiResponses': move({ model: model.id, input: [], ...(tier !== undefined && { service_tier: tier }) }),
+    }, { services: { copilot: service, fetcher: () => fetcher } });
+    const result = await started.result;
+    const outcome = result['response.openaiResponses'];
+    if (outcome.kind !== 'stream') throw new Error('Expected OpenAI Responses stream');
+    await Array.fromAsync(outcome.stream);
+    await started.done;
+    wireModels.push(result['response.modelKey']);
+  }
+
+  expect(fetcher).toHaveBeenCalledTimes(tiers.length);
+  expect(wireModels).toEqual(['gpt-5.6-sol', 'gpt-5.6-sol-fast', 'gpt-5.6-sol-fast', 'gpt-5.6-sol']);
+  for (const [index, [url, init]] of fetcher.mock.calls.entries()) {
+    expect(url).toBe(`${copilotApi}/responses`);
+    expect(typeof init.body).toBe('string');
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body.model).toBe(wireModels[index]);
+    expect(body).not.toHaveProperty('service_tier');
+  }
+});
+
 test.each([
   {
     quota: 'ent=300&ov=0.0&ovPerm=false&rem=90.0&rst=2026-09-01T00%3A00%3A00Z&totRem=270',

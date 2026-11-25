@@ -63,14 +63,18 @@ openai-intent: conversation-agent
 x-interaction-type: conversation-agent
 ```
 
-`packages/provider-copilot/src/auth.ts` is the source of truth for both header
-sets, their distinct version constants, extraction of `endpoints.api`, and
-data-plane dispatch in `copilotAuthedFetch`. Read the current values and flow
-from there rather than hardcoding them in probe scripts. For Anthropic Messages probes
-needing Claude beta features, also send `anthropic-beta: <feature-list>`.
+`packages/provider-copilot/src/auth.ts` defines the identity headers, their
+distinct version constants, and the token exchange that reads `endpoints.api`.
+The stages in `packages/provider-copilot/src/pipelines/shared/set-identity-headers.ts`
+and `packages/provider-copilot/src/pipelines/shared/authorize.ts` apply the
+identity and Bearer credential before the HTTP terminal sends the request.
+Read the current values from those files when preparing a probe. For Anthropic
+Messages probes needing Claude beta features, also send
+`anthropic-beta: <feature-list>`.
 
 ## Token cache
 
-The gateway uses a 60-second in-process memo keyed by upstream id, backed by
-`state_json.copilotToken`. A direct probe shares neither cache; keep any
-PAT-exchange result in probe-process memory and never write it back to production.
+The host-owned Copilot service shares in-flight exchanges for matching GitHub
+credentials and keeps a 60-second in-process memo backed by
+`state_json.copilotToken`. Keep any direct probe's PAT-exchange result in
+probe-process memory and never write it back to production.

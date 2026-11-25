@@ -18,7 +18,6 @@
   },
   "dependencies": {
     "@floway-dev/http": "workspace:*",
-    "@floway-dev/interceptor": "workspace:*",
     "@floway-dev/pipeline": "workspace:*",
     "@floway-dev/platform": "workspace:*",
     "@floway-dev/protocols": "workspace:*",

@@ -2,7 +2,7 @@ import pRetry, { AbortError as RetryAbortError } from 'p-retry';
 
 import { githubApiOrigin } from './github-host.ts';
 import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
-import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, type Fetcher, type FetchInit, type HttpHeaderLines } from '@floway-dev/provider';
+import { getProviderRepo as getRepo, isAbortError, type Fetcher, type HttpHeaderLines } from '@floway-dev/provider';
 
 // Version constants pinned to a known-good fingerprint that mirrors what a
 // current VSCode Copilot Chat install sends. The Copilot Chat plugin version,
@@ -68,7 +68,7 @@ class NonErrorAbort extends Error {
   }
 }
 
-const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>, signal: AbortSignal | undefined): Promise<T> => {
+const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>): Promise<T> => {
   try {
     return await pRetry(async () => {
       try {
@@ -78,10 +78,8 @@ const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>, signal: AbortSign
           throw new RetryAbortError(error instanceof Error ? error : new NonErrorAbort(error));
         }
 
-        // p-retry rejects non-network TypeErrors immediately and normalizes
-        // non-Error rejections into terminal TypeErrors. The token exchange
-        // previously retried every non-terminal value, so both shapes travel
-        // through a retryable Error and are restored at the boundary.
+        // p-retry skips non-network TypeErrors and normalizes non-Error rejections.
+        // Keep the original value across retries and restore it at the boundary.
         if (!(error instanceof Error) || error instanceof TypeError) throw new RetryableError(error);
         throw error;
       }
@@ -89,7 +87,6 @@ const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>, signal: AbortSign
       retries: 3,
       factor: 2,
       minTimeout: 1000,
-      signal,
       onFailedAttempt: ({ error, attemptNumber, retryDelay }) => {
         if (retryDelay === 0) return;
         const cause = error instanceof RetryableError ? error.originalError : error;
@@ -152,7 +149,6 @@ export const createCopilotCredentials = () => {
     githubHost: string,
     githubToken: string,
     fetcher: Fetcher,
-    signal?: AbortSignal,
   ): Promise<CopilotTokenEntry> => {
     const started = generation;
     const now = Date.now();
@@ -176,7 +172,7 @@ export const createCopilotCredentials = () => {
     // Copilot proxy would still see periodic auth-refresh failures every
     // ~25 minutes per process.
     return await retryCopilotTokenFetch(async () => {
-      const entry = await exchangeCopilotToken(githubHost, githubToken, fetcher, signal);
+      const entry = await exchangeCopilotToken(githubHost, githubToken, fetcher);
       if (started !== generation) return entry;
       inProcessTokenCache.set(upstreamId, { entry, cachedAt: Date.now(), githubHost, githubToken });
       // Best-effort: the caller is about to satisfy a live request with this
@@ -196,7 +192,7 @@ export const createCopilotCredentials = () => {
         console.warn(`Failed to persist Copilot token for ${upstreamId}:`, err);
       }
       return entry;
-    }, signal);
+    });
   };
 
   const getCopilotToken = async (
@@ -204,10 +200,7 @@ export const createCopilotCredentials = () => {
     githubHost: string,
     githubToken: string,
     fetcher: Fetcher,
-    signal?: AbortSignal,
   ): Promise<CopilotTokenEntry> => {
-    if (signal !== undefined) return await readOrExchangeToken(upstreamId, githubHost, githubToken, fetcher, signal);
-
     const current = pendingTokenExchanges.get(upstreamId);
     if (current?.githubHost === githubHost && current.githubToken === githubToken) return await current.task;
 
@@ -232,10 +225,6 @@ export const createCopilotCredentials = () => {
     },
   };
 };
-
-const legacyCredentials = createCopilotCredentials();
-
-export const clearInProcessCopilotTokenCache = legacyCredentials.clear;
 
 // Pure exchange against /copilot_internal/v2/token — no caching, no
 // persistence, no retry. Callers that want those wrap it (getCopilotToken
@@ -274,77 +263,6 @@ export async function exchangeCopilotToken(githubHost: string, githubToken: stri
     expiresAt: data.expires_at,
     baseUrl,
   };
-}
-
-export interface CopilotFetchOptions {
-  headers?: HttpHeaderLines | undefined;
-  /** Per-request proxy-aware indirection. Used for both the data-plane
-   *  request and the selected GitHub host's token exchange so a single
-   *  fallback chain covers both paths under restricted egress. */
-  fetcher: Fetcher;
-  /** See UpstreamCallOptions.wrapUpstreamCall. Fires on the data-plane
-   *  request only, after any token-exchange round trip. */
-  wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
-}
-
-export interface CopilotAuth {
-  id: string;
-  githubHost: string;
-  githubToken: string;
-}
-
-export async function copilotAuthedFetch(
-  path: string,
-  init: FetchInit,
-  auth: CopilotAuth,
-  options: CopilotFetchOptions,
-  credentials = legacyCredentials,
-): Promise<Response> {
-  const signal = init.signal ?? undefined;
-  let ownedInit: FetchInit | undefined = init;
-  // The token exchange is the only await before the data-plane dispatch. Keep
-  // the body in an explicit owner and replace the generator parameter so the
-  // final network wait cannot retain both copies after ownership transfers.
-  init = { signal };
-  const entry = await credentials.getCopilotToken(auth.id, auth.githubHost, auth.githubToken, options.fetcher, signal);
-
-  if (ownedInit === undefined) throw new Error('Copilot request ownership missing before dispatch');
-  const headers = new Headers(ownedInit.headers);
-  headers.set('Authorization', `Bearer ${entry.token}`);
-  // Content-Type follows the body. A `FormData` body has to reach the runtime
-  // untouched so it can generate the multipart boundary itself — pinning
-  // `application/json` over it makes Copilot reject `/v1/images/edits` with
-  // `400 Failed to decode image edit request` before it reads a single part.
-  // A bodyless GET (the catalog) carries no Content-Type, matching VSCode.
-  if (ownedInit.body !== undefined && ownedInit.body !== null && !(ownedInit.body instanceof FormData)) {
-    headers.set('Content-Type', 'application/json');
-  }
-  for (const [name, value] of credentials.identityHeaders()) headers.set(name, value);
-
-  // Provider-attached invocation headers (vision, initiator, anthropic-beta,
-  // ...) flow through unchanged. The provider's boundary interceptors decide
-  // which headers each upstream call needs; this layer only knows how to ship
-  // them. Setting them last lets workaround interceptors override the static
-  // VSCode identification block when a future workaround needs to.
-  //
-  // Convention: an empty-string value from an interceptor means "delete this
-  // base header" — the interceptor wants Copilot to NOT see a default we'd
-  // otherwise pin. An interceptor that wants to clear an arbitrary downstream
-  // header value must do so by name through this sentinel; the layer does not
-  // otherwise expose a per-header delete API.
-  if (options.headers) {
-    for (const [name, value] of options.headers) {
-      if (value === '') headers.delete(name);
-      else headers.set(name, value);
-    }
-  }
-
-  const request = { ...ownedInit, headers };
-  ownedInit = undefined;
-  // Do not await here: the dispatch owner clears its body synchronously, then
-  // this async frame can disappear while the upstream network wait continues.
-  // eslint-disable-next-line @typescript-eslint/return-await
-  return dispatchUpstreamFetch(options, `${entry.baseUrl}${path}`, request);
 }
 
 // Headers for management-plane calls on the selected GitHub API origin — token

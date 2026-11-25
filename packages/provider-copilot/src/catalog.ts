@@ -7,10 +7,8 @@ import type { CopilotRawModel } from './types.ts';
 import { kindForEndpoints, type DecisionProtocol, type DecisionTarget, type ModelEndpointKey, type ModelEndpoints } from '@floway-dev/protocols/common';
 import { resolveEffectiveFlags, type FlagOverrides, type ProviderModel } from '@floway-dev/provider';
 
-// Project Copilot's raw `/models` shape into the slim provider-neutral fields.
-// kind/endpoints/providerData/enabledFlags/flagOverrides are set by the caller
-// because they depend on Copilot's endpoint knowledge and the multi-layer
-// flag resolution.
+// The raw catalog supplies descriptive metadata. Endpoint and flag policies
+// use the merged model family and upstream configuration.
 const copilotRawToProviderModel = (model: CopilotRawModel): Omit<ProviderModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags' | 'flagOverrides'> => {
   const limits: ProviderModel['limits'] = {};
   if (model.capabilities?.limits?.max_output_tokens !== undefined) limits.max_output_tokens = model.capabilities.limits.max_output_tokens;
