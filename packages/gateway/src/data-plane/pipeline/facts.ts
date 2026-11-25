@@ -1,10 +1,12 @@
 import type { ComputedUsage } from './compute-usage.ts';
 import type { User } from '../../repo/types.ts';
+import type { ChatDelivery } from '../chat/pipeline/delivery.ts';
 import { factSpace, type Deferred } from '@floway-dev/pipeline';
 import type { DecisionProtocol, RerankSourceProtocol, AliasRules } from '@floway-dev/protocols/common';
 import type { GatewayFacts, ProviderModelFact, ProviderUpstream } from '@floway-dev/provider';
 
 export type ClientDelivery =
+  | ChatDelivery
   | { readonly kind: 'json' }
   | { readonly kind: 'sse' }
   | { readonly kind: 'bytes' }
