@@ -8,7 +8,7 @@ import { PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-message
 import { parseDecisionRequest } from '@floway-dev/protocols/decision';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { ProviderModelFact } from '@floway-dev/provider';
-import { stubProviderModel } from '@floway-dev/test-utils';
+import { assert, stubProviderModel } from '@floway-dev/test-utils';
 
 const requestFacts = (headers: HttpHeaders = [], model?: ProviderModelFact) => ({
   'request.http': move({ url: 'https://floway.test', method: 'POST', headers, body: null }),
@@ -462,11 +462,13 @@ test.each([
     answers: { green: { type: 'noul', noul: 0.75 } },
   },
 ])('Copilot Decision uses $protocol on both sides of the HTTP exchange', async ({ protocol, path, request: wire, answers }) => {
-  const request = parseDecisionRequest('typesafe-systemone', {
+  const parsed = parseDecisionRequest('typesafe-systemone', {
     model: 'visible-model',
     state: 'Is the test green?',
     questions: { green: { type: 'noul', criteria: { true: 'green', false: 'red' } } },
-  }).request;
+  });
+  assert(parsed.ok);
+  const { request } = parsed.value;
   const { services, fetcher } = servicesFor(() => Response.json({
     model: 'raw-model',
     answers,

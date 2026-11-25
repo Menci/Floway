@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { assert, describe, expect, test } from 'vitest';
 
 import { parseJSONWithRawNumbers } from '../../src/common/json.ts';
 import { parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, serializeDecisionRequest } from '../../src/decision/translate.ts';
@@ -18,7 +18,13 @@ const choiceRequest = {
 describe('decision request ingress', () => {
 
   test('rejects unknown top-level arguments the way System One does', () => {
-    expect(() => parseDecisionRequest('typesafe-systemone', { ...choiceRequest, stream: true })).toThrow();
+    expect(parseDecisionRequest('typesafe-systemone', { ...choiceRequest, stream: true }))
+      .toEqual({ ok: false, error: 'System One does not support stream' });
+  });
+
+  test('propagates a defect encountered during request validation', () => {
+    const defect = new TypeError('unexpected state access');
+    expect(() => parseDecisionRequest('typesafe-systemone', { ...choiceRequest, get state() { throw defect; } })).toThrow(defect);
   });
 });
 
@@ -34,7 +40,8 @@ describe('decision request serialization', () => {
         severity: { type: 'score', instructions: 'Severity?', criteria: ['Low', 'High'] },
       },
     });
-    const wire = serializeDecisionRequest('openai-decisions', 'gpt-6-luna', parsed.request) as {
+    assert(parsed.ok);
+    const wire = serializeDecisionRequest('openai-decisions', 'gpt-6-luna', parsed.value.request) as {
       input: unknown; model: string;
       questions: readonly Record<string, unknown>[];
     };
@@ -135,7 +142,8 @@ describe('protocol-standard fields', () => {
       questions: [{ type: 'choice', name: 'q', instructions: 'i', choices: [{ value: true }, { value: 'true' }] }],
     });
     // It cannot be lowered to System One, whose option keys are strings.
-    expect(() => serializeDecisionRequest('typesafe-systemone', 'raw', parsed.request)).toThrow();
+    assert(parsed.ok);
+    expect(() => serializeDecisionRequest('typesafe-systemone', 'raw', parsed.value.request)).toThrow();
   });
 });
 
@@ -153,7 +161,8 @@ describe('image evidence', () => {
 
   test('lowers image parts into System One assets', () => {
     const parsed = parseDecisionRequest('openai-decisions', imageRequest);
-    const wire = serializeDecisionRequest('typesafe-systemone', 'raw', parsed.request) as {
+    assert(parsed.ok);
+    const wire = serializeDecisionRequest('typesafe-systemone', 'raw', parsed.value.request) as {
       state: unknown; assets: Record<string, { format: string; data_base64: string }>;
     };
     expect(wire.assets).toEqual({ 'image-0': { type: 'image', format: 'png', data_base64: 'AAAA' } });
