@@ -9,15 +9,8 @@ import type { FileStore } from '@floway-dev/platform';
 // translated to native path segments on the way in/out so the same key reads
 // identically on Windows and POSIX hosts.
 //
-// Threat model: `root` (`FLOWAY_FILES_DIR`) is gateway-trusted. Everything
-// dumped here is data the gateway already holds in its database (API keys,
-// upstream credentials, request payloads); fs-level access to this directory
-// is already equivalent to gateway compromise. We deliberately do not mode
-// 0o600 / 0o700 the writes — bodies are stored verbatim and the OS-level
-// confidentiality boundary belongs to the operator (umask, mount perms,
-// dedicated user). The dashboard redacts sensitive headers at render time
-// for human display, but the on-disk record stays untouched so an operator
-// can replay or diff against upstream byte-for-byte.
+// The operator controls access to the gateway-trusted root with filesystem
+// permissions and the process umask.
 export class FsFileStore implements FileStore {
   private readonly root: string;
 
@@ -30,6 +23,12 @@ export class FsFileStore implements FileStore {
   }
 
   async put(key: string, body: Uint8Array): Promise<void> {
+    const path = this.pathFor(key);
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, body);
+  }
+
+  async putStream(key: string, body: ReadableStream<Uint8Array>): Promise<void> {
     const path = this.pathFor(key);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, body);

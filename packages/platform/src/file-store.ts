@@ -1,5 +1,6 @@
 export interface FileStore {
   put(key: string, body: Uint8Array): Promise<void>;
+  putStream(key: string, body: ReadableStream<Uint8Array>): Promise<void>;
   get(key: string): Promise<Uint8Array | null>;
   deleteKeys(keys: readonly string[]): Promise<void>;
 }
@@ -20,6 +21,10 @@ export class MemoryFileStore implements FileStore {
 
   async put(key: string, body: Uint8Array): Promise<void> {
     this.files.set(key, body.slice());
+  }
+
+  async putStream(key: string, body: ReadableStream<Uint8Array>): Promise<void> {
+    this.files.set(key, new Uint8Array(await new Response(body).arrayBuffer()));
   }
 
   async get(key: string): Promise<Uint8Array | null> {

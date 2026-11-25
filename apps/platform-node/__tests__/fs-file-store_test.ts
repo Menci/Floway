@@ -26,3 +26,15 @@ test('deleteKeys removes exact files and ignores missing keys', () => withTempRo
   assertEquals(await store.get('cleanup/a.bin'), null);
   assertEquals(await store.get('cleanup/ab.bin'), new Uint8Array([2]));
 }));
+
+test('putStream preserves all bytes across file write chunks', () => withTempRoot(async root => {
+  const store = new FsFileStore(root);
+  await store.putStream('archive/run.ndjson', new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(Uint8Array.of(1, 0));
+      controller.enqueue(Uint8Array.of(0x80, 0xff));
+      controller.close();
+    },
+  }));
+  assertEquals(await store.get('archive/run.ndjson'), Uint8Array.of(1, 0, 0x80, 0xff));
+}));
