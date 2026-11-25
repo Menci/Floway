@@ -6,7 +6,7 @@ import type { Assembly, Pipeline } from './compose.ts';
 import { checkHandoff, checkReturn, checkUp, requireKeys } from './declarations.ts';
 import type { ParsedSide, ParsedThrough } from './declarations.ts';
 import type { RunEvent } from './events.ts';
-import { checkFacts, move } from './facts.ts';
+import { checkFacts, registerHandle } from './facts.ts';
 import type { Facts } from './facts.ts';
 import { resourceOf, StreamResource, streamsIn, transferStreams } from './stream.ts';
 import type { AnyStream, StreamOwner } from './stream.ts';
@@ -29,9 +29,11 @@ interface RunHandle<O> {
 class SignalBranch {
   readonly #controller = new AbortController();
   readonly #children = new Set<SignalBranch>();
+  #parent: SignalBranch | undefined;
   settled: (() => boolean) | undefined;
 
-  constructor(readonly parent?: SignalBranch) {
+  constructor(parent?: SignalBranch) {
+    this.#parent = parent;
     if (parent) parent.#children.add(this);
     if (parent?.signal.aborted) this.abort(parent.signal.reason);
   }
@@ -49,7 +51,8 @@ class SignalBranch {
   }
 
   detach(): void {
-    if (this.parent) this.parent.#children.delete(this);
+    if (this.#parent) this.#parent.#children.delete(this);
+    this.#parent = undefined;
   }
 }
 
@@ -61,16 +64,16 @@ class Runtime {
   #failure: Failure | undefined;
   #deferredFailure: Failure | undefined;
   readonly #work = new Set<Promise<void>>();
+  #finalized = false;
 
   constructor(readonly options: RunOptions<unknown>) {
     this.services = Object.freeze({ ...options.services as object });
   }
 
-  get failure(): Failure | undefined { return this.#failure; }
-
   stageId(): number { return ++this.#id; }
 
   emit(event: RunEvent): void {
+    if (this.#finalized) return;
     try {
       this.options.events?.(event);
     } catch (error) {
@@ -106,6 +109,7 @@ class Runtime {
 
   async finalize(): Promise<void> {
     await Promise.all(this.#work);
+    this.#finalized = true;
     if (this.#deferredFailure) throw this.#deferredFailure.error;
   }
 }
@@ -198,7 +202,7 @@ class StageRun {
     readonly position: number,
     readonly initial: Facts,
     readonly destination: StreamOwner,
-    readonly parentId?: number,
+    parentId?: number,
     readonly boundary?: Assembly,
   ) {
     this.#id = state.stageId();
@@ -453,7 +457,7 @@ class StageRun {
   #deferred<T>(): DeferredController<T> {
     const promise = Promise.withResolvers<T>();
     void promise.promise.catch(() => undefined);
-    const deferred = move({ promise: promise.promise });
+    const deferred = registerHandle({ promise: promise.promise });
     const finish = (result: Result<T, unknown>): void => {
       if (!this.#pendingDeferred.delete(cancel)) this.#fail(new Error('Deferred has already settled'));
       if (result.ok) promise.resolve(result.value);

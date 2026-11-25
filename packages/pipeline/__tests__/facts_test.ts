@@ -33,4 +33,10 @@ describe('move', () => {
     expect(() => checkFacts({ nested: move(nested), root, present: undefined }, 'handoff')).not.toThrow();
     expect(() => checkFacts({ root: Object.freeze({}) }, 'handoff')).toThrow('"root" without move()');
   });
+
+  it('leaves abort signals on the scope', () => {
+    const signal = new AbortController().signal;
+    expect(() => move({ signal })).toThrow('Abort signals belong to the stage scope');
+    expect(() => checkFacts({ signal }, 'handoff')).toThrow('"signal" without move()');
+  });
 });

@@ -5,11 +5,17 @@ const moved = new WeakSet<object>();
 const isObject = (value: unknown): value is object =>
   (typeof value === 'object' && value !== null) || typeof value === 'function';
 
+export const registerHandle = <T extends object>(handle: T): T => {
+  moved.add(Object.freeze(handle));
+  return handle;
+};
+
 export const move = <T>(value: T): T => {
   if (!isObject(value) || moved.has(value)) return value;
   const visited = new WeakSet<object>();
   const freeze = (object: object): void => {
     if (visited.has(object) || moved.has(object)) return;
+    if (object instanceof AbortSignal) throw new TypeError('Abort signals belong to the stage scope');
     visited.add(object);
     if (ArrayBuffer.isView(object) && !(object instanceof DataView) && object.byteLength > 0) return;
     for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(object))) {

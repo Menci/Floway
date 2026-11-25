@@ -12,6 +12,7 @@ interface Space {
   readonly 'response.left': string;
   readonly 'response.right': string;
   readonly 'response.deferred': Deferred<string>;
+  readonly 'response.data': { readonly number: number };
 }
 
 const { compose, defineStage } = factSpace<Space>();
@@ -67,7 +68,7 @@ describe('stage handoffs', () => {
     expect(second.parentStageId).toBe(first.stageId);
   });
 
-  it('panics on an unmoved fact at entry and on a child handoff', async () => {
+  it('panics on an unmoved fact at entry, a child handoff, or return', async () => {
     const ending = defineStage({
       name: 'needs-data',
       request: { needs: ['request.data'] },
@@ -90,6 +91,17 @@ describe('stage handoffs', () => {
       entry: [], exit: ['response.value'], stages: [adds], ending,
     });
     await expect(run(pipeline, {}, { services: {} }).done).rejects.toThrow('"request.data" without move()');
+
+    const invalidAnswer = compose('unmoved-answer', {
+      entry: [], exit: ['response.data'], stages: [],
+      ending: defineStage({
+        name: 'unmoved-response',
+        request: { needs: [] },
+        return: { provides: ['response.data'] },
+        execute: async () => ({ 'response.data': { number: 2 } }),
+      }),
+    });
+    await expect(run(invalidAnswer, {}, { services: {} }).done).rejects.toThrow('"response.data" without move()');
   });
 
   it('panics on missing needs, unwritten provides, and remaining consumes', async () => {
@@ -188,6 +200,46 @@ describe('stage handoffs', () => {
 });
 
 describe('child calls', () => {
+  it('shares the run’s fixed service instances with independent calls', async () => {
+    const original = { value: 'original' };
+    const services = { store: original };
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const { compose, defineStage } = factSpace<Space, typeof services>();
+    const child = compose('services-child', {
+      entry: [], exit: ['response.value'], stages: [],
+      ending: defineStage({
+        name: 'services-child',
+        request: { needs: [] },
+        return: { provides: ['response.value'] },
+        execute: async (_facts, scope) => {
+          expect(scope.services.store).toBe(original);
+          return { 'response.value': scope.services.store.value };
+        },
+      }),
+    });
+    const parent = compose('services-parent', {
+      entry: [], exit: ['response.value'], stages: [],
+      ending: defineStage({
+        name: 'services-parent',
+        request: { needs: [] },
+        return: { provides: ['response.value'] },
+        execute: async (facts, scope) => {
+          entered.resolve();
+          await release.promise;
+          expect(Object.isFrozen(scope.services)).toBe(true);
+          return await scope.run(child, facts);
+        },
+      }),
+    });
+    const request = run(parent, {}, { services });
+    await entered.promise;
+    services.store = { value: 'replacement' };
+    release.resolve();
+    await expect(request.result).resolves.toEqual({ 'response.value': 'original' });
+    await request.done;
+  });
+
   it('uses separate identities and detaches the signal of a completed child', async () => {
     const signals: AbortSignal[] = [];
     const shared = { 'response.value': 'same' };
@@ -363,6 +415,27 @@ describe('deferred stage values and finalization', () => {
     work.resolve();
     await request.done;
     expect(completed).toBe(true);
+  });
+
+  it('exposes finalization failure after a successful response', async () => {
+    const failure = new Error('post-response write failed');
+    const work = Promise.withResolvers<void>();
+    const pipeline = compose('finalization-failure', {
+      entry: [], exit: ['response.value'], stages: [],
+      ending: defineStage({
+        name: 'defers',
+        request: { needs: [] },
+        return: { provides: ['response.value'] },
+        execute: async (_facts, scope) => {
+          scope.defer(work.promise);
+          return { 'response.value': 'delivered' };
+        },
+      }),
+    });
+    const request = run(pipeline, {}, { services: {} });
+    await expect(request.result).resolves.toEqual({ 'response.value': 'delivered' });
+    work.reject(failure);
+    await expect(request.done).rejects.toBe(failure);
   });
 
   it('writes the logg entry to both the global sink and the entered stage', async () => {

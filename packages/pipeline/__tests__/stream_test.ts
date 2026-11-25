@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { factSpace, move, run } from '../src/index.ts';
-import type { ManagedStream, Result, RunEvent } from '../src/index.ts';
+import type { Deferred, ManagedStream, Result, RunEvent } from '../src/index.ts';
 
 type Frame = Result<string, string>;
 type Stream = ManagedStream<string, string>;
@@ -10,6 +10,7 @@ interface Space {
   readonly 'request.stream': Stream;
   readonly 'response.stream': Stream;
   readonly 'response.value': string;
+  readonly 'response.deferred': Deferred<string>;
 }
 
 const { compose, defineStage } = factSpace<Space>();
@@ -150,6 +151,32 @@ describe('managed stream iteration', () => {
 });
 
 describe('stream producers and wrappers', () => {
+  it('keeps a stage-created deferred open through its producer’s native drain', async () => {
+    const pipeline = compose('producer-deferred', {
+      entry: [], exit: ['response.stream', 'response.deferred'], stages: [],
+      ending: defineStage({
+        name: 'producer-deferred',
+        request: { needs: [] },
+        return: { provides: ['response.stream', 'response.deferred'] },
+        execute: async (_facts, scope) => {
+          const handle = scope.deferred<string>();
+          const stream = scope.createStream<string, string>(async function* () {
+            yield success('before settlement');
+            handle.resolve('after settlement');
+          });
+          return { 'response.stream': stream, 'response.deferred': handle.deferred };
+        },
+      }),
+    });
+    const request = run(pipeline, {}, { services: {} });
+    const answer = await request.result;
+    const iterator = answer['response.stream'][Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toEqual({ done: false, value: success('before settlement') });
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
+    await expect(answer['response.deferred'].promise).resolves.toBe('after settlement');
+    await request.done;
+  });
+
   it('yields an outcome and drains its source before reporting wrapper done', async () => {
     const sourceClose = Promise.withResolvers<void>();
     const records: RunEvent[] = [];

@@ -1,5 +1,5 @@
 import type { RunEvent } from './events.ts';
-import { move } from './facts.ts';
+import { registerHandle } from './facts.ts';
 import type { Facts } from './facts.ts';
 import type { ManagedStream, Result } from './values.ts';
 
@@ -63,7 +63,7 @@ export class StreamResource<T, E> {
     this.#source = source;
     this.#hooks = hooks;
     this.#inner = inner;
-    this.handle = move({
+    this.handle = registerHandle({
       [Symbol.asyncIterator]: () => {
         if (this.#wrappedBy) this.#wrappedBy(new Error('Cannot iterate a stream transferred to a wrapper'));
         return this.#open();
