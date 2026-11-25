@@ -65,6 +65,9 @@ x-interaction-type: conversation-agent
 
 `packages/provider-copilot/src/auth.ts` defines the identity headers, their
 distinct version constants, and the token exchange that reads `endpoints.api`.
+`createCopilotService` in `packages/provider-copilot/src/service.ts` supplies
+credentials and identity headers to the operation handles in `copilotPipelines`
+(`packages/provider-copilot/src/pipelines/index.ts`).
 The stages in `packages/provider-copilot/src/pipelines/shared/set-identity-headers.ts`
 and `packages/provider-copilot/src/pipelines/shared/authorize.ts` apply the
 identity and Bearer credential before the HTTP terminal sends the request.

@@ -1,14 +1,3 @@
-import type { ModelPricing } from '@floway-dev/protocols/common';
-
-// Model identity attached to every provider result at the provider boundary
-// so the identity is decided once.
-export interface TelemetryModelIdentity {
-  model: string;
-  upstream: string;
-  modelKey: string;
-  pricing: ModelPricing | null;
-}
-
 // `chat`, `text_completion`, and `embeddings` are the OTel `gen_ai.operation.name`
 // well-known values we route; `image_generation`, `image_edit`, `rerank`,
 // `audio_transcription`, and `decision` are gateway-defined extensions for

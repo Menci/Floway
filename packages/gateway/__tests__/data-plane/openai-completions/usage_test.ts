@@ -37,8 +37,6 @@ test.each([
 });
 
 test('tokenUsageFromOpenAICompletionsUsage folds the cache counts back in on the totals alone', () => {
-  // The same accounting the chat targets normalize on the usage chunk: this
-  // endpoint has no interceptor chain, so the fold happens on the billing read.
   assertEquals(
     tokenUsageFromOpenAICompletionsUsage(
       { prompt_tokens: 479, completion_tokens: 373, total_tokens: 14164, prompt_tokens_details: { cached_tokens: 13312 } },

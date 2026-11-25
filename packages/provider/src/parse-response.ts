@@ -1,11 +1,15 @@
 import type { ProviderTransportFacts } from './http-terminal.ts';
 import type { ProtocolError, ProtocolStreamError } from './pipelines.ts';
-import type { ProviderStreamParser } from './streaming.ts';
 import { getHeader, isHttpBodyStream, readHttpBody, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
 import type { ManagedStream, Result } from '@floway-dev/pipeline';
-import { isEventStreamMediaType, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
+import { isEventStreamMediaType, parseJSONWithRawNumbers, type ParsedProtocolFrame } from '@floway-dev/protocols/common';
 
 export type FormatProviderError<Body> = (status: number | null, message: string) => Body;
+
+export type ProviderStreamParser<Event> = (
+  body: ReadableStream<Uint8Array>,
+  options?: { signal?: AbortSignal | undefined },
+) => AsyncIterable<ParsedProtocolFrame<Event>>;
 
 export type ProviderSseEof<Event> =
   | { readonly kind: 'complete' }

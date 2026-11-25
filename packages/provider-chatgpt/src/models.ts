@@ -222,7 +222,7 @@ export const chatgptModelUsesResponsesLite = (model: Pick<ProviderModel, 'id' | 
 //
 // `enabledFlags` is the upstream-resolved flag set (provider defaults
 // merged with the row's `flagOverrides`); it propagates per-model so
-// downstream interceptors can read the effective set without re-resolving.
+// the request pipeline reads the effective set directly.
 export const chatgptRawToProviderModel = (raw: ChatGPTRawModel, enabledFlags: ReadonlySet<FlagId>): ProviderModel => {
   const contextWindow = assertContextWindow(raw.context_window, raw.id, 'context_window');
   const maxContextWindow = raw.max_context_window === undefined

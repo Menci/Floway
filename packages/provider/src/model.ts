@@ -131,25 +131,9 @@ interface ModelMetadata {
   opaqueBlobCompatibilityScope?: OpaqueBlobCompatibilityScope;
 }
 
-// The neutral internal model shape consumed across the gateway. Metadata fields
-// surface the public identity of the model; `endpoints` and `kind` reflect the
-// OR-union across every contributing upstream so the gateway as a whole reaches
-// the union.
-//
-// A row is exactly one of two mutually-exclusive kinds:
-//   • Real row — carries `providerModels`, keyed on upstream id. Per-request
-//     dispatch reads the chosen upstream's `ProviderModel` off this map via
-//     `providerModelOf(candidate)`. A per-candidate row (from
-//     `enumerateRealModelCandidates`) narrows the map to the single dispatched
-//     upstream; the merged catalog row from `getModelsFromProviders`
-//     aggregates every contributing upstream.
-//   • Alias row — carries `aliasedFrom`, the operator-defined alias record.
-//     Alias rows appear in listings but never dispatch directly; the resolver
-//     walks the alias's targets and yields real-row candidates instead.
-//
-// The two carriers are exclusive: a row is either real or alias, never both.
-// `providerModelOf` throws with distinct messages for each miss so a mis-used
-// alias row surfaces the correct diagnostic.
+// A merged catalog row holds the per-upstream models keyed by upstream ID.
+// Alias rows instead carry the alias definition and appear in listings.
+// Candidate discovery visits the alias targets to select an upstream model.
 export type InternalModel = ModelMetadata & (
   | { readonly providerModels: Record<string, ProviderModel>; readonly aliasedFrom?: never }
   | { readonly providerModels?: never; readonly aliasedFrom: InternalAliasedFrom }
@@ -169,15 +153,10 @@ export interface InternalAliasedFrom {
   readonly targets: readonly AliasTarget[];
 }
 
-// Per-upstream projection returned by every provider's `getProvidedModels` and
-// the shape every provider's `callXxx(model, ...)` takes at dispatch time.
-// Carries the same metadata as `InternalModel` plus `providerData` (opaque
-// provider-private invocation data whose shape is owned by the emitting
-// provider), `enabledFlags` (the effective flag set for the model on the
-// emitting upstream, already resolved through every layer), and `flagOverrides` (optional dashboard-only
-// view of the per-model layer that fed into `enabledFlags`). Providers only
-// ever see their own emission — the surrounding `InternalModel` map is
-// assembled by the registry.
+// One upstream's model catalog entry. Candidate discovery projects it into
+// a provider model fact for the selected operation. The effective flags are
+// resolved at catalog assembly, and flagOverrides exposes the per-model layer
+// to the dashboard.
 export interface ProviderModel extends ModelMetadata {
   // The provider-neutral upstream catalog id shown on auto rows and used when
   // an opaque-blob scope omits its key. A provider that selects a request-time

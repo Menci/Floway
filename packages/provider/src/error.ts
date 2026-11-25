@@ -1,8 +1,5 @@
-// Errors that bubble out of source/target emit or interceptors and need a
-// structured envelope for the api debug response. The target_api lane is
-// typed as a free string here so the package stays decoupled from the
-// api-internal serve-api unions — the api always passes the narrowed value
-// it owns.
+// Internal pipeline failures carry a stack trace and cause into the protocol's
+// debug envelope. The caller supplies the target API name when it has one.
 export interface InternalDebugError {
   type: 'internal_error';
   name: string;
