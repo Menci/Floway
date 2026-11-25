@@ -58,6 +58,8 @@ test('only exposes the five implemented operations', () => {
 });
 
 test('normalizes Codex Responses headers and payload, restores terminal output, and records quota', async () => {
+  const upstreams = createUpstreamStateRepoStub(record, next => { state = next as ChatGPTUpstreamState; });
+  initProviderRepo(() => ({ recordUpstreamMetric: async () => {}, upstreams }));
   const { services, fetcher } = service(() => new Response(`${sse(
     { type: 'response.output_item.done', output_index: 0, item: nativeItem } as const,
     { type: 'response.completed', response: terminal } as const,
@@ -79,6 +81,7 @@ test('normalizes Codex Responses headers and payload, restores terminal output, 
     { ok: true, value: { type: 'response.completed', response: { output: [nativeItem] } } },
   ]);
   await exchange.done;
+  expect(upstreams.getById).toHaveBeenCalledOnce();
   expect(account().quotaSnapshot).toMatchObject({ codex: { data: { primary_used_percent: 10 } } });
 
   const [send] = fetcher.mock.calls;
@@ -179,6 +182,46 @@ test('propagates a Lite projection bug as a pipeline panic', async () => {
     await expect(exchange.done).rejects.toBe(bug);
   } finally {
     project.mockRestore();
+  }
+});
+
+test.each(['generate', 'compact'])('returns a local 503 for a removed account before Codex %s', async mode => {
+  initProviderRepo(() => ({ recordUpstreamMetric: vi.fn(), upstreams: { getById: async () => null, saveState: vi.fn() } }));
+  const { services, fetcher } = service(() => { throw new Error('Unexpected upstream fetch'); });
+  const facts = { ...entry, 'request.openaiResponses': move({ model: 'client', input: [] }) };
+  const exchange = mode === 'generate'
+    ? run(chatgptPipelines.openaiResponses, facts, { services })
+    : run(chatgptPipelines.openaiResponsesCompact, facts, { services });
+  await expect(exchange.result).resolves.toMatchObject({
+    'response.http': { status: 503, statusText: 'Service Unavailable' },
+    'response.openaiResponses': { kind: 'error', source: 'local', error: { error: { type: 'chatgpt_upstream_unavailable' } } },
+  });
+  await exchange.done;
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+test.each([false, true])('drains invalid OAuth responses and preserves parser bugs when injected (%s)', async injectBug => {
+  state = { accounts: [{ ...credential(), accessToken: null }] };
+  const body = new Response('{"access_token":"private-token"');
+  const { services, fetcher } = service(() => body);
+  const bug = new TypeError('OAuth parser bug');
+  const parse = injectBug ? vi.spyOn(JSON, 'parse').mockImplementationOnce(() => { throw bug; }) : undefined;
+  try {
+    const exchange = run(chatgptPipelines.openaiResponses, { ...entry, 'request.openaiResponses': move({ model: 'client', input: [] }) }, { services });
+    if (injectBug) {
+      await expect(exchange.result).rejects.toBe(bug);
+      await expect(exchange.done).rejects.toBe(bug);
+    } else {
+      const { 'response.openaiResponses': outcome } = await exchange.result;
+      expect(outcome).toMatchObject({ kind: 'error', source: 'upstream', error: { error: { type: 'server_error', message: expect.stringContaining('OAuth') } } });
+      expect(JSON.stringify(outcome)).not.toContain('private-token');
+      await exchange.done;
+    }
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(body.bodyUsed).toBe(true);
+    expect(body.body?.locked).toBe(false);
+  } finally {
+    parse?.mockRestore();
   }
 });
 

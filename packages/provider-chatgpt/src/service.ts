@@ -2,10 +2,10 @@ import { ChatGPTAccessOnlyCredentialError, chatgptPlanObservation, invalidateCha
 import { ChatGPTOAuthResponseError, ChatGPTOAuthSessionTerminatedError, type ChatGPTOAuthFetcher } from './auth/oauth.ts';
 import { chatgptPlanSupportsImages } from './models.ts';
 import { hasChatGPTQuotaReading, parseChatGPTQuotaHeaders, putChatGPTQuota } from './quota.ts';
-import { readChatGPTUpstreamState, persistChatGPTRefreshTokenRotation, persistChatGPTTerminalState, type ChatGPTAccessTokenEntry } from './state.ts';
+import { readChatGPTUpstreamState, persistChatGPTRefreshTokenRotation, persistChatGPTTerminalState, type ChatGPTAccessTokenEntry, type ChatGPTAccountCredential } from './state.ts';
 import type { ChatGPTUpstreamFact } from './upstream-fact.ts';
 import { materializeHeaders, type HttpHeaders, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
-import { Secret } from '@floway-dev/pipeline';
+import { Secret, type Result } from '@floway-dev/pipeline';
 import { getProviderRepo, type ProviderServices } from '@floway-dev/provider';
 
 type ChatGPTPersistence =
@@ -18,7 +18,7 @@ export type ChatGPTAccessFailure =
   | { readonly kind: 'transport'; readonly http: HttpResponseFact | null; readonly error: HttpStreamError };
 
 type ChatGPTAuthorization =
-  | { readonly kind: 'authorized'; readonly bearer: Secret<string> }
+  | { readonly kind: 'authorized'; readonly bearer: Secret<string>; readonly deviceId: string }
   | ChatGPTAccessFailure;
 
 type ChatGPTUnauthorized =
@@ -27,7 +27,6 @@ type ChatGPTUnauthorized =
   | Extract<ChatGPTAccessFailure, { kind: 'local' }>;
 
 export interface ChatGPTService {
-  readonly deviceId: (upstream: ChatGPTUpstreamFact) => Promise<string>;
   readonly authorization: (upstream: ChatGPTUpstreamFact, fetcher: ChatGPTOAuthFetcher, images: boolean, log: ChatGPTTokenLog) => Promise<ChatGPTAuthorization>;
   readonly reauthorize: (upstream: ChatGPTUpstreamFact, bearer: Secret<string>, fetcher: ChatGPTOAuthFetcher, images: boolean, log: ChatGPTTokenLog) => Promise<ChatGPTAuthorization>;
   readonly observeUnauthorized: (upstream: ChatGPTUpstreamFact, bearer: Secret<string>, code: string | null, message: string) => Promise<ChatGPTUnauthorized>;
@@ -38,25 +37,24 @@ export interface ChatGPTServices extends ProviderServices {
   readonly chatgpt: ChatGPTService;
 }
 
-const readAccount = async (upstream: ChatGPTUpstreamFact) => {
-  const identity = upstream.config.accounts[0];
-  const current = await getProviderRepo().upstreams.getById(upstream.id);
-  if (current === null) throw new Error(`ChatGPT upstream ${upstream.id} disappeared mid-request`);
-  const account = readChatGPTUpstreamState(current.state).accounts.find(value => value.chatgptAccountId === identity.chatgptAccountId);
-  if (!account) throw new Error(`ChatGPT upstream ${upstream.id} state has no credential for account ${identity.chatgptAccountId}`);
-  return account;
-};
-
 const unavailable = (message: string): Extract<ChatGPTAccessFailure, { kind: 'local' }> =>
   ({ kind: 'local', status: 503, type: 'chatgpt_upstream_unavailable', message });
+
+const readAccount = async (upstreamId: string, accountId: string | null): Promise<Result<ChatGPTAccountCredential, ReturnType<typeof unavailable>>> => {
+  const current = await getProviderRepo().upstreams.getById(upstreamId);
+  if (current === null) return { ok: false, error: unavailable(`ChatGPT upstream ${upstreamId} disappeared mid-request`) };
+  const account = readChatGPTUpstreamState(current.state).accounts.find(value => value.chatgptAccountId === accountId);
+  if (!account) return { ok: false, error: unavailable(`ChatGPT upstream ${upstreamId} state has no credential for account ${accountId}`) };
+  return { ok: true, value: account };
+};
 
 const persist = async (write: () => Promise<void>): Promise<ChatGPTPersistence> => {
   try {
     await write();
-    return { persisted: true };
   } catch (error) {
     return { persisted: false, error };
   }
+  return { persisted: true };
 };
 
 const mergeRetryPlan = (entry: ChatGPTAccessTokenEntry, fallbackPlan: ChatGPTPlanObservation | null): ChatGPTAccessTokenEntry =>
@@ -72,15 +70,15 @@ const inFlightEnsures = new Map<string, Promise<ChatGPTAccessTokenResult>>();
 
 const ensureAccessToken = async (
   upstreamId: string,
-  accountId: string | null,
+  account: ChatGPTAccountCredential,
   mint: ChatGPTAccessTokenMint,
   force: boolean,
   log?: ChatGPTTokenLog,
 ): Promise<ChatGPTAccessTokenResult> => {
-  const key = JSON.stringify([upstreamId, accountId, force]);
+  const key = JSON.stringify([upstreamId, account.chatgptAccountId, force]);
   const existing = inFlightEnsures.get(key);
   if (existing) return await existing;
-  const pending = resolveChatGPTAccessToken(upstreamId, accountId, mint, force, log);
+  const pending = resolveChatGPTAccessToken(upstreamId, account, mint, force, log);
   inFlightEnsures.set(key, pending);
   try {
     return await pending;
@@ -95,7 +93,9 @@ export const ensureChatGPTAccessToken = async (
   mint: (refreshToken: string) => Promise<ChatGPTAccessTokenEntry>,
   force = false,
 ): Promise<ChatGPTAccessTokenEntry> => {
-  const result = await ensureAccessToken(upstreamId, accountId, async refreshToken => {
+  const account = await readAccount(upstreamId, accountId);
+  if (!account.ok) throw new Error(account.error.message);
+  const result = await ensureAccessToken(upstreamId, account.value, async refreshToken => {
     try {
       return { ok: true, value: await mint(refreshToken) };
     } catch (error) {
@@ -103,7 +103,7 @@ export const ensureChatGPTAccessToken = async (
       throw error;
     }
   }, force);
-  if (!result.ok) throw result.error instanceof ChatGPTOAuthResponseError ? result.error : result.error.transport.cause;
+  if (!result.ok) throw result.error instanceof Error ? result.error : result.error.transport.cause;
   return result.value;
 };
 
@@ -116,49 +116,45 @@ export const createChatGPTService = (): ChatGPTService => {
     upstream: ChatGPTUpstreamFact, fetcher: ChatGPTOAuthFetcher, images: boolean, log: ChatGPTTokenLog, rejected?: Secret<string>,
   ): Promise<ChatGPTAuthorization> => {
     const { chatgptAccountId: accountId, planType } = upstream.config.accounts[0];
-    const account = await readAccount(upstream);
+    const read = await readAccount(upstream.id, accountId);
+    if (!read.ok) return read.error;
+    const { value: account } = read;
     if (account.state !== 'active') return unavailable(`ChatGPT upstream is ${account.state}`);
 
-    try {
-      const previousPlan = rejected === undefined ? null : issued.get(rejected)!.plan;
-      const mint: ChatGPTAccessTokenMint = async refreshToken => {
-        const result = await mintChatGPTAccessTokenResult(
-          refreshToken, fetcher, rotated => persistChatGPTRefreshTokenRotation(upstream.id, accountId, rotated, { onMissing: 'throw' }),
-        );
-        return result.ok ? { ok: true, value: mergeRetryPlan(result.value, previousPlan) } : result;
-      };
-      const retained = rejected === undefined ? null : await invalidateChatGPTAccessToken(upstream.id, accountId, rejected.reveal().slice('Bearer '.length));
-      const result = retained === null
-        ? await ensureAccessToken(upstream.id, accountId, mint, rejected !== undefined, log)
-        : { ok: true, value: retained } as const;
-      if (!result.ok) {
-        const { error } = result;
-        if (error instanceof ChatGPTOAuthSessionTerminatedError) {
-          await persistChatGPTTerminalState(upstream.id, accountId, 'refresh_failed', error.upstreamMessage, { onMissing: 'throw' });
-        }
-        if (!(error instanceof ChatGPTOAuthResponseError)) return { kind: 'transport', http: error.http, error: error.transport };
-        if (error.http === undefined) throw error;
-        return { kind: 'upstream', http: error.http };
+    const previousPlan = rejected === undefined ? null : issued.get(rejected)!.plan;
+    const mint: ChatGPTAccessTokenMint = async refreshToken => {
+      const result = await mintChatGPTAccessTokenResult(
+        refreshToken, fetcher, rotated => persistChatGPTRefreshTokenRotation(upstream.id, accountId, rotated, { onMissing: 'throw' }),
+      );
+      return result.ok ? { ok: true, value: mergeRetryPlan(result.value, previousPlan) } : result;
+    };
+    const retained = rejected === undefined ? { ok: true, value: null } as const : await invalidateChatGPTAccessToken(upstream.id, accountId, rejected.reveal().slice('Bearer '.length));
+    if (!retained.ok) return unavailable(retained.error.message);
+    const result = retained.value === null
+      ? await ensureAccessToken(upstream.id, account, mint, rejected !== undefined, log)
+      : { ok: true, value: retained.value } as const;
+    if (!result.ok) {
+      const { error } = result;
+      if (error instanceof ChatGPTAccessOnlyCredentialError) return unavailable(error.message);
+      if (error instanceof ChatGPTOAuthSessionTerminatedError) {
+        await persistChatGPTTerminalState(upstream.id, accountId, 'refresh_failed', error.upstreamMessage, { onMissing: 'throw' });
       }
-      const access = result.value;
-      const plan = chatgptPlanObservation(access) ?? previousPlan ?? (planType === null ? null : { planType });
-      if (images && plan !== null && !chatgptPlanSupportsImages(plan.planType)) {
-        return { kind: 'local', status: 403, type: 'image_tools_unavailable', message: 'ChatGPT Free accounts do not provide Codex image tools.' };
-      }
-
-      const bearer = Secret.from(access.token).map(token => `Bearer ${token}`);
-      issued.set(bearer, { renewable: account.refresh_token !== null, plan });
-      return { kind: 'authorized', bearer };
-    } catch (cause) {
-      if (cause instanceof ChatGPTAccessOnlyCredentialError) return unavailable(cause.message);
-      throw cause;
+      if (!(error instanceof ChatGPTOAuthResponseError)) return { kind: 'transport', http: error.http, error: error.transport };
+      if (error.http === undefined) throw error;
+      return { kind: 'upstream', http: error.http };
     }
+    const access = result.value;
+    const plan = chatgptPlanObservation(access) ?? previousPlan ?? (planType === null ? null : { planType });
+    if (images && plan !== null && !chatgptPlanSupportsImages(plan.planType)) {
+      return { kind: 'local', status: 403, type: 'image_tools_unavailable', message: 'ChatGPT Free accounts do not provide Codex image tools.' };
+    }
+
+    const bearer = Secret.from(access.token).map(token => `Bearer ${token}`);
+    issued.set(bearer, { renewable: account.refresh_token !== null, plan });
+    return { kind: 'authorized', bearer, deviceId: account.openaiDeviceId };
   };
 
   return {
-    async deviceId(upstream) {
-      return (await readAccount(upstream)).openaiDeviceId;
-    },
     authorization: authorize,
     reauthorize: async (upstream, bearer, fetcher, images, log) => await authorize(upstream, fetcher, images, log, bearer),
     async observeUnauthorized(upstream, bearer, code, message) {
@@ -170,11 +166,11 @@ export const createChatGPTService = (): ChatGPTService => {
       await terminal();
       return unavailable(`ChatGPT session terminated: ${message}`);
     },
-    observeQuota: async (upstream, headers, status, onlyWhenPresent) => await persist(async () => {
+    observeQuota: async (upstream, headers, status, onlyWhenPresent) => {
       const { chatgptAccountId: accountId } = upstream.config.accounts[0];
       const snapshot = parseChatGPTQuotaHeaders(new Headers(materializeHeaders(headers)), { now: new Date(), isRateLimited: status === 429 });
-      if (onlyWhenPresent && !hasChatGPTQuotaReading(snapshot)) return;
-      await putChatGPTQuota(upstream.id, accountId, snapshot);
-    }),
+      if (onlyWhenPresent && !hasChatGPTQuotaReading(snapshot)) return { persisted: true };
+      return await persist(() => putChatGPTQuota(upstream.id, accountId, snapshot));
+    },
   };
 };

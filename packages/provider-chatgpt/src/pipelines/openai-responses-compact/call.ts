@@ -25,12 +25,12 @@ export const call = defineStage({
     const upstream = facts['provider.upstream'];
     const model = facts['provider.model'];
     const modelKey = model.upstreamModelId;
-    const prepareRequest = async () => {
+    const prepareRequest = (deviceId: string) => {
       const prepared = prepareChatGPTResponsesRequest({
         body: payload,
         model,
         modelKey,
-        deviceId: await scope.services.chatgpt.deviceId(upstream),
+        deviceId,
         getHeader: name => trimHeader(request.headers, name),
       }, 'compact');
       return codexRequest(request, CHATGPT_OPENAI_RESPONSES_COMPACT_PATH, prepared.body, 'application/json',

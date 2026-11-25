@@ -62,7 +62,7 @@ export const parseJsonObject = (bytes: Uint8Array) => {
 
 export const authorizedCall = async (
   upstream: ChatGPTUpstreamFact,
-  prepareRequest: () => HttpRequestFact | Promise<HttpRequestFact>,
+  prepareRequest: (deviceId: string) => HttpRequestFact | Promise<HttpRequestFact>,
   images: boolean,
   scope: CallScope,
   send: (request: HttpRequestFact) => Promise<ProviderTransportFacts>,
@@ -111,5 +111,5 @@ export const authorizedCall = async (
 
   const access = await chatgpt.authorization(upstream, fetcher, images, log);
   if (access.kind !== 'authorized') return await accessError(access, format);
-  return await dispatch(await prepareRequest(), access.bearer, true);
+  return await dispatch(await prepareRequest(access.deviceId), access.bearer, true);
 };

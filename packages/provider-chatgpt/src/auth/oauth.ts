@@ -7,7 +7,7 @@ import {
   CHATGPT_ORIGINATOR,
   CHATGPT_REDIRECT_URI,
 } from '../constants.ts';
-import { responseHeaderEntries, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
+import { readHttpResponseText, responseHeaderEntries, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
 import type { Result } from '@floway-dev/pipeline';
 import type { Fetcher, ProviderServices } from '@floway-dev/provider';
 
@@ -130,17 +130,15 @@ const chatgptTokenRequest = async (
   const response = sent.value;
   const head = { status: response.status, statusText: response.statusText, headers: responseHeaderEntries(response) };
 
-  let rawText: string;
-  try {
-    rawText = await response.text();
-  } catch (cause) {
-    return { ok: false, error: { http: { ...head, body: null }, transport: { kind: 'transport', cause } } };
-  }
+  const text = await readHttpResponseText(response);
+  if (!text.ok) return { ok: false, error: { http: { ...head, body: null }, transport: text.error } };
+  const rawText = text.value;
   let parsed: unknown;
   try {
     parsed = rawText.length > 0 ? JSON.parse(rawText) : {};
-  } catch {
-    parsed = { _nonJsonBody: rawText };
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    parsed = null;
   }
 
   const root = (typeof parsed === 'object' && parsed !== null) ? (parsed as Record<string, unknown>) : null;
@@ -164,22 +162,22 @@ const chatgptTokenRequest = async (
     return { ok: false, error: new ChatGPTOAuthResponseError(`ChatGPT OAuth /token returned ${response.status}: ${message}`, http) };
   }
 
-  if (root === null) throw new Error('ChatGPT OAuth /token response is not an object');
-  for (const key of ['access_token', 'refresh_token'] as const) {
-    if (typeof root[key] !== 'string' || root[key] === '') {
-      throw new Error(`ChatGPT OAuth /token response missing ${key}`);
-    }
-  }
-  if (typeof root.expires_in !== 'number' || !Number.isFinite(root.expires_in)) {
-    throw new Error('ChatGPT OAuth /token response missing expires_in');
+  const token = root?.access_token;
+  const refresh = root?.refresh_token;
+  const expires = root?.expires_in;
+  const idToken = root?.id_token;
+  if (typeof token !== 'string' || token === '' || typeof refresh !== 'string' || refresh === '' || typeof expires !== 'number' || !Number.isFinite(expires)) {
+    const message = root === null ? 'ChatGPT OAuth /token response is not an object'
+      : `ChatGPT OAuth /token response missing ${typeof token !== 'string' || token === '' ? 'access_token' : typeof refresh !== 'string' || refresh === '' ? 'refresh_token' : 'expires_in'}`;
+    return { ok: false, error: new ChatGPTOAuthResponseError(message, { ...head, body: { error: { type: 'server_error', message } } }) };
   }
   return {
     ok: true,
     value: {
-      access_token: root.access_token as string,
-      refresh_token: root.refresh_token as string,
-      ...(typeof root.id_token === 'string' && root.id_token !== '' ? { id_token: root.id_token } : {}),
-      expires_in: root.expires_in as number,
+      access_token: token,
+      refresh_token: refresh,
+      ...(typeof idToken === 'string' && idToken !== '' ? { id_token: idToken } : {}),
+      expires_in: expires,
     },
   };
 };

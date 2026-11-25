@@ -1,6 +1,6 @@
 import { parseChatGPTIdTokenPlanType } from './auth/jwt.ts';
 import { ChatGPTOAuthSessionTerminatedError, chatgptTokenExpiresAt, refreshChatGPTAccessToken, refreshChatGPTAccessTokenResult, type ChatGPTOAuthFailure, type ChatGPTOAuthFetcher, type ChatGPTOAuthRefreshTokens } from './auth/oauth.ts';
-import { findChatGPTAccountIndex, readChatGPTUpstreamState, replaceChatGPTAccount, type ChatGPTAccessTokenEntry } from './state.ts';
+import { findChatGPTAccountIndex, readChatGPTUpstreamState, replaceChatGPTAccount, type ChatGPTAccessTokenEntry, type ChatGPTAccountCredential } from './state.ts';
 import type { Result } from '@floway-dev/pipeline';
 import { getProviderRepo, UpstreamGoneError, type Fetcher } from '@floway-dev/provider';
 
@@ -104,8 +104,9 @@ const persistAccessToken = async (opts: PersistChatGPTAccessTokenOptions): Promi
   // emitted once afterwards rather than logged from inside it.
   let accountMissing = false;
   let effectiveEntry = opts.entry;
+  const { upstreams } = getProviderRepo();
   try {
-    await getProviderRepo().upstreams.saveState(opts.upstreamId, current => {
+    await upstreams.saveState(opts.upstreamId, current => {
       const state = readChatGPTUpstreamState(current);
       const idx = findChatGPTAccountIndex(state, opts.accountId);
       if (idx < 0) {
@@ -148,24 +149,34 @@ export const invalidateChatGPTAccessToken = async (
   upstreamId: string,
   accountId: string | null,
   expectedToken?: string,
-): Promise<ChatGPTAccessTokenEntry | null> => {
+): Promise<Result<ChatGPTAccessTokenEntry | null, Error>> => {
   if (expectedToken === undefined) {
-    return await persistAccessToken({ upstreamId, accountId, entry: null, where: 'invalidateChatGPTAccessToken' });
+    return { ok: true, value: await persistAccessToken({ upstreamId, accountId, entry: null, where: 'invalidateChatGPTAccessToken' }) };
   }
+  const { upstreams } = getProviderRepo();
+  let accountMissing = false;
   let retained: ChatGPTAccessTokenEntry | null = null;
-  await getProviderRepo().upstreams.saveState(upstreamId, current => {
-    const state = readChatGPTUpstreamState(current);
-    const idx = findChatGPTAccountIndex(state, accountId);
-    if (idx < 0) throw new Error(`invalidateChatGPTAccessToken: ChatGPT account ${accountId} not found in upstream ${upstreamId}`);
-    const entry = state.accounts[idx].accessToken;
-    if (entry !== null && entry.token !== expectedToken) {
-      retained = entry;
-      return current;
-    }
-    if (entry === null) return current;
-    return replaceChatGPTAccount(state, idx, account => ({ ...account, accessToken: null }));
-  });
-  return retained;
+  try {
+    await upstreams.saveState(upstreamId, current => {
+      const state = readChatGPTUpstreamState(current);
+      const idx = findChatGPTAccountIndex(state, accountId);
+      accountMissing = idx < 0;
+      if (accountMissing) return current;
+      const entry = state.accounts[idx].accessToken;
+      if (entry !== null && entry.token !== expectedToken) {
+        retained = entry;
+        return current;
+      }
+      retained = null;
+      if (entry === null) return current;
+      return replaceChatGPTAccount(state, idx, account => ({ ...account, accessToken: null }));
+    });
+  } catch (error) {
+    if (!(error instanceof UpstreamGoneError)) throw error;
+    return { ok: false, error };
+  }
+  if (accountMissing) return { ok: false, error: new Error(`invalidateChatGPTAccessToken: ChatGPT account ${accountId} not found in upstream ${upstreamId}`) };
+  return { ok: true, value: retained };
 };
 
 // Reads, mints, and persists. The mint callback is responsible for routing
@@ -185,30 +196,26 @@ export const invalidateChatGPTAccessToken = async (
 // other terminal codes (`app_session_terminated`, `invalid_refresh_token`,
 // `invalid_client`, `unauthorized_client`, `access_denied`) signal
 // credential death under any race scenario and skip recovery.
-export type ChatGPTAccessTokenResult = Result<ChatGPTAccessTokenEntry, ChatGPTOAuthFailure>;
-export type ChatGPTAccessTokenMint = (refreshToken: string) => Promise<ChatGPTAccessTokenResult>;
+export type ChatGPTAccessTokenResult = Result<ChatGPTAccessTokenEntry, ChatGPTOAuthFailure | ChatGPTAccessOnlyCredentialError>;
+export type ChatGPTAccessTokenMint = (refreshToken: string) => Promise<Result<ChatGPTAccessTokenEntry, ChatGPTOAuthFailure>>;
 
 export const resolveChatGPTAccessToken = async (
   upstreamId: string,
-  accountId: string | null,
+  account: ChatGPTAccountCredential,
   mint: ChatGPTAccessTokenMint,
   force: boolean,
   log?: ChatGPTTokenLog,
-): Promise<ChatGPTAccessTokenResult> => await ensureAccessToken(upstreamId, accountId, mint, true, force, log);
+): Promise<ChatGPTAccessTokenResult> => await ensureAccessToken(upstreamId, account, mint, true, force, log);
 
 const ensureAccessToken = async (
   upstreamId: string,
-  accountId: string | null,
+  account: ChatGPTAccountCredential,
   mint: ChatGPTAccessTokenMint,
   recoveryAllowed: boolean,
   force: boolean,
   log: ChatGPTTokenLog | undefined,
 ): Promise<ChatGPTAccessTokenResult> => {
-  const fresh = await getProviderRepo().upstreams.getById(upstreamId);
-  if (!fresh) throw new Error(`ChatGPT upstream ${upstreamId} not found`);
-  const state = readChatGPTUpstreamState(fresh.state);
-  const account = state.accounts.find(a => a.chatgptAccountId === accountId);
-  if (!account) throw new Error(`ChatGPT account ${accountId} not found in upstream ${upstreamId}`);
+  const { chatgptAccountId: accountId } = account;
   const renewable = account.refresh_token !== null;
   if (account.accessToken && isAccessTokenUsable(account.accessToken, renewable) && !force) {
     return { ok: true, value: account.accessToken };
@@ -218,12 +225,12 @@ const ensureAccessToken = async (
   // operator's fix is the same but the reason changes what they check.
   if (account.refresh_token === null) {
     if (force) {
-      throw new ChatGPTAccessOnlyCredentialError('ChatGPT access-only credentials cannot be refreshed; re-import the credential');
+      return { ok: false, error: new ChatGPTAccessOnlyCredentialError('ChatGPT access-only credentials cannot be refreshed; re-import the credential') };
     }
     if (account.accessToken !== null && account.accessToken.expiresAt !== null && account.accessToken.expiresAt <= Date.now()) {
-      throw new ChatGPTAccessOnlyCredentialError('ChatGPT access token has expired and cannot be refreshed; re-import the credential');
+      return { ok: false, error: new ChatGPTAccessOnlyCredentialError('ChatGPT access token has expired and cannot be refreshed; re-import the credential') };
     }
-    throw new ChatGPTAccessOnlyCredentialError('ChatGPT access-only credential has no usable access token; re-import the credential');
+    return { ok: false, error: new ChatGPTAccessOnlyCredentialError('ChatGPT access-only credential has no usable access token; re-import the credential') };
   }
 
   const refreshToken = account.refresh_token;
@@ -279,7 +286,7 @@ const recoverFromRefreshRace = async (
   // through the standard mint path. The depth guard suppresses a second
   // recovery attempt — if `invalid_grant` strikes again the refresh token
   // really is dead and we want the terminal flip.
-  return await ensureAccessToken(upstreamId, accountId, mint, false, false, log);
+  return await ensureAccessToken(upstreamId, rereadAccount, mint, false, false, log);
 };
 
 // Mints a fresh access token via /oauth/token and routes the rotated
@@ -299,7 +306,7 @@ export const mintChatGPTAccessTokenResult = async (
   refreshToken: string,
   fetcher: ChatGPTOAuthFetcher,
   persistRefreshTokenRotation: (newRefreshToken: string) => Promise<void>,
-): Promise<ChatGPTAccessTokenResult> => {
+): ReturnType<ChatGPTAccessTokenMint> => {
   const result = await refreshChatGPTAccessTokenResult(refreshToken, fetcher);
   return result.ok ? { ok: true, value: await persistMint(result.value, persistRefreshTokenRotation) } : result;
 };

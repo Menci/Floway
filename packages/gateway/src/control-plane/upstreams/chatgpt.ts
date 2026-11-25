@@ -116,7 +116,8 @@ const withChatGPTResetAccess = async <Result>(opts: {
     // caller's same idempotency key is safe. Network failures remain ambiguous
     // and deliberately bypass this branch.
     const retained = await invalidateChatGPTAccessToken(opts.upstreamId, opts.access.accountId, opts.access.accessToken);
-    opts.access.accessToken = retained?.token ?? await ensureChatGPTControlPlaneAccessToken({
+    if (!retained.ok) throw retained.error;
+    opts.access.accessToken = retained.value?.token ?? await ensureChatGPTControlPlaneAccessToken({
       upstreamId: opts.upstreamId,
       accountId: opts.access.accountId,
       fetcher: opts.access.fetcher,
