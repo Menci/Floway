@@ -10,6 +10,7 @@ import { OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS } from '../../src/usage-probe.ts';
 import { CREDIT_BALANCE, USAGE_TOTALS } from '../usage-fixture.ts';
 import type { HttpRequestFact } from '@floway-dev/http';
 import { move, run, Secret, type Pipeline } from '@floway-dev/pipeline';
+import * as decisions from '@floway-dev/protocols/decision';
 import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { toProviderModelFact, type ProviderRepo, type ProtocolOutcome, type ProviderServices, type UpstreamRecord } from '@floway-dev/provider';
@@ -76,7 +77,7 @@ test.each([true, false])('applies DeepSeek Chat Completions normalization when e
   };
   const upstream = new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, { headers: { 'content-type': 'text/event-stream' } });
   const fetcher = vi.fn<ReturnType<ProviderServices['fetcher']>>().mockResolvedValue({ ok: true, value: upstream });
-  const services = { fetcher: () => fetcher, ollama: { refreshProbes: vi.fn().mockResolvedValue(undefined) } };
+  const services = { fetcher: () => fetcher, ollama: { refreshProbes: vi.fn().mockResolvedValue({ ok: true, value: undefined }) } };
   const model = facts['provider.model'];
   const exchange = run(ollamaPipelines.openaiChatCompletions, {
     ...facts,
@@ -129,7 +130,7 @@ test.each([true, false])('applies DeepSeek Chat Completions normalization when e
 test('keeps a bodyless Anthropic count-tokens success', async () => {
   const upstream = new Response(null, { status: 204, headers: { 'x-upstream': 'empty-count' } });
   const fetcher = vi.fn<ReturnType<ProviderServices['fetcher']>>().mockResolvedValue({ ok: true, value: upstream });
-  const services = { fetcher: () => fetcher, ollama: { refreshProbes: vi.fn().mockResolvedValue(undefined) } };
+  const services = { fetcher: () => fetcher, ollama: { refreshProbes: vi.fn().mockResolvedValue({ ok: true, value: undefined }) } };
   const exchange = run(ollamaPipelines.anthropicMessagesCountTokens, {
     ...facts,
     'request.anthropicMessages': move({ model: 'public', messages: [] }),
@@ -150,7 +151,7 @@ test.each([
   const fetch = vi.fn<ReturnType<ProviderServices['fetcher']>>().mockResolvedValue({
     ok: true, value: new Response(`data: ${JSON.stringify(chunk)}\n\n`, { headers: { 'content-type': 'text/event-stream' } }),
   });
-  const refreshProbes = vi.fn().mockResolvedValue(undefined);
+  const refreshProbes = vi.fn().mockResolvedValue({ ok: true, value: undefined });
   const exchange = run(ollamaPipelines.openaiChatCompletions, {
     ...facts,
     'provider.upstream': move(ollamaUpstreamFact({ ...record, config: { baseUrl: config.baseUrl, cloudUsage: false, models: [] } })),
@@ -255,7 +256,7 @@ test('malformed streaming success and token counting leave probes unarmed', asyn
   const fetch = vi.fn<ReturnType<ProviderServices['fetcher']>>()
     .mockResolvedValueOnce({ ok: true, value: Response.json({ error: 'non-SSE' }) })
     .mockResolvedValueOnce({ ok: true, value: Response.json({ input_tokens: 12 }) });
-  const refreshProbes = vi.fn().mockResolvedValue(undefined);
+  const refreshProbes = vi.fn().mockResolvedValue({ ok: true, value: undefined });
   const services = { fetcher: () => fetch, ollama: { refreshProbes } };
   const chat = run(ollamaPipelines.openaiChatCompletions, {
     ...facts,
@@ -321,7 +322,7 @@ test('Ollama transcription replaces the form model with the selected upstream ID
         { name: 'model', value: 'public' },
       ],
     }),
-  }, { services: { fetcher: () => fetcher, ollama: { refreshProbes: vi.fn().mockResolvedValue(undefined) } } });
+  }, { services: { fetcher: () => fetcher, ollama: { refreshProbes: vi.fn().mockResolvedValue({ ok: true, value: undefined }) } } });
   const answer = await exchange.result;
   await exchange.done;
   expect(answer).toMatchObject({ 'response.modelKey': 'publisher/model', 'response.openaiAudioTranscriptions': { kind: 'result', result: new TextEncoder().encode('hello') } });
@@ -351,7 +352,7 @@ const verifyOperation = <Input, Key extends string, Output extends Record<Key, P
     const error = { error: { message: 'Temporary upstream failure', detail: 'Keep extension fields' } };
     const value = variant === 'success' ? success() : Response.json(error, { status: 503 });
     const fetch = vi.fn<ReturnType<ProviderServices['fetcher']>>().mockResolvedValue({ ok: true, value });
-    const services = { fetcher: () => fetch, ollama: { refreshProbes: vi.fn().mockResolvedValue(undefined) } };
+    const services = { fetcher: () => fetch, ollama: { refreshProbes: vi.fn().mockResolvedValue({ ok: true, value: undefined }) } };
     const exchange = run(pipeline, input, { services });
     const answer = await exchange.result;
     const outcome = answer[key];
@@ -377,11 +378,34 @@ verifyOperation(ollamaPipelines.anthropicMessagesCountTokens, {
   'request.anthropicMessages': move({ model: 'public', messages: [] }),
 }, 'response.anthropicMessages', () => Response.json({ input_tokens: 8 }), 'result');
 
-verifyOperation(ollamaPipelines.decision, {
+const decisionFacts = {
   ...facts,
   'provider.model': move(toProviderModelFact(stubProviderModel({ decisionTarget: { protocol: 'typesafe-systemone' } }))),
   'request.decision': move<CanonicalDecisionRequest>({ sourceProtocol: 'typesafe-systemone', raw: { state: 'evidence', questions: {} }, state: { kind: 'text', value: 'evidence' }, questions: [] }),
-}, 'response.decision', () => new Response('{"answers":{"choice":{"type":"noul","noul":0.5000}}}', { headers: { 'content-type': 'application/json' } }), 'result');
+};
+verifyOperation(ollamaPipelines.decision, decisionFacts, 'response.decision', () => new Response('{"answers":{"choice":{"type":"noul","noul":0.5000}}}', { headers: { 'content-type': 'application/json' } }), 'result');
+
+test.each([false, true])('Decision drains an invalid response and propagates a parser bug when injected (%s)', async injectBug => {
+  const bug = new TypeError('Decision parser bug');
+  const response = Response.json({ answers: [] });
+  const fetcher: ReturnType<ProviderServices['fetcher']> = async () => ({ ok: true, value: response });
+  const services = { fetcher: () => fetcher, ollama: { refreshProbes: vi.fn().mockResolvedValue({ ok: true, value: undefined }) } };
+  const parse = injectBug ? vi.spyOn(decisions, 'parseDecisionResponse').mockImplementationOnce(() => { throw bug; }) : undefined;
+  try {
+    const exchange = run(ollamaPipelines.decision, decisionFacts, { services });
+    if (injectBug) {
+      await expect(exchange.result).rejects.toBe(bug);
+      await expect(exchange.done).rejects.toBe(bug);
+    } else {
+      expect((await exchange.result)['response.decision']).toMatchObject({ kind: 'error', source: 'upstream', error: { answers: [] } });
+      await exchange.done;
+    }
+    expect(response.bodyUsed).toBe(true);
+    expect(response.body?.locked).toBe(false);
+  } finally {
+    parse?.mockRestore();
+  }
+});
 
 verifyOperation(ollamaPipelines.openaiAudioTranscriptions, {
   ...facts,

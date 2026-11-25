@@ -10,6 +10,7 @@
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
 import { fullUpstreamActionError } from '../../access-control/upstream-edit.ts';
+import { adaptProviderFetcher } from '../../dial/transport-error.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -50,15 +51,11 @@ export const ollamaUsage = async (c: CtxWithJson<typeof ollamaUsageBody>) => {
   // request's. The account is read alongside them — its own background cadence
   // is a day, which is too long to wait for after fixing a key — and a failure
   // there costs the card a name rather than the reading.
-  const account = (record.id === ''
-    ? fetchOllamaAccount(config, fetcher)
-    : refreshOllamaAccount(record.id, config, fetcher)
-  ).catch((): null => null);
-
-  try {
-    const observation = await refreshOllamaUsageProbe(record.id, config, fetcher);
-    return c.json({ observation, account: await account });
-  } catch (err) {
-    return c.json({ error: errorMessage(err) }, 502);
-  }
+  const send = adaptProviderFetcher(() => fetcher);
+  const [observation, account] = await Promise.all([
+    refreshOllamaUsageProbe(record.id, config, send),
+    record.id === '' ? fetchOllamaAccount(config, send) : refreshOllamaAccount(record.id, config, send),
+  ]);
+  if (!observation.ok) return c.json({ error: errorMessage(observation.error) }, 502);
+  return c.json({ observation: observation.value, account: account.ok ? account.value : null });
 };

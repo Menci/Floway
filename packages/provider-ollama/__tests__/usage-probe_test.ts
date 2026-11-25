@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { CREDIT_BALANCE as BALANCE_BODY, USAGE_TOTALS as USAGE_BODY } from './usage-fixture.ts';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
@@ -8,7 +8,7 @@ import {
   refreshOllamaUsageProbe,
 } from '../src/usage-probe.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertRejects, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_ollama_usage';
 
@@ -56,7 +56,7 @@ test('a failed endpoint preserves both prior readings and records one refresh ou
   const repo = withStateRepo();
   await withMockedFetch(
     request => Response.json(new URL(request.url).pathname === '/api/usage' ? USAGE_BODY : BALANCE_BODY),
-    () => refreshOllamaUsageProbe(UPSTREAM_ID, config, directFetcher),
+    () => refreshOllamaUsageProbe(UPSTREAM_ID, config, async (url, init) => ({ ok: true, value: await directFetcher(url, init) })),
   );
   const observed = repo.read();
   assertEquals(observed.usageProbe?.observation?.data.usage, USAGE_BODY);
@@ -71,13 +71,47 @@ test('a failed endpoint preserves both prior readings and records one refresh ou
     request => new URL(request.url).pathname === failedPath
       ? new Response('invalid credentials', { status: 401 })
       : Response.json({ changed: true }),
-    () => assertRejects(() => refreshOllamaUsageProbe(UPSTREAM_ID, config, directFetcher)),
+    () => expect(refreshOllamaUsageProbe(UPSTREAM_ID, config, async (url, init) => ({ ok: true, value: await directFetcher(url, init) }))).resolves.toMatchObject({ ok: false }),
   );
   const after = repo.read();
   assertEquals(after.usageProbe?.observation, observed.usageProbe?.observation);
   assertEquals(after.usageProbe?.error, `Ollama ${failedPath} returned 401: invalid credentials`);
   assertEquals(repo.writes.length, 2);
   assertEquals(repo.metrics.length, 4);
+});
+
+test('records validation failures but propagates parser bugs without persisting an outcome', async () => {
+  const { config } = assertOllamaUpstreamRecord(cloudRecord());
+  const repo = withStateRepo();
+  const badBalance = Response.json({ included: null });
+  const usage = Response.json(USAGE_BODY);
+  const result = await refreshOllamaUsageProbe(UPSTREAM_ID, config, async url => ({ ok: true, value: url.endsWith('/api/usage') ? usage : badBalance }));
+  expect(result).toMatchObject({ ok: false, error: expect.any(TypeError) });
+  expect([usage.bodyUsed, badBalance.bodyUsed, usage.body?.locked, badBalance.body?.locked]).toEqual([true, true, false, false]);
+  expect(repo.writes).toHaveLength(1);
+
+  const bug = new TypeError('Ollama usage parser bug');
+  const parse = vi.spyOn(JSON, 'parse').mockImplementationOnce(() => { throw bug; });
+  try {
+    await expect(refreshOllamaUsageProbe(UPSTREAM_ID, config, async url => ({ ok: true, value: Response.json(url.endsWith('/api/usage') ? USAGE_BODY : BALANCE_BODY) }))).rejects.toBe(bug);
+    expect(repo.writes).toHaveLength(1);
+  } finally {
+    parse.mockRestore();
+  }
+});
+
+test('a rejected write after valid usage reads returns the persistence error', async () => {
+  const { config } = assertOllamaUpstreamRecord(cloudRecord());
+  const cause = new Error('state store unavailable');
+  const repo = {
+    recordUpstreamMetric: vi.fn(),
+    upstreams: { getById: vi.fn(), saveState: vi.fn().mockRejectedValue(cause) },
+  };
+  const result = await refreshOllamaUsageProbe(UPSTREAM_ID, config,
+    async url => ({ ok: true, value: Response.json(url.endsWith('/api/usage') ? USAGE_BODY : BALANCE_BODY) }), repo);
+  expect(result).toEqual({ ok: false, error: cause });
+  expect(repo.upstreams.saveState).toHaveBeenCalledOnce();
+  expect(repo.recordUpstreamMetric).not.toHaveBeenCalled();
 });
 
 test('usage is probed when the operator enabled it and a key is configured, and not otherwise', () => {

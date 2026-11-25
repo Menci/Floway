@@ -2,10 +2,11 @@ import { isOllamaAccountProbeDue, refreshOllamaAccount } from './account-probe.t
 import { assertOllamaUpstreamRecord } from './config.ts';
 import { readOllamaUpstreamState } from './state.ts';
 import { isOllamaUsageEnabled, isOllamaUsageProbeDue, refreshOllamaUsageProbe } from './usage-probe.ts';
-import type { Fetcher, ProviderRepo, ProviderServices } from '@floway-dev/provider';
+import type { Result } from '@floway-dev/pipeline';
+import type { ProviderRepo, ProviderServices } from '@floway-dev/provider';
 
 export interface OllamaService {
-  readonly refreshProbes: (upstreamId: string, fetcher: Fetcher) => Promise<void>;
+  readonly refreshProbes: (upstreamId: string, fetcher: ReturnType<ProviderServices['fetcher']>) => Promise<Result<void, unknown>>;
 }
 
 export interface OllamaServices extends ProviderServices {
@@ -13,22 +14,23 @@ export interface OllamaServices extends ProviderServices {
 }
 
 export const createOllamaService = (repo: ProviderRepo): OllamaService => {
-  const pending = new Map<string, Promise<void>>();
+  const pending = new Map<string, ReturnType<OllamaService['refreshProbes']>>();
 
-  const refresh = async (upstreamId: string, fetcher: Fetcher): Promise<void> => {
+  const refresh: OllamaService['refreshProbes'] = async (upstreamId, fetcher) => {
     const record = await repo.upstreams.getById(upstreamId);
-    if (record === null) return;
+    if (record === null) return { ok: true, value: undefined };
     const { config, state: rawState } = assertOllamaUpstreamRecord(record);
-    if (!isOllamaUsageEnabled(config)) return;
+    if (!isOllamaUsageEnabled(config)) return { ok: true, value: undefined };
 
     const state = readOllamaUpstreamState(rawState);
     const now = Date.now();
-    const tasks: Promise<unknown>[] = [];
+    const tasks: Promise<Result<unknown, unknown>>[] = [];
     if (isOllamaUsageProbeDue(state, now)) tasks.push(refreshOllamaUsageProbe(upstreamId, config, fetcher, repo, record.configVersion));
     if (isOllamaAccountProbeDue(state, now)) tasks.push(refreshOllamaAccount(upstreamId, config, fetcher, repo, record.configVersion));
-    const failures = (await Promise.allSettled(tasks)).flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : []);
-    if (failures.length === 1) throw failures[0];
-    if (failures.length > 1) throw new AggregateError(failures, 'Ollama usage and account probes failed');
+    const failures = (await Promise.all(tasks)).filter(result => !result.ok);
+    if (failures.length === 1) return failures[0];
+    if (failures.length > 1) return { ok: false, error: new AggregateError(failures.map(failure => failure.error), 'Ollama usage and account probes failed') };
+    return { ok: true, value: undefined };
   };
 
   return {

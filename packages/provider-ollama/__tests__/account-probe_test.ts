@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { assert, expect, test, vi } from 'vitest';
 
 import { fetchOllamaAccount, refreshOllamaAccount } from '../src/account-probe.ts';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
@@ -69,10 +69,11 @@ test('the account probe reads the plan and identity ollama.com actually sends', 
       return new Response(JSON.stringify(ME_BODY), { status: 200 });
     },
     async () => {
-      const account = await fetchOllamaAccount(config, directFetcher);
-      assertEquals(account.plan, 'free');
-      assertEquals(account.name, 'operator');
-      assertEquals(account.email, 'operator@example.com');
+      const account = await fetchOllamaAccount(config, async (url, init) => ({ ok: true, value: await directFetcher(url, init) }));
+      assert(account.ok);
+      assertEquals(account.value.plan, 'free');
+      assertEquals(account.value.name, 'operator');
+      assertEquals(account.value.email, 'operator@example.com');
     },
   );
 });
@@ -82,7 +83,7 @@ test('the account slot resolves a race by read time', async () => {
   const repo = withStateRepo();
   await withMockedFetch(
     () => new Response(JSON.stringify(ME_BODY), { status: 200 }),
-    () => refreshOllamaAccount(UPSTREAM_ID, config, directFetcher),
+    () => refreshOllamaAccount(UPSTREAM_ID, config, async (url, init) => ({ ok: true, value: await directFetcher(url, init) })),
   );
   const written = repo.read().account;
   assertEquals(written?.plan, 'free');
@@ -91,7 +92,25 @@ test('the account slot resolves a race by read time', async () => {
   const repoWithNewer = withStateRepo({ account: { ...written, fetchedAt: Date.now() + 60_000, plan: 'pro' } });
   await withMockedFetch(
     () => new Response(JSON.stringify(ME_BODY), { status: 200 }),
-    () => refreshOllamaAccount(UPSTREAM_ID, config, directFetcher),
+    () => refreshOllamaAccount(UPSTREAM_ID, config, async (url, init) => ({ ok: true, value: await directFetcher(url, init) })),
   );
   assertEquals(repoWithNewer.read().account?.plan, 'pro');
+});
+
+test('the account reader drains malformed JSON and propagates an unexpected parser failure', async () => {
+  const { config } = assertOllamaUpstreamRecord(cloudRecord());
+  const malformed = new Response('{broken');
+  await expect(fetchOllamaAccount(config, async () => ({ ok: true, value: malformed }))).resolves.toMatchObject({
+    ok: false, error: expect.objectContaining({ cause: expect.any(SyntaxError) }),
+  });
+  expect(malformed.bodyUsed).toBe(true);
+  expect(malformed.body?.locked).toBe(false);
+
+  const bug = new TypeError('Ollama account parser bug');
+  const parse = vi.spyOn(JSON, 'parse').mockImplementationOnce(() => { throw bug; });
+  try {
+    await expect(fetchOllamaAccount(config, async () => ({ ok: true, value: Response.json(ME_BODY) }))).rejects.toBe(bug);
+  } finally {
+    parse.mockRestore();
+  }
 });

@@ -1,4 +1,5 @@
 import { createPerRequestFetcher } from '../dial/per-request.ts';
+import { adaptProviderFetcher } from '../dial/transport-error.ts';
 import { getRepo } from '../repo/index.ts';
 import { hasLocationIndependentEgress } from '../repo/proxy-fallback-list.ts';
 import type { ProviderScheduledOptions, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -15,7 +16,12 @@ const scheduledTasksByKind: Record<UpstreamProviderKind, ((record: UpstreamRecor
   copilot: runCopilotScheduledTask,
   custom: null,
   'kimi-code': runKimiCodeScheduledTask,
-  ollama: runOllamaScheduledTask,
+  ollama: (record, options) => runOllamaScheduledTask(record, {
+    async fetcher(fresh) {
+      const fetcher = await options.fetcher(fresh);
+      return fetcher === null ? null : adaptProviderFetcher(() => fetcher);
+    },
+  }),
 };
 
 export const runUpstreamScheduledTasks = async (runtimeLocation: string | null): Promise<void> => {

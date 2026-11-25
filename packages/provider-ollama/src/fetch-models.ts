@@ -115,12 +115,14 @@ const fetchShowForTag = async (
   fetcher: Fetcher,
   tag: TagEntry,
 ): Promise<OllamaRawModel | null> => {
-  const response = await fetchOllamaApi(
+  const result = await fetchOllamaApi(
     config,
     '/api/show',
     { method: 'POST', body: jsonRequestBody({ name: tag.name }) },
-    fetcher,
+    async (url, init) => ({ ok: true, value: await fetcher(url, init) }),
   );
+  if (!result.ok) throw result.error.cause;
+  const response = result.value;
   // A tag whose /api/show fails is skipped rather than failing the catalog, so
   // this is the one path that walks away from a response it asked for.
   if (!response.ok) {
@@ -143,7 +145,11 @@ export const fetchOllamaCatalog = async (config: OllamaUpstreamConfig, fetcher: 
   // provider's catalog fetch produces, which the control-plane and persisted cache
   // both branch on.
   const tags = await fetchUpstreamModels(
-    () => fetchOllamaApi(config, '/api/tags', { method: 'GET' }, fetcher),
+    async () => {
+      const result = await fetchOllamaApi(config, '/api/tags', { method: 'GET' }, async (url, init) => ({ ok: true, value: await fetcher(url, init) }));
+      if (!result.ok) throw result.error.cause;
+      return result.value;
+    },
     parseTagsResponse,
   );
   // /api/show fan-out stays outside the scaffold: `allSettled` already drops

@@ -24,7 +24,9 @@
 import { fetchOllamaApi } from './api.ts';
 import type { OllamaUpstreamConfig } from './config.ts';
 import { type OllamaAccountEntry, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
-import { type Fetcher, type ProviderRepo, getProviderRepo } from '@floway-dev/provider';
+import { readHttpResponseText } from '@floway-dev/http';
+import type { Result } from '@floway-dev/pipeline';
+import { type ProviderRepo, getProviderRepo, type ProviderServices } from '@floway-dev/provider';
 
 // A subscription changes on a billing boundary at most, so this refreshes on a
 // wholly different cadence from the usage windows beside it: an upstream
@@ -36,58 +38,68 @@ const optionalString = (value: unknown): string | null =>
 
 export const fetchOllamaAccount = async (
   config: OllamaUpstreamConfig,
-  fetcher: Fetcher,
-): Promise<OllamaAccountEntry> => {
-  const response = await fetchOllamaApi(
+  fetcher: ReturnType<ProviderServices['fetcher']>,
+): Promise<Result<OllamaAccountEntry, unknown>> => {
+  const result = await fetchOllamaApi(
     config,
     '/api/me',
     { method: 'POST', headers: new Headers({ accept: 'application/json' }), body: '{}' },
     fetcher,
   );
-  const rawText = await response.text();
+  if (!result.ok) return { ok: false, error: result.error.cause };
+  const response = result.value;
+  const rawText = await readHttpResponseText(response);
+  if (!rawText.ok) return { ok: false, error: rawText.error.cause };
   if (!response.ok) {
-    throw new Error(`Ollama /api/me returned ${response.status}: ${rawText.trim().slice(0, 256)}`);
+    return { ok: false, error: new Error(`Ollama /api/me returned ${response.status}: ${rawText.value.trim().slice(0, 256)}`) };
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(rawText);
+    parsed = JSON.parse(rawText.value);
   } catch (cause) {
-    throw new Error(`Ollama /api/me returned a non-JSON body (${response.status})`, { cause: cause as Error });
+    if (!(cause instanceof SyntaxError)) throw cause;
+    return { ok: false, error: new Error(`Ollama /api/me returned a non-JSON body (${response.status})`, { cause }) };
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`Ollama /api/me returned a non-object body (${response.status})`);
+    return { ok: false, error: new Error(`Ollama /api/me returned a non-object body (${response.status})`) };
   }
   const body = parsed as Record<string, unknown>;
   return {
-    fetchedAt: Date.now(),
-    plan: optionalString(body.Plan),
-    name: optionalString(body.Name),
-    email: optionalString(body.Email),
+    ok: true, value: {
+      fetchedAt: Date.now(),
+      plan: optionalString(body.Plan),
+      name: optionalString(body.Name),
+      email: optionalString(body.Email),
+    },
   };
 };
 
-const persistAccountEntry = async (repo: ProviderRepo, upstreamId: string, entry: OllamaAccountEntry, expectedConfigVersion?: number): Promise<void> => {
-  await repo.upstreams.saveState(upstreamId, (current, configVersion) => {
-    if (expectedConfigVersion !== undefined && configVersion !== expectedConfigVersion) return current;
-    const state = readOllamaUpstreamState(current);
-    // Races resolve by read time rather than by write order, as the usage slot
-    // beside this one does, and equal stamps mean equally fresh rather than a
-    // rollback.
-    if (state.account && state.account.fetchedAt > entry.fetchedAt) return current;
-    return { ...state, account: entry } satisfies OllamaUpstreamState;
-  });
+const persistAccountEntry = async (repo: ProviderRepo, upstreamId: string, entry: OllamaAccountEntry, expectedConfigVersion?: number): Promise<Result<void, unknown>> => {
+  try {
+    await repo.upstreams.saveState(upstreamId, (current, configVersion) => {
+      if (expectedConfigVersion !== undefined && configVersion !== expectedConfigVersion) return current;
+      const state = readOllamaUpstreamState(current);
+      // Older observations cannot overwrite a more recent read.
+      if (state.account && state.account.fetchedAt > entry.fetchedAt) return current;
+      return { ...state, account: entry } satisfies OllamaUpstreamState;
+    });
+  } catch (error) {
+    return { ok: false, error };
+  }
+  return { ok: true, value: undefined };
 };
 
 export const refreshOllamaAccount = async (
   upstreamId: string,
   config: OllamaUpstreamConfig,
-  fetcher: Fetcher,
+  fetcher: ReturnType<ProviderServices['fetcher']>,
   repo = getProviderRepo(),
   expectedConfigVersion?: number,
-): Promise<OllamaAccountEntry> => {
+): Promise<Result<OllamaAccountEntry, unknown>> => {
   const entry = await fetchOllamaAccount(config, fetcher);
-  await persistAccountEntry(repo, upstreamId, entry, expectedConfigVersion);
-  return entry;
+  if (!entry.ok) return entry;
+  const persisted = await persistAccountEntry(repo, upstreamId, entry.value, expectedConfigVersion);
+  return persisted.ok ? entry : persisted;
 };
 
 export const isOllamaAccountProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
