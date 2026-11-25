@@ -1,8 +1,10 @@
-import pRetry, { AbortError as RetryAbortError } from 'p-retry';
-
 import { githubApiOrigin } from './github-host.ts';
+import type { CopilotCredentialFailure } from './service.ts';
 import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
-import { getProviderRepo as getRepo, isAbortError, type Fetcher, type HttpHeaderLines } from '@floway-dev/provider';
+import { readHttpResponseText, responseHeaderEntries } from '@floway-dev/http';
+import type { Result } from '@floway-dev/pipeline';
+import { isJsonObject } from '@floway-dev/protocols/common';
+import { getProviderRepo as getRepo, type Fetcher, type HttpHeaderLines, type ProviderServices } from '@floway-dev/provider';
 
 // Version constants pinned to a known-good fingerprint that mirrors what a
 // current VSCode Copilot Chat install sends. The Copilot Chat plugin version,
@@ -56,47 +58,23 @@ export class CopilotTokenFetchError extends Error {
 
 export const isCopilotTokenFetchError = (error: unknown): error is CopilotTokenFetchError => error instanceof CopilotTokenFetchError;
 
-class RetryableError extends Error {
-  constructor(readonly originalError: unknown) {
-    super(originalError instanceof Error ? originalError.message : String(originalError), { cause: originalError });
-  }
-}
-
-class NonErrorAbort extends Error {
-  constructor(readonly originalError: unknown) {
-    super(String(originalError), { cause: originalError });
-  }
-}
-
-const retryCopilotTokenFetch = async <T>(fn: () => Promise<T>): Promise<T> => {
-  try {
-    return await pRetry(async () => {
-      try {
-        return await fn();
-      } catch (error) {
-        if (isAbortError(error) || (isCopilotTokenFetchError(error) && isCopilotTokenFetchTerminalStatus(error.status))) {
-          throw new RetryAbortError(error instanceof Error ? error : new NonErrorAbort(error));
-        }
-
-        // p-retry skips non-network TypeErrors and normalizes non-Error rejections.
-        // Keep the original value across retries and restore it at the boundary.
-        if (!(error instanceof Error) || error instanceof TypeError) throw new RetryableError(error);
-        throw error;
-      }
-    }, {
-      retries: 3,
-      factor: 2,
-      minTimeout: 1000,
-      onFailedAttempt: ({ error, attemptNumber, retryDelay }) => {
-        if (retryDelay === 0) return;
-        const cause = error instanceof RetryableError ? error.originalError : error;
-        console.warn(`Retry ${attemptNumber}/3 after ${retryDelay}ms: ${cause instanceof Error ? cause.message : String(cause)}`);
-      },
-    });
-  } catch (error) {
-    if (error instanceof RetryableError) throw error.originalError;
-    if (error instanceof NonErrorAbort) throw error.originalError;
-    throw error;
+const retryCopilotTokenFetch = async (fetch: () => ReturnType<typeof exchangeCopilotTokenResult>): ReturnType<typeof exchangeCopilotTokenResult> => {
+  for (let attempt = 1; ; attempt++) {
+    const result = await fetch();
+    if (result.ok || attempt === 4) return result;
+    const { error } = result;
+    let cause: unknown;
+    if (isCopilotTokenFetchError(error)) {
+      if (isCopilotTokenFetchTerminalStatus(error.status)) return result;
+      cause = error;
+    } else if (error.kind === 'transport' && error.error.kind === 'transport') {
+      cause = error.error.cause;
+    } else {
+      return result;
+    }
+    const delay = 1000 * 2 ** (attempt - 1);
+    console.warn(`Retry ${attempt}/3 after ${delay}ms: ${cause instanceof Error ? cause.message : String(cause)}`);
+    await new Promise<void>(resolve => { setTimeout(resolve, delay); });
   }
 };
 
@@ -123,7 +101,7 @@ export const createCopilotCredentials = () => {
   const pendingTokenExchanges = new Map<string, {
     githubHost: string;
     githubToken: string;
-    task: Promise<CopilotTokenEntry>;
+    task: ReturnType<typeof exchangeCopilotTokenResult>;
   }>();
   let generation = 0;
 
@@ -148,22 +126,23 @@ export const createCopilotCredentials = () => {
     upstreamId: string,
     githubHost: string,
     githubToken: string,
-    fetcher: Fetcher,
-  ): Promise<CopilotTokenEntry> => {
+    fetcher: ReturnType<ProviderServices['fetcher']>,
+  ): ReturnType<typeof exchangeCopilotTokenResult> => {
     const started = generation;
     const now = Date.now();
     const cached = inProcessTokenCache.get(upstreamId);
     if (cached?.githubHost === githubHost && cached.githubToken === githubToken && isTokenValid(cached.entry.token, cached.entry.expiresAt) && now - cached.cachedAt < IN_PROCESS_TTL_MS) {
-      return cached.entry;
+      return { ok: true, value: cached.entry };
     }
 
-    const fresh = await getRepo().upstreams.getById(upstreamId);
-    if (!fresh) throw new Error(`Copilot upstream ${upstreamId} disappeared mid-token-refresh`);
+    const { upstreams } = getRepo();
+    const fresh = await upstreams.getById(upstreamId);
+    if (!fresh) return { ok: false, error: { kind: 'local', message: `Copilot upstream ${upstreamId} disappeared mid-token-refresh` } };
     const state = readCopilotUpstreamState(fresh.state);
     const persisted = state.copilotToken;
     if (persisted && isTokenValid(persisted.token, persisted.expiresAt)) {
       if (started === generation) inProcessTokenCache.set(upstreamId, { entry: persisted, cachedAt: now, githubHost, githubToken });
-      return persisted;
+      return { ok: true, value: persisted };
     }
 
     // Routed through the upstream's Fetcher so deployments behind a network
@@ -171,36 +150,31 @@ export const createCopilotCredentials = () => {
     // proxy chain that carries the data-plane traffic; without this, a working
     // Copilot proxy would still see periodic auth-refresh failures every
     // ~25 minutes per process.
-    return await retryCopilotTokenFetch(async () => {
-      const entry = await exchangeCopilotToken(githubHost, githubToken, fetcher);
-      if (started !== generation) return entry;
-      inProcessTokenCache.set(upstreamId, { entry, cachedAt: Date.now(), githubHost, githubToken });
-      // Best-effort: the caller is about to satisfy a live request with this
-      // token, so a storage failure costs the next cold isolate one extra mint
-      // rather than the request. Swallowing here also keeps such a failure out
-      // of retryCopilotTokenFetch, which would otherwise answer it by minting
-      // again.
-      try {
-        await getRepo().upstreams.saveState(upstreamId, (current, configVersion) => {
-          if (configVersion !== fresh.configVersion) return current;
-          return {
-            ...readCopilotUpstreamState(current),
-            copilotToken: entry,
-          } satisfies CopilotUpstreamState;
-        });
-      } catch (err) {
-        console.warn(`Failed to persist Copilot token for ${upstreamId}:`, err);
-      }
-      return entry;
-    });
+    const result = await retryCopilotTokenFetch(() => exchangeCopilotTokenResult(githubHost, githubToken, fetcher));
+    if (!result.ok || started !== generation) return result;
+    const entry = result.value;
+    inProcessTokenCache.set(upstreamId, { entry, cachedAt: Date.now(), githubHost, githubToken });
+    // The minted token can serve this request even when its cache write fails.
+    try {
+      await upstreams.saveState(upstreamId, (current, configVersion) => {
+        if (configVersion !== fresh.configVersion) return current;
+        return {
+          ...readCopilotUpstreamState(current),
+          copilotToken: entry,
+        } satisfies CopilotUpstreamState;
+      });
+    } catch (err) {
+      console.warn(`Failed to persist Copilot token for ${upstreamId}:`, err);
+    }
+    return result;
   };
 
   const getCopilotToken = async (
     upstreamId: string,
     githubHost: string,
     githubToken: string,
-    fetcher: Fetcher,
-  ): Promise<CopilotTokenEntry> => {
+    fetcher: ReturnType<ProviderServices['fetcher']>,
+  ): ReturnType<typeof exchangeCopilotTokenResult> => {
     const current = pendingTokenExchanges.get(upstreamId);
     if (current?.githubHost === githubHost && current.githubToken === githubToken) return await current.task;
 
@@ -234,36 +208,51 @@ export const createCopilotCredentials = () => {
 // api). `endpoints.api` is the per-tier data-plane host GitHub routes this
 // PAT to. It travels with the token because they share a lifetime.
 // https://github.com/microsoft/vscode-copilot-chat/blob/5863f5a7088958050792b5dccbe8b46c6e13eccc/src/platform/endpoint/common/domainServiceImpl.ts
-export async function exchangeCopilotToken(githubHost: string, githubToken: string, fetcher: Fetcher, signal?: AbortSignal): Promise<CopilotTokenEntry> {
-  const resp = await fetcher(`${githubApiOrigin(githubHost)}/copilot_internal/v2/token`, {
+const exchangeCopilotTokenResult = async (
+  githubHost: string,
+  githubToken: string,
+  fetcher: ReturnType<ProviderServices['fetcher']>,
+  signal?: AbortSignal,
+): Promise<Result<CopilotTokenEntry, CopilotTokenFetchError | Exclude<CopilotCredentialFailure, { kind: 'response' }>>> => {
+  const response = await fetcher(`${githubApiOrigin(githubHost)}/copilot_internal/v2/token`, {
     method: 'GET',
     headers: githubHeaders(githubToken),
     signal,
   });
 
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new CopilotTokenFetchError(resp, text);
+  if (!response.ok) return { ok: false, error: { kind: 'transport', error: response.error } };
+  const { value: resp } = response;
+  const text = await readHttpResponseText(resp, signal);
+  if (!text.ok) return { ok: false, error: { kind: 'transport', error: text.error } };
+  if (!resp.ok) return { ok: false, error: new CopilotTokenFetchError(resp, text.value) };
+
+  const http = { status: resp.status, statusText: resp.statusText, headers: responseHeaderEntries(resp) };
+  let data: unknown;
+  try {
+    data = JSON.parse(text.value);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return { ok: false, error: { kind: 'invalid-response', http, message: 'Copilot token exchange returned invalid JSON' } };
   }
-
-  const data = (await resp.json()) as {
-    token: string;
-    expires_at: number;
-    refresh_in: number;
-    endpoints?: { api?: string };
-  };
-
-  const baseUrl = data.endpoints?.api;
+  if (!isJsonObject(data) || typeof data.token !== 'string' || data.token === '' || typeof data.expires_at !== 'number' || !Number.isFinite(data.expires_at)) {
+    return { ok: false, error: { kind: 'invalid-response', http, message: 'Copilot token exchange response missing a valid token or expiry' } };
+  }
+  const baseUrl = isJsonObject(data.endpoints) ? data.endpoints.api : undefined;
   if (typeof baseUrl !== 'string' || baseUrl === '') {
-    throw new Error('Copilot token exchange response missing endpoints.api');
+    return { ok: false, error: { kind: 'invalid-response', http, message: 'Copilot token exchange response missing endpoints.api' } };
   }
+  return { ok: true, value: { token: data.token, expiresAt: data.expires_at, baseUrl } };
+};
 
-  return {
-    token: data.token,
-    expiresAt: data.expires_at,
-    baseUrl,
-  };
-}
+export const exchangeCopilotToken = async (githubHost: string, githubToken: string, fetcher: Fetcher, signal?: AbortSignal): Promise<CopilotTokenEntry> => {
+  const result = await exchangeCopilotTokenResult(githubHost, githubToken,
+    async (url, init) => ({ ok: true, value: await fetcher(url, init) }), signal);
+  if (result.ok) return result.value;
+  const { error } = result;
+  if (isCopilotTokenFetchError(error)) throw error;
+  if (error.kind === 'transport') throw error.error.cause;
+  throw new Error(error.message);
+};
 
 // Headers for management-plane calls on the selected GitHub API origin — token
 // exchange and /copilot_internal/user.

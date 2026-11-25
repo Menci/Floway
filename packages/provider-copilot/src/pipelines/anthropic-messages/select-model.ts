@@ -1,6 +1,7 @@
 import { CONTEXT_1M_BETA } from '../../model-selection.ts';
 import { defineCopilotStage } from '../facts.ts';
 import { readBetaHeaders } from './read-beta-headers.ts';
+import { parseCredentialFailure } from '../shared/authorize.ts';
 import { move } from '@floway-dev/pipeline';
 import { formatAnthropicMessagesError } from '@floway-dev/protocols/anthropic-messages';
 
@@ -23,6 +24,10 @@ export const selectAnthropicMessagesModel = (generate: boolean) => defineCopilot
       reasoningEffort: request.output_config?.effort ?? undefined,
       fast: generate && 'speed' in request && request.speed === 'fast',
     });
+    if (selected.kind === 'local') {
+      const { http, outcome } = await parseCredentialFailure(selected, formatAnthropicMessagesError);
+      return { 'response.http': move(http), 'response.modelKey': model.upstreamModelId, 'response.anthropicMessages': move(outcome) };
+    }
     if (selected.kind === 'unsupportedFast') {
       // Anthropic returns a client error for an unsupported Fast Mode request.
       // https://docs.claude.com/en/build-with-claude/fast-mode

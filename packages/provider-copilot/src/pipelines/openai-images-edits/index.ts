@@ -14,7 +14,7 @@ export const openaiImagesEdits = copilotOperation<'openaiImagesEdits'>().compose
   exit: ['response.http', 'response.modelKey', 'response.openaiImagesEdits'],
   stages: [
     stripClientHeaders,
-    selectModel('openaiImagesEdits'),
+    selectModel('openaiImagesEdits', 'response.openaiImagesEdits', formatOpenAIChatCompletionsError),
     setIdentityHeaders,
     serializeOpenAIImagesEdits,
     observeQuota,

@@ -12,13 +12,15 @@ import { materializeHeaders, responseHeaderEntries, type HttpHeaders, type HttpR
 import { Secret, type Result } from '@floway-dev/pipeline';
 import { compressBytesToWebp } from '@floway-dev/platform';
 import type { ModelEndpointKey } from '@floway-dev/protocols/common';
-import { getProviderRepo, type Fetcher, type ProviderModel, type ProviderServices, type ProviderUpstream, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, type ProviderModel, type ProviderServices, type ProviderUpstream, type UpstreamRecord } from '@floway-dev/provider';
 
-type CopilotModelSelection = { readonly kind: 'model'; readonly id: string } | { readonly kind: 'unsupportedFast' };
+type CopilotModelSelection = { readonly kind: 'model'; readonly id: string } | { readonly kind: 'unsupportedFast' } | Extract<CopilotCredentialFailure, { kind: 'local' }>;
 export type CopilotCredentials = { readonly baseUrl: string; readonly token: Secret<string> };
 export type CopilotCredentialFailure =
   | { readonly kind: 'response'; readonly http: Omit<HttpResponseFact, 'body'>; readonly body: string }
-  | { readonly kind: 'transport'; readonly error: HttpStreamError };
+  | { readonly kind: 'transport'; readonly error: HttpStreamError }
+  | { readonly kind: 'local'; readonly message: string }
+  | { readonly kind: 'invalid-response'; readonly http: Omit<HttpResponseFact, 'body'>; readonly message: string };
 type CopilotFetcher = ReturnType<ProviderServices['fetcher']>;
 
 export interface CopilotService {
@@ -34,20 +36,13 @@ export interface CopilotService {
     endpoint: ModelEndpointKey,
     hints: ModelSelectionHints,
   ) => Promise<CopilotModelSelection>;
-  readonly observeQuota: (upstreamId: string, headers: HttpHeaders) => Promise<void>;
-  readonly refreshCatalog: (record: UpstreamRecord, fetcher: Fetcher) => Promise<ProviderModel[]>;
+  readonly observeQuota: (upstreamId: string, headers: HttpHeaders) => Promise<Result<void, unknown>>;
+  readonly refreshCatalog: (record: UpstreamRecord, fetcher: CopilotFetcher) => Promise<ProviderModel[]>;
   readonly clearTokens: () => void;
 }
 
 export interface CopilotServices extends ProviderServices {
   readonly copilot: CopilotService;
-}
-
-class CopilotCredentialTransportError extends Error {
-  constructor(readonly failure: HttpStreamError) {
-    super('GitHub Copilot credential exchange failed', { cause: failure.cause });
-    this.name = failure.kind === 'abort' ? 'AbortError' : 'CopilotCredentialTransportError';
-  }
 }
 
 const authConfig = (upstream: ProviderUpstream): Pick<CopilotUpstreamConfig, 'githubHost' | 'githubToken'> => {
@@ -61,9 +56,9 @@ const authConfig = (upstream: ProviderUpstream): Pick<CopilotUpstreamConfig, 'gi
   return { githubHost: normalizeGitHubHost(githubHost), githubToken: githubToken.reveal() };
 };
 
-const readStoredModels = async (id: string): Promise<CopilotKnownModels> => {
+const readStoredModels = async (id: string): Promise<CopilotKnownModels | null> => {
   const fresh = await getProviderRepo().upstreams.getById(id);
-  if (fresh === null || fresh === undefined) throw new Error(`Copilot upstream ${id} disappeared while reading its catalog`);
+  if (fresh === null) return null;
   return readCopilotUpstreamState(fresh.state).knownModels ?? emptyKnownModels();
 };
 
@@ -73,29 +68,25 @@ export const createCopilotService = (): CopilotService => {
 
   const credentials: CopilotService['credentials'] = async (upstream, fetcher) => {
     const { githubHost, githubToken } = authConfig(upstream);
-    try {
-      const { baseUrl, token } = await auth.getCopilotToken(upstream.id, githubHost, githubToken, async (url, init) => {
-        const result = await fetcher(url, init);
-        if (!result.ok) throw new CopilotCredentialTransportError(result.error);
-        return result.value;
-      });
-      return { ok: true, value: { baseUrl, token: Secret.from(token) } };
-    } catch (error) {
+    const token = await auth.getCopilotToken(upstream.id, githubHost, githubToken, fetcher);
+    if (!token.ok) {
+      const { error } = token;
       if (isCopilotTokenFetchError(error)) {
         const { response, body } = error;
         const http = { status: response.status, statusText: response.statusText, headers: responseHeaderEntries(response) };
         return { ok: false, error: { kind: 'response', http, body } };
       }
-      if (error instanceof CopilotCredentialTransportError) return { ok: false, error: { kind: 'transport', error: error.failure } };
-      throw error;
+      return { ok: false, error };
     }
+    return { ok: true, value: { baseUrl: token.value.baseUrl, token: Secret.from(token.value.token) } };
   };
 
-  const modelsFor = async (id: string): Promise<CopilotKnownModels> => {
+  const modelsFor = async (id: string): Promise<CopilotKnownModels | null> => {
     const now = Date.now();
     const cached = catalogs.get(id);
     if (cached && now - cached.checkedAt < 60_000) return cached.models;
     const stored = await readStoredModels(id);
+    if (stored === null) return null;
     const latest = catalogs.get(id);
     const models = latest && latest.models.fetchedAt > stored.fetchedAt ? latest.models : stored;
     catalogs.set(id, { models, checkedAt: now });
@@ -103,7 +94,9 @@ export const createCopilotService = (): CopilotService => {
   };
 
   const selectModel: CopilotService['selectModel'] = async (upstreamId, upstreamModelId, endpoint, hints) => {
-    const catalog = projectKnownModels(await modelsFor(upstreamId), Date.now());
+    const models = await modelsFor(upstreamId);
+    if (models === null) return { kind: 'local', message: `Copilot upstream ${upstreamId} disappeared while reading its catalog` };
+    const catalog = projectKnownModels(models, Date.now());
     const family = copilotVariantIndex(catalog).families.get(upstreamModelId);
     if (!family) throw new Error(`Copilot catalog contains no model family for ${upstreamModelId} on ${upstreamId}`);
     if (endpoint === 'anthropicMessages' && hints.fast && !copilotModelSupportsFastVariant(family)) {
@@ -120,6 +113,7 @@ export const createCopilotService = (): CopilotService => {
   const refreshCatalog: CopilotService['refreshCatalog'] = async (record, fetcher) => {
     const copilot = assertCopilotUpstreamRecord(record);
     const known = await modelsFor(copilot.id);
+    if (known === null) throw new Error(`Copilot upstream ${copilot.id} disappeared while reading its catalog`);
     const response = await fetchCopilotModels({
       id: copilot.id,
       githubHost: copilot.config.githubHost,
@@ -129,8 +123,9 @@ export const createCopilotService = (): CopilotService => {
     const latest = catalogs.get(copilot.id)?.models;
     const models = mergeKnownModels(latest && latest.fetchedAt > known.fetchedAt ? latest : known, response, now);
     catalogs.set(copilot.id, { models, checkedAt: now });
+    const { upstreams } = getProviderRepo();
     try {
-      await getProviderRepo().upstreams.saveState(copilot.id, current => {
+      await upstreams.saveState(copilot.id, current => {
         const state = readCopilotUpstreamState(current);
         return {
           ...state,
@@ -151,7 +146,14 @@ export const createCopilotService = (): CopilotService => {
     refreshCatalog,
     async observeQuota(upstreamId, headers) {
       const snapshot = parseCopilotQuotaHeaders(new Headers(materializeHeaders(headers)), new Date());
-      if (snapshot !== null) await putCopilotQuota(upstreamId, snapshot);
+      if (!snapshot.ok) return snapshot;
+      if (snapshot.value === null) return { ok: true, value: undefined };
+      try {
+        await putCopilotQuota(upstreamId, snapshot.value);
+      } catch (error) {
+        return { ok: false, error };
+      }
+      return { ok: true, value: undefined };
     },
     clearTokens: auth.clear,
   };
@@ -160,5 +162,5 @@ export const createCopilotService = (): CopilotService => {
 export const getCopilotProvidedModels = (
   service: CopilotService,
   record: UpstreamRecord,
-  fetcher: Fetcher,
+  fetcher: CopilotFetcher,
 ): Promise<ProviderModel[]> => service.refreshCatalog(record, fetcher);

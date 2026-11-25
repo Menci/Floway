@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest';
+import { assert, expect, test, vi } from 'vitest';
 
 import { parseCopilotQuotaHeaders, projectCopilotUsageResponse, putCopilotQuota, type CopilotUsageResponse } from '../src/quota.ts';
 import { initProviderRepo } from '@floway-dev/provider';
@@ -15,7 +15,9 @@ const liveHeaders = (): Headers => new Headers({
 });
 
 test('parseCopilotQuotaHeaders reads every bucket a live response reports', () => {
-  const snapshot = parseCopilotQuotaHeaders(liveHeaders(), NOW);
+  const parsed = parseCopilotQuotaHeaders(liveHeaders(), NOW);
+  assert(parsed.ok);
+  const snapshot = parsed.value;
 
   assertEquals(snapshot?.observed_at, '2026-08-01T19:42:34.000Z');
   assertEquals(snapshot?.reset_at, '2026-09-01T00:00:00Z');
@@ -36,25 +38,29 @@ test('parseCopilotQuotaHeaders reads every bucket a live response reports', () =
 // A half-parsed bucket would render as a confident zero on the dashboard, so
 // it is dropped while its well-formed siblings survive.
 test('parseCopilotQuotaHeaders drops a bucket missing a numeric field', () => {
-  const snapshot = parseCopilotQuotaHeaders(
+  const parsed = parseCopilotQuotaHeaders(
     new Headers({
       'x-quota-snapshot-chat': 'ovPerm=false&rst=2026-09-01T00%3A00%3A00Z',
       'x-quota-snapshot-premium_interactions': 'ent=300&ov=0.0&ovPerm=false&rem=90.0&rst=2026-09-01T00%3A00%3A00Z&totRem=270',
     }),
     NOW,
   );
+  assert(parsed.ok);
+  const snapshot = parsed.value;
 
   assertEquals(Object.keys(snapshot?.quotas ?? {}), ['premium_interactions']);
 });
 
 test('parseCopilotQuotaHeaders ignores a prototype-polluting quota id', () => {
-  const snapshot = parseCopilotQuotaHeaders(
+  const parsed = parseCopilotQuotaHeaders(
     new Headers({
       'x-quota-snapshot-__proto__': 'ent=1&ov=0.0&ovPerm=false&rem=1.0&rst=2026-09-01T00%3A00%3A00Z&totRem=1',
       'x-quota-snapshot-chat': 'ent=300&ov=0.0&ovPerm=false&rem=90.0&rst=2026-09-01T00%3A00%3A00Z&totRem=270',
     }),
     NOW,
   );
+  assert(parsed.ok);
+  const snapshot = parsed.value;
 
   assertEquals(Object.keys(snapshot?.quotas ?? {}), ['chat']);
   assertEquals(Object.getPrototypeOf(snapshot?.quotas ?? {}), Object.prototype);
@@ -77,8 +83,9 @@ test('projectCopilotUsageResponse lands on the same shape the headers produce', 
 
   const projected = projectCopilotUsageResponse(body, NOW);
   const fromHeaders = parseCopilotQuotaHeaders(liveHeaders(), NOW);
+  assert(fromHeaders.ok);
 
-  assertEquals(projected?.quotas.premium_interactions, fromHeaders?.quotas.premium_interactions);
+  assertEquals(projected?.quotas.premium_interactions, fromHeaders.value?.quotas.premium_interactions);
   assertEquals(projected?.observed_at, '2026-08-01T19:42:34.000Z');
   assertEquals(projected?.reset_at, '2026-09-01T00:00:00.000Z');
 });

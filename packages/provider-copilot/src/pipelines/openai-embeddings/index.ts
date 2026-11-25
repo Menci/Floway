@@ -15,7 +15,7 @@ export const openaiEmbeddings = copilotOperation<'openaiEmbeddings'>().compose('
   exit: ['response.http', 'response.modelKey', 'response.openaiEmbeddings'],
   stages: [
     stripClientHeaders,
-    selectModel('openaiEmbeddings'),
+    selectModel('openaiEmbeddings', 'response.openaiEmbeddings', formatOpenAIChatCompletionsError),
     setIdentityHeaders,
     wrapScalarInput,
     serializeOpenAIEmbeddings,

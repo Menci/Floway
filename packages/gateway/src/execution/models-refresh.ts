@@ -1,5 +1,6 @@
 import { getGatewayProviderServices } from '../data-plane/pipeline/provider-services.ts';
 import { createDetachedFetcher, createPerRequestFetcher, createValidatedPerRequestFetcher, InvalidProxyConfigurationError } from '../dial/per-request.ts';
+import { adaptProviderFetcher } from '../dial/transport-error.ts';
 import { getRepo } from '../repo/index.ts';
 import { MODEL_CATALOG_REVISION, shouldScheduleModelsRefresh } from '../repo/models-cache-contract.ts';
 import { modelsRefreshRetryAt } from '../repo/models-refresh-backoff.ts';
@@ -21,7 +22,7 @@ const getProvidedModelsByKind: Record<Exclude<UpstreamProviderKind, 'custom'>, (
   azure: getAzureProvidedModels,
   chatgpt: getChatGPTProvidedModels,
   'claude-code': getClaudeCodeProvidedModels,
-  copilot: (record, fetcher) => getCopilotProvidedModels(getGatewayProviderServices().copilot, record, fetcher),
+  copilot: (record, fetcher) => getCopilotProvidedModels(getGatewayProviderServices().copilot, record, adaptProviderFetcher(() => fetcher)),
   'kimi-code': getKimiCodeProvidedModels,
   ollama: getOllamaProvidedModels,
 };

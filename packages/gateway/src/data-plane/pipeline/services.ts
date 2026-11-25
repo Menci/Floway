@@ -5,14 +5,14 @@ import { getGatewayProviderServices, type GatewayProviderServices } from './prov
 import type { RequestBodyService } from './request-body.ts';
 import type { UsageStoreServices } from './store-usage.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
-import { isUpstreamTransportError } from '../../dial/transport-error.ts';
+import { adaptProviderFetcher } from '../../dial/transport-error.ts';
 import { createModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import { createAffinityCodec, type AffinityCodec } from '../chat/shared/affinity/index.ts';
 import { createSidecarCodecFactory, type SidecarCodecFactory } from '../chat/shared/sidecar-codec.ts';
 import { findCatalogCandidates } from '../providers/resolution.ts';
-import { isAbortError, toProviderModelFact, type Fetcher, type ProviderServices, type ProviderUpstream, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { toProviderModelFact, type Fetcher, type ProviderServices, type ProviderUpstream, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { azureUpstreamFact } from '@floway-dev/provider-azure';
 import { chatgptUpstreamFact } from '@floway-dev/provider-chatgpt';
 import { claudeCodeUpstreamFact } from '@floway-dev/provider-claude-code';
@@ -38,18 +38,7 @@ const projectUpstream = {
 } as const satisfies Record<UpstreamProviderKind, (record: UpstreamRecord) => ProviderUpstream>;
 
 const asProviderFetcher = (resolve: () => Promise<(upstreamId: string) => Fetcher>): ProviderServices['fetcher'] =>
-  id => async (url, init) => {
-    const signal = init.signal;
-    if (signal?.aborted) return { ok: false, error: { kind: 'abort', cause: signal.reason } };
-    const fetch = (await resolve())(id);
-    try {
-      return { ok: true, value: await fetch(url, init) };
-    } catch (error) {
-      if (isAbortError(error)) return { ok: false, error: { kind: 'abort', cause: error } };
-      if (!isUpstreamTransportError(error)) throw error;
-      return { ok: false, error: { kind: signal?.aborted ? 'abort' : 'transport', cause: error } };
-    }
-  };
+  id => adaptProviderFetcher(async () => (await resolve())(id));
 
 export const createGatewayServices = ({ requestBody, runtimeLocation, serverSecret }: GatewayHostServicesInput): GatewayServices => {
   const repo = getRepo();

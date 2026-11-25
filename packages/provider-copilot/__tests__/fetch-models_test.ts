@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { createCopilotCredentials } from '../src/auth.ts';
 import { fetchCopilotModels } from '../src/fetch-models.ts';
@@ -58,7 +58,7 @@ test('fetchCopilotModels throws ProviderModelsUnavailableError with null httpRes
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      try { await fetchCopilotModels(config, directFetcher, createCopilotCredentials()); } catch (e) { thrown = e; }
+      try { await fetchCopilotModels(config, async (url, init) => ({ ok: true, value: await directFetcher(url, init) }), createCopilotCredentials()); } catch (e) { thrown = e; }
     },
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
@@ -81,7 +81,7 @@ test('fetchCopilotModels tags the request with the model-access intent and omits
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      await fetchCopilotModels(config, directFetcher, createCopilotCredentials());
+      await fetchCopilotModels(config, async (url, init) => ({ ok: true, value: await directFetcher(url, init) }), createCopilotCredentials());
     },
   );
 
@@ -89,4 +89,12 @@ test('fetchCopilotModels tags the request with the model-access intent and omits
   assertEquals(observed.get('openai-intent'), 'model-access');
   assertEquals(observed.get('x-interaction-type'), 'model-access');
   assertEquals(observed.get('content-type'), null);
+});
+
+test('a fetcher defect during catalog authorization propagates without retrying', async () => {
+  const config = await installRepoAndConfig();
+  const bug = new TypeError('catalog fetcher bug');
+  const fetcher = vi.fn(async () => { throw bug; });
+  await expect(fetchCopilotModels(config, fetcher, createCopilotCredentials())).rejects.toBe(bug);
+  expect(fetcher).toHaveBeenCalledOnce();
 });

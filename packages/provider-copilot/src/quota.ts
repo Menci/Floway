@@ -31,6 +31,7 @@ import { githubApiOrigin } from './github-host.ts';
 import { resolveCopilotQuotaUnlimited } from './quota-entitlement.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import { copilotMetrics } from './upstream-metrics.ts';
+import type { Result } from '@floway-dev/pipeline';
 import { recordUpstreamMetrics, getProviderRepo, type Fetcher } from '@floway-dev/provider';
 
 // One quota bucket. A seat reports three kinds of bucket and both sources spell
@@ -97,46 +98,50 @@ const resetInstantOrNull = (raw: string | null | undefined): string | null => {
 // `ent=-1&ov=0.0&ovPerm=false&rem=100.0&rst=...&totRem=-1`. A bucket is only
 // accepted when every numeric field parses: a partial bucket would render as a
 // confident zero on the dashboard, which is worse than showing nothing.
-const parseQuotaDetail = (fields: URLSearchParams): CopilotQuotaDetail | null => {
+const parseQuotaDetail = (fields: URLSearchParams): Result<CopilotQuotaDetail | null, TypeError> => {
   const entitlement = parseNumber(fields.get('ent'));
   const overageCount = parseNumber(fields.get('ov'));
   const percentRemaining = parseNumber(fields.get('rem'));
   const quotaRemaining = parseNumber(fields.get('totRem'));
   if (entitlement === null || overageCount === null || percentRemaining === null || quotaRemaining === null) {
-    return null;
+    return { ok: true, value: null };
   }
   const unlimited = resolveCopilotQuotaUnlimited(entitlement, false);
+  if (!unlimited.ok) return unlimited;
   return {
-    entitlement,
-    overage_count: overageCount,
-    overage_permitted: fields.get('ovPerm') === 'true',
-    percent_remaining: percentRemaining,
-    quota_remaining: quotaRemaining,
-    unlimited,
+    ok: true, value: {
+      entitlement,
+      overage_count: overageCount,
+      overage_permitted: fields.get('ovPerm') === 'true',
+      percent_remaining: percentRemaining,
+      quota_remaining: quotaRemaining,
+      unlimited: unlimited.value,
+    },
   };
 };
 
 // Returns null when the response carries no quota headers at all — the shape of
 // every 4xx we have observed, and of `/models`. Callers use that to leave a
 // previously persisted snapshot untouched instead of erasing it.
-export const parseCopilotQuotaHeaders = (headers: Headers, now: Date): CopilotQuotaSnapshot | null => {
+export const parseCopilotQuotaHeaders = (headers: Headers, now: Date): Result<CopilotQuotaSnapshot | null, TypeError> => {
   const quotas: Record<string, CopilotQuotaDetail> = {};
   let resetAt: string | null = null;
 
-  headers.forEach((value, name) => {
+  for (const [name, value] of headers) {
     const lower = name.toLowerCase();
-    if (!lower.startsWith(QUOTA_SNAPSHOT_HEADER_PREFIX)) return;
+    if (!lower.startsWith(QUOTA_SNAPSHOT_HEADER_PREFIX)) continue;
     const quotaId = lower.slice(QUOTA_SNAPSHOT_HEADER_PREFIX.length);
-    if (isUnsafeQuotaId(quotaId)) return;
+    if (isUnsafeQuotaId(quotaId)) continue;
     const fields = new URLSearchParams(value);
     const detail = parseQuotaDetail(fields);
-    if (detail === null) return;
-    quotas[quotaId] = detail;
+    if (!detail.ok) return detail;
+    if (detail.value === null) continue;
+    quotas[quotaId] = detail.value;
     resetAt ??= resetInstantOrNull(fields.get('rst'));
-  });
+  }
 
-  if (Object.keys(quotas).length === 0) return null;
-  return { observed_at: now.toISOString(), reset_at: resetAt, quotas };
+  if (Object.keys(quotas).length === 0) return { ok: true, value: null };
+  return { ok: true, value: { observed_at: now.toISOString(), reset_at: resetAt, quotas } };
 };
 
 // `GET /copilot_internal/user`. Every field is optional, including every field
@@ -229,6 +234,7 @@ const projectQuotaDetail = (detail: {
   const quotaRemaining = finiteOrNull(detail.quota_remaining);
   if (entitlement === null || quotaRemaining === null) return null;
   const unlimited = resolveCopilotQuotaUnlimited(entitlement, detail.unlimited === true);
+  if (!unlimited.ok) throw unlimited.error;
   const percentRemaining = finiteOrNull(detail.percent_remaining)
     ?? (entitlement > 0 ? (quotaRemaining / entitlement) * 100 : 0);
   return {
@@ -237,7 +243,7 @@ const projectQuotaDetail = (detail: {
     overage_permitted: detail.overage_permitted === true,
     percent_remaining: percentRemaining,
     quota_remaining: quotaRemaining,
-    unlimited,
+    unlimited: unlimited.value,
   };
 };
 

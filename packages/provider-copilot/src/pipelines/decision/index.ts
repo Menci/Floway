@@ -14,7 +14,7 @@ export const decision = copilotOperation<'decision'>().compose('copilot.decision
   exit: ['response.http', 'response.modelKey', 'response.decision'],
   stages: [
     stripClientHeaders,
-    selectModel('decision'),
+    selectModel('decision', 'response.decision', formatOpenAIChatCompletionsError),
     setIdentityHeaders,
     serializeDecision,
     observeQuota,

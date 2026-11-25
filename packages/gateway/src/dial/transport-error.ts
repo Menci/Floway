@@ -1,4 +1,4 @@
-import { isAbortError } from '@floway-dev/provider';
+import { isAbortError, type Fetcher, type ProviderServices } from '@floway-dev/provider';
 import { ProxyDialError } from '@floway-dev/proxy';
 
 // Only rejections from the network call itself are eligible for upstream failover.
@@ -23,6 +23,20 @@ export const isUpstreamTransportError = (error: unknown): error is Error =>
   error instanceof UpstreamTransportError
   || (error instanceof ProxyDialError && error.stage !== 'config')
   || (error instanceof AggregateError && error.errors.length > 0 && error.errors.every(isUpstreamTransportError));
+
+export const adaptProviderFetcher = (resolve: () => Fetcher | Promise<Fetcher>): ReturnType<ProviderServices['fetcher']> =>
+  async (url, init) => {
+    const signal = init.signal;
+    if (signal?.aborted) return { ok: false, error: { kind: 'abort', cause: signal.reason } };
+    const fetch = await resolve();
+    try {
+      return { ok: true, value: await fetch(url, init) };
+    } catch (error) {
+      if (isAbortError(error) || (signal?.aborted && error === signal.reason)) return { ok: false, error: { kind: 'abort', cause: error } };
+      if (!isUpstreamTransportError(error)) throw error;
+      return { ok: false, error: { kind: 'transport', cause: error } };
+    }
+  };
 
 export const isNativeFetchTransportError = (error: unknown): boolean =>
   // https://github.com/nodejs/undici/blob/34151bf879d5aa1f6bd7a86870c6fcc0e1056c32/lib/web/fetch/index.js#L272

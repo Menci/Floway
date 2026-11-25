@@ -6,6 +6,7 @@ import { getHeader, type FetchInit, type HttpHeaders } from '@floway-dev/http';
 import { move, run, Secret } from '@floway-dev/pipeline';
 import { PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
 import { parseDecisionRequest } from '@floway-dev/protocols/decision';
+import * as decisions from '@floway-dev/protocols/decision';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { ProviderModelFact } from '@floway-dev/provider';
 import { assert, stubProviderModel } from '@floway-dev/test-utils';
@@ -18,7 +19,7 @@ const requestFacts = (headers: HttpHeaders = [], model?: ProviderModelFact) => (
 
 const servicesFor = (response: () => Response, overrides: Partial<CopilotService> = {}) => {
   const fetcher = vi.fn((_url: string, _init: FetchInit) => Promise.resolve({ ok: true, value: response() } as const));
-  const observeQuota = vi.fn(() => Promise.resolve());
+  const observeQuota = vi.fn<CopilotService['observeQuota']>(async () => ({ ok: true, value: undefined }));
   const selectModel = vi.fn<CopilotService['selectModel']>(async () => ({ kind: 'model', id: 'raw-model' }));
   const services = {
     fetcher: () => fetcher,
@@ -481,4 +482,28 @@ test.each([
   expect(url).toBe(`https://copilot.test${path}`);
   expect(wireJson(init)).toMatchObject({ ...wire, model: 'raw-model' });
   expect(result['response.decision']).toMatchObject({ kind: 'result', result: { answers: [{ name: 'green', type: 'noul', noul: 0.75 }] } });
+});
+
+test.each([false, true])('Copilot Decision drains an invalid response and propagates a parser bug when injected (%s)', async injectBug => {
+  const bug = new TypeError('Decision parser bug');
+  const response = Response.json({ answers: [] });
+  const { services } = servicesFor(() => response);
+  const parse = injectBug ? vi.spyOn(decisions, 'parseDecisionResponse').mockImplementationOnce(() => { throw bug; }) : undefined;
+  const parsed = parseDecisionRequest('typesafe-systemone', { model: 'visible-model', state: 'evidence', questions: { q: { type: 'noul', criteria: { true: 'yes', false: 'no' } } } });
+  assert(parsed.ok);
+  const model = { ...stubProviderModel({}), enabledFlags: [], decisionTarget: { protocol: 'typesafe-systemone' as const } };
+  try {
+    const exchange = run(copilotPipelines.decision, { ...requestFacts([], model), 'request.decision': move(parsed.value.request) }, { services });
+    if (injectBug) {
+      await expect(exchange.result).rejects.toBe(bug);
+      await expect(exchange.done).rejects.toBe(bug);
+    } else {
+      expect((await exchange.result)['response.decision']).toMatchObject({ kind: 'error', source: 'upstream', error: { answers: [] } });
+      await exchange.done;
+    }
+    expect(response.bodyUsed).toBe(true);
+    expect(response.body?.locked).toBe(false);
+  } finally {
+    parse?.mockRestore();
+  }
 });

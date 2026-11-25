@@ -1,4 +1,7 @@
 import { defineCopilotStage } from '../facts.ts';
+import { parseCredentialFailure } from '../shared/authorize.ts';
+import { move } from '@floway-dev/pipeline';
+import { formatOpenAIChatCompletionsError } from '@floway-dev/protocols/openai-chat-completions';
 
 export const selectOpenAIChatCompletionsModel = defineCopilotStage({
   name: 'copilot.openaiChatCompletions.selectModel',
@@ -6,6 +9,7 @@ export const selectOpenAIChatCompletionsModel = defineCopilotStage({
     request: { needs: ['request.openaiChatCompletions', 'provider.upstream', 'provider.model'], provides: ['copilot.modelId'], consumes: [] },
     response: { needs: [], provides: [], consumes: [] },
   },
+  return: { provides: ['response.http', 'response.modelKey', 'response.openaiChatCompletions'] },
   async execute(facts, scope) {
     // Copilot /chat/completions ignores service_tier and reports default even on a priority request.
     // https://github.com/caozhiyuan/copilot-api/commit/f7835a44f06976cab874700e4d94a5f5c0379369
@@ -14,6 +18,10 @@ export const selectOpenAIChatCompletionsModel = defineCopilotStage({
     const selected = await scope.services.copilot.selectModel(facts['provider.upstream'].id, model, 'openaiChatCompletions', {
       reasoningEffort: effort === 'none' ? undefined : effort ?? undefined,
     });
+    if (selected.kind === 'local') {
+      const { http, outcome } = await parseCredentialFailure(selected, formatOpenAIChatCompletionsError);
+      return { 'response.http': move(http), 'response.modelKey': model, 'response.openaiChatCompletions': move(outcome) };
+    }
     if (selected.kind !== 'model') throw new TypeError(`Copilot OpenAI Chat Completions unexpectedly rejected Fast Mode for ${model}`);
     return await scope.next({ ...facts, 'copilot.modelId': selected.id });
   },

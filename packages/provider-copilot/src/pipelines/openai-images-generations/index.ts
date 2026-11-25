@@ -14,7 +14,7 @@ export const openaiImagesGenerations = copilotOperation<'openaiImagesGenerations
   exit: ['response.http', 'response.modelKey', 'response.openaiImagesGenerations'],
   stages: [
     stripClientHeaders,
-    selectModel('openaiImagesGenerations'),
+    selectModel('openaiImagesGenerations', 'response.openaiImagesGenerations', formatOpenAIChatCompletionsError),
     setIdentityHeaders,
     serializeOpenAIImagesGenerations,
     observeQuota,

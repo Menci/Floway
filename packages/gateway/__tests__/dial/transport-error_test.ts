@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { isUpstreamTransportError, runUpstreamTransport, UpstreamTransportError } from '../../src/dial/transport-error.ts';
+import { adaptProviderFetcher, isUpstreamTransportError, runUpstreamTransport, UpstreamTransportError } from '../../src/dial/transport-error.ts';
 import { ProxyDialError } from '@floway-dev/proxy';
 
 test('network failures retain their original cause and successful responses retain their identity', async () => {
@@ -27,4 +27,21 @@ test('a response body failure stays outside the pre-response transport boundary'
     start(controller) { controller.error(cause); },
   })));
   await expect(response.text()).rejects.toBe(cause);
+});
+
+test('the provider fetcher reports only named transport and direct abort failures', async () => {
+  const url = 'https://upstream.test';
+  const transport = new UpstreamTransportError(new Error('connection reset'));
+  const send = adaptProviderFetcher(() => async () => { throw transport; });
+  await expect(send(url, { method: 'GET' })).resolves.toEqual({ ok: false, error: { kind: 'transport', cause: transport } });
+
+  const abort = new AbortController();
+  const reason = new Error('stop');
+  const cancelled = adaptProviderFetcher(() => async () => { abort.abort(reason); throw reason; });
+  await expect(cancelled(url, { method: 'GET', signal: abort.signal })).resolves.toEqual({ ok: false, error: { kind: 'abort', cause: reason } });
+
+  const signal = new AbortController();
+  const bug = new TypeError('fetcher bug');
+  const panic = adaptProviderFetcher(() => async () => { signal.abort(); throw bug; });
+  await expect(panic(url, { method: 'GET', signal: signal.signal })).rejects.toBe(bug);
 });

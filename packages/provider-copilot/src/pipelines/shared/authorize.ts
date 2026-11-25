@@ -1,12 +1,12 @@
 import type { CopilotCredentialFailure, CopilotCredentials } from '../../service.ts';
 import { defineCopilotStage, type CopilotFacts } from '../facts.ts';
-import { setHeader, type HttpRequestFact } from '@floway-dev/http';
+import { setHeader, type HttpRequestFact, type HttpResponseFact } from '@floway-dev/http';
 import { move } from '@floway-dev/pipeline';
 import { parseErrorBody, type FormatProviderError, type ProtocolError } from '@floway-dev/provider';
 
-type ProtocolResponseKey = Exclude<Extract<keyof CopilotFacts, `response.${string}`>, 'response.http' | 'response.modelKey' | 'response.transport'>;
+export type ProtocolResponseKey = Exclude<Extract<keyof CopilotFacts, `response.${string}`>, 'response.http' | 'response.modelKey' | 'response.transport'>;
 
-const errorFact = <Key extends ProtocolResponseKey>(key: Key, outcome: ProtocolError): Record<Key, ProtocolError> =>
+export const errorFact = <Key extends ProtocolResponseKey>(key: Key, outcome: ProtocolError): Record<Key, ProtocolError> =>
   ({ [key]: move(outcome) }) as Record<Key, ProtocolError>;
 
 export const authorizeRequest = (request: HttpRequestFact, credentials: CopilotCredentials): HttpRequestFact => move({
@@ -17,6 +17,14 @@ export const authorizeRequest = (request: HttpRequestFact, credentials: CopilotC
 
 export const parseCredentialFailure = async (failure: CopilotCredentialFailure, format: FormatProviderError<unknown>) => {
   if (failure.kind === 'response') return await parseErrorBody({ ...failure.http, body: failure.body }, format);
+  if (failure.kind === 'local') return {
+    http: { status: 503, statusText: 'Service Unavailable', headers: [['content-type', 'application/json']], body: null } as HttpResponseFact,
+    outcome: { kind: 'error', source: 'local', error: format(503, failure.message) },
+  } as const;
+  if (failure.kind === 'invalid-response') return {
+    http: { ...failure.http, body: null },
+    outcome: { kind: 'error', source: 'upstream', error: format(502, failure.message), cause: failure },
+  } as const;
 
   const { cause } = failure.error;
   return {

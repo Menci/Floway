@@ -2,11 +2,13 @@ import { expect, test, vi } from 'vitest';
 
 import { copilotUpstreamFact } from '../src/config.ts';
 import { copilotPipelines } from '../src/pipelines/index.ts';
+import * as quota from '../src/quota.ts';
 import { createCopilotService, getCopilotProvidedModels } from '../src/service.ts';
 import { readCopilotUpstreamState } from '../src/state.ts';
 import { getHeader, type FetchInit } from '@floway-dev/http';
 import { move, run, Secret } from '@floway-dev/pipeline';
 import { initProviderRepo, toProviderModelFact, type UpstreamRecord } from '@floway-dev/provider';
+import { stubProviderModel } from '@floway-dev/test-utils';
 
 const setup = () => {
   let upstream: UpstreamRecord = {
@@ -109,7 +111,7 @@ test('Copilot projects routing metadata and resolves raw variants from its store
       ],
     });
   });
-  const models = await getCopilotProvidedModels(service, record(), fetcher);
+  const models = await getCopilotProvidedModels(service, record(), async (url, init) => ({ ok: true, value: await fetcher(url, init) }));
   expect(models).toHaveLength(1);
   expect(models[0]).toMatchObject({ id: 'example-model', endpoints: { openaiResponses: {} } });
   expect(models[0]).not.toHaveProperty('providerData');
@@ -129,6 +131,40 @@ test('a transport abort during the Copilot token exchange preserves its cause wi
   expect(fetcher).toHaveBeenCalledOnce();
 });
 
+test('a removed upstream produces a local error before Copilot dispatch', async () => {
+  const { record } = setup();
+  initProviderRepo(() => ({
+    recordUpstreamMetric: vi.fn(),
+    upstreams: { getById: async () => null, saveState: vi.fn() },
+  }));
+  const fetcher = vi.fn();
+  const service = createCopilotService();
+  const upstream = copilotUpstreamFact(record());
+  await expect(service.credentials(upstream, fetcher)).resolves.toMatchObject({ ok: false, error: { kind: 'local' } });
+  const exchange = run(copilotPipelines.openaiResponses, {
+    'provider.upstream': move(upstream),
+    'provider.model': move(toProviderModelFact(stubProviderModel({}))),
+    'request.http': move({ url: 'https://floway.test', method: 'POST', headers: [], body: null }),
+    'request.openaiResponses': move({ model: 'client', input: [] }),
+  }, { services: { copilot: service, fetcher: () => fetcher } });
+  await expect(exchange.result).resolves.toMatchObject({
+    'response.http': { status: 503, statusText: 'Service Unavailable' },
+    'response.openaiResponses': { kind: 'error', source: 'local' },
+  });
+  await exchange.done;
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+test('quota observation propagates a parser bug', async () => {
+  const bug = new TypeError('quota parser bug');
+  const parse = vi.spyOn(quota, 'parseCopilotQuotaHeaders').mockImplementationOnce(() => { throw bug; });
+  try {
+    await expect(createCopilotService().observeQuota('copilot-1', [])).rejects.toBe(bug);
+  } finally {
+    parse.mockRestore();
+  }
+});
+
 test('Copilot merges a refreshed catalog into the state written during its fetch', async () => {
   const { record, setState } = setup();
   const service = createCopilotService();
@@ -145,7 +181,7 @@ test('Copilot merges a refreshed catalog into the state written during its fetch
       ],
     });
   };
-  const [model] = await getCopilotProvidedModels(service, record(), fetcher);
+  const [model] = await getCopilotProvidedModels(service, record(), async url => ({ ok: true, value: await fetcher(url) }));
   const state = readCopilotUpstreamState(record().state);
   expect(state.knownModels?.models).toHaveProperty('claude-opus-4.7');
   expect(state.copilotToken?.token).toBe('copilot-access-token');
@@ -153,7 +189,7 @@ test('Copilot merges a refreshed catalog into the state written during its fetch
   await expect(service.selectModel(record().id, model.upstreamModelId, 'openaiResponses', { reasoningEffort: 'xhigh' }))
     .resolves.toEqual({ kind: 'model', id: 'claude-opus-4.7' });
 
-  await expect(getCopilotProvidedModels(service, record(), async () => new Response('unavailable', { status: 503 })))
+  await expect(getCopilotProvidedModels(service, record(), async () => ({ ok: true, value: new Response('unavailable', { status: 503 }) })))
     .rejects.toMatchObject({ httpResponse: { status: 503, body: 'unavailable' } });
   expect(readCopilotUpstreamState(record().state).knownModels).toEqual(state.knownModels);
 });
@@ -162,16 +198,18 @@ test('Copilot dispatches the Responses wire variant for each requested service t
   const { record } = setup();
   const service = createCopilotService();
   const models = await getCopilotProvidedModels(service, record(), async url => {
-    if (url === tokenApi) return exchangeResponse();
+    if (url === tokenApi) return { ok: true, value: exchangeResponse() };
     if (url !== `${copilotApi}/models`) throw new Error(`Unexpected URL ${url}`);
-    return Response.json({
-      object: 'list',
-      data: [
-        { id: 'gpt-5.6-sol', supported_endpoints: ['/responses'] },
-        { id: 'gpt-5.6-sol-fast', supported_endpoints: ['/responses'] },
-        { id: 'grok-code-fast', supported_endpoints: ['/responses'] },
-      ],
-    });
+    return {
+      ok: true, value: Response.json({
+        object: 'list',
+        data: [
+          { id: 'gpt-5.6-sol', supported_endpoints: ['/responses'] },
+          { id: 'gpt-5.6-sol-fast', supported_endpoints: ['/responses'] },
+          { id: 'grok-code-fast', supported_endpoints: ['/responses'] },
+        ],
+      }),
+    };
   });
   expect(models.map(model => model.id)).toEqual(['gpt-5.6-sol', 'grok-code-fast']);
   const [model] = models;
@@ -235,7 +273,7 @@ test.each([
     }
     throw new Error(`Unexpected URL ${url}`);
   };
-  const [model] = await getCopilotProvidedModels(service, record(), fetcher);
+  const [model] = await getCopilotProvidedModels(service, record(), async url => ({ ok: true, value: await fetcher(url) }));
   const started = run(copilotPipelines.openaiChatCompletions, {
     'provider.upstream': move(copilotUpstreamFact(record())),
     'provider.model': move(toProviderModelFact(model)),
