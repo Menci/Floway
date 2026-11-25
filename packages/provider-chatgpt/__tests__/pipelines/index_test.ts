@@ -227,7 +227,7 @@ test('returns an OAuth transport failure with its original cause and no HTTP hea
   expect(result['response.http']).toBeNull();
   const outcome = result['response.alphaSearch'];
   assert(outcome.kind === 'error');
-  expect(outcome).toMatchObject({ source: 'upstream', error: { message: failure.cause.message } });
+  expect(outcome).toMatchObject({ source: 'upstream', error: { error: { message: failure.cause.message, type: 'api_error' } } });
   expect(outcome.cause).toBe(failure);
   expect(account().state).toBe('active');
 });
@@ -300,7 +300,7 @@ test('uses the hydrated plan for the image gate and formats a non-JSON upstream 
   const search = run(chatgptPipelines.alphaSearch, { ...entry, 'request.alphaSearch': move({ query: 'take it' }) }, { services });
   expect(await search.result).toMatchObject({
     'response.http': { status: 422, headers: expect.arrayContaining([['x-upstream', 'kept']]) },
-    'response.alphaSearch': { kind: 'error', source: 'upstream', error: { type: 'error', message: 'upstream refused search' } },
+    'response.alphaSearch': { kind: 'error', source: 'upstream', error: { error: { type: 'api_error', message: 'upstream refused search' } } },
   });
   await search.done;
 });

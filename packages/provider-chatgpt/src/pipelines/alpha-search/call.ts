@@ -6,7 +6,7 @@ import type { ChatGPTUpstreamFact } from '../../upstream-fact.ts';
 import { authorizedCall, parseJsonObject, withoutTransportResponse } from '../authorized-call.ts';
 import { codexRequest, trimHeader } from '../request.ts';
 import { factSpace, move } from '@floway-dev/pipeline';
-import { formatOpenAIResponsesError } from '@floway-dev/protocols/openai-responses';
+import { formatAlphaSearchError } from '@floway-dev/protocols/alpha-search';
 import { parseResultBody, type ProviderOperationFacts, type ProviderTransportFacts } from '@floway-dev/provider';
 
 export const { defineStage, compose } = factSpace<ProviderOperationFacts<'alphaSearch', ChatGPTUpstreamFact> & ProviderTransportFacts, ChatGPTServices>();
@@ -36,8 +36,8 @@ export const call = defineStage({
       }, trimHeader(request.headers, 'x-codex-turn-metadata'), false);
     };
     const back = await authorizedCall(upstream, prepareRequest, false, scope,
-      next => scope.next({ ...facts, 'request.http': next }), formatOpenAIResponsesError);
-    const { http, outcome } = 'outcome' in back ? back : await parseResultBody(back, parseJsonObject, formatOpenAIResponsesError);
+      next => scope.next({ ...facts, 'request.http': next }), formatAlphaSearchError);
+    const { http, outcome } = 'outcome' in back ? back : await parseResultBody(back, parseJsonObject, formatAlphaSearchError);
     return {
       ...withoutTransportResponse(back),
       'response.http': move(http),

@@ -1,13 +1,15 @@
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { mountAlphaSearchRoutes } from '../../../src/data-plane/alpha-search/routes.ts';
+import { mountAlphaSearchRoute, mountAlphaSearchRoutes } from '../../../src/data-plane/alpha-search/routes.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../src/data-plane/tools/web-search/provider.ts';
 import type { WebSearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../../../src/data-plane/tools/web-search/types.ts';
 import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
 import { internalErrorResponse } from '../../../src/middleware/internal-error-response.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
+import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
 // Real provider construction (`createTavilyWebSearchProvider` etc.) hits the
@@ -83,12 +85,14 @@ const buildAlphaSearchApp = () => {
   app.onError(internalErrorResponse);
   app.use('*', authMiddleware);
   mountAlphaSearchRoutes(app);
+  mountAlphaSearchRoute(app, PUBLIC_DATA_PLANE_ROUTES.codexAlphaSearch);
   return app;
 };
 
 const SEARCH_PATHS = [
   '/alpha/search',
   '/v1/alpha/search',
+  '/azure-api.codex/alpha/search',
 ] as const;
 const SEARCH_PATH = SEARCH_PATHS[0];
 
@@ -114,7 +118,7 @@ beforeEach(() => {
 });
 
 describe('/alpha/search data plane', () => {
-  describe('passthrough model availability', () => {
+  describe('configured model availability', () => {
     // Each reason is a distinct production branch; the two mount paths share
     // one handler, so the rows alternate between them.
     it.each([
@@ -163,7 +167,7 @@ describe('/alpha/search data plane', () => {
   });
 
   describe('command execution', () => {
-    it('raw-passthrough mode dispatches to the selected custom upstream and preserves its response', async () => {
+    it('dispatches the configured model through the pipeline and preserves a structured response on the Codex alias', async () => {
       const { apiKey, repo } = await setupAppTest({ webSearchConfig: PASSTHROUGH_CONFIG });
       await repo.upstreams.deleteAll();
       await saveUpstreamForTest(repo.upstreams, searchUpstream(['gpt-search']));
@@ -172,13 +176,23 @@ describe('/alpha/search data plane', () => {
         output: 'upstream output',
         results: [{ type: 'text_result', ref_id: 'turn0search0', url: 'https://example.com', title: 'Example', snippet: 'Snippet' }],
       };
-      const immutableUpstreamResponse = await fetch(`data:application/json,${encodeURIComponent(JSON.stringify(upstreamPayload))}`);
       let upstreamBody: Record<string, unknown> | undefined;
       await withMockedFetch(
         async request => {
           if (request.url === 'https://search.example.com/v1/alpha/search') {
             upstreamBody = await request.json() as Record<string, unknown>;
-            return immutableUpstreamResponse;
+            return Response.json(upstreamPayload, {
+              status: 202,
+              statusText: 'Accepted upstream',
+              headers: {
+                connection: 'close',
+                'content-encoding': 'gzip',
+                'content-length': '999',
+                'set-cookie': 'session=upstream-secret',
+                'transfer-encoding': 'chunked',
+                'x-oai-request-id': 'req_search_1',
+              },
+            });
           }
           throw new Error(`Unhandled fetch ${request.url}`);
         },
@@ -188,8 +202,14 @@ describe('/alpha/search data plane', () => {
             id: 'session-search',
             model: 'caller-model',
             commands: { search_query: [{ q: 'Floway' }] },
-          });
-          expect(response.status).toBe(200);
+          }, SEARCH_PATHS[2]);
+          expect(response.status).toBe(202);
+          expect(response.statusText).toBe('Accepted upstream');
+          expect(response.headers.get('x-oai-request-id')).toBe('req_search_1');
+          expect(response.headers.get('content-type')).toBe('application/json');
+          for (const header of ['connection', 'content-encoding', 'content-length', 'set-cookie', 'transfer-encoding']) {
+            expect(response.headers.get(header)).toBeNull();
+          }
           expect(await response.json()).toEqual(upstreamPayload);
         },
       );
@@ -197,6 +217,38 @@ describe('/alpha/search data plane', () => {
         id: 'session-search',
         model: 'gpt-search',
         commands: { search_query: [{ q: 'Floway' }] },
+      });
+      await flushBackground();
+      expect(await repo.usage.listAll()).toEqual([]);
+      expect(await repo.performance.listAll()).toEqual([]);
+    });
+
+    it.each([
+      {
+        name: 'JSON',
+        upstream: () => Response.json({ error: { code: 'vendor_failure' } }, { status: 400, headers: { 'x-upstream': 'search' } }),
+        status: 400,
+        body: { error: { code: 'vendor_failure' } },
+      },
+      {
+        name: 'plain text',
+        upstream: () => new Response('search temporarily unavailable', { status: 503, headers: { 'x-upstream': 'search' } }),
+        status: 503,
+        body: { error: { message: 'search temporarily unavailable', type: 'api_error' } },
+      },
+    ])('renders configured upstream $name errors with their status and headers', async ({ upstream, status, body }) => {
+      const { apiKey, repo } = await setupAppTest({ webSearchConfig: PASSTHROUGH_CONFIG });
+      await repo.upstreams.deleteAll();
+      await saveUpstreamForTest(repo.upstreams, searchUpstream(['gpt-search']));
+      await withMockedFetch(request => {
+        expect(request.url).toBe('https://search.example.com/v1/alpha/search');
+        return upstream();
+      }, async () => {
+        await warmModelsForTest();
+        const response = await postSearch(buildAlphaSearchApp(), apiKey.key, { commands: { search_query: [{ q: 'Floway' }] } }, SEARCH_PATHS[1]);
+        expect(response.status).toBe(status);
+        expect(response.headers.get('x-upstream')).toBe('search');
+        expect(await response.json()).toEqual(body);
       });
     });
 
