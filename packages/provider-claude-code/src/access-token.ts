@@ -68,22 +68,34 @@ export interface EnsureClaudeCodeAccessTokenArgs {
 // for true cluster-wide single-mint; we trade that for zero coordination
 // state at the cost of cross-isolate-only round-trip duplication, which is
 // the rare case.
-const inFlightEnsures = new Map<string, Promise<EnsuredAccessToken>>();
-
-export const ensureClaudeCodeAccessToken = async (
-  args: EnsureClaudeCodeAccessTokenArgs,
-): Promise<EnsuredAccessToken> => {
-  const key = `${args.upstreamId}:${args.force ? 'force' : 'lazy'}`;
-  const existing = inFlightEnsures.get(key);
-  if (existing) return await existing;
-  const promise = ensureClaudeCodeAccessTokenInner(args, true);
-  inFlightEnsures.set(key, promise);
-  try {
-    return await promise;
-  } finally {
-    inFlightEnsures.delete(key);
-  }
+const createAccessTokenService = (repo: UpstreamsRepoSlim) => {
+  const inFlightEnsures = new Map<string, Promise<EnsuredAccessToken>>();
+  return async (args: Omit<EnsureClaudeCodeAccessTokenArgs, 'repo'>): Promise<EnsuredAccessToken> => {
+    const key = `${args.upstreamId}:${args.force ? 'force' : 'lazy'}`;
+    const existing = inFlightEnsures.get(key);
+    if (existing) return await existing;
+    const promise = ensureClaudeCodeAccessTokenInner({ ...args, repo }, true);
+    inFlightEnsures.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      inFlightEnsures.delete(key);
+    }
+  };
 };
+
+const accessTokenServices = new WeakMap<UpstreamsRepoSlim, ReturnType<typeof createAccessTokenService>>();
+
+export const getClaudeCodeAccessTokenService = (repo: UpstreamsRepoSlim) => {
+  const existing = accessTokenServices.get(repo);
+  if (existing) return existing;
+  const ensure = createAccessTokenService(repo);
+  accessTokenServices.set(repo, ensure);
+  return ensure;
+};
+
+export const ensureClaudeCodeAccessToken = async ({ repo, ...args }: EnsureClaudeCodeAccessTokenArgs): Promise<EnsuredAccessToken> =>
+  await getClaudeCodeAccessTokenService(repo)(args);
 
 // Reads, refreshes, and persists. The rotated refresh token and the new
 // cached access token are committed together in a single state write; the
@@ -281,16 +293,16 @@ const recoverFromRefreshRace = async (
   return await ensureClaudeCodeAccessTokenInner(args, false);
 };
 
-// Used in 401-retry: clear the cached access token without touching the
-// refresh token, so the next call mints a fresh one. An account whose slot is
-// already empty is returned untouched, which the repo reads as "nothing to do".
+// A concurrent retry may have already replaced the rejected token.
 export const invalidateClaudeCodeAccessToken = async (args: {
   upstreamId: string;
   repo: UpstreamsRepoSlim;
+  rejectedAuthorization: string;
 }): Promise<void> => {
   await args.repo.saveState(args.upstreamId, current => {
     const state = readClaudeCodeUpstreamState(current);
-    if (state.accounts[0].accessToken === null) return state;
+    const token = state.accounts[0].accessToken;
+    if (token === null || `Bearer ${token.token}` !== args.rejectedAuthorization) return state;
     return replaceSoleAccount(state, account => ({ ...account, accessToken: null }));
   });
 };

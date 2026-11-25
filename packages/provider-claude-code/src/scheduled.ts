@@ -1,6 +1,7 @@
 import { ensureClaudeCodeAccessToken } from './access-token.ts';
+import { persistClaudeCodeUsageProbe } from './service.ts';
 import { readClaudeCodeUpstreamState } from './state.ts';
-import { fetchClaudeCodeUsageProbe, persistClaudeCodeUsageProbe } from './usage-probe.ts';
+import { fetchClaudeCodeUsageProbe } from './usage-probe.ts';
 import { getProviderRepo, runScheduledUsageRefresh, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 export const runClaudeCodeScheduledTask = async (record: UpstreamRecord, options: ProviderScheduledOptions): Promise<void> => {

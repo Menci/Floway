@@ -143,7 +143,7 @@ const extractSystemTexts = (body: AnthropicMessagesPayload): string[] => {
 };
 
 export interface ClaudeCodeShapedRequestInput {
-  headers: Headers;
+  headers: Pick<Headers, 'get'>;
   body: AnthropicMessagesPayload;
 }
 

@@ -1,5 +1,5 @@
 import type { AnthropicMessagesBoundaryCtx } from './types.ts';
-import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
+import { fillFields } from '../../pipelines/anthropic-messages/backfill-required-fields.ts';
 
 // Real Claude Code always sends `max_tokens` and `temperature` on every
 // request body. Anthropic's `/v1/messages` requires `max_tokens` and 422s
@@ -25,11 +25,6 @@ export const backfillRequiredFields = async <TResult>(
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const next = { ...ctx.payload };
-
-  next.max_tokens ??= ctx.model.limits.max_output_tokens ?? ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS;
-  next.temperature ??= 1;
-
-  ctx.payload = next;
+  ctx.payload = fillFields(ctx.payload, ctx.model.limits.max_output_tokens);
   return await run();
 };
