@@ -1,4 +1,4 @@
-import type { RerankSourceProtocol } from '../common/models.ts';
+import type { RerankProtocol, RerankSourceProtocol } from '../common/models.ts';
 
 export type RerankInput = string | Record<string, unknown>;
 
@@ -26,6 +26,7 @@ export interface CanonicalRerankResult {
 }
 
 export interface CanonicalRerankResponse {
+  targetProtocol: RerankProtocol;
   raw: Record<string, unknown>;
   id?: string;
   model?: string;

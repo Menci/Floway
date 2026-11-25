@@ -365,51 +365,46 @@ export const parseRerankUsage = (
 
 export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): CanonicalRerankResponse => {
   if (!isRecord(value)) throw new Error('Rerank response body must be an object');
-  const usage = parseRerankUsage(protocol, value);
+  const base = { targetProtocol: protocol, raw: value, ...parseRerankUsage(protocol, value) };
   switch (protocol) {
   case 'cohere-v1':
   case 'cohere-v2':
     return {
-      raw: value,
+      ...base,
       ...(typeof value.id === 'string' ? { id: value.id } : {}),
       results: resultsArray(value.results, 'results'),
-      ...usage,
     };
   case 'jina-v1': {
     const model = listEnvelopeModel(value);
     return {
-      raw: value,
+      ...base,
       model,
       results: resultsArray(value.results, 'results'),
-      ...usage,
     };
   }
   case 'voyage-v1': {
     const model = listEnvelopeModel(value);
     return {
-      raw: value,
+      ...base,
       model,
       results: resultsArray(value.data, 'data'),
-      ...usage,
     };
   }
   case 'dashscope-compatible': {
     const model = listEnvelopeModel(value);
     return {
-      raw: value,
+      ...base,
       id: requiredString(value.id, 'id'),
       model,
       results: resultsArray(value.results, 'results'),
-      ...usage,
     };
   }
   case 'dashscope-native': {
     if (!isRecord(value.output)) throw new Error('output must be an object');
     return {
-      raw: value,
+      ...base,
       id: requiredString(value.request_id, 'request_id'),
       results: resultsArray(value.output.results, 'output.results'),
-      ...usage,
     };
   }
   }

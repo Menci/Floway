@@ -11,7 +11,7 @@ import { openaiCompletions } from './openai-completions/http.ts';
 import { openaiEmbeddings } from './openai-embeddings/http.ts';
 import { openaiImagesEdits, openaiImagesGenerations } from './openai-images/http.ts';
 import { mountPublicRoute } from './public-route.ts';
-import { rerank } from './rerank/serve.ts';
+import { rerank } from './rerank/http.ts';
 import type { AuthVars } from '../middleware/auth.ts';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 

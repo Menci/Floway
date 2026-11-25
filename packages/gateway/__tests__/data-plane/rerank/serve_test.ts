@@ -1,24 +1,27 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import type { Repo } from '../../../src/repo/types.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
 import type { ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-const saveRerankUpstream = async (
+const addRerankUpstream = async (
   repo: Repo,
+  id: string,
+  host: string,
+  sortOrder: number,
   target: RerankTarget,
   pricing?: ModelPricing,
 ): Promise<void> => {
-  await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_rerank',
+    id,
     name: 'Rerank Provider',
+    sortOrder,
     config: {
-      baseUrl: 'https://rerank.example.com',
+      baseUrl: `https://${host}`,
       ingressHeadersRules: [],
       apiKey: 'sk-rerank',
       endpoints: {},
@@ -33,6 +36,12 @@ const saveRerankUpstream = async (
       }],
     },
   }));
+};
+
+const saveRerankUpstream = async (repo: Repo, target: RerankTarget, pricing?: ModelPricing): Promise<void> => {
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+  await addRerankUpstream(repo, 'up_rerank', 'rerank.example.com', 1, target, pricing);
 };
 
 const requestHeaders = (apiKey: string) => ({
@@ -90,7 +99,7 @@ test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', as
     top_n: 1,
   });
 
-  await flushAsyncWork();
+  await flushBackground();
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0].requests, 1);
@@ -147,7 +156,7 @@ test('/jina/v1/rerank preserves same-dialect extensions and records token usage'
     vendor_request: { enabled: true },
   });
 
-  await flushAsyncWork();
+  await flushBackground();
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0].requests, 1);
@@ -203,10 +212,65 @@ test('cross-protocol success still validates result items before rendering', asy
     },
   );
 
-  await flushAsyncWork();
+  await flushBackground();
   const usage = await repo.usage.listAll();
   assertEquals(usage[0].requests, 1);
   assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '7', unitPrice: null }]);
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
+});
+
+test.each([
+  {
+    name: 'JSON error',
+    second: () => jsonResponse({ error: { code: 'vendor_failure' } }, 400),
+    status: 400,
+    body: { error: { code: 'vendor_failure' } },
+  },
+  {
+    name: 'text error',
+    second: () => new Response('reranker unavailable', { status: 503 }),
+    status: 503,
+    body: { error: { message: 'reranker unavailable', type: 'api_error' } },
+  },
+  {
+    name: 'rerank result',
+    second: () => jsonResponse({ model: 'raw-reranker', object: 'list', results: [{ index: 0, relevance_score: 0.8 }] }),
+    status: 200,
+    body: { model: 'raw-reranker', object: 'list', data: [{ index: 0, relevance_score: 0.8 }] },
+  },
+])('/voyage/v1/rerank bills a damaged first result and renders the selected $name', async ({ second, status, body }) => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'jina-v1' }, { entries: [{ rates: { input_tokens: '0.0000005' } }] });
+  await addRerankUpstream(repo, 'second', 'second.example.com', 2, { protocol: 'jina-v1' });
+  const calls: string[] = [];
+
+  await withMockedFetch(async request => {
+    const url = new URL(request.url);
+    expect(await request.json()).toEqual({ model: 'raw-reranker', query: 'query', documents: ['one'], return_documents: false, truncation: true });
+    calls.push(url.hostname);
+    return url.hostname === 'rerank.example.com'
+      ? jsonResponse({ model: 'raw-reranker', object: 'list', usage: { total_tokens: 7 }, results: [{ relevance_score: 0.8 }] })
+      : second();
+  }, async () => {
+    const response = await requestAppWithWarmModels('/voyage/v1/rerank', {
+      method: 'POST',
+      headers: requestHeaders(apiKey.key),
+      body: JSON.stringify({ model: 'public-reranker', query: 'query', documents: ['one'] }),
+    });
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual(body);
+  });
+  await flushBackground();
+
+  expect(calls).toEqual(['rerank.example.com', 'second.example.com']);
+  const usage = await repo.usage.listAll();
+  expect(usage).toHaveLength(status === 200 ? 2 : 1);
+  expect(usage).toEqual(expect.arrayContaining([
+    expect.objectContaining({ upstream: 'up_rerank', requests: 1, metrics: [{ metric: 'input_tokens', quantity: '7', unitPrice: '0.0000005' }] }),
+  ]));
+  expect(await repo.performance.listAll()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ upstream: 'up_rerank', operation: 'rerank', requests: 1, errorsNoOutput: 1 }),
+    expect.objectContaining({ upstream: 'second', operation: 'rerank', requests: 1, errorsNoOutput: status === 200 ? 0 : 1 }),
+  ]));
 });
