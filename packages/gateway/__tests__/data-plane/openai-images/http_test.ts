@@ -192,6 +192,12 @@ test.each([
     status: 200,
     body: { data: [], usage: { input_tokens: 3 } },
   },
+  {
+    name: 'damaged successful upstream response',
+    second: () => new Response('unreadable image result', { headers: { 'x-upstream': 'second' } }),
+    status: 502,
+    body: { error: { message: expect.any(String), type: 'api_error' } },
+  },
 ])('/v1/images/generations selects the $name and meters each call', async ({ second, status, body }) => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
