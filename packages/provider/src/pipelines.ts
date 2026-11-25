@@ -98,13 +98,17 @@ export type GatewayFacts = {
   readonly [Name in ProviderProtocol as `response.${Name}`]: OperationsFor<Name>['outcome'] | CollectedOutcome<Name>;
 };
 
-type ProviderRequestFacts<Op extends ProviderOperation> = Pick<GatewayFacts, 'request.http' | 'provider.upstream' | 'provider.model'> &
+type ProviderRequestFacts<Op extends ProviderOperation, Upstream extends ProviderUpstream> =
+  Pick<GatewayFacts, 'request.http' | 'provider.model'> &
+  { readonly 'provider.upstream': Upstream } &
   Readonly<Record<`request.${Operations[Op]['protocol']}`, Operations[Op]['request']>>;
 type ProviderResponseFacts<Op extends ProviderOperation> = Pick<GatewayFacts, 'response.http' | 'response.modelKey'> &
   Readonly<Record<`response.${Operations[Op]['protocol']}`, Operations[Op]['outcome']>>;
 
-export type ProviderOperationFacts<Op extends ProviderOperation> = GatewayFacts & ProviderRequestFacts<Op> & ProviderResponseFacts<Op>;
+// A provider package narrows `provider.upstream` to its own projected config so stages read it without casts.
+export type ProviderOperationFacts<Op extends ProviderOperation, Upstream extends ProviderUpstream = ProviderUpstream> =
+  Omit<GatewayFacts, 'provider.upstream'> & ProviderRequestFacts<Op, Upstream> & ProviderResponseFacts<Op>;
 
-export type ProviderPipelines<S = ProviderServices> = {
-  readonly [Op in ProviderOperation]?: Pipeline<ProviderRequestFacts<Op>, ProviderResponseFacts<Op>, S>;
+export type ProviderPipelines<S = ProviderServices, Upstream extends ProviderUpstream = ProviderUpstream> = {
+  readonly [Op in ProviderOperation]?: Pipeline<ProviderRequestFacts<Op, Upstream>, ProviderResponseFacts<Op>, S>;
 };
