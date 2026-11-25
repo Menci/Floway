@@ -35,6 +35,13 @@ export type SseReadableFrame = SseFrame | SseRawFrame;
 
 export type ProtocolFrame<TEvent> = EventFrame<TEvent> | DoneFrame;
 
+export interface SseErrorFrame {
+  readonly type: 'error';
+  readonly cause: { readonly message: string; readonly cause: unknown };
+}
+
+export type ParsedProtocolFrame<TEvent> = ProtocolFrame<TEvent> | SseErrorFrame;
+
 export const sseFrame = (data: string, event?: string): SseFrame => ({
   type: 'sse',
   ...(event === undefined ? {} : { event }),

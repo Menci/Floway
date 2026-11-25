@@ -9,7 +9,7 @@ import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { ProviderStreamResult } from '@floway-dev/provider';
+import { streamingProviderCall, type ProviderStreamResult } from '@floway-dev/provider';
 import { mockPerfTelemetryContext, stubModelCandidate } from '@floway-dev/test-utils';
 
 afterEach(() => { vi.restoreAllMocks(); });
@@ -61,7 +61,8 @@ test.each([true, false])('preserves parser consumption timing under downstream b
   const role = encode({ role: 'assistant' });
   const text = encode({ content: 'hello' });
   const ctx = mockGatewayCtx();
-  const result = await providerStreamResultToExecuteResult(okStreamResult(parseOpenAIChatCompletionsStream(body)), stubModelCandidate(), 'openaiChatCompletions', ctx, () => null);
+  const parsed = await streamingProviderCall(Promise.resolve(new Response(body, { headers: { 'content-type': 'text/event-stream' } })), parseOpenAIChatCompletionsStream, 'test-model-key', undefined);
+  const result = await providerStreamResultToExecuteResult(parsed, stubModelCandidate(), 'openaiChatCompletions', ctx, () => null);
   if (result.type !== 'events') throw new Error('Expected events');
   const iterator = result.events[Symbol.asyncIterator]();
   if (!sameChunk) {

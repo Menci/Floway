@@ -1,7 +1,7 @@
 import type { AnthropicMessagesStreamEventEx } from './index.ts';
 import { parseTargetStreamFrames } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
-import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '../common/sse.ts';
+import { eventFrame, type ParsedProtocolFrame, type SseFrame } from '../common/sse.ts';
 
 export interface ParseAnthropicMessagesStreamOptions {
   signal?: AbortSignal | undefined;
@@ -11,7 +11,7 @@ export interface ParseAnthropicMessagesStreamOptions {
 export const parseAnthropicMessagesStream = (
   body: ReadableStream<Uint8Array>,
   options: ParseAnthropicMessagesStreamOptions = {},
-): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> => (async function* () {
+): AsyncGenerator<ParsedProtocolFrame<AnthropicMessagesStreamEventEx>> => (async function* () {
   const rawFrames = (async function* () {
     for await (const frame of parseSSEStream(body, options)) {
       if (frame.type === 'sse') options.onSseFrame?.(frame);
@@ -22,8 +22,8 @@ export const parseAnthropicMessagesStream = (
     protocol: 'Anthropic Messages',
     malformedJsonEventName: 'message',
   })) {
-    if (frame.type === 'done') {
-      yield doneFrame();
+    if (frame.type === 'done' || frame.type === 'error') {
+      yield frame;
       return;
     }
     yield eventFrame(frame.data);

@@ -34,6 +34,7 @@ export const respondOpenAICompletionsSse = (
     downstreamAbortController: ctx.downstreamAbortController,
     protocol: {
       encode: parsed => {
+        if (parsed.type === 'error') throw new Error(parsed.cause.message, { cause: parsed.cause.cause });
         const input = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
         ctx.dump?.frame(input);
         if (input.type === 'done') return { wire: serializeSseFrame(sseFrame('[DONE]')), end: { type: 'completed' } };

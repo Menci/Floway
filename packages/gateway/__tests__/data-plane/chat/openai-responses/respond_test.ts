@@ -14,6 +14,13 @@ import { mockPerfTelemetryContext, testTelemetryModelIdentity } from '@floway-de
 
 beforeEach(() => { initRepo(new InMemoryRepo()); });
 
+const parseResponseFrames = async function* (body: ReadableStream<Uint8Array>) {
+  for await (const frame of parseOpenAIResponsesStream(body)) {
+    if (frame.type === 'error') throw new Error(frame.cause.message, { cause: frame.cause.cause });
+    yield frame;
+  }
+};
+
 const internalFailure = () => {
   const cause = new TypeError('nested'); cause.stack = 'TypeError: nested\n  at nested';
   const failure = new Error('broken', { cause }); failure.stack = 'Error: broken\n  at render';
@@ -93,7 +100,7 @@ test('Responses SSE failures keep the announced resource, completed items, wire 
   expect(failed.response.error).toEqual(details);
   const terminalOnly = await collectOpenAIResponsesProtocolEventsToResult((async function* () { yield eventFrame(failed); })());
   expect(terminalOnly.error).toEqual(failed.response.error);
-  await expect(collectOpenAIResponsesProtocolEventsToResult(parseOpenAIResponsesStream(new Response(wire).body!))).rejects.toMatchObject({ message: 'broken', cause: error });
+  await expect(collectOpenAIResponsesProtocolEventsToResult(parseResponseFrames(new Response(wire).body!))).rejects.toMatchObject({ message: 'broken', cause: error });
 });
 
 test('Responses sends a failed terminal when the next event cannot be serialized as SSE', async () => {
@@ -101,7 +108,7 @@ test('Responses sends a failed terminal when the next event cannot be serialized
     { type: 'response.created', sequence_number: 4, response: { id: 'upstream', object: 'response', model: 'm', status: 'in_progress', output: [], error: null, incomplete_details: null } },
     { type: 'vendor:event\nbad', sequence_number: 5 },
   ].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
-  const source = parseOpenAIResponsesStream(upstream.body!);
+  const source = parseResponseFrames(upstream.body!);
   const app = new Hono().get('/', c => respondOpenAIResponses(c, eventResult(source, testTelemetryModelIdentity), true, mockChatGatewayCtx(), { model: 'm', input: [] }));
   const response = await app.request('/');
   expect(response.status).toBe(200);

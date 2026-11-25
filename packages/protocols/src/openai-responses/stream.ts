@@ -1,7 +1,7 @@
 import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResultEx, openaiResponsesResultToEvents, type OpenAIResponsesStreamEventEx } from './index.ts';
 import { parseTargetStreamFrames } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
+import { eventFrame, type ParsedProtocolFrame } from '../common/sse.ts';
 
 export interface ParseOpenAIResponsesStreamOptions {
   signal?: AbortSignal | undefined;
@@ -53,7 +53,7 @@ const sequencer = () => {
 export const parseOpenAIResponsesStream = (
   body: ReadableStream<Uint8Array>,
   options: ParseOpenAIResponsesStreamOptions = {},
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> => (async function* () {
+): AsyncGenerator<ParsedProtocolFrame<OpenAIResponsesStreamEventEx>> => (async function* () {
   let sawStructured = false;
   const sentWrapperTypes = new Set<OpenAIResponsesStreamEventEx['type']>();
   const { stamp, stampNext } = sequencer();
@@ -62,8 +62,8 @@ export const parseOpenAIResponsesStream = (
     protocol: 'OpenAI Responses',
     malformedJsonEventName: 'response',
   })) {
-    if (frame.type === 'done') {
-      yield doneFrame();
+    if (frame.type === 'done' || frame.type === 'error') {
+      yield frame;
       return;
     }
 

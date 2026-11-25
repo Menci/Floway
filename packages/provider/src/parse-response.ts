@@ -3,7 +3,7 @@ import type { ProtocolError, ProtocolStreamError } from './pipelines.ts';
 import type { ProviderStreamParser } from './streaming.ts';
 import { getHeader, isHttpBodyStream, readHttpBody, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
 import type { ManagedStream, Result } from '@floway-dev/pipeline';
-import { isEventStreamMediaType, parseJSONWithRawNumbers, UpstreamStreamProtocolError } from '@floway-dev/protocols/common';
+import { isEventStreamMediaType, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
 export type FormatProviderError<Body> = (status: number | null, message: string) => Body;
 
@@ -21,7 +21,7 @@ interface ProducerScope {
   readonly abort: (key: object) => void;
 }
 
-interface StreamScope {
+interface StreamScope extends Pick<ProducerScope, 'abort'> {
   readonly createStream: <T, E>(iterate: (scope: ProducerScope) => AsyncIterable<Result<T, E>>) => ManagedStream<T, E>;
   readonly wrapStream: <T, E, U, F>(
     stream: ManagedStream<T, E>,
@@ -139,13 +139,16 @@ const parseSse = async function* <Event>(
         completed = true;
         break;
       }
+      if (frame.type === 'error') {
+        failure = { kind: 'protocol', cause: frame.cause };
+        break;
+      }
       if (eof.kind === 'terminalEvent' && eof.isTerminal(frame.event)) sawTerminalEvent = true;
       yield { ok: true, value: frame.event };
     }
   } catch (cause) {
     if (panic) throw panic.cause;
     if (bodyFailure && cause === bodyFailure) failure = bodyFailure;
-    else if (cause instanceof UpstreamStreamProtocolError) failure = { kind: 'protocol', cause };
     else throw cause;
   }
 
@@ -187,11 +190,16 @@ export const parseSseBody = async <Event, Body>(
   const response = { ...http, body: null };
   const contentType = getHeader(http.headers, 'content-type');
   if (body === null || typeof contentType !== 'string' || !isEventStreamMediaType(contentType)) {
-    const raw = await readHttpBody(body);
-    if (!raw.ok) return transportFailure(response, raw.error, format);
-    const text = new TextDecoder().decode(raw.value);
-    const cause = new UpstreamStreamProtocolError(`Expected an upstream text/event-stream response. Body: ${text}`);
-    return upstreamFailure(response, cause.message, cause, format);
+    if (isHttpBodyStream(body)) {
+      scope.abort(back);
+      for await (const _item of body) {
+        // The rejected body still belongs to this stage until native done.
+      }
+    }
+    return upstreamFailure(response, 'Expected an upstream text/event-stream response', {
+      contentType: typeof contentType === 'string' ? contentType : null,
+      hasBody: body !== null,
+    }, format);
   }
 
   if (isHttpBodyStream(body)) {

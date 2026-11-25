@@ -5,7 +5,7 @@ import { parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-respons
 import type { ProviderStreamParser } from '@floway-dev/provider';
 
 const mapParser = <T>(parser: ProviderStreamParser<T>, map: (event: T) => T): ProviderStreamParser<T> => async function* (body, options) {
-  for await (const frame of parser(body, options)) yield frame.type === 'done' ? frame : eventFrame(map(frame.event));
+  for await (const frame of parser(body, options)) yield frame.type === 'event' ? eventFrame(map(frame.event)) : frame;
 };
 
 // In observed chat requests Kimi accepted priority without a response tier marker

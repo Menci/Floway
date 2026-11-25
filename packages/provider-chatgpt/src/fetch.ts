@@ -706,7 +706,12 @@ const performStreamingOpenAIResponsesCall = async (
   const result = await streamingProviderCall(
     upstreamFetch,
     (stream, parserOpts) => {
-      const frames = parseOpenAIResponsesStream(stream, parserOpts);
+      const frames = (async function* () {
+        for await (const frame of parseOpenAIResponsesStream(stream, parserOpts)) {
+          if (frame.type === 'error') throw new Error(frame.cause.message, { cause: frame.cause.cause });
+          yield frame;
+        }
+      })();
       return restoreChatGPTResponsesOutput(Object.keys(prepared.movedFields).length === 0
         ? frames
         : projectMovedChatGPTResponsesFields(frames, prepared.movedFields));

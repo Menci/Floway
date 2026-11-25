@@ -1,7 +1,7 @@
 import type { GeminiGenerateContentStreamEvent } from './index.ts';
 import { parseTargetStreamFrames } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
+import { eventFrame, type ParsedProtocolFrame } from '../common/sse.ts';
 
 export interface ParseGeminiGenerateContentStreamOptions {
   signal?: AbortSignal | undefined;
@@ -24,14 +24,14 @@ export interface ParseGeminiGenerateContentStreamOptions {
 export const parseGeminiGenerateContentStream = (
   body: ReadableStream<Uint8Array>,
   options: ParseGeminiGenerateContentStreamOptions = {},
-): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> => (async function* () {
+): AsyncGenerator<ParsedProtocolFrame<GeminiGenerateContentStreamEvent>> => (async function* () {
   for await (const frame of parseTargetStreamFrames<GeminiGenerateContentStreamEvent>(parseSSEStream(body, options), {
     protocol: 'Gemini generateContent',
     // Gemini is the protocol that can carry a trailing bare JSON body.
     onRawFrame: true,
   })) {
-    if (frame.type === 'done') {
-      yield doneFrame();
+    if (frame.type === 'done' || frame.type === 'error') {
+      yield frame;
       return;
     }
     yield eventFrame(frame.data);

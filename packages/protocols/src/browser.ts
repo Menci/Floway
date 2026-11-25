@@ -114,6 +114,7 @@ export {
 export { isOpenAIUsageOnlyEventShape } from './common/openai-stream.ts';
 
 export { parseTargetStreamFrames } from './common/parse-events.ts';
+export type { ParsedProtocolFrame, SseErrorFrame } from './common/sse.ts';
 
 export { parseSSEStream } from './common/parse-sse.ts';
 

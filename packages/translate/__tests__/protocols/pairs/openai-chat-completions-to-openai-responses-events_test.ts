@@ -4,7 +4,7 @@ import { openaiChatCompletionsSourceProtocol } from '../../../src/protocols/open
 import { openaiResponsesTargetProtocol } from '../../../src/protocols/openai-responses/as-target.ts';
 import { buildSourceEventsFor, buildTargetPayloadFor, emptyPayload, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { testOutputTranslation } from '../fixtures.ts';
+import { expectParsedProtocolFrames, testOutputTranslation } from '../fixtures.ts';
 import { structuredResponsesFixture } from '../openai-responses/fixtures.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, parseOpenAIChatCompletionsStream, openaiChatCompletionsProtocolFrameToSSEFrame as writeChatFrame } from '@floway-dev/protocols/openai-chat-completions';
@@ -249,13 +249,13 @@ test.each([
     { type: 'response.completed', response },
   ];
   const upstreamSSE = events.map((event, sequence_number) => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, sequence_number })}\n\n`).join('');
-  const upstream = await collectOpenAIResponsesProtocolEventsToResult(parseOpenAIResponsesStream(new Response(upstreamSSE).body!));
+  const upstream = await collectOpenAIResponsesProtocolEventsToResult(expectParsedProtocolFrames(parseOpenAIResponsesStream(new Response(upstreamSSE).body!)));
   let clientSSE = '';
-  for await (const frame of translate(parseOpenAIResponsesStream(new Response(upstreamSSE).body!))) {
+  for await (const frame of translate(expectParsedProtocolFrames(parseOpenAIResponsesStream(new Response(upstreamSSE).body!)))) {
     const sse = writeChatFrame(frame, includeUsageChunk);
     if (sse) clientSSE += `data: ${sse.data}\n\n`;
   }
-  const client = await collectOpenAIChatCompletionsProtocolEventsToResult(parseOpenAIChatCompletionsStream(new Response(clientSSE).body!));
+  const client = await collectOpenAIChatCompletionsProtocolEventsToResult(expectParsedProtocolFrames(parseOpenAIChatCompletionsStream(new Response(clientSSE).body!)));
   expect(client.choices[0].finish_reason).toBe('tool_calls');
   const replay = await buildTargetPayloadFor(openaiChatCompletionsSourceProtocol, openaiResponsesTargetProtocol, { model: response.model, stream: true, messages: [client.choices[0].message, { role: 'tool', tool_call_id: custom.call_id, content: 'edited' }] }, { sidecarCodec: createTestSidecarCodec() });
   expect(replay.input.slice(0, -1)).toEqual(upstream.output);

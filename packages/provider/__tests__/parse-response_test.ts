@@ -29,11 +29,11 @@ const parseChat = (eof: ProviderSseEof<OpenAIChatCompletionsStreamEvent>) => cha
   },
 });
 
-const composeChat = (eof: ProviderSseEof<OpenAIChatCompletionsStreamEvent>) => chat.compose('chat.response', {
+const composeChat = (eof: ProviderSseEof<OpenAIChatCompletionsStreamEvent>, ending = httpTerminal) => chat.compose('chat.response', {
   entry: ['request.http', 'provider.upstream'],
   exit: ['response.http', 'response.openaiChatCompletions'],
   stages: [parseChat(eof)],
-  ending: httpTerminal,
+  ending,
 });
 const chatPipeline = composeChat({ kind: 'complete' });
 
@@ -77,7 +77,9 @@ describe('provider response parsing', () => {
 
     expect(answer['response.http']).toMatchObject({ status: 429, body: null });
     expect(answer['response.http']?.headers).toContainEqual(['retry-after', '5']);
-    expect(answer['response.openaiChatCompletions']).toEqual({ kind: 'error', source: 'upstream', error });
+    const outcome = answer['response.openaiChatCompletions'];
+    expect(outcome).toEqual({ kind: 'error', source: 'upstream', error });
+    expect('cause' in outcome).toBe(false);
     expect(answer).not.toHaveProperty('response.transport');
     await exchange.done;
   });
@@ -115,6 +117,24 @@ describe('provider response parsing', () => {
 
     expect(answer['response.http']?.body).toBeNull();
     expect(await Array.fromAsync(outcome.stream)).toEqual([{ ok: true, value: chunk }]);
+    await exchange.done;
+  });
+
+  it('rejects a successful response with the wrong media type without reading its payload', async () => {
+    const pull = vi.fn();
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({ pull, cancel }, { highWaterMark: 0 });
+    const response = new Response(body, { headers: { 'content-type': 'text/html' } });
+    const exchange = run(chatPipeline, facts, { services: services({ ok: true, value: response }) });
+    const answer = await exchange.result;
+
+    expect(answer['response.http']).toMatchObject({ status: 200, body: null });
+    expect(answer['response.openaiChatCompletions']).toEqual({
+      kind: 'error', source: 'upstream', error: format(200, 'Expected an upstream text/event-stream response'),
+      cause: { contentType: 'text/html', hasBody: true },
+    });
+    expect(pull).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalledOnce();
     await exchange.done;
   });
 
@@ -188,6 +208,38 @@ describe('provider response parsing', () => {
     release.resolve();
     expect((await cursor.next()).done).toBe(true);
     expect(body.locked).toBe(false);
+    await exchange.done;
+  });
+
+  it('forwards the original transport Err once and drains its managed source', async () => {
+    const failure: HttpStreamError = { kind: 'transport', cause: new Error('managed read failed') };
+    const drained = vi.fn();
+    const ending = chat.defineStage({
+      name: 'failedTransportStream',
+      request: { needs: ['request.http', 'provider.upstream'] },
+      return: { provides: ['response.transport'] },
+      async execute(_facts, scope) {
+        const body = scope.createStream<Uint8Array, HttpStreamError>(async function* () {
+          yield { ok: true, value: encode(event) };
+          yield { ok: false, error: failure };
+          drained();
+        });
+        return { 'response.transport': move({ ok: true, value: { status: 200, statusText: '', headers: [['content-type', 'text/event-stream']], body } }) };
+      },
+    });
+    const pipeline = composeChat({ kind: 'complete' }, ending);
+    const exchange = run(pipeline, facts, { services: services({ ok: true, value: sse('') }) });
+    const outcome = (await exchange.result)['response.openaiChatCompletions'];
+    assert(outcome.kind === 'stream');
+    const reader = outcome.stream[Symbol.asyncIterator]();
+
+    expect(await reader.next()).toEqual({ done: false, value: { ok: true, value: chunk } });
+    const errored = await reader.next();
+    assert(!errored.done && !errored.value.ok);
+    expect(errored.value.error).toBe(failure);
+    expect(drained).not.toHaveBeenCalled();
+    expect(await reader.next()).toEqual({ done: true, value: undefined });
+    expect(drained).toHaveBeenCalledOnce();
     await exchange.done;
   });
 

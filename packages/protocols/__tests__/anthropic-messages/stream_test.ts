@@ -1,22 +1,12 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { parseAnthropicMessagesStream } from '../../src/anthropic-messages/stream.ts';
 import { sseFrame, sseFrameBody } from '../common/test-utils.ts';
-import { assertRejects } from '@floway-dev/test-utils';
 
-const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
-  const collected: T[] = [];
-  for await (const event of events) collected.push(event);
-  return collected;
-};
+test('parseAnthropicMessagesStream yields malformed SSE JSON as its last frame', async () => {
+  const frames = parseAnthropicMessagesStream(sseFrameBody(sseFrame('not json', 'message_delta'), sseFrame('[DONE]')));
 
-test('parseAnthropicMessagesStream rejects malformed Anthropic Messages SSE JSON', async () => {
-  await assertRejects(
-    async () => {
-      await collect(parseAnthropicMessagesStream(sseFrameBody(
-        sseFrame('not json', 'message_delta'),
-      )));
-    },
-    Error,
-  );
+  expect(await Array.fromAsync(frames)).toEqual([
+    { type: 'error', cause: { message: 'Malformed upstream Anthropic Messages SSE JSON for event "message_delta": not json', cause: expect.any(SyntaxError) } },
+  ]);
 });

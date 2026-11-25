@@ -5,7 +5,7 @@ import { decodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { collect, iterate } from '../shared/iterables.ts';
 import { collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, doneFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, doneFrame, type ParsedProtocolFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult } from '@floway-dev/protocols/gemini-generate-content';
 import { collectOpenAIChatCompletionsProtocolEventsToResult } from '@floway-dev/protocols/openai-chat-completions';
 import { collectOpenAIResponsesProtocolEventsToResult, openaiResponsesResultToEvents } from '@floway-dev/protocols/openai-responses';
@@ -19,6 +19,13 @@ const protocolKeys: Record<IRTestProtocol, AssistantTurnProtocol> = {
   'gemini-generate-content': 'geminiGenerateContent',
 };
 interface Fixture { text?: string[]; refusal?: string; thinking?: string[]; signature?: string; tools?: { name: string; id: string; args: Wire }[]; stop?: string; usage?: Wire; tier?: string }
+
+export const expectParsedProtocolFrames = async function* <Event>(frames: AsyncIterable<ParsedProtocolFrame<Event>>): AsyncGenerator<ProtocolFrame<Event>> {
+  for await (const frame of frames) {
+    if (frame.type === 'error') throw new Error(frame.cause.message, { cause: frame.cause.cause });
+    yield frame;
+  }
+};
 
 export const fixtureFrames = (protocol: IRTestProtocol, fixture: Fixture): ProtocolFrame<any>[] => {
   const text = fixture.text ?? [];

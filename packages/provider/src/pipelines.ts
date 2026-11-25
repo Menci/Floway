@@ -89,6 +89,7 @@ type CollectedOutcome<Name extends ProviderProtocol> = Name extends keyof Collec
 export type GatewayFacts = {
   readonly 'request.http': HttpRequestFact;
   readonly 'response.http': HttpResponseFact | null;
+  readonly 'response.modelKey': string;
   readonly 'provider.upstream': ProviderUpstream;
   readonly 'provider.model': ProviderModelFact;
 } & {
@@ -99,7 +100,7 @@ export type GatewayFacts = {
 
 type ProviderRequestFacts<Op extends ProviderOperation> = Pick<GatewayFacts, 'request.http' | 'provider.upstream' | 'provider.model'> &
   Readonly<Record<`request.${Operations[Op]['protocol']}`, Operations[Op]['request']>>;
-type ProviderResponseFacts<Op extends ProviderOperation> = Pick<GatewayFacts, 'response.http'> &
+type ProviderResponseFacts<Op extends ProviderOperation> = Pick<GatewayFacts, 'response.http' | 'response.modelKey'> &
   Readonly<Record<`response.${Operations[Op]['protocol']}`, Operations[Op]['outcome']>>;
 
 export type ProviderOperationFacts<Op extends ProviderOperation> = GatewayFacts & ProviderRequestFacts<Op> & ProviderResponseFacts<Op>;

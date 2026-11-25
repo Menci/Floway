@@ -1,8 +1,8 @@
 import { openaiChatCompletionsErrorPayloadMessage } from './errors.ts';
 import type { OpenAIChatCompletionsStreamEvent } from './index.ts';
-import { parseTargetStreamFrames, UpstreamStreamProtocolError } from '../common/parse-events.ts';
+import { parseTargetStreamFrames } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
+import { eventFrame, type ParsedProtocolFrame } from '../common/sse.ts';
 
 export interface ParseOpenAIChatCompletionsStreamOptions {
   signal?: AbortSignal | undefined;
@@ -11,19 +11,19 @@ export interface ParseOpenAIChatCompletionsStreamOptions {
 export const parseOpenAIChatCompletionsStream = (
   body: ReadableStream<Uint8Array>,
   options: ParseOpenAIChatCompletionsStreamOptions = {},
-): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> => (async function* () {
+): AsyncGenerator<ParsedProtocolFrame<OpenAIChatCompletionsStreamEvent>> => (async function* () {
   for await (const frame of parseTargetStreamFrames<OpenAIChatCompletionsStreamEvent>(parseSSEStream(body, options), {
     protocol: 'OpenAI Chat Completions',
   })) {
-    if (frame.type === 'done') {
-      yield doneFrame();
+    if (frame.type === 'done' || frame.type === 'error') {
+      yield frame;
       return;
     }
-    // Some upstreams report mid-stream failures via `{error: {message, type}}`
-    // instead of an HTTP failure; bubble as a thrown Error so the target
-    // boundary 502s.
     const errorMessage = openaiChatCompletionsErrorPayloadMessage(frame.data);
-    if (errorMessage) throw new UpstreamStreamProtocolError(`Upstream OpenAI Chat Completions SSE error: ${errorMessage}`);
+    if (errorMessage) {
+      yield { type: 'error', cause: { message: `Upstream OpenAI Chat Completions SSE error: ${errorMessage}`, cause: frame.data } };
+      return;
+    }
     yield eventFrame(frame.data);
   }
 })();
