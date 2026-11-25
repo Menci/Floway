@@ -1,19 +1,26 @@
-import { isJsonObject } from './json.ts';
+import { isJsonObject, type JsonObject } from './json.ts';
 import { parseSseFrames } from './parse-sse.ts';
 import type { Result } from '@floway-dev/pipeline';
 
 export interface ProtocolDecodeError {
   kind: 'protocol';
   cause: unknown;
+  event?: JsonObject;
 }
 
 export type ProtocolByteStream<Failure> = AsyncIterable<Result<Uint8Array, Failure>>;
 export type ProtocolEventStream<Event, Failure> = AsyncGenerator<Result<Event, Failure | ProtocolDecodeError>, void, unknown>;
 
-export const protocolDecodeError = (message: string, cause?: unknown): Result<never, ProtocolDecodeError> => ({
+export const protocolDecodeError = (message: string, cause?: unknown, event?: JsonObject): Result<never, ProtocolDecodeError> => ({
   ok: false,
-  error: { kind: 'protocol', cause: new Error(message, { cause }) },
+  error: { kind: 'protocol', cause: new Error(message, { cause }), ...(event === undefined ? {} : { event }) },
 });
+
+export const protocolSseError = (protocol: string, event: JsonObject): Result<never, ProtocolDecodeError> => {
+  const details = isJsonObject(event.error) ? event.error : event;
+  const message = typeof details.message === 'string' ? `: ${details.message}` : '';
+  return protocolDecodeError(`Upstream ${protocol} SSE error${message}`, undefined, event);
+};
 
 interface DecodeSseEventsOptions {
   protocol: string;
@@ -26,7 +33,7 @@ interface DecodeSseEventsOptions {
 export const decodeSseEvents = async function* <Event, Failure>(
   body: ProtocolByteStream<Failure>,
   { protocol, malformedJsonEventName, onRawFrame, onDone, ignoreEvents }: DecodeSseEventsOptions,
-): ProtocolEventStream<{ data: Event; eventName: string | undefined }, Failure> {
+): ProtocolEventStream<{ data: Event & JsonObject; eventName: string | undefined }, Failure> {
   let ended = false;
   for await (const item of parseSseFrames(body)) {
     if (!item.ok) {
@@ -58,7 +65,7 @@ export const decodeSseEvents = async function* <Event, Failure>(
       yield protocolDecodeError(`Expected a JSON object in upstream ${description}`, data);
       return;
     }
-    yield { ok: true, value: { data: data as Event, eventName } };
+    yield { ok: true, value: { data: data as Event & JsonObject, eventName } };
   }
 };
 
@@ -81,9 +88,11 @@ export const decodeOpenAISseEvents = async function* <Event, Failure>(
       return;
     }
     const { data, eventName } = item.value;
-    ended = completion?.event?.(data) === true
-      || eventName === 'error'
-      || (isJsonObject(data) && (data.type === 'error' || isJsonObject(data.error)));
+    if (eventName === 'error' || data.type === 'error' || isJsonObject(data.error)) {
+      yield protocolSseError(protocol, data);
+      return;
+    }
+    ended = completion?.event?.(data) === true;
     yield { ok: true, value: data };
   }
   if (completion !== undefined && !ended) yield protocolDecodeError(completion.missing);

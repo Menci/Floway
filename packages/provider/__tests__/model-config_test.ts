@@ -81,6 +81,9 @@ test('modelsField derives kind from endpoints when omitted', () => {
   assertEquals(image.kind, 'image');
   const [audio] = modelsField([{ upstreamModelId: 'a', endpoints: { openaiAudioTranscriptions: {} } }], 'custom');
   assertEquals(audio.kind, 'transcription');
+  const [speech] = modelsField([{ upstreamModelId: 's', endpoints: { openaiAudioSpeech: {} } }], 'custom');
+  assertEquals(speech.kind, 'speech');
+  assertEquals(speech.endpoints, { openaiAudioSpeech: {} });
   const [chat] = modelsField([{ upstreamModelId: 'c', endpoints: { openaiResponses: {} } }], 'custom');
   assertEquals(chat.kind, 'chat');
 });

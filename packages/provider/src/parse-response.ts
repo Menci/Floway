@@ -242,6 +242,14 @@ const responseParser = <Op extends ProviderOperation, Needs extends RequestNeeds
         mode = parser.select(request, head) === 'stream'
           ? { kind: 'stream', decode: parser.stream }
           : { kind: 'result', decode: parser.result };
+        const contentType = getHeader(http.headers, 'content-type');
+        if (mode.kind === 'result' && typeof contentType === 'string' && isEventStreamMediaType(contentType)) {
+          if (body !== null) scope.discard(body);
+          return answer(response, {
+            kind: 'error', source: 'upstream',
+            error: parser.format(502, `Upstream returned ${http.status} with content-type "${contentType}" but a scalar response is required`),
+          });
+        }
       } else {
         mode = parser;
       }

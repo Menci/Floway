@@ -117,7 +117,10 @@ export const sendHttpRequest = async (
   const binding = bindAbort(signal);
   let readingBody = false;
   try {
-    const result = await settleFetch(fetcher(request.url, { method: request.method, headers, body, signal: binding.signal }), binding.signal);
+    const { url, method } = request;
+    const init = { method, headers, body, signal: binding.signal };
+    const startedAt = performance.now();
+    const result = await settleFetch(fetcher(url, init), binding.signal);
     if (!result.ok) return result;
     const { response, identifyBodyTransportFailure } = result.value;
     const { status, statusText, body: readable } = response;
@@ -125,7 +128,7 @@ export const sendHttpRequest = async (
     readingBody = readable !== null;
     return {
       ok: true,
-      value: { status, statusText, headers: responseHeaders, body: readable === null ? null : readHttpResponseBody(readable, binding, identifyBodyTransportFailure) },
+      value: { status, statusText, headers: responseHeaders, body: readable === null ? null : readHttpResponseBody(readable, binding, identifyBodyTransportFailure), startedAt },
     };
   } finally {
     if (!readingBody) binding.release();

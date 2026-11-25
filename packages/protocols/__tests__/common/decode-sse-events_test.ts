@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { decodeAnthropicMessagesStream } from '../../src/anthropic-messages/stream.ts';
 import { decodeGeminiGenerateContentStream } from '../../src/gemini-generate-content/stream.ts';
-import { decodeOpenAIAudioTranscriptionsStream } from '../../src/openai-audio/stream.ts';
+import { decodeOpenAIAudioSpeechStream, decodeOpenAIAudioTranscriptionsStream } from '../../src/openai-audio/stream.ts';
 import { decodeOpenAIChatCompletionsStream } from '../../src/openai-chat-completions/stream.ts';
 import { decodeOpenAICompletionsStream } from '../../src/openai-completions/stream.ts';
+import { decodeOpenAIImagesEditsStream, decodeOpenAIImagesGenerationsStream } from '../../src/openai-images/stream.ts';
 import { decodeOpenAIResponsesStream } from '../../src/openai-responses/stream.ts';
 import type { Result } from '@floway-dev/pipeline';
 
@@ -53,17 +54,17 @@ describe('SSE byte-result decoding', () => {
     ]);
   });
 
-  it('preserves a trailing bare Gemini error as a protocol event', async () => {
+  it('carries a trailing bare Gemini error as the protocol Err event', async () => {
     const event = { candidates: [{ index: 0 }] };
     const error = { error: { code: 429, message: 'busy', status: 'RESOURCE_EXHAUSTED' } };
     const results = await Array.fromAsync(decodeGeminiGenerateContentStream(wire(`data: ${JSON.stringify(event)}\n\n`, `${JSON.stringify(error)}\n`)));
     expect(results).toEqual([
       { ok: true, value: event },
-      { ok: true, value: error },
+      { ok: false, error: { kind: 'protocol', cause: expect.any(Error), event: error } },
     ]);
   });
 
-  it('expands partial output from the OpenAI Responses failed resource with continuous sequence numbers', async () => {
+  it('preserves the OpenAI Responses error notification and failed resource in one Err', async () => {
     const response = {
       id: 'resp_failed', object: 'response', status: 'failed', model: 'gpt-test',
       output: [{ type: 'message', id: 'msg_1', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'some output', annotations: [] }] }],
@@ -72,16 +73,52 @@ describe('SSE byte-result decoding', () => {
     };
     const error = { type: 'error', sequence_number: 1, code: 'server_error', message: 'failed' };
     const failure = { type: 'response.failed', sequence_number: 2, response };
-    const source = wire(`data: ${JSON.stringify(error)}\n\n`, `event: response.failed\ndata: ${JSON.stringify(failure)}\n\n`);
+    const source = (async function* () {
+      yield* wire(`data: ${JSON.stringify(error)}\n\n`, `event: response.failed\ndata: ${JSON.stringify(failure)}\n\n`);
+      throw new Error('Read beyond the failed resource');
+    })();
     const events = await Array.fromAsync(decodeOpenAIResponsesStream(source));
-    expect(events[0]).toEqual({ ok: true, value: error });
-    expect(events).toContainEqual({ ok: true, value: expect.objectContaining({ type: 'response.output_text.delta', delta: 'some output' }) });
-    expect(events.at(-1)).toEqual({ ok: true, value: { ...failure, sequence_number: 10 } });
+    expect(events).toEqual([{ ok: false, error: { kind: 'protocol', cause: expect.any(Error), event: { notification: error, failed: failure } } }]);
   });
 
-  it('accepts a standalone OpenAI Responses error at native EOF', async () => {
+  it('returns a standalone OpenAI Responses error at native EOF', async () => {
     const error = { type: 'error', sequence_number: 1, message: 'resource gone' };
-    expect(await Array.fromAsync(decodeOpenAIResponsesStream(wire(`data: ${JSON.stringify(error)}\n\n`)))).toEqual([{ ok: true, value: error }]);
+    expect(await Array.fromAsync(decodeOpenAIResponsesStream(wire(`data: ${JSON.stringify(error)}\n\n`)))).toEqual([
+      { ok: false, error: { kind: 'protocol', cause: expect.any(Error), event: { notification: error } } },
+    ]);
+  });
+
+  it.each(['server_error', 'bio_policy', 'cyber_policy'])('carries a bare Responses failed resource with %s in the protocol Err', async code => {
+    const failed = { type: 'response.failed', response: { status: 'failed', output: [], error: { code, message: 'failed' } } };
+    expect(await Array.fromAsync(decodeOpenAIResponsesStream(wire(`data: ${JSON.stringify(failed)}\n\n`)))).toEqual([
+      { ok: false, error: { kind: 'protocol', cause: expect.any(Error), event: { failed } } },
+    ]);
+  });
+
+  it.each(['completed', 'incomplete'])('keeps a Responses %s terminal as ordinary content', async status => {
+    const terminal = { type: `response.${status}`, response: { status, output: [] } };
+    const events = await Array.fromAsync(decodeOpenAIResponsesStream(wire(`data: ${JSON.stringify(terminal)}\n\n`, 'data: [DONE]\n\n')));
+    expect(events.every(item => item.ok)).toBe(true);
+    expect(events.at(-1)).toMatchObject({ ok: true, value: terminal });
+  });
+
+  it.each([
+    ['Chat Completions', decodeOpenAIChatCompletionsStream],
+    ['Completions', decodeOpenAICompletionsStream],
+    ['Speech', decodeOpenAIAudioSpeechStream],
+    ['Transcriptions', decodeOpenAIAudioTranscriptionsStream],
+    ['Images Edits', decodeOpenAIImagesEditsStream],
+    ['Images Generations', decodeOpenAIImagesGenerationsStream],
+  ] as const)('emits one Err for a data-only %s failure', async (_protocol, decode) => {
+    for (const event of [{ error: { type: 'unavailable', message: 'retry later' } }, { type: 'error', message: 'retry later' }]) {
+      const body = (async function* () {
+        yield { ok: true, value: encoder.encode(`data: ${JSON.stringify(event)}\n\n`) } as const;
+        throw new Error('Read beyond the protocol failure');
+      })();
+      const reader = decode(body);
+      expect(await reader.next()).toEqual({ done: false, value: { ok: false, error: { kind: 'protocol', cause: expect.any(Error), event } } });
+      expect(await reader.next()).toMatchObject({ done: true });
+    }
   });
 
   it('accepts the Gemini sentinel when the preceding candidate has not finished', async () => {

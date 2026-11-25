@@ -1,6 +1,6 @@
 import { isOpenAIResponsesTerminalEvent, type OpenAIResponsesResultEx, openaiResponsesResultToEvents, type OpenAIResponsesStreamEventEx } from './index.ts';
 import { decodeSseEvents, protocolDecodeError, type ProtocolByteStream, type ProtocolEventStream } from '../common/decode-sse-events.ts';
-import { isJsonObject } from '../common/json.ts';
+import { isJsonObject, type JsonObject } from '../common/json.ts';
 import { parseTargetStreamFrames } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
@@ -113,41 +113,76 @@ const isExpandableOutputItem = (item: unknown): boolean => {
   }
 };
 
+export type OpenAIResponsesSseFailureEvent =
+  | { notification: JsonObject; failed?: JsonObject }
+  | { notification?: JsonObject; failed: JsonObject };
+
+const responsesSseFailure = (event: OpenAIResponsesSseFailureEvent, cause?: unknown) => {
+  const resource = event.failed?.response;
+  const failedError = isJsonObject(resource) && isJsonObject(resource.error) ? resource.error : undefined;
+  const notificationError = isJsonObject(event.notification?.error) ? event.notification.error : event.notification;
+  const message = failedError?.message ?? notificationError?.message;
+  return protocolDecodeError(`Upstream OpenAI Responses SSE error${typeof message === 'string' ? `: ${message}` : ''}`, cause, event);
+};
+
 export const decodeOpenAIResponsesStream = async function* <Failure>(
   body: ProtocolByteStream<Failure>,
 ): ProtocolEventStream<OpenAIResponsesStreamEventEx, Failure> {
   const normalize = normalizeEvents();
   let ended = false;
-  let errored = false;
+  let notification: JsonObject | undefined;
   for await (const item of decodeSseEvents<OpenAIResponsesStreamEventEx, Failure>(body, {
     protocol: 'OpenAI Responses', malformedJsonEventName: 'response', ignoreEvents: () => ended,
   })) {
     if (!item.ok) {
-      yield item;
+      yield notification === undefined ? item : responsesSseFailure({ notification }, item.error);
       return;
     }
     const { data, eventName } = item.value;
-    const type = (data as { type?: string }).type ?? eventName;
+    const wire: JsonObject = data;
+    const type = typeof wire.type === 'string'
+      ? wire.type
+      : wire.type === undefined ? eventName ?? (isJsonObject(wire.error) ? 'error' : undefined) : undefined;
     if (type === undefined) {
-      yield protocolDecodeError('Expected an OpenAI Responses SSE event type', data);
+      yield notification === undefined
+        ? protocolDecodeError('Expected an OpenAI Responses SSE event type', data)
+        : responsesSseFailure({ notification }, data);
       return;
     }
-    const projected = projectSseJsonEvent(data, eventName);
+    if (type === 'error') {
+      notification ??= wire.type === undefined ? { ...wire, type } : wire;
+      continue;
+    }
+    const projected = projectSseJsonEvent(data, type);
     if (isOpenAIResponsesTerminalEvent(projected)) {
       const { response } = projected as { response?: unknown };
       if (!isJsonObject(response) || !Array.isArray(response.output) || !response.output.every(isExpandableOutputItem)
         || (response.status !== 'completed' && response.status !== 'incomplete' && response.status !== 'failed')) {
-        yield protocolDecodeError('Invalid terminal response resource in OpenAI Responses SSE', projected);
+        yield notification === undefined
+          ? protocolDecodeError('Invalid terminal response resource in OpenAI Responses SSE', projected)
+          : responsesSseFailure({ notification }, projected);
+        return;
+      }
+      // The native protocol treats every failed resource as a failure. Translation owns the content-filter projection.
+      // https://github.com/Menci/Floway/blob/844908d7813c92b59e836e5b4cec772a156e53c4/packages/gateway/src/data-plane/chat/openai-responses/respond.ts#L190-L191
+      if (type === 'response.failed') {
+        const failed = wire.type === undefined ? { ...wire, type } : wire;
+        yield responsesSseFailure(notification === undefined ? { failed } : { notification, failed });
+        return;
+      }
+      if (notification !== undefined) {
+        yield responsesSseFailure({ notification });
         return;
       }
     }
-    errored ||= type === 'error';
+    if (notification !== undefined) continue;
     for (const event of normalize(data, eventName)) {
       ended ||= isOpenAIResponsesTerminalEvent(event);
       yield { ok: true, value: event };
     }
   }
-  if (!ended && !errored) yield protocolDecodeError('OpenAI Responses stream ended without a terminal response event');
+  if (notification !== undefined) yield responsesSseFailure({ notification });
+  else if (!ended) yield protocolDecodeError('OpenAI Responses stream ended without a terminal response event');
 };
 
 export const parseOpenAIResponsesStream = async function* (

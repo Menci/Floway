@@ -11,7 +11,8 @@ export interface TelemetryModelIdentity {
 
 // `chat`, `text_completion`, and `embeddings` are the OTel `gen_ai.operation.name`
 // well-known values we route; `image_generation`, `image_edit`, `rerank`,
-// `audio_transcription`, and `decision` are gateway-defined extensions for
+// `audio_transcription`, `audio_speech`, `count_tokens`, `alpha_search`, and
+// `decision` are gateway-defined extensions for
 // concrete endpoints not covered by OTel. Extend only when a new route lands —
 // no wildcard string.
 // OTel canonical set:
@@ -24,6 +25,9 @@ export const PERFORMANCE_OPERATIONS = [
   'image_edit',
   'rerank',
   'audio_transcription',
+  'audio_speech',
+  'count_tokens',
+  'alpha_search',
   'decision',
 ] as const;
 export type PerformanceOperation = typeof PERFORMANCE_OPERATIONS[number];

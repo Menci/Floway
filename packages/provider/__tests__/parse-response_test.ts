@@ -118,7 +118,9 @@ describe('provider HTTP return path', () => {
     });
     const running = run(pipeline, {}, host(() => { throw new Error('rate limiting does not dial'); }));
     if (source === 'local') {
-      await expect(running.result).resolves.toBe(answer);
+      const local = await running.result;
+      expect(local).toBe(answer);
+      expect(local['response.http']).not.toHaveProperty('startedAt');
       await running.done;
     } else {
       await expect(running.result).rejects.toThrow('expected an unparsed HTTP response or an explicit local error');
@@ -238,7 +240,7 @@ describe('provider HTTP return path', () => {
     const running = run(chat, request, host(fetcher));
     const response = await running.result;
     const outcome = response['response.openaiChatCompletions'];
-    expect(response['response.http']).toMatchObject({ status: 200, body: null });
+    expect(response['response.http']).toMatchObject({ status: 200, body: null, startedAt: expect.any(Number) });
     expect(fetcher).toHaveBeenCalledExactlyOnceWith('https://upstream.example/request', expect.objectContaining({
       headers: [['X-Sample', 'a'], ['x-sample', 'b'], ['authorization', 'test']],
       body: request['request.http'].body,
@@ -255,7 +257,7 @@ describe('provider HTTP return path', () => {
   ])('preserves the error response status and headers for %s', async (body, error) => {
     const running = run(chat, request, host(() => Promise.resolve(new Response(body, { status: 429, headers: { 'retry-after': '5' } }))));
     expect(await running.result).toEqual({
-      'response.http': { status: 429, statusText: '', headers: [['content-type', 'text/plain;charset=UTF-8'], ['retry-after', '5']], body: null },
+      'response.http': { status: 429, statusText: '', headers: [['content-type', 'text/plain;charset=UTF-8'], ['retry-after', '5']], body: null, startedAt: expect.any(Number) },
       'response.openaiChatCompletions': { kind: 'error', source: 'upstream', error },
     });
     await running.done;
@@ -290,7 +292,7 @@ describe('provider HTTP return path', () => {
   it.each([
     { event: { type: 'message_stop' }, disconnect: true },
     { event: { type: 'error', error: { type: 'overloaded_error', message: 'busy' } }, disconnect: false },
-  ])('preserves an Anthropic Messages $event.type event and reads the remaining source', async ({ event, disconnect }) => {
+  ])('handles an Anthropic Messages $event.type event and resolves the remaining source custody', async ({ event, disconnect }) => {
     const release = Promise.withResolvers<void>();
     const draining = Promise.withResolvers<void>();
     const failure = new UpstreamTransportError(new Error('connection reset after the terminal event'));
@@ -314,10 +316,14 @@ describe('provider HTTP return path', () => {
       const outcome = (await running.result)['response.anthropicMessages'];
       if (outcome.kind !== 'stream') throw new Error('Expected a stream outcome');
       const reader = running.read(outcome.stream);
-      expect(await reader.next()).toEqual({ done: false, value: { ok: true, value: event } });
+      const terminal = disconnect
+        ? { ok: true, value: event }
+        : { ok: false, error: { kind: 'protocol', cause: expect.any(Error), event } };
+      expect(await reader.next()).toEqual({ done: false, value: terminal });
       const remaining = Array.fromAsync(reader);
       await draining.promise;
       expect(response.body!.locked).toBe(true);
+      if (!disconnect) await running.done;
       release.resolve();
       expect(await remaining).toEqual(disconnect ? [{ ok: false, error: { kind: 'transport', cause: failure } }] : []);
       await running.done;
@@ -394,7 +400,7 @@ describe('provider HTTP return path', () => {
     const running = run(speech, {
       ...request,
       'request.openaiAudioSpeech': { model: 'test', input: 'text', voice: 'voice', stream_format: streamFormat },
-    }, host(() => Promise.resolve(new Response(body, { headers: { 'content-type': 'text/event-stream' } }))));
+    }, host(() => Promise.resolve(new Response(body, { headers: { 'content-type': streamFormat === 'sse' ? 'text/event-stream' : 'audio/wav' } }))));
     const outcome = (await running.result)['response.openaiAudioSpeech'];
     if (streamFormat === 'sse') {
       if (outcome.kind !== 'stream') throw new Error('Expected parsed speech events');
@@ -405,5 +411,32 @@ describe('provider HTTP return path', () => {
       expect(outcome).toEqual({ kind: 'result', result: new TextEncoder().encode(body) });
     }
     await running.done;
+  });
+
+  it('discards an SSE body when the mixed-mode parser selected a scalar response', async () => {
+    const release = Promise.withResolvers<void>();
+    const draining = Promise.withResolvers<void>();
+    const response = new Response(new ReadableStream<Uint8Array>({
+      async pull(body) {
+        draining.resolve();
+        await release.promise;
+        body.close();
+      },
+    }, { highWaterMark: 0 }), { headers: { 'content-type': 'text/event-stream; charset=utf-8', 'x-upstream': 'kept' } });
+    const running = run(speech, {
+      ...request,
+      'request.openaiAudioSpeech': { model: 'test', input: 'text', voice: 'voice', stream_format: 'audio' },
+    }, host(() => Promise.resolve(response)));
+    try {
+      await expect(running.result).resolves.toMatchObject({
+        'response.http': { status: 200, headers: [['content-type', 'text/event-stream; charset=utf-8'], ['x-upstream', 'kept']], body: null },
+        'response.openaiAudioSpeech': { kind: 'error', source: 'upstream', error: { error: { status: 502 } } },
+      });
+      await running.done;
+      await draining.promise;
+      expect(response.body!.locked).toBe(true);
+    } finally {
+      release.resolve();
+    }
   });
 });

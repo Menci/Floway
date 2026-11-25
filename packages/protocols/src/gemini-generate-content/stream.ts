@@ -1,6 +1,6 @@
 import type { GeminiGenerateContentStreamEvent } from './index.ts';
-import { createGeminiGenerateContentCandidateCompletion, GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, isGeminiGenerateContentTerminalEvent } from './to-result.ts';
-import { decodeSseEvents, protocolDecodeError, type ProtocolByteStream, type ProtocolEventStream } from '../common/decode-sse-events.ts';
+import { createGeminiGenerateContentCandidateCompletion, GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent } from './to-result.ts';
+import { decodeSseEvents, protocolDecodeError, protocolSseError, type ProtocolByteStream, type ProtocolEventStream } from '../common/decode-sse-events.ts';
 import { isJsonObject } from '../common/json.ts';
 import { parseTargetStreamFrames } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
@@ -23,6 +23,10 @@ export const decodeGeminiGenerateContentStream = async function* <Failure>(
       return;
     }
     const event = item.value.data;
+    if (isGeminiGenerateContentErrorEvent(event)) {
+      yield protocolSseError('Gemini generateContent', event);
+      return;
+    }
     if ('candidates' in event && event.candidates !== undefined && (!Array.isArray(event.candidates) || !event.candidates.every(isJsonObject))) {
       yield protocolDecodeError('Expected an array of candidates in the Gemini stream event', event);
       return;

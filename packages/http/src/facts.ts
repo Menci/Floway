@@ -23,4 +23,5 @@ export interface HttpResponseFact {
   statusText: string;
   headers: HttpHeaders;
   body: ManagedStream<Uint8Array, HttpBodyError> | Uint8Array | null;
+  startedAt?: number;
 }

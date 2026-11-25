@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, serializeRerankRequest } from '../../src/rerank/translate.ts';
+import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderCrossDialectRerankResponse, renderRerankResponse, serializeRerankRequest } from '../../src/rerank/translate.ts';
 
 describe('rerank request ingress', () => {
 
@@ -163,10 +163,12 @@ describe('rerank response translation', () => {
     const canonical = parseRerankResponse('cohere-v2', {
       id: 'request', results: [{ index: 1, relevance_score: 0.9 }], meta: { billed_units: { search_units: 1 } },
     });
-    expect(renderRerankResponse('voyage-v1', 'cohere-v2', canonical, request)).toEqual({
+    const rendered = {
       object: 'list',
       model: 'public',
       data: [{ index: 1, relevance_score: 0.9, document: 'two' }],
-    });
+    };
+    expect(renderCrossDialectRerankResponse(request, canonical)).toEqual(rendered);
+    expect(renderRerankResponse('voyage-v1', 'cohere-v2', canonical, request)).toEqual(rendered);
   });
 });

@@ -4,7 +4,7 @@ import type { ProviderModel, UpstreamProviderKind } from './model.ts';
 import type { HttpRequestFact, HttpResponseFact, HttpStreamError, ProviderFetcher } from '@floway-dev/http';
 import type { ManagedStream, Pipeline } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload, AnthropicMessagesResult, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import type { JsonObject } from '@floway-dev/protocols/common';
+import type { JsonObject, ProtocolDecodeError } from '@floway-dev/protocols/common';
 import type { CanonicalDecisionRequest, CanonicalDecisionResponse } from '@floway-dev/protocols/decision';
 import type { GeminiCountTokensPayload, GeminiGenerateContentPayload, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIAudioSpeechPayload, OpenAIAudioSpeechStreamEvent, OpenAIAudioTranscriptionStreamEvent } from '@floway-dev/protocols/openai-audio';
@@ -15,7 +15,7 @@ import type { OpenAIImagesGenerationsPayload, OpenAIImagesStreamEvent } from '@f
 import type { CanonicalOpenAIResponsesCompactPayload, CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { CanonicalRerankRequest, CanonicalRerankResponse } from '@floway-dev/protocols/rerank';
 
-export type ProtocolStreamError = HttpStreamError | { kind: 'protocol'; cause: unknown };
+export type ProtocolStreamError = HttpStreamError | ProtocolDecodeError;
 
 export interface ProtocolError<Body = unknown> {
   kind: 'error';
@@ -75,7 +75,7 @@ type Operation<Request, Event, Output> = {
 };
 
 interface Operations {
-  alphaSearch: Operation<JsonObject, never, JsonObject>;
+  alphaSearch: Operation<JsonObject, never, Uint8Array | JsonObject>;
   anthropicMessages: Operation<AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, never>;
   anthropicMessagesCountTokens: Operation<AnthropicMessagesCountTokensPayload, never, AnthropicMessagesCountTokensResult>;
   decision: Operation<CanonicalDecisionRequest, never, Uint8Array | CanonicalDecisionResponse>;

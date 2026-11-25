@@ -1,6 +1,6 @@
 import { openaiChatCompletionsErrorPayloadMessage } from './errors.ts';
 import type { OpenAIChatCompletionsStreamEvent } from './index.ts';
-import { decodeSseEvents, type ProtocolByteStream, type ProtocolEventStream } from '../common/decode-sse-events.ts';
+import { decodeOpenAISseEvents, type ProtocolByteStream, type ProtocolEventStream } from '../common/decode-sse-events.ts';
 import { parseTargetStreamFrames } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
@@ -9,22 +9,9 @@ export interface ParseOpenAIChatCompletionsStreamOptions {
   signal?: AbortSignal | undefined;
 }
 
-export const decodeOpenAIChatCompletionsStream = async function* <Failure>(
+export const decodeOpenAIChatCompletionsStream = <Failure>(
   body: ProtocolByteStream<Failure>,
-): ProtocolEventStream<OpenAIChatCompletionsStreamEvent, Failure> {
-  let errored = false;
-  for await (const item of decodeSseEvents<OpenAIChatCompletionsStreamEvent, Failure>(body, {
-    protocol: 'OpenAI Chat Completions', ignoreEvents: () => errored,
-  })) {
-    if (!item.ok) {
-      yield item;
-      return;
-    }
-    const { data, eventName } = item.value;
-    errored = eventName === 'error' || openaiChatCompletionsErrorPayloadMessage(data) !== null;
-    yield { ok: true, value: data };
-  }
-};
+): ProtocolEventStream<OpenAIChatCompletionsStreamEvent, Failure> => decodeOpenAISseEvents(body, 'OpenAI Chat Completions');
 
 export const parseOpenAIChatCompletionsStream = (
   body: ReadableStream<Uint8Array>,

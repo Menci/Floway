@@ -16,11 +16,16 @@ const sendHttpRequest = (fetcher: Fetcher, input: HttpRequestFact, signal: Abort
 
 describe('sendHttpRequest', () => {
   it('sends the final fact values and returns a byte stream with native completion', async () => {
-    const fetcher = vi.fn((_url: string, _init: FetchInit) => Promise.resolve(new Response(new Uint8Array([7, 8]), {
-      status: 201,
-      statusText: 'Created',
-      headers: [['set-cookie', 'a=1'], ['set-cookie', 'b=2']],
-    })));
+    let dispatchedAt = -1;
+    const fetcher = vi.fn((_url: string, _init: FetchInit) => {
+      dispatchedAt = performance.now();
+      return Promise.resolve(new Response(new Uint8Array([7, 8]), {
+        status: 201,
+        statusText: 'Created',
+        headers: [['set-cookie', 'a=1'], ['set-cookie', 'b=2']],
+      }));
+    });
+    const before = performance.now();
     const result = await sendHttpRequest(fetcher, request, new AbortController().signal);
     expect(fetcher).toHaveBeenCalledExactlyOnceWith(request.url, {
       method: 'POST',
@@ -30,6 +35,8 @@ describe('sendHttpRequest', () => {
     });
     expect(result).toMatchObject({ ok: true, value: { status: 201, statusText: 'Created', headers: [['set-cookie', 'a=1'], ['set-cookie', 'b=2']] } });
     if (!result.ok || result.value.body === null) throw new Error('Expected HTTP bytes');
+    expect(result.value.startedAt).toBeGreaterThanOrEqual(before);
+    expect(result.value.startedAt).toBeLessThanOrEqual(dispatchedAt);
     await expect(result.value.body.next()).resolves.toEqual({ done: false, value: { ok: true, value: new Uint8Array([7, 8]) } });
     await expect(result.value.body.next()).resolves.toMatchObject({ done: true });
   });

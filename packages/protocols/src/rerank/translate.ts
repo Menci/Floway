@@ -434,13 +434,11 @@ const renderedCohereMeta = (response: CanonicalRerankResponse): Record<string, u
         },
       };
 
-export const renderRerankResponse = (
+const renderForSourceProtocol = (
   sourceProtocol: RerankSourceProtocol,
-  targetProtocol: RerankProtocol,
   response: CanonicalRerankResponse,
   request: CanonicalRerankRequest,
 ): Record<string, unknown> => {
-  if (sourceProtocol === targetProtocol) return response.raw;
   switch (sourceProtocol) {
   case 'cohere-v1':
     return {
@@ -483,3 +481,15 @@ export const renderRerankResponse = (
     };
   }
 };
+
+export const renderCrossDialectRerankResponse = (
+  request: CanonicalRerankRequest,
+  response: CanonicalRerankResponse,
+): Record<string, unknown> => renderForSourceProtocol(request.sourceProtocol, response, request);
+
+export const renderRerankResponse = (
+  sourceProtocol: RerankSourceProtocol,
+  targetProtocol: RerankProtocol,
+  response: CanonicalRerankResponse,
+  request: CanonicalRerankRequest,
+): Record<string, unknown> => sourceProtocol === targetProtocol ? response.raw : renderForSourceProtocol(sourceProtocol, response, request);
