@@ -1,5 +1,5 @@
 import { parseChatGPTIdTokenPlanType } from './auth/jwt.ts';
-import { ChatGPTOAuthSessionTerminatedError, chatgptTokenExpiresAt, refreshChatGPTAccessToken, refreshChatGPTAccessTokenResult, type ChatGPTOAuthFailure, type ChatGPTOAuthFetcher, type ChatGPTOAuthRefreshTokens } from './auth/oauth.ts';
+import { ChatGPTOAuthResponseError, ChatGPTOAuthSessionTerminatedError, chatgptTokenExpiresAt, refreshChatGPTAccessToken, refreshChatGPTAccessTokenResult, type ChatGPTOAuthFailure, type ChatGPTOAuthFetcher, type ChatGPTOAuthRefreshTokens } from './auth/oauth.ts';
 import { findChatGPTAccountIndex, readChatGPTUpstreamState, replaceChatGPTAccount, type ChatGPTAccessTokenEntry, type ChatGPTAccountCredential } from './state.ts';
 import type { Result } from '@floway-dev/pipeline';
 import { getProviderRepo, UpstreamGoneError, type Fetcher } from '@floway-dev/provider';
@@ -299,8 +299,11 @@ export const mintChatGPTAccessToken = async (
   refreshToken: string,
   fetcher: Fetcher,
   persistRefreshTokenRotation: (newRefreshToken: string) => Promise<void>,
-): Promise<ChatGPTAccessTokenEntry> =>
-  await persistMint(await refreshChatGPTAccessToken(refreshToken, fetcher), persistRefreshTokenRotation);
+): Promise<ChatGPTAccessTokenEntry> => {
+  const result = await persistMint(await refreshChatGPTAccessToken(refreshToken, fetcher), persistRefreshTokenRotation);
+  if (!result.ok) throw result.error;
+  return result.value;
+};
 
 export const mintChatGPTAccessTokenResult = async (
   refreshToken: string,
@@ -308,20 +311,34 @@ export const mintChatGPTAccessTokenResult = async (
   persistRefreshTokenRotation: (newRefreshToken: string) => Promise<void>,
 ): ReturnType<ChatGPTAccessTokenMint> => {
   const result = await refreshChatGPTAccessTokenResult(refreshToken, fetcher);
-  return result.ok ? { ok: true, value: await persistMint(result.value, persistRefreshTokenRotation) } : result;
+  return result.ok ? await persistMint(result.value, persistRefreshTokenRotation) : result;
 };
 
 const persistMint = async (
   tokens: ChatGPTOAuthRefreshTokens,
   persistRefreshTokenRotation: (newRefreshToken: string) => Promise<void>,
-): Promise<ChatGPTAccessTokenEntry> => {
+): Promise<Result<ChatGPTAccessTokenEntry, ChatGPTOAuthResponseError>> => {
   await persistRefreshTokenRotation(tokens.refresh_token);
-  const planType = tokens.id_token === undefined ? undefined : parseChatGPTIdTokenPlanType(tokens.id_token);
+  const plan = tokens.id_token === undefined ? { ok: true, value: undefined } as const : parseChatGPTIdTokenPlanType(tokens.id_token);
+  if (!plan.ok) {
+    const message = plan.error.message;
+    return {
+      ok: false, error: new ChatGPTOAuthResponseError(message, {
+        status: 502,
+        statusText: 'Bad Gateway',
+        headers: [['content-type', 'application/json']],
+        body: { error: { type: 'server_error', message } },
+      }),
+    };
+  }
+  const { value: planType } = plan;
   const refreshedAt = new Date().toISOString();
   return {
-    token: tokens.access_token,
-    expiresAt: chatgptTokenExpiresAt(tokens.expires_in),
-    refreshedAt,
-    ...(planType === undefined ? {} : { planType, planObservedAt: refreshedAt }),
+    ok: true, value: {
+      token: tokens.access_token,
+      expiresAt: chatgptTokenExpiresAt(tokens.expires_in),
+      refreshedAt,
+      ...(planType === undefined ? {} : { planType, planObservedAt: refreshedAt }),
+    },
   };
 };

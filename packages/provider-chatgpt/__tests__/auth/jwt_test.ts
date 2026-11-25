@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
-import { parseChatGPTTokenClaims } from '../../src/auth/jwt.ts';
+import { parseChatGPTIdTokenPlanType, parseChatGPTTokenClaims, tryParseChatGPTAccessTokenClaims } from '../../src/auth/jwt.ts';
 
 // Helper builds a minimal JWT with given payload. Signature segment is fake.
 const encodeBase64Url = (text: string): string => {
@@ -37,4 +37,20 @@ describe('parseChatGPTTokenClaims', () => {
     expect(() => parseChatGPTTokenClaims(`${header}.${payload}\n.${signature}`, 'access_token')).toThrow();
     expect(() => parseChatGPTTokenClaims(`${header}.${payload!.slice(0, -1)}R.${signature}`, 'access_token')).toThrow();
   });
+});
+
+test('JWT wire parsing returns invalid plan and JSON failures but propagates parser bugs', () => {
+  const invalid = makeJwt({ 'https://api.openai.com/auth': { chatgpt_plan_type: false } });
+  expect(parseChatGPTIdTokenPlanType(invalid)).toEqual({ ok: false, error: new Error('id_token has malformed chatgpt_plan_type claim') });
+  const malformed = `header.${encodeBase64Url('{broken')}.signature`;
+  expect(parseChatGPTIdTokenPlanType(malformed)).toMatchObject({ ok: false, error: expect.objectContaining({ cause: expect.any(SyntaxError) }) });
+  expect(tryParseChatGPTAccessTokenClaims(malformed)).toBeNull();
+
+  const bug = new TypeError('JWT parser bug');
+  const parse = vi.spyOn(JSON, 'parse').mockImplementationOnce(() => { throw bug; });
+  try {
+    expect(() => parseChatGPTIdTokenPlanType(invalid)).toThrow(bug);
+  } finally {
+    parse.mockRestore();
+  }
 });

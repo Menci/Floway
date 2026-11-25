@@ -6,6 +6,7 @@
 // access token may not be a JWT at all.
 
 import { isObject } from './guards.ts';
+import type { Result } from '@floway-dev/pipeline';
 import { decodeCanonicalBase64url } from '@floway-dev/protocols/common';
 
 export interface ChatGPTTokenClaims {
@@ -17,7 +18,12 @@ export interface ChatGPTTokenClaims {
 }
 
 export const parseChatGPTTokenClaims = (token: string, label = 'token'): ChatGPTTokenClaims => {
-  const payload = decodeJwtPayload(token, label);
+  const decoded = decodeJwtPayload(token, label);
+  if (!decoded.ok) throw decoded.error;
+  return projectTokenClaims(decoded.value);
+};
+
+const projectTokenClaims = (payload: Record<string, unknown>): ChatGPTTokenClaims => {
   const auth = payload['https://api.openai.com/auth'];
   const profile = payload['https://api.openai.com/profile'];
 
@@ -40,11 +46,8 @@ export const parseChatGPTTokenClaims = (token: string, label = 'token'): ChatGPT
 // identity and expiry cannot be inferred from it; it says nothing about
 // whether the bearer works.
 export const tryParseChatGPTAccessTokenClaims = (accessToken: string): ChatGPTTokenClaims | null => {
-  try {
-    return parseChatGPTTokenClaims(accessToken, 'access_token');
-  } catch {
-    return null;
-  }
+  const decoded = decodeJwtPayload(accessToken, 'access_token');
+  return decoded.ok ? projectTokenClaims(decoded.value) : null;
 };
 
 // Refresh responses need only update the capability-relevant plan claim. The
@@ -52,37 +55,39 @@ export const tryParseChatGPTAccessTokenClaims = (accessToken: string): ChatGPTTo
 // profile claims from a later id_token. Missing plan returns `undefined` so
 // callers can preserve the latest observation or use the import-time identity;
 // malformed present claims still surface.
-export const parseChatGPTIdTokenPlanType = (idToken: string): string | undefined => {
-  const payload = decodeJwtPayload(idToken, 'id_token');
-  const auth = payload['https://api.openai.com/auth'];
-  if (auth === undefined) return undefined;
-  if (!isObject(auth)) throw new Error('id_token https://api.openai.com/auth claim is not an object');
+export const parseChatGPTIdTokenPlanType = (idToken: string): Result<string | undefined, Error> => {
+  const decoded = decodeJwtPayload(idToken, 'id_token');
+  if (!decoded.ok) return decoded;
+  const auth = decoded.value['https://api.openai.com/auth'];
+  if (auth === undefined) return { ok: true, value: undefined };
+  if (!isObject(auth)) return { ok: false, error: new Error('id_token https://api.openai.com/auth claim is not an object') };
   const planType = auth.chatgpt_plan_type;
-  if (planType === undefined) return undefined;
-  if (typeof planType !== 'string' || planType === '') throw new Error('id_token has malformed chatgpt_plan_type claim');
-  return planType;
+  if (planType === undefined) return { ok: true, value: undefined };
+  if (typeof planType !== 'string' || planType === '') return { ok: false, error: new Error('id_token has malformed chatgpt_plan_type claim') };
+  return { ok: true, value: planType };
 };
 
-const decodeJwtPayload = (token: string, label: string): Record<string, unknown> => {
+const decodeJwtPayload = (token: string, label: string): Result<Record<string, unknown>, Error> => {
   const segments = token.split('.');
-  if (segments.length !== 3) throw new Error(`${label} must have 3 segments, got ${segments.length}`);
+  if (segments.length !== 3) return { ok: false, error: new Error(`${label} must have 3 segments, got ${segments.length}`) };
+  // JOSE compact serialization uses canonical unpadded Base64URL.
+  // https://www.rfc-editor.org/rfc/rfc7515.html#section-2
+  const bytes = decodeCanonicalBase64url(segments[1]);
+  if (bytes === null) return {
+    ok: false,
+    error: new Error(`${label} payload is not base64url-encoded JSON`, { cause: new TypeError('Invalid canonical Base64URL JWT segment') }),
+  };
+  const text = new TextDecoder().decode(bytes);
 
   let payload: unknown;
   try {
-    payload = JSON.parse(decodeBase64UrlToUtf8(segments[1]));
+    payload = JSON.parse(text);
   } catch (cause) {
-    throw new Error(`${label} payload is not base64url-encoded JSON`, { cause: cause as Error });
+    if (!(cause instanceof SyntaxError)) throw cause;
+    return { ok: false, error: new Error(`${label} payload is not base64url-encoded JSON`, { cause }) };
   }
-  if (!isObject(payload)) throw new Error(`${label} payload is not an object`);
-  return payload;
-};
-
-const decodeBase64UrlToUtf8 = (value: string): string => {
-  // JOSE compact serialization uses canonical unpadded Base64URL.
-  // https://www.rfc-editor.org/rfc/rfc7515.html#section-2
-  const bytes = decodeCanonicalBase64url(value);
-  if (bytes === null) throw new TypeError('Invalid canonical Base64URL JWT segment');
-  return new TextDecoder().decode(bytes);
+  if (!isObject(payload)) return { ok: false, error: new Error(`${label} payload is not an object`) };
+  return { ok: true, value: payload };
 };
 
 const pickStringOptional = (record: Record<string, unknown>, key: string): string | null => {

@@ -225,6 +225,27 @@ test.each([false, true])('drains invalid OAuth responses and preserves parser bu
   }
 });
 
+test('persists refresh rotation and relays a sanitized upstream 502 for an invalid id_token', async () => {
+  state = { accounts: [{ ...credential(), accessToken: null }] };
+  const body = Response.json({
+    access_token: 'private-access-token', refresh_token: 'rotated-refresh-token', expires_in: 3600, id_token: 'private-identity-token',
+  });
+  const { services, fetcher } = service(() => body);
+  const exchange = run(chatgptPipelines.openaiResponses, { ...entry, 'request.openaiResponses': move({ model: 'client', input: [] }) }, { services });
+  const answer = await exchange.result;
+  await exchange.done;
+  expect(answer).toMatchObject({
+    'response.http': { status: 502, statusText: 'Bad Gateway', body: null },
+    'response.openaiResponses': { kind: 'error', source: 'upstream', error: { error: { type: 'server_error', message: 'id_token must have 3 segments, got 1' } } },
+  });
+  expect(JSON.stringify(answer)).not.toMatch(/private-(access|identity)-token|rotated-refresh-token/);
+  expect(account().refresh_token).toBe('rotated-refresh-token');
+  expect(account().accessToken).toBeNull();
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(body.bodyUsed).toBe(true);
+  expect(body.body?.locked).toBe(false);
+});
+
 test('drains a renewable 401, rotates credentials once, and replays the compact request', async () => {
   let exhausted = false;
   let attempts = 0;
