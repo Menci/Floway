@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
 
-import type { AnthropicMessagesInvocation } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/types.ts';
 import {
   decodeWebSearchCitationPayload,
   decodeWebSearchResultPayload,
@@ -9,14 +8,16 @@ import {
   type AnthropicMessagesWebSearchShimState,
   prepareAnthropicMessagesWebSearchShimRequest,
   rewriteAnthropicMessagesWebSearchEventsToNative,
-  withAnthropicMessagesWebSearchRequestPrepared,
-  withAnthropicMessagesWebSearchShim,
 } from '../../../../../src/data-plane/chat/anthropic-messages/pipeline/web-search-shim/mechanics.ts';
+import { anthropicMessagesWebSearch } from '../../../../../src/data-plane/chat/anthropic-messages/pipeline/web-search-shim.ts';
+import { gatewayFactSpace, type GatewayPipelineFacts } from '../../../../../src/data-plane/pipeline/facts.ts';
+import { responseHead } from '../../../../../src/data-plane/pipeline/response.ts';
 import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../../../src/data-plane/tools/web-search/config.ts';
 import type { WebSearchProvider } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
+import { projectAffinityTestCandidate } from '../../shared/affinity/helpers.ts';
+import { move, run } from '@floway-dev/pipeline';
 import { anthropicMessagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/anthropic-messages';
 import type {
   AnthropicMessagesAssistantContentBlock,
@@ -30,25 +31,64 @@ import type {
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
+import type { ProtocolStreamError } from '@floway-dev/provider';
 import { assertEquals, assertExists, stubModelCandidate } from '@floway-dev/test-utils';
 
-const testTelemetryModelIdentity = {
-  model: 'test-model',
-  upstream: 'test-upstream',
-  modelKey: 'test-model-key',
-  pricing: null,
-};
+const { compose, defineStage } = gatewayFactSpace<{}>();
+const requestKey = 'request.anthropicMessages';
+const responseKey = 'response.anthropicMessages';
+const responseKeys = ['response.http', responseKey] as const;
 
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesInvocation => ({
-  payload,
-  candidate: stubModelCandidate({
-    model: { endpoints: { anthropicMessages: {} } },
-    enabledFlags: new Set(['anthropic-messages-web-search-shim']),
-  }),
-  targetApi: 'anthropicMessages',
-  headers: new Headers(),
-  anthropicBeta: [],
-});
+const runWebSearchStage = async (
+  operation: 'anthropicMessages' | 'anthropicMessagesCountTokens',
+  payload: AnthropicMessagesPayload,
+  frames: readonly ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [],
+) => {
+  let observed: GatewayPipelineFacts[typeof requestKey] | undefined;
+  const ending = defineStage({
+    name: 'test.anthropicMessages.web-search-suffix',
+    request: { needs: [requestKey] },
+    return: { provides: responseKeys },
+    async execute(facts, scope) {
+      observed = facts[requestKey];
+      if (operation === 'anthropicMessagesCountTokens') return {
+        'response.http': move(responseHead(204)),
+        [responseKey]: move({ kind: 'result', result: null } as const),
+      };
+      const stream = scope.createStream<AnthropicMessagesStreamEventEx, ProtocolStreamError>(async function* () {
+        for (const frame of frames) {
+          if (frame.type === 'event') yield { ok: true, value: frame.event };
+        }
+      });
+      return {
+        'response.http': move(responseHead(200)),
+        [responseKey]: move({ kind: 'stream', stream } as const),
+      };
+    },
+  });
+  const pipeline = compose('test.anthropicMessages.web-search', {
+    entry: [requestKey, 'serve.candidate', 'request.auth.apiKeyId'],
+    exit: responseKeys,
+    stages: [anthropicMessagesWebSearch(operation)],
+    ending,
+  });
+  const handle = run(pipeline, {
+    [requestKey]: move(payload),
+    'serve.candidate': move(projectAffinityTestCandidate(stubModelCandidate({
+      model: { endpoints: { anthropicMessages: {} } },
+      enabledFlags: new Set(['anthropic-messages-web-search-shim']),
+    }))),
+    'request.auth.apiKeyId': 'test-key',
+  }, { services: {} });
+  const { 'response.http': http, [responseKey]: outcome } = await handle.result;
+  const events: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
+  if (outcome.kind === 'stream') for await (const item of outcome.stream) {
+    if (!item.ok) throw item.error.cause;
+    events.push(eventFrame(item.value));
+  }
+  await handle.done;
+  return { http, outcome, observed, events };
+};
 
 const encodeUnsignedPayload = (payload: unknown): string => btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 
@@ -157,16 +197,6 @@ const toAsyncIterable = async function* <T>(values: Iterable<T>): AsyncGenerator
   for (const value of values) {
     yield value;
   }
-};
-
-const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
-  const collected: T[] = [];
-
-  for await (const event of events) {
-    collected.push(event);
-  }
-
-  return collected;
 };
 
 const anthropicMessagesResponseToUpstreamFrames = (response: AnthropicMessagesResult): ProtocolFrame<AnthropicMessagesStreamEventEx>[] => {
@@ -379,41 +409,27 @@ const initEnabledSearchRepo = async (): Promise<void> => {
 test('generation and count_tokens prepare identical web-search request payloads', async () => {
   await initEnabledSearchRepo();
   const source = makeNativeReplayPayload();
-  const generationInvocation = invocation(structuredClone(source));
-  const countInvocation = invocation(structuredClone(source));
+  const generation = await runWebSearchStage('anthropicMessages', source);
+  const count = await runWebSearchStage('anthropicMessagesCountTokens', source);
 
-  await withAnthropicMessagesWebSearchShim(generationInvocation, mockChatGatewayCtx(), () => Promise.resolve({
-    type: 'events',
-    events: toAsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>([]),
-    modelIdentity: testTelemetryModelIdentity,
-  }));
-  const countResponse = await withAnthropicMessagesWebSearchRequestPrepared(
-    countInvocation,
-    mockChatGatewayCtx(),
-    () => Promise.resolve(new Response(null, { status: 204 })),
-  );
-
-  assertEquals(countResponse.status, 204);
-  assertEquals(countInvocation.payload, generationInvocation.payload);
-  const rewrittenTool = generationInvocation.payload.tools?.[0] as AnthropicMessagesClientTool;
+  assertEquals(count.http?.status, 204);
+  assertEquals(count.observed, generation.observed);
+  const rewrittenTool = generation.observed?.tools?.[0] as AnthropicMessagesClientTool;
   assertEquals(rewrittenTool.name, 'web_search');
   assertEquals('type' in rewrittenTool, false);
 });
 
 test('count_tokens returns a native error response for invalid web-search tools', async () => {
-  const response = await withAnthropicMessagesWebSearchRequestPrepared(
-    invocation({
-      model: 'claude-test',
-      max_tokens: 64,
-      messages: [{ role: 'user', content: 'search' }],
-      tools: [{ name: 'web_search', type: 'web_search_20260209' }, { name: 'web_search', type: 'web_search_20260209' }],
-    }),
-    mockChatGatewayCtx(),
-    () => Promise.reject(new Error('run should not be called')),
-  );
+  const response = await runWebSearchStage('anthropicMessagesCountTokens', {
+    model: 'claude-test',
+    max_tokens: 64,
+    messages: [{ role: 'user', content: 'search' }],
+    tools: [{ name: 'web_search', type: 'web_search_20260209' }, { name: 'web_search', type: 'web_search_20260209' }],
+  });
 
-  assertEquals(response.status, 400);
-  expect(await response.json()).toMatchObject({ type: 'error', error: { type: 'invalid_request_error' } });
+  expect(response.http?.status).toBe(400);
+  expect(response.observed).toBeUndefined();
+  expect(response.outcome).toMatchObject({ kind: 'error', source: 'local', error: { type: 'error', error: { type: 'invalid_request_error' } } });
 });
 
 const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<AnthropicMessagesStreamEventEx>[]> => {
@@ -421,64 +437,55 @@ const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<Anthr
 
   const { tools: _tools, ...payload } = makeNativeReplayPayload();
 
-  const result = await withAnthropicMessagesWebSearchShim(invocation(payload), mockChatGatewayCtx(), () =>
-    Promise.resolve({
-      type: 'events',
-      events: toAsyncIterable(
-        anthropicMessagesResponseToUpstreamFrames({
-          container: null, diagnostics: null, stop_details: null,
-          id: messageId,
-          type: 'message',
-          role: 'assistant',
-          model: 'claude-test',
-          stop_reason: 'end_turn',
-          stop_sequence: null,
-          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 1 },
-          content: [
+  const result = await runWebSearchStage('anthropicMessages', payload,
+    anthropicMessagesResponseToUpstreamFrames({
+      container: null, diagnostics: null, stop_details: null,
+      id: messageId,
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-test',
+      stop_reason: 'end_turn',
+      stop_sequence: null,
+      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 1 },
+      content: [
+        {
+          type: 'text',
+          text: 'Use the docs.',
+          citations: [
             {
-              type: 'text',
-              text: 'Use the docs.',
-              citations: [
-                {
-                  type: 'search_result_location',
-                  source: 'https://react.dev',
-                  title: 'React',
-                  search_result_index: 0,
-                  start_block_index: 0,
-                  end_block_index: 0,
-                  cited_text: 'Official React documentation',
-                },
-              ],
+              type: 'search_result_location',
+              source: 'https://react.dev',
+              title: 'React',
+              search_result_index: 0,
+              start_block_index: 0,
+              end_block_index: 0,
+              cited_text: 'Official React documentation',
             },
           ],
-        }),
-      ),
-      modelIdentity: testTelemetryModelIdentity,
+        },
+      ],
     }));
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('expected events result');
-
-  return await collect(result.events);
+  assertEquals(result.outcome.kind, 'stream');
+  return result.events;
 };
 
-test('withAnthropicMessagesWebSearchShim returns internal-error when request requires disabled search config', async () => {
+test('the Anthropic Messages web-search stage returns a local 500 when search is required but disabled', async () => {
   await initDisabledSearchRepo();
 
-  const result = await withAnthropicMessagesWebSearchShim(
-    invocation({
-      model: 'claude-test',
-      max_tokens: 64,
-      messages: [{ role: 'user', content: 'latest React docs' }],
-      tools: [{ name: 'web_search', type: 'web_search_20260209' }],
-    }), mockChatGatewayCtx(),
-    () => Promise.reject(new Error('run should not be called')),
-  );
+  const result = await runWebSearchStage('anthropicMessages', {
+    model: 'claude-test',
+    max_tokens: 64,
+    messages: [{ role: 'user', content: 'latest React docs' }],
+    tools: [{ name: 'web_search', type: 'web_search_20260209' }],
+  });
 
-  assertEquals(result.type, 'internal-error');
+  expect(result.http?.status).toBe(500);
+  expect(result.observed).toBeUndefined();
+  expect(result.outcome).toMatchObject({ kind: 'error', source: 'local' });
 });
 
-test('withAnthropicMessagesWebSearchShim emits native-like citation deltas for replay-only history', async () => {
+test('the Anthropic Messages web-search stage emits native citation deltas for replay-only history', async () => {
   const collected = await runReplayOnlyShim('msg_replay_only_stream');
 
   const frames = collected.map(anthropicMessagesProtocolFrameToSSEFrame).filter(frame => frame !== null);
@@ -621,6 +628,15 @@ const runStreamingShim = (
       provider,
     ),
   );
+
+test('the Anthropic Messages web-search stage fails when one tool argument exceeds its buffer', async () => {
+  const provider = activeProvider(searchOnlyProvider(() => Promise.reject(new Error('The oversized tool arguments reached search'))));
+  const events = [
+    upstreamMessageStart(),
+    ...upstreamWebSearchBlockRawJson(0, 'toolu_large', 'x'.repeat(1024 * 1024 + 1)),
+  ];
+  await expect(runStreamingShim(events, activeAnthropicMessagesWebSearchShimState(), provider)).rejects.toThrow('web search arguments exceeded');
+});
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative single web search emits server_tool_use/result pair around text', async () => {
   const events = await runStreamingShim(
