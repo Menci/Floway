@@ -58,9 +58,9 @@ test('one fair driver drains bounded OpenAI Responses and dump backlogs', async 
   );
   await repo.openaiResponsesItems.insertMany([responseItem('msg-current', now)], 0);
   for (let index = 0; index < 150; index += 1) {
-    await writeArchive(dumps.archives, 'key-a', archiveMetadata(`01K00000000000000000${String(index).padStart(4, '0')}`, dumpExpiredAt));
+    await writeArchive(dumps, 'key-a', archiveMetadata(`01K00000000000000000${String(index).padStart(4, '0')}`, dumpExpiredAt));
   }
-  await writeArchive(dumps.archives, 'key-a', archiveMetadata('01K00000000000000000LIVE', now));
+  await writeArchive(dumps, 'key-a', archiveMetadata('01K00000000000000000LIVE', now));
   await repo.apiKeys.update('key-a', { dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: OPENAI_RESPONSES_RETENTION_SECONDS });
 
   await sweepExpirations(now);
@@ -75,7 +75,7 @@ test('one fair driver drains bounded OpenAI Responses and dump backlogs', async 
 
   expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records WHERE created_at < ?').bind(now).first<{ count: number }>())?.count).toBe(0);
   expect(await repo.openaiResponsesItems.lookupMany('key-a', ['msg-current'], 0)).toHaveLength(1);
-  expect((await dumps.archives.list('key-a', { limit: 10 })).map(row => row.id)).toEqual(['01K00000000000000000LIVE']);
+  expect((await dumps.list('key-a', { limit: 10 })).map(row => row.id)).toEqual(['01K00000000000000000LIVE']);
 });
 
 test('a partial hot key yields the current tick to another due key', async () => {

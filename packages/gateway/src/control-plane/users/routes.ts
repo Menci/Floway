@@ -1,5 +1,4 @@
 import { userToAdminWire, userToDirectoryWire } from './wire.ts';
-import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type AuthedContext, sessionIdFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -137,13 +136,6 @@ export const deleteUser = async (c: AuthedContext) => {
   if (id === actorId) return c.json({ error: 'cannot delete yourself' }, 400);
 
   const repo = getRepo();
-
-  // The broker close hook cuts any live SSE subscriber but is best-effort;
-  // broker availability never blocks the cascade.
-  const keys = await repo.apiKeys.listByUserId(id);
-  for (const key of keys) {
-    await notifyDisabledBestEffort(key.id, 'deleteUser cascade');
-  }
 
   await repo.apiKeys.softDeleteByUserId(id);
   await repo.sessions.deleteByUserId(id);

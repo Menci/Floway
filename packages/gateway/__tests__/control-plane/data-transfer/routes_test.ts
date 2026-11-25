@@ -5,13 +5,11 @@ import { exportData, importData } from '../../../src/control-plane/data-transfer
 import { exportQuery, importBody } from '../../../src/control-plane/schemas.ts';
 import { upstreamRecordToFullJson } from '../../../src/control-plane/upstreams/serialize.ts';
 import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../src/data-plane/tools/web-search/config.ts';
-import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { zValidator } from '../../../src/middleware/zod-validator.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { SqlRepo } from '../../../src/repo/sql.ts';
 import type { ApiKey, GroupWithMembers, Repo, PerformanceTelemetryRecord, WebSearchUsageRecord, StoredOpenAIResponsesItem, StoredUpstreamRecord, UsageRecord, User } from '../../../src/repo/types.ts';
 import { tokenUsageMetrics } from '../../../src/repo/usage-metrics.ts';
-import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import { createSqliteTestDb } from '../../repo/test-sqlite.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
@@ -834,20 +832,6 @@ test('a full v25 export re-imports verbatim — the export→import round trip i
   assertEquals((await repo.usage.listAll()).find(u => u.keyId === restoredKeyA.id && u.hour === USAGE_1.hour), { ...USAGE_1, keyId: restoredKeyA.id });
   assertEquals((await repo.performance.listAll()).find(p => p.keyId === restoredKeyA.id && p.hour === PERFORMANCE_1.hour), { ...PERFORMANCE_1, keyId: restoredKeyA.id });
   assertEquals(await repo.webSearchConfig.get(), config);
-});
-
-test('replace-mode import cuts SSE subscribers for every pre-existing dump key', async () => {
-  const { app, repo } = setup();
-  await repo.apiKeys.save({ ...KEY_A, dumpRetentionSeconds: 3600 });
-  await repo.apiKeys.save({ ...KEY_B, dumpRetentionSeconds: 1800 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-
-  const result = await doImport(app, 'replace', latestImportData({
-    apiKeys: [{ ...KEY_A, dumpRetentionSeconds: 3600 }],
-  }));
-  assertEquals(result.status, 200);
-  assertEquals(stubs.closedChannels.some(c => c.keyId === KEY_A.id), true);
-  assertEquals(stubs.closedChannels.some(c => c.keyId === KEY_B.id), true);
 });
 
 test('backup restores historical upstream gauges and replaces existing telemetry', async () => {

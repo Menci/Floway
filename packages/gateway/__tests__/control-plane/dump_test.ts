@@ -1,26 +1,14 @@
 import { expect, test, vi } from 'vitest';
 
-import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
-import type { DumpArchiveStore } from '../../src/dump/store-contract.ts';
-import { installDumpStubs } from '../dump/test-fixtures.ts';
+import { initDumpStore } from '../../src/dump/registry.ts';
+import type { DumpStore } from '../../src/dump/store-contract.ts';
+import { dumpStoreStub } from '../dump/archive-fixtures.ts';
 import { requestApp, setupAppTest } from '../test-utils/app.ts';
-
-const install = (archive: Partial<DumpArchiveStore> = {}) => {
-  const { store } = installDumpStubs(initDumpStore, initDumpBroker);
-  const archives: DumpArchiveStore = {
-    writeArchive: async () => { throw new Error('Unexpected archive write'); },
-    list: async () => [],
-    get: async () => null,
-    ...archive,
-  };
-  initDumpStore({ ...store, archives });
-  return archives;
-};
 
 test('GET /api/dump/keys/:keyId/records requires an owned key with retention', async () => {
   const { apiKey } = await setupAppTest();
   const list = vi.fn(async () => []);
-  install({ list });
+  initDumpStore(dumpStoreStub({ list }));
   const response = await requestApp(`/api/dump/keys/${apiKey.id}/records`, { headers: { 'x-api-key': apiKey.key } });
   expect(response.status).toBe(404);
   expect(list).not.toHaveBeenCalled();
@@ -29,8 +17,8 @@ test('GET /api/dump/keys/:keyId/records requires an owned key with retention', a
 test('GET /api/dump/keys/:keyId/records applies pagination and filter parameters', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const list = vi.fn<DumpArchiveStore['list']>(async () => []);
-  install({ list });
+  const list = vi.fn<DumpStore['list']>(async () => []);
+  initDumpStore(dumpStoreStub({ list }));
 
   const path = `/api/dump/keys/${apiKey.id}/records`;
   const request = { headers: { 'x-api-key': apiKey.key } };
@@ -46,7 +34,7 @@ test('serves the completed archive with its exact text', async () => {
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const contents = '{"type":"object","fromObjectId":1,"nodes":[900719925474099312345]}\n';
   const get = vi.fn(async () => new Blob([contents]).stream());
-  install({ get });
+  initDumpStore(dumpStoreStub({ get }));
   const response = await requestApp(`/api/dump/keys/${apiKey.id}/records/archive`, { headers: { 'x-api-key': apiKey.key } });
   expect(response.status).toBe(200);
   expect(response.headers.get('Content-Type')).toBe('application/x-ndjson; charset=utf-8');

@@ -16,13 +16,9 @@ const captureArchives = () => {
   const archives: { metadata: ArchiveMetadata; contents: string }[] = [];
   initDumpStore({
     ...initialDumpStore,
-    archives: {
-      async writeArchive(_keyId, _id, bytes) {
-        const contents = await new Response(bytes).text();
-        return async metadata => { archives.push({ metadata, contents }); };
-      },
-      async list() { return []; },
-      async get() { return null; },
+    async writeArchive(_keyId, _id, bytes) {
+      const contents = await new Response(bytes).text();
+      return async metadata => { archives.push({ metadata, contents }); };
     },
   });
   return archives;

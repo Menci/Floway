@@ -22,7 +22,7 @@ const openDb = async (): Promise<SqlDatabase> => {
 test('adopts an archive only when its index row is committed and reads the exact bytes', async () => {
   const db = await openDb();
   const files = new MemoryFileStore();
-  const store = new FileDumpStore(db, files).archives;
+  const store = new FileDumpStore(db, files);
   const commit = await store.writeArchive('key_x', 'archive', archiveBody());
   expect(await store.list('key_x', { limit: 10 })).toEqual([]);
   expect(await db.prepare("SELECT state FROM spilled_files WHERE file_key = 'dumps/v2/key_x/archive.ndjson'").first()).toEqual({ state: 'staged' });
@@ -42,13 +42,13 @@ test('filters and pages the retained index, retires expired bytes and counts onl
   initFileStore(files);
   const store = new FileDumpStore(mapRunChangeCount(db, changes => changes * 3), files);
   const now = Date.now();
-  await writeArchive(store.archives, 'key_x', archiveMetadata('old', now - 2 * 86400 * 1000));
-  await writeArchive(store.archives, 'key_x', archiveMetadata('a-failed', now, { status: 429, model: 'wanted' }));
-  await writeArchive(store.archives, 'key_x', archiveMetadata('b-newer', now));
-  expect(await store.archives.get('key_x', 'old')).toBeNull();
-  expect((await store.archives.list('key_x', { limit: 1 })).map(({ id }) => id)).toEqual(['b-newer']);
-  expect((await store.archives.list('key_x', { limit: 1, before: 'b-newer' })).map(({ id }) => id)).toEqual(['a-failed']);
-  expect((await store.archives.list('key_x', { limit: 1, failures: true, q: 'WANTED' })).map(({ id }) => id)).toEqual(['a-failed']);
+  await writeArchive(store, 'key_x', archiveMetadata('old', now - 2 * 86400 * 1000));
+  await writeArchive(store, 'key_x', archiveMetadata('a-failed', now, { status: 429, model: 'wanted' }));
+  await writeArchive(store, 'key_x', archiveMetadata('b-newer', now));
+  expect(await store.get('key_x', 'old')).toBeNull();
+  expect((await store.list('key_x', { limit: 1 })).map(({ id }) => id)).toEqual(['b-newer']);
+  expect((await store.list('key_x', { limit: 1, before: 'b-newer' })).map(({ id }) => id)).toEqual(['a-failed']);
+  expect((await store.list('key_x', { limit: 1, failures: true, q: 'WANTED' })).map(({ id }) => id)).toEqual(['a-failed']);
 
   expect(await store.deleteExpiredBatch('key_x', now, 10)).toBe(1);
   await collectSpilledFiles(now);

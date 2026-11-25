@@ -1,7 +1,5 @@
 import { test, vi } from 'vitest';
 
-import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
-import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -125,28 +123,4 @@ test('POST /api/keys does not retry a generated key after a server-secret constr
   } finally {
     save.mockRestore();
   }
-});
-
-test('DELETE /api/keys/:id succeeds when the broker close hook throws — broker outage must not block soft-delete', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failOn('closeChannel', new Error('broker down'));
-
-  const response = await requestApp(`/api/keys/${apiKey.id}`, {
-    method: 'DELETE',
-    headers: { 'x-api-key': apiKey.key },
-  });
-  assertEquals(response.status, 200);
-  assertEquals(await repo.apiKeys.getById(apiKey.id), null);
-});
-
-test('PATCH /api/keys/:id positive→null closes the channel', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-
-  const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
-  assertEquals(response.status, 200);
-  assertEquals(stubs.closedChannels.some(c => c.keyId === apiKey.id), true);
 });

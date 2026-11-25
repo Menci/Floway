@@ -12,7 +12,6 @@ import { parseImportData, type SerializedProxy } from './import-schema.ts';
 import type { AccessRecordInput } from '../../access-control/types.ts';
 import { parseWebSearchConfigDefault, parseWebSearchConfigStrict } from '../../data-plane/tools/web-search/config.ts';
 import type { WebSearchConfig } from '../../data-plane/tools/web-search/types.ts';
-import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { groupNameKey } from '../../repo/group-names.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -159,10 +158,8 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const { users, userPreferences, groups, accessRecords, apiKeys, upstreams, proxies, usage, searchUsage, upstreamMetrics, performance, performanceIncluded, searchConfig, siteSettings } = parsed.data;
 
   const repo = getRepo();
-  // Merge mode needs each key's prior dump policy to identify transitions that
-  // must disconnect live subscribers after the replacement row is stored.
-  const preImportKeys = await repo.apiKeys.listIncludingDeleted();
-  const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, mode === 'merge' ? preImportKeys : [], mode);
+  const preImportKeys = mode === 'merge' ? await repo.apiKeys.listIncludingDeleted() : [];
+  const apiKeyIdentityError = validateApiKeyIdentities(apiKeys, preImportKeys, mode);
   if (apiKeyIdentityError) return c.json({ error: `invalid apiKeys: ${apiKeyIdentityError}` }, 400);
   const importedGroupIds = new Set(groups.map(group => group.id));
   const retainedGroups = mode === 'merge' ? (await repo.groups.list()).filter(group => !importedGroupIds.has(group.id)) : [];
@@ -174,8 +171,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
     if (previousId !== undefined) return c.json({ error: `invalid groups: active group names conflict for ids ${previousId} and ${group.id}` }, 400);
     groupNames.set(key, group.id);
   }
-  const preImportRetentionById = new Map<string, number | null>(preImportKeys.map(key => [key.id, key.dumpRetentionSeconds]));
-
   const existingProxyIdsForRefs = mode === 'merge' ? (await repo.proxies.list()).map(proxy => proxy.id) : [];
   const fallbackRefError = validateProxyFallbackReferences(upstreams, proxies, existingProxyIdsForRefs);
   if (fallbackRefError) return c.json({ error: `invalid upstreams: ${fallbackRefError}` }, 400);
@@ -186,8 +181,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const normalizedUpstreams = normalizeUpstreamOrder([...retainedUpstreams, ...upstreams]);
 
   if (mode === 'replace') {
-    for (const key of preImportKeys) await notifyDisabledBestEffort(key.id, 'replace-mode import');
-
     // D1 does not expose a transaction spanning these repositories. Complete
     // validation therefore happens before this delete wave; a storage failure
     // after it begins can still leave a partially restored deployment.
@@ -223,13 +216,7 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       dialTimeoutSeconds: proxy.dial_timeout_seconds,
     });
   }
-  for (const key of apiKeys) {
-    const previous = preImportRetentionById.get(key.id) ?? null;
-    await repo.apiKeys.save(key);
-    if (mode === 'merge' && key.dumpRetentionSeconds === null && previous !== null) {
-      await notifyDisabledBestEffort(key.id, 'merge-mode retention disable');
-    }
-  }
+  for (const key of apiKeys) await repo.apiKeys.save(key);
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.webSearchUsage.set(record);
   for (const record of upstreamMetrics) await repo.upstreamMetrics.set(record);

@@ -6,9 +6,9 @@ import { hashOpenAIResponsesItem } from '../../../../src/data-plane/chat/openai-
 import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/openai-responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import type { PipelineDumpMetadata } from '../../../../src/dump/archive-metadata.ts';
-import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
+import { initDumpStore } from '../../../../src/dump/registry.ts';
 import { initBackgroundSchedulerResolver } from '../../../../src/runtime/background.ts';
-import { installDumpStubs } from '../../../dump/test-fixtures.ts';
+import { dumpStoreStub } from '../../../dump/archive-fixtures.ts';
 import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { buildChatGPTUpstreamRecord, chatgptModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseOpenAIResponsesResponse, warmModelsForTest } from '../../../test-utils/app.ts';
@@ -17,19 +17,14 @@ import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../.
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const capturePipelineArchives = () => {
-  const { store } = installDumpStubs(initDumpStore, initDumpBroker);
   const archives: { readonly body: string; readonly metadata: PipelineDumpMetadata }[] = [];
-  initDumpStore({
-    ...store,
-    archives: {
-      async writeArchive(_keyId, _id, bytes) {
-        const body = await new Response(bytes).text();
-        return async metadata => { archives.push({ body, metadata: { ...metadata, upstream: null } }); };
-      },
-      async list() { return archives.map(archive => archive.metadata); },
-      async get() { return null; },
+  initDumpStore(dumpStoreStub({
+    async writeArchive(_keyId, _id, bytes) {
+      const body = await new Response(bytes).text();
+      return async metadata => { archives.push({ body, metadata: { ...metadata, upstream: null } }); };
     },
-  });
+    async list() { return archives.map(archive => archive.metadata); },
+  }));
   return archives;
 };
 

@@ -172,7 +172,7 @@ test('drained completion cannot remove a queue whose domain still has rows', asy
     dumpRetentionSeconds: 3600,
     openaiResponsesRetentionSeconds: 0,
   });
-  await writeArchive(new FileDumpStore(db, new MemoryFileStore()).archives, 'key-a', archiveMetadata('dump-a', 1));
+  await writeArchive(new FileDumpStore(db, new MemoryFileStore()), 'key-a', archiveMetadata('dump-a', 1));
   await repo.expirationSweeps.schedule('dumps', 'key-a', 0);
   const first = await repo.expirationSweeps.claim('claim-a', 10, 0);
   if (first === null) throw new Error('expected first expiration claim');
@@ -203,8 +203,8 @@ test('inactive dump archive queues drain in bounded ticks', async () => {
     const store = new FileDumpStore(db, new MemoryFileStore());
     initDumpStore(store);
     for (let index = 0; index < 75; index += 1) {
-      await writeArchive(store.archives, 'disabled', archiveMetadata(`disabled-${index}`, 1));
-      await writeArchive(store.archives, 'deleted', archiveMetadata(`deleted-${index}`, 1));
+      await writeArchive(store, 'disabled', archiveMetadata(`disabled-${index}`, 1));
+      await writeArchive(store, 'deleted', archiveMetadata(`deleted-${index}`, 1));
     }
     raw.run("UPDATE api_keys SET dump_retention_seconds = NULL WHERE id = 'disabled'");
     raw.run("UPDATE api_keys SET deleted_at = '2026-01-02T00:00:00Z' WHERE id = 'deleted'");

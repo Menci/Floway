@@ -1,9 +1,8 @@
 import { collectArchiveMetadata, type CommitDumpArchive } from './archive-metadata.ts';
+import type { WriteDumpArchive } from './store-contract.ts';
 import type { PipelineRecorder } from '../data-plane/pipeline/recorder.ts';
 import { ulid } from '../shared/ulid.ts';
 import { createDumpEncoder } from '@floway-dev/dump';
-
-export type WriteDumpArchive = (keyId: string, id: string, bytes: ReadableStream<Uint8Array>) => Promise<CommitDumpArchive>;
 
 type Upload = { readonly ok: true; readonly commit: CommitDumpArchive } | { readonly ok: false; readonly error: unknown };
 

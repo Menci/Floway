@@ -1,4 +1,3 @@
-import { EventTargetChannelBroker } from './event-target-channel-broker.ts';
 import { createNodeExternalResourceFetcher } from './external-resource-fetcher.ts';
 import { nodeFetch } from './fetch.ts';
 import { FsFileStore } from './fs-file-store.ts';
@@ -8,9 +7,7 @@ import { createSharpImageProcessor } from './sharp-image-processor.ts';
 import { nodeSocketDial } from './socket-dial.ts';
 import { SqliteImageCacheStore } from './sqlite-image-cache-store.ts';
 import { timingSafeEqual } from './timing-safe-equal.ts';
-import { FileDumpStore, initDumpBroker, initDumpStore } from '@floway-dev/gateway';
-import { dumpCodec } from '@floway-dev/gateway/dump-codec';
-import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
+import { FileDumpStore, initDumpStore } from '@floway-dev/gateway';
 import {
   getEnvOptional,
   IMAGE_CACHE_POLICY,
@@ -43,6 +40,5 @@ export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   initImageCacheStore(new SqliteImageCacheStore(db, IMAGE_CACHE_POLICY));
   initImageProcessor(createSharpImageProcessor());
   initDumpStore(new FileDumpStore(db, files));
-  initDumpBroker(new EventTargetChannelBroker<DumpMetadata>(dumpCodec));
   return { db };
 };

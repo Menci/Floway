@@ -69,7 +69,7 @@ test('one maintenance tick collects every file retired by its four dump units', 
     const keyId = `key-${keyIndex}`;
     await repo.apiKeys.save(apiKey(keyId, now, keyIndex + 1));
     for (let rowIndex = 0; rowIndex < 50; rowIndex += 1) {
-      await writeArchive(dumps.archives, keyId, archiveMetadata(`dump-${keyIndex}-${rowIndex}`, now - 3600_001));
+      await writeArchive(dumps, keyId, archiveMetadata(`dump-${keyIndex}-${rowIndex}`, now - 3600_001));
     }
   }
   const { results: ownedFiles } = await db.prepare('SELECT file_key FROM spilled_files ORDER BY file_key')

@@ -1,4 +1,3 @@
-import { notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -135,10 +134,6 @@ export const deleteKey = async (c: AuthedContext) => {
   const id = c.req.param('id')!;
   const owned = await ownedKeyForUser(c, id);
   if (!owned) return c.json({ error: 'Key not found' }, 404);
-  // Cut any live SSE subscribers so the dashboard sees a clean disconnect.
-  // Broker availability shouldn't block the soft-delete — clients reconcile
-  // on the next keys refetch regardless.
-  await notifyDisabledBestEffort(id, 'deleteKey');
   await getRepo().apiKeys.softDelete(id);
   return c.json({ ok: true });
 };
@@ -178,12 +173,6 @@ export const updateKey = async (c: CtxWithJson<typeof updateKeyBody>) => {
     ...(body.responses_retention_seconds !== undefined ? { openaiResponsesRetentionSeconds: body.responses_retention_seconds } : {}),
   });
   if (updated === null) throw new Error(`API key disappeared during update: ${id}`);
-
-  if (body.dump_retention_seconds !== undefined && body.dump_retention_seconds !== owned.dumpRetentionSeconds) {
-    const previous = owned.dumpRetentionSeconds;
-    const next = body.dump_retention_seconds;
-    if (next === null && previous !== null) await notifyDisabledBestEffort(id, 'updateKey retention disable');
-  }
 
   return c.json(apiKeyToJson(updated, knownUpstreamIds));
 };
