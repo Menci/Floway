@@ -12,6 +12,7 @@ import { move, run, Secret, type Pipeline } from '@floway-dev/pipeline';
 
 export interface GatewayHostServicesInput extends RequestBodyService {
   readonly runtimeLocation: string;
+  readonly serverSecret: string;
 }
 
 export const startPipeline = <I, O, S>(
@@ -82,7 +83,11 @@ export const servePipeline = async <S extends RequestBodyService>(
 ): Promise<Response> => {
   const facts = initialHttpFacts(c);
   const request = c.req.raw;
-  const services = await createServices({ requestBody: request.body, runtimeLocation: getRuntimeLocation(request) });
+  const services = await createServices({
+    requestBody: request.body,
+    runtimeLocation: getRuntimeLocation(request),
+    serverSecret: apiKeyFromContext(c).serverSecret,
+  });
   const schedule = backgroundSchedulerFromContext(c);
   const recorder = openPipelineRecorder(c, facts['request.auth.apiKeyId']);
   const handle = startPipeline(pipeline, facts, services, request.signal, recorder);

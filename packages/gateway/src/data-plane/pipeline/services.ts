@@ -9,6 +9,7 @@ import { isUpstreamTransportError } from '../../dial/transport-error.ts';
 import { createModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
+import { createSidecarCodecFactory, type SidecarCodecFactory } from '../chat/shared/sidecar-codec.ts';
 import { findCatalogCandidates } from '../providers/resolution.ts';
 import { isAbortError, toProviderModelFact, type Fetcher, type ProviderServices, type ProviderUpstream, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { azureUpstreamFact } from '@floway-dev/provider-azure';
@@ -20,7 +21,7 @@ import { kimiCodeUpstreamFact } from '@floway-dev/provider-kimi-code';
 import { ollamaUpstreamFact } from '@floway-dev/provider-ollama';
 
 export type GatewayServices = RequestBodyService & CandidateDiscoveryServices & PerformanceServices & UsageStoreServices
-  & ProviderServices & GatewayProviderServices;
+  & ProviderServices & GatewayProviderServices & { readonly sidecarCodecFactory: SidecarCodecFactory };
 
 const projectUpstream = {
   azure: azureUpstreamFact,
@@ -46,17 +47,21 @@ const asProviderFetcher = (resolve: () => Promise<(upstreamId: string) => Fetche
     }
   };
 
-export const createGatewayServices = ({ requestBody, runtimeLocation }: GatewayHostServicesInput): GatewayServices => {
+export const createGatewayServices = ({ requestBody, runtimeLocation, serverSecret }: GatewayHostServicesInput): GatewayServices => {
   const repo = getRepo();
   let upstreams: Promise<readonly StoredUpstreamRecord[]> | undefined;
   let fetcherResolver: Promise<(upstreamId: string) => Fetcher> | undefined;
   const listUpstreams = () => upstreams ??= repo.upstreams.list();
   const resolveFetcher = () => fetcherResolver ??= listUpstreams().then(rows => createPerRequestFetcher(runtimeLocation, rows));
+  let sidecars: SidecarCodecFactory | undefined;
 
   return {
     ...getGatewayProviderServices(),
     requestBody,
     runtimeLocation,
+    sidecarCodecFactory: {
+      codecFor: domain => (sidecars ??= createSidecarCodecFactory(serverSecret)).codecFor(domain),
+    },
     fetcher: asProviderFetcher(resolveFetcher),
     async findCandidates(input, defer) {
       const { candidates, ...diagnostics } = await findCatalogCandidates(await listUpstreams(), {
