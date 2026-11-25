@@ -22,8 +22,8 @@ export const kimiCodeMessagesSpeedParser = (speed: 'fast' | 'standard') => mapPa
   ? { ...event, message: { ...event.message, usage: { ...event.message.usage, speed } } }
   : event);
 
-export const kimiCodeMessagesWireBody = (body: Record<string, unknown>): Record<string, unknown> => {
-  if (body.speed !== 'fast' && body.speed !== 'standard') return body;
-  const { speed: _speed, ...wireBody } = body;
+export const kimiCodeMessagesWireBody = <Body extends object>(body: Body) => {
+  const { speed, ...wireBody } = body as Body & { speed?: unknown };
+  if (speed !== 'fast' && speed !== 'standard') return body;
   return wireBody;
 };

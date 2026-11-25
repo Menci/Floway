@@ -9,6 +9,9 @@ const BASE_URLS = {
   overseas: 'https://api.kimi.ai/coding/v1',
 } as const;
 
+export const kimiCodeEndpoint = (region: KimiCodeUpstreamConfig['region'], path: string): string =>
+  joinBaseAndPath(BASE_URLS[region], path);
+
 export const kimiCodeFetch = async (
   config: KimiCodeUpstreamConfig,
   path: string,
@@ -19,7 +22,7 @@ export const kimiCodeFetch = async (
   for (const [name, value] of options.extraHeaders ?? []) headers.set(name, value);
   headers.set('authorization', `Bearer ${config.apiKey}`);
   if (init.body) headers.set('content-type', 'application/json');
-  return await options.wrapUpstreamCall(() => options.fetcher(joinBaseAndPath(BASE_URLS[config.region], path), { ...init, headers }));
+  return await options.wrapUpstreamCall(() => options.fetcher(kimiCodeEndpoint(config.region, path), { ...init, headers }));
 };
 
 export const readKimiCodeJson = async (response: Response, path: string): Promise<unknown> => {

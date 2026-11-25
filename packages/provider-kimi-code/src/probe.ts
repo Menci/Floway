@@ -8,8 +8,8 @@ import { getProviderRepo, identityWrapUpstreamCall, recordUpstreamMetrics, runSc
 // Request-triggered probes require the last persisted attempt to be at least one
 // minute old for usage or one day old for identity. A 429 or 403 forces a usage
 // refresh regardless of age. These are Floway polling policies.
-const USAGE_INTERVAL_MS = 60_000;
-const ACCOUNT_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const KIMI_CODE_USAGE_INTERVAL_MS = 60_000;
+export const KIMI_CODE_ACCOUNT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const persistProbe = async <T>(
   upstreamId: string,
@@ -89,12 +89,12 @@ export const refreshKimiCodeAccountProbe = (upstreamId: string, config: KimiCode
 export const scheduleKimiCodeProbes = (record: UpstreamRecord, config: KimiCodeUpstreamConfig, fetcher: Fetcher, waitUntil: (promise: Promise<unknown>) => void, forceUsage: boolean): void => {
   const state = readKimiCodeUpstreamState(record.state);
   const now = Date.now();
-  if (forceUsage || state.usageProbe === null || now - state.usageProbe.attemptedAt >= USAGE_INTERVAL_MS) {
+  if (forceUsage || state.usageProbe === null || now - state.usageProbe.attemptedAt >= KIMI_CODE_USAGE_INTERVAL_MS) {
     waitUntil(refreshKimiCodeUsageProbe(record.id, config, fetcher).catch((error: unknown) => {
       console.warn(`Failed to refresh Kimi Code usage for ${record.id}:`, error);
     }));
   }
-  if (state.accountProbe === null || now - state.accountProbe.attemptedAt >= ACCOUNT_INTERVAL_MS) {
+  if (state.accountProbe === null || now - state.accountProbe.attemptedAt >= KIMI_CODE_ACCOUNT_INTERVAL_MS) {
     waitUntil(refreshKimiCodeAccountProbe(record.id, config, fetcher).catch((error: unknown) => {
       console.warn(`Failed to refresh Kimi Code account for ${record.id}:`, error);
     }));
@@ -107,7 +107,7 @@ export const runKimiCodeScheduledTask = async (record: UpstreamRecord, options: 
   await runScheduledUsageRefresh(record, options, state.usageProbe?.observation?.fetchedAt ?? null, async (fresh, fetcher) => {
     const outcomes = await Promise.allSettled([
       refreshKimiCodeUsageProbe(fresh.id, config, fetcher),
-      ...(state.accountProbe === null || Date.now() - state.accountProbe.attemptedAt >= ACCOUNT_INTERVAL_MS ? [refreshKimiCodeAccountProbe(fresh.id, config, fetcher)] : []),
+      ...(state.accountProbe === null || Date.now() - state.accountProbe.attemptedAt >= KIMI_CODE_ACCOUNT_INTERVAL_MS ? [refreshKimiCodeAccountProbe(fresh.id, config, fetcher)] : []),
     ]);
     const failures = outcomes.filter(result => result.status === 'rejected');
     if (failures.length > 0) throw new AggregateError(failures.map(result => result.reason as unknown), 'Kimi Code scheduled probes failed');

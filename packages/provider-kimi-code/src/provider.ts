@@ -1,15 +1,14 @@
 import { assertKimiCodeUpstreamRecord } from './config.ts';
-import { KIMI_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { kimiCodeFetch } from './fetch.ts';
 import { selectKimiCodeModel } from './model-selection.ts';
-import { fetchKimiCodeModels } from './models.ts';
+import { getKimiCodeProvidedModels } from './models.ts';
 import { scheduleKimiCodeProbes, runKimiCodeScheduledTask } from './probe.ts';
 import { kimiCodeChatSpeedParser, kimiCodeMessagesSpeedParser, kimiCodeMessagesWireBody, kimiCodeResponsesSpeedParser } from './speed.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { FAST_SERVICE_TIER, isFastServiceTier } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
-import { headersForAnthropicMessagesCall, jsonRequestBody, resolveEffectiveFlags, streamingProviderCall, type HttpHeaderLines, type Provider, type ProviderInstance, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForAnthropicMessagesCall, jsonRequestBody, streamingProviderCall, type HttpHeaderLines, type Provider, type ProviderInstance, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 const fastModeRequired = (model: ProviderModel, field: 'service_tier' | 'speed') => ({
   ok: false as const,
@@ -39,7 +38,6 @@ const selectMessagesModel = (model: ProviderModel, speed: unknown) => {
 
 export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertKimiCodeUpstreamRecord(record);
-  const enabledFlags = resolveEffectiveFlags([KIMI_CODE_DEFAULT_FLAGS, record.flagOverrides]);
 
   // Forward thinking and effort unchanged. Observed responses echo the id that
   // was requested, so neither this layer nor the caller can tell which model
@@ -67,7 +65,7 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
   // so unrelated Open Platform capabilities are not inferred from model names.
   // https://www.kimi.com/code/docs/en/kimi-code/models.html
   const instance: ProviderInstance = {
-    getProvidedModels: fetcher => fetchKimiCodeModels(config, fetcher, enabledFlags),
+    getProvidedModels: fetcher => getKimiCodeProvidedModels(record, fetcher),
     runScheduledTask: options => runKimiCodeScheduledTask(record, options),
     callOpenAIChatCompletions: async (model, body, signal, opts) => {
       const fast = isFastServiceTier(body.service_tier);

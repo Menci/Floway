@@ -2,7 +2,9 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import { config, profile, recentState, record, usage } from './fixtures.ts';
 import { refreshKimiCodeAccountProbe, refreshKimiCodeUsageProbe, runKimiCodeScheduledTask, scheduleKimiCodeProbes } from '../src/probe.ts';
+import { createKimiCodeService } from '../src/service.ts';
 import { readKimiCodeUpstreamState } from '../src/state.ts';
+import { kimiCodeUpstreamFact } from '../src/upstream-fact.ts';
 import { initProviderRepo, type Fetcher } from '@floway-dev/provider';
 import { testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -18,6 +20,30 @@ const setupRepo = (initial: unknown = null) => {
   }));
   return { read: () => readKimiCodeUpstreamState(state), metrics };
 };
+
+test('the service defers to fresh persisted state and coalesces forced usage probes', async () => {
+  const repo = setupRepo(recentState());
+  const service = createKimiCodeService();
+  const upstream = kimiCodeUpstreamFact(record());
+  const network = Promise.withResolvers<Response>();
+  const fetcher = vi.fn<Fetcher>().mockReturnValue(network.promise);
+
+  await expect(service.observeResponse(upstream, 200, fetcher)).resolves.toEqual({ persisted: true });
+  expect(fetcher).not.toHaveBeenCalled();
+
+  const first = service.observeResponse(upstream, 429, fetcher);
+  const second = service.observeResponse(upstream, 403, fetcher);
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledExactlyOnceWith(
+    'https://api.kimi.com/coding/v1/usages',
+    expect.objectContaining({ method: 'GET' }),
+  ));
+  const reading = usage();
+  reading.usages.limit_5h.used_ratio = 0.75;
+  network.resolve(Response.json(reading));
+  await expect(Promise.all([first, second])).resolves.toEqual([{ persisted: true }, { persisted: true }]);
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(repo.read().usageProbe?.observation?.data).toEqual(reading);
+});
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
