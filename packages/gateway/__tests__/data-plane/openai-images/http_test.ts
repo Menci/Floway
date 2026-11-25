@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
@@ -163,6 +163,77 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
     },
   );
   assertEquals(observedForm?.get('model'), 'gpt-image-2');
+  const image = observedForm?.get('image');
+  expect(image).toBeInstanceOf(File);
+  if (!(image instanceof File)) throw new TypeError('Expected the upstream multipart image file');
+  expect(image.name).toBe('photo.png');
+  expect(image.type).toBe('image/png');
+  expect(new Uint8Array(await image.arrayBuffer())).toEqual(Uint8Array.of(1, 2, 3));
   const usageRows = await repo.usage.listAll();
   assertEquals(usageRows.some(row => row.model === 'gpt-image-2' && tokenCountsFromUsage(row).input === 7 && tokenCountsFromUsage(row).output === 11), true);
+});
+
+test.each([
+  {
+    name: 'JSON upstream error',
+    second: () => Response.json({ error: { message: 'vendor error', extra: { retry: true } } }, { status: 429, headers: { 'x-upstream': 'second' } }),
+    status: 429,
+    body: { error: { message: 'vendor error', extra: { retry: true } } },
+  },
+  {
+    name: 'plain-text upstream error',
+    second: () => new Response('temporarily unavailable', { status: 503, headers: { 'x-upstream': 'second' } }),
+    status: 503,
+    body: { error: { message: 'temporarily unavailable', type: 'api_error' } },
+  },
+  {
+    name: 'successful alternative',
+    second: () => Response.json({ data: [], usage: { input_tokens: 3 } }, { headers: { 'x-upstream': 'second' } }),
+    status: 200,
+    body: { data: [], usage: { input_tokens: 3 } },
+  },
+])('/v1/images/generations selects the $name and meters each call', async ({ second, status, body }) => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  for (const [index, id] of ['first', 'second'].entries()) {
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+      id,
+      sortOrder: index,
+      config: {
+        baseUrl: `https://${id}.example.com`,
+        ingressHeadersRules: [],
+        apiKey: 'sk-image',
+        endpoints: {},
+        modelsFetch: { enabled: false, authStyle: 'bearer' },
+        models: [{ upstreamModelId: 'image-model', endpoints: { openaiImagesGenerations: {} } }],
+      },
+    }));
+  }
+  const called: string[] = [];
+  await withMockedFetch(async request => {
+    const url = new URL(request.url);
+    expect(url.pathname).toBe('/v1/images/generations');
+    expect(await request.json()).toEqual({ model: 'image-model', prompt: 'a night sky' });
+    called.push(url.hostname);
+    return url.hostname === 'first.example.com' ? jsonResponse({ error: { message: 'first error' } }, 500) : second();
+  }, async () => {
+    const response = await requestAppWithWarmModels('/v1/images/generations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+      body: JSON.stringify({ model: 'image-model', prompt: 'a night sky' }),
+    });
+    expect(response.status).toBe(status);
+    expect(response.headers.get('x-upstream')).toBe('second');
+    expect(await response.json()).toEqual(body);
+  });
+  await flushAsyncWork();
+
+  expect(called).toEqual(['first.example.com', 'second.example.com']);
+  expect(await repo.performance.listAll()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ upstream: 'first', operation: 'image_generation', requests: 1, errorsNoOutput: 1 }),
+    expect.objectContaining({ upstream: 'second', operation: 'image_generation', requests: 1, errorsNoOutput: status === 200 ? 0 : 1 }),
+  ]));
+  expect(await repo.usage.listAll()).toMatchObject(status === 200 ? [{
+    upstream: 'second', requests: 1, metrics: [{ metric: 'input_tokens', quantity: '3' }],
+  }] : []);
 });
