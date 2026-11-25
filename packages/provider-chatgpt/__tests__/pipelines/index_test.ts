@@ -103,17 +103,26 @@ test('normalizes Codex Responses headers and payload, restores terminal output, 
 });
 
 test('projects Lite fields through the same invocation without replaying them in the wire body', async () => {
-  const { services, fetcher } = service(() => new Response(sse({ type: 'response.completed', response: terminal } as const)));
+  const tool = { type: 'function', name: 'lookup', parameters: { type: 'object' } } as const;
+  const call = { type: 'function_call', id: 'tool-item', call_id: 'tool-call', name: 'lookup', arguments: '{}' };
+  const { services, fetcher } = service(() => new Response(sse(
+    { type: 'response.output_item.done', output_index: 0, item: call },
+    { type: 'response.completed', response: terminal },
+  )));
   const exchange = run(chatgptPipelines.openaiResponses, {
     ...entry,
     'provider.model': move({ ...model, providerData: { useResponsesLite: true } }),
-    'request.openaiResponses': move({ model: 'client', input: [], instructions: 'Be brief.' }),
+    'request.openaiResponses': move({ model: 'client', input: [], instructions: 'Be brief.', tools: [tool] }),
   }, { services });
   const response = (await exchange.result)['response.openaiResponses'];
   assert(response.kind === 'stream');
   const items = await Array.fromAsync(response.stream);
   expect(items).toContainEqual(expect.objectContaining({
-    ok: true, value: expect.objectContaining({ type: 'response.completed', response: expect.objectContaining({ instructions: 'Be brief.' }) }),
+    ok: true,
+    value: expect.objectContaining({
+      type: 'response.completed',
+      response: expect.objectContaining({ instructions: 'Be brief.', tools: [tool], output: [call] }),
+    }),
   }));
   await exchange.done;
   const sent = fetcher.mock.calls[0]?.[1];
@@ -121,6 +130,7 @@ test('projects Lite fields through the same invocation without replaying them in
   expect(new Headers(sent.headers).get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
   const body: unknown = JSON.parse(sent.body);
   expect(body).not.toHaveProperty('instructions');
+  expect(body).not.toHaveProperty('tools');
   expect(body).toMatchObject({ input: [{ type: 'additional_tools' }, { type: 'message', role: 'developer' }] });
 });
 
@@ -303,4 +313,137 @@ test('uses the hydrated plan for the image gate and formats a non-JSON upstream 
     'response.alphaSearch': { kind: 'error', source: 'upstream', error: { error: { type: 'api_error', message: 'upstream refused search' } } },
   });
   await search.done;
+});
+
+test('preserves the final upstream 401 after one replay of the prepared Lite generation', async () => {
+  const reason = { error: { code: 'expired_token', message: 'Expired' } };
+  const { services, fetcher } = service(url => url === CHATGPT_OAUTH_TOKEN_URL
+    ? Response.json({ access_token: 'access-new', refresh_token: 'refresh-new', expires_in: 3600 })
+    : Response.json(reason, { status: 401, headers: { [CHATGPT_RESPONSES_LITE_HEADER]: 'retained' } }));
+  const exchange = run(chatgptPipelines.openaiResponses, {
+    ...entry,
+    'provider.model': move({ ...model, providerData: { useResponsesLite: true } }),
+    'request.openaiResponses': move({ model: 'client', input: [], instructions: 'Be brief.' }),
+  }, { services });
+  const result = await exchange.result;
+  await exchange.done;
+  expect(result['response.openaiResponses']).toEqual({ kind: 'error', source: 'upstream', error: reason });
+  const http = result['response.http'];
+  assert(http !== null);
+  expect(http.status).toBe(401);
+  expect(getHeader(http.headers, CHATGPT_RESPONSES_LITE_HEADER)).toBe('retained');
+  expect(fetcher).toHaveBeenCalledTimes(3);
+  const first = fetcher.mock.calls[0]?.[1];
+  const retry = fetcher.mock.calls[2]?.[1];
+  assert(first !== undefined && retry !== undefined);
+  expect(retry.body).toBe(first.body);
+  const headers = [new Headers(first.headers), new Headers(retry.headers)] as const;
+  expect(headers.map(header => header.get(CHATGPT_RESPONSES_LITE_HEADER))).toEqual(['true', 'true']);
+  expect(headers.map(header => header.get('authorization'))).toEqual(['Bearer access-old', 'Bearer access-new']);
+  headers.forEach(header => header.delete('authorization'));
+  expect([...headers[0]]).toEqual([...headers[1]]);
+});
+
+test('retains the compact result around a caller-positioned tools carrier', async () => {
+  const { services } = service((_url, init) => {
+    assert(typeof init.body === 'string');
+    const body = JSON.parse(init.body) as { input: unknown[] };
+    expect(body.input).toMatchObject([
+      { type: 'additional_tools' },
+      { type: 'message', role: 'developer' },
+      { type: 'additional_tools', id: 'at_caller' },
+      { type: 'message', role: 'user' },
+    ]);
+    return Response.json({ id: 'compact', object: 'response.compaction', output: [...body.input, nativeItem] });
+  });
+  const exchange = run(chatgptPipelines.openaiResponsesCompact, {
+    ...entry,
+    'provider.model': move({ ...model, providerData: { useResponsesLite: true } }),
+    'request.openaiResponses': move({
+      model: 'client', instructions: 'Base',
+      input: [
+        { type: 'additional_tools' as const, role: 'developer' as const, id: 'at_caller', tools: [{ type: 'custom' as const, name: 'patch' }] },
+        { type: 'message' as const, role: 'user' as const, content: 'Continue.' },
+      ],
+    }),
+  }, { services });
+  const result = (await exchange.result)['response.openaiResponses'];
+  await exchange.done;
+  assert(result.kind === 'result' && 'output' in result.result);
+  expect(result.result.output).toMatchObject([
+    { type: 'additional_tools' }, { type: 'message' }, { id: 'at_caller' }, { type: 'message' }, nativeItem,
+  ]);
+});
+
+test('records a rate limit, replaces the same family on success, and preserves it on a headerless image', async () => {
+  const other = { fetchedAt: 1, data: { observed_at: '2026-01-01T00:00:00Z', active_limit: 'other', primary_used_percent: 5 } };
+  account().quotaSnapshot = { other };
+  const quotaHeaders = { 'x-codex-active-limit': 'premium', 'x-codex-primary-reset-after-seconds': '3600' };
+  let turn = 0;
+  const { services } = service(url => {
+    if (url.endsWith('/images/generations')) return Response.json({ data: [] });
+    if (turn++ === 0) return Response.json({ error: { message: 'Limited' } }, {
+      status: 429, headers: { ...quotaHeaders, 'x-codex-primary-used-percent': '100' },
+    });
+    return new Response(sse({ type: 'response.completed', response: terminal }), {
+      headers: { ...quotaHeaders, 'x-codex-primary-used-percent': '42' },
+    });
+  });
+  const input = { ...entry, 'request.openaiResponses': move({ model: 'client', input: [] }) };
+  const limited = run(chatgptPipelines.openaiResponses, input, { services });
+  expect((await limited.result)['response.http']?.status).toBe(429);
+  await limited.done;
+  const snapshot = account().quotaSnapshot?.premium.data;
+  assert(snapshot !== undefined);
+  expect(Date.parse(snapshot.ratelimited_until!) - Date.parse(snapshot.observed_at)).toBe(3_600_000);
+
+  const successful = run(chatgptPipelines.openaiResponses, input, { services });
+  const outcome = (await successful.result)['response.openaiResponses'];
+  assert(outcome.kind === 'stream');
+  await Array.fromAsync(outcome.stream);
+  await successful.done;
+  expect(account().quotaSnapshot?.premium.data).toMatchObject({ primary_used_percent: 42 });
+  expect(account().quotaSnapshot?.premium.data.ratelimited_until).toBeUndefined();
+  expect(account().quotaSnapshot?.other).toEqual(other);
+
+  const before = account().quotaSnapshot;
+  const image = run(chatgptPipelines.openaiImagesGenerations, {
+    ...entry, 'request.openaiImagesGenerations': move({ model: 'client', prompt: 'A tree' }),
+  }, { services });
+  expect((await image.result)['response.http']?.status).toBe(200);
+  await image.done;
+  expect(account().quotaSnapshot).toEqual(before);
+});
+
+test('checks the plan from a newly minted bearer before sending an image request', async () => {
+  account().accessToken = null;
+  const claims = Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_plan_type: 'free' } })).toString('base64url');
+  const { services, fetcher } = service(url => {
+    expect(url).toBe(CHATGPT_OAUTH_TOKEN_URL);
+    return Response.json({ access_token: 'access-new', refresh_token: 'refresh-new', expires_in: 3600, id_token: `e30.${claims}.signature` });
+  });
+  const image = run(chatgptPipelines.openaiImagesGenerations, {
+    ...entry, 'request.openaiImagesGenerations': move({ model: 'client', prompt: 'A tree' }),
+  }, { services });
+  expect((await image.result)['response.http']?.status).toBe(403);
+  await image.done;
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(account().accessToken).toMatchObject({ token: 'access-new', planType: 'free' });
+});
+
+test('uses the plan of a sibling bearer that wins before retry rather than minting again', async () => {
+  const winner = { ...credential().accessToken!, token: 'sibling-bearer', planType: 'free' };
+  const { services, fetcher } = service((_url, init) => {
+    expect(new Headers(init.headers).get('authorization')).toBe('Bearer access-old');
+    account().accessToken = winner;
+    account().refresh_token = 'sibling-refresh';
+    return Response.json({ error: { code: 'expired_token', message: 'Expired' } }, { status: 401 });
+  });
+  const image = run(chatgptPipelines.openaiImagesGenerations, {
+    ...entry, 'request.openaiImagesGenerations': move({ model: 'client', prompt: 'A tree' }),
+  }, { services });
+  expect((await image.result)['response.http']?.status).toBe(403);
+  await image.done;
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(account().accessToken).toEqual(winner);
 });

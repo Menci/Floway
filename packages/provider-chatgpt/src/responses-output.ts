@@ -1,4 +1,3 @@
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputItemEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 // Codex can close messages and native compaction items but omit them from its
@@ -57,13 +56,4 @@ export const createChatGPTResponsesOutputRestore = () => {
     }
     return event;
   };
-};
-
-export const restoreChatGPTResponsesOutput = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-  const restore = createChatGPTResponsesOutputRestore();
-  for await (const frame of frames) {
-    yield frame.type === 'event' ? eventFrame(restore(frame.event)) : frame;
-  }
 };

@@ -1,11 +1,11 @@
 import { assertKimiCodeUpstreamRecord, type KimiCodeUpstreamConfig } from './config.ts';
 import { KIMI_CODE_DEFAULT_FLAGS } from './defaults.ts';
-import { kimiCodeFetch } from './fetch.ts';
+import { kimiCodeEndpoint } from './endpoints.ts';
 import type { KimiCodeProviderData } from './model-selection.ts';
 import { pricingForKimiCodePublicModelId } from './pricing.ts';
 import { kimiCodeModelLabel, parseKimiCodeModelName, publicKimiCodeModelId } from './public-model-id.ts';
 import { object, string, number } from './validation.ts';
-import { fetchUpstreamModels, identityWrapUpstreamCall, ProviderModelsUnavailableError, resolveEffectiveFlags, type Fetcher, type FlagId, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
+import { fetchUpstreamModels, ProviderModelsUnavailableError, resolveEffectiveFlags, type Fetcher, type FlagId, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
 
 // Capability and effort metadata are authoritative; display names establish
 // public presentation ids and model-version identity. Only catalog ids are
@@ -110,9 +110,9 @@ const projectCatalog = (value: unknown, enabledFlags: ReadonlySet<FlagId>): Prov
   });
 };
 
-export const fetchKimiCodeModels = (config: KimiCodeUpstreamConfig, fetcher: Fetcher, enabledFlags: ReadonlySet<FlagId>): Promise<ProviderModel[]> =>
+const fetchKimiCodeModels = (config: KimiCodeUpstreamConfig, fetcher: Fetcher, enabledFlags: ReadonlySet<FlagId>): Promise<ProviderModel[]> =>
   fetchUpstreamModels(
-    () => kimiCodeFetch(config, '/models', { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
+    () => fetcher(kimiCodeEndpoint(config.region, '/models'), { method: 'GET', headers: [['authorization', `Bearer ${config.apiKey}`]] }),
     value => {
       try {
         return projectCatalog(value, enabledFlags);

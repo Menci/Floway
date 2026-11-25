@@ -142,6 +142,23 @@ test('only exposes the four implemented operations', () => {
   expect(upstream.config.apiKey).toBeInstanceOf(Secret);
 });
 
+test('preserves an open service tier on the standard Chat Completions lane', async () => {
+  const { services, fetcher } = service(() => sse(
+    'data: {"id":"turn","object":"chat.completion.chunk","created":1,"model":"standard-id","choices":[],"service_tier":"future-tier"}\n\ndata: [DONE]\n\n',
+  ));
+  const exchange = run(kimiCodePipelines.openaiChatCompletions, {
+    ...entry,
+    'request.openaiChatCompletions': move({ model: 'client', messages: [], service_tier: 'future-tier' }),
+  }, { services });
+  const response = await exchange.result;
+  expect(response['response.modelKey']).toBe('standard-id');
+  const result = response['response.openaiChatCompletions'];
+  assert(result.kind === 'stream');
+  expect(await Array.fromAsync(result.stream)).toMatchObject([{ ok: true, value: { service_tier: 'future-tier' } }]);
+  await exchange.done;
+  expect(fetcher.mock.calls[0]?.[1].body).toBe(JSON.stringify({ model: 'standard-id', messages: [], service_tier: 'future-tier', stream: true }));
+});
+
 test('serializes OpenAI Chat Completions to the chosen lane and projects the served priority tier', async () => {
   const { services, fetcher, observeResponse } = service(() => sse(
     'data: {"id":"turn","object":"chat.completion.chunk","created":1,"model":"fast-id","choices":[],"service_tier":"default"}\n\ndata: [DONE]\n\n',
@@ -222,6 +239,22 @@ test('counts tokens as a scalar and preserves open speed strings without schedul
   await exchange.done;
   expect(fetcher.mock.calls[0]?.[0]).toBe('https://api.kimi.com/coding/v1/messages/count_tokens');
   expect(fetcher.mock.calls[0]?.[1].body).toBe(JSON.stringify({ model: 'standard-id', messages: [], speed: 'future-speed' }));
+  expect(observeResponse).not.toHaveBeenCalled();
+});
+
+test.each(['standard', 'fast'])('count_tokens uses the fast-only lane only for explicit fast, requested %s', async speed => {
+  const { services, fetcher, observeResponse } = service(() => Response.json({ input_tokens: 7 }));
+  const exchange = run(kimiCodePipelines.anthropicMessagesCountTokens, {
+    ...entry,
+    'provider.model': move({ ...model, upstreamModelId: 'fast-id', providerData: { fastModelId: 'fast-id' } }),
+    'request.anthropicMessages': move({ model: 'client', messages: [], speed }),
+  }, { services });
+  const result = await exchange.result;
+  await exchange.done;
+  expect(result['response.modelKey']).toBe('fast-id');
+  expect(result['response.http']?.status).toBe(speed === 'fast' ? 200 : 400);
+  if (speed === 'fast') expect(fetcher.mock.calls[0]?.[1].body).toBe(JSON.stringify({ model: 'fast-id', messages: [] }));
+  else expect(fetcher).not.toHaveBeenCalled();
   expect(observeResponse).not.toHaveBeenCalled();
 });
 

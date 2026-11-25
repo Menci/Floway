@@ -1,5 +1,5 @@
 import { assertKimiCodeUpstreamRecord, type KimiCodeUpstreamConfig } from './config.ts';
-import { kimiCodeEndpoint, readKimiCodeJson } from './fetch.ts';
+import { kimiCodeEndpoint } from './endpoints.ts';
 import { readKimiCodeUpstreamState, readKimiCodeAccount, type KimiCodeAccount, type KimiCodeObservation, type KimiCodeUpstreamState } from './state.ts';
 import { kimiCodeMetrics } from './upstream-metrics.ts';
 import { readKimiCodeUsage } from './usage.ts';
@@ -34,6 +34,12 @@ const persistProbe = async <T>(
 };
 
 export type KimiCodeProbeFetcher = ReturnType<ProviderServices['fetcher']>;
+
+const readKimiCodeJson = async (response: Response, path: string): Promise<unknown> => {
+  const text = await response.text();
+  if (!response.ok) throw new Error(`Kimi Code ${path} returned ${response.status}: ${text}`);
+  return JSON.parse(text) as unknown;
+};
 
 const refreshProbe = async <T>(
   upstreamId: string,
@@ -114,21 +120,6 @@ export const refreshKimiCodeUsageProbe = (upstreamId: string, config: KimiCodeUp
 
 export const refreshKimiCodeAccountProbe = (upstreamId: string, config: KimiCodeUpstreamConfig, fetcher: Fetcher): Promise<KimiCodeObservation<KimiCodeAccount>> =>
   controlPlaneObservation(probeKimiCodeAccount(upstreamId, config, controlPlaneFetcher(fetcher)));
-
-export const scheduleKimiCodeProbes = (record: UpstreamRecord, config: KimiCodeUpstreamConfig, fetcher: Fetcher, waitUntil: (promise: Promise<unknown>) => void, forceUsage: boolean): void => {
-  const state = readKimiCodeUpstreamState(record.state);
-  const now = Date.now();
-  if (forceUsage || state.usageProbe === null || now - state.usageProbe.attemptedAt >= KIMI_CODE_USAGE_INTERVAL_MS) {
-    waitUntil(refreshKimiCodeUsageProbe(record.id, config, fetcher).catch((error: unknown) => {
-      console.warn(`Failed to refresh Kimi Code usage for ${record.id}:`, error);
-    }));
-  }
-  if (state.accountProbe === null || now - state.accountProbe.attemptedAt >= KIMI_CODE_ACCOUNT_INTERVAL_MS) {
-    waitUntil(refreshKimiCodeAccountProbe(record.id, config, fetcher).catch((error: unknown) => {
-      console.warn(`Failed to refresh Kimi Code account for ${record.id}:`, error);
-    }));
-  }
-};
 
 export const runKimiCodeScheduledTask = async (record: UpstreamRecord, options: ProviderScheduledOptions): Promise<void> => {
   const { config } = assertKimiCodeUpstreamRecord(record);

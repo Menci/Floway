@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { config, profile, recentState, record, usage } from './fixtures.ts';
-import { refreshKimiCodeAccountProbe, refreshKimiCodeUsageProbe, runKimiCodeScheduledTask, scheduleKimiCodeProbes, type KimiCodeProbeFetcher } from '../src/probe.ts';
+import { refreshKimiCodeAccountProbe, refreshKimiCodeUsageProbe, runKimiCodeScheduledTask, type KimiCodeProbeFetcher } from '../src/probe.ts';
 import { createKimiCodeService } from '../src/service.ts';
 import { readKimiCodeUpstreamState } from '../src/state.ts';
 import { kimiCodeUpstreamFact } from '../src/upstream-fact.ts';
@@ -114,17 +114,10 @@ test('scheduled quota refresh succeeds even when the optional account endpoint f
   expect(repo.read().accountProbe?.error).toContain('profile unavailable');
 });
 
-test('request-time debounce, opt-out and scheduled intervals issue only due reads', async () => {
+test('scheduled refresh skips disabled, opted-out, recently refreshed, and unroutable upstreams', async () => {
   setupRepo();
   const calls: string[] = [];
   const fetcher: Fetcher = async url => { calls.push(url); return Response.json(url.endsWith('/usages') ? usage() : profile); };
-  const background: Promise<unknown>[] = [];
-  scheduleKimiCodeProbes(record(), config, fetcher, promise => { background.push(promise); }, false);
-  expect(background).toHaveLength(0);
-  scheduleKimiCodeProbes(record({ state: null }), config, fetcher, promise => { background.push(promise); }, false);
-  await Promise.all(background);
-  expect(calls.map(url => new URL(url).pathname).sort()).toEqual(['/coding/v1/me', '/coding/v1/usages']);
-  calls.length = 0;
   await runKimiCodeScheduledTask(record({ state: null, usageRefreshIntervalMinutes: 0 }), { fetcher: async () => fetcher });
   await runKimiCodeScheduledTask(record({ enabled: false, state: null, usageRefreshIntervalMinutes: 5 }), { fetcher: async () => fetcher });
   await runKimiCodeScheduledTask(record({ usageRefreshIntervalMinutes: 5 }), { fetcher: async () => fetcher });

@@ -1,9 +1,3 @@
-import { KIMI_CODE_DEFAULT_FLAGS } from './defaults.ts';
-import { createKimiCodeProvider } from './provider.ts';
-import type { ProviderModule } from '@floway-dev/provider';
-
-export const kimiCodeProviderModule: ProviderModule = { create: createKimiCodeProvider, defaultFlags: KIMI_CODE_DEFAULT_FLAGS };
-
 export { KIMI_CODE_DEFAULT_FLAGS } from './defaults.ts';
 export { getKimiCodeProvidedModels } from './models.ts';
 export { kimiCodePipelines } from './pipelines/index.ts';

@@ -1,12 +1,3 @@
-import { CHATGPT_DEFAULT_FLAGS } from './defaults.ts';
-import { createChatGPTProvider } from './provider.ts';
-import type { ProviderModule } from '@floway-dev/provider';
-
-export const chatgptProviderModule: ProviderModule = {
-  create: createChatGPTProvider,
-  defaultFlags: CHATGPT_DEFAULT_FLAGS,
-};
-
 export { ChatGPTAccessOnlyCredentialError, chatgptPlanObservation, invalidateChatGPTAccessToken, mintChatGPTAccessToken, putChatGPTAccessToken, type ChatGPTAccessTokenEntry, type ChatGPTPlanObservation } from './access-token.ts';
 export * from './auth/credential.ts';
 export * from './auth/import.ts';

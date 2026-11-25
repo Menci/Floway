@@ -1,6 +1,5 @@
 import { v5 as uuidV5 } from 'uuid';
 
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   CanonicalOpenAIResponsesPayload,
   OpenAIResponsesInputAdditionalToolsItem,
@@ -198,17 +197,4 @@ export const projectChatGPTResponsesEvent = (
     return { ...event, response: { ...event.response, ...movedFields } };
   }
   return event;
-};
-
-export const projectMovedChatGPTResponsesFields = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
-  movedFields: ChatGPTResponsesLiteRequest['movedFields'],
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-  for await (const frame of frames) {
-    if (frame.type !== 'event') {
-      yield frame;
-      continue;
-    }
-    yield { ...frame, event: projectChatGPTResponsesEvent(frame.event, movedFields) };
-  }
 };

@@ -1,4 +1,4 @@
-import { kimiCodeEndpoint } from '../fetch.ts';
+import { kimiCodeEndpoint } from '../endpoints.ts';
 import { selectKimiCodeModel } from '../model-selection.ts';
 import type { KimiCodeUpstreamFact } from '../upstream-fact.ts';
 import { setHeader, type HttpRequestFact, type HttpResponseFact } from '@floway-dev/http';

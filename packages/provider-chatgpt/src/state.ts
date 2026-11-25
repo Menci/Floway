@@ -258,14 +258,9 @@ export const readChatGPTUpstreamState = (raw: unknown): ChatGPTUpstreamState => 
   };
 };
 
-// State-transition writes for both planes. The operator-facing refresh handler
-// in the gateway delegates to these so the provider owns its own state writes,
-// and the data plane's createChatGPTProvider routes the same fields through the
-// same helpers. The control plane no-ops on a missing account rather than
-// throw, matching the refresh contract that a state slot it cannot address
-// should be left alone (saveState skips the write when the mutator returns
-// state unchanged), while the data plane passes onMissing:'throw' so a lost
-// credential fails loudly instead of silently persisting nothing.
+// The operator refresh handler and the ChatGPT service share state writes.
+// Operator refresh treats a removed account as a no-op. The service passes
+// onMissing: 'throw' because a missing credential is invalid after routing.
 
 // Shared state-write scaffold: stamps state_updated_at on every successful
 // account patch and no-ops on a missing account, so the transitions below
