@@ -4,13 +4,47 @@ import { expect, test, vi } from 'vitest';
 import { gatewayFactSpace, httpEntry } from '../../../src/data-plane/pipeline/facts.ts';
 import { servePipeline, startPipeline } from '../../../src/data-plane/pipeline/host.ts';
 import { responseHead, writeHttpResponse } from '../../../src/data-plane/pipeline/response.ts';
+import { createGatewayServices, type GatewayServices } from '../../../src/data-plane/pipeline/services.ts';
 import type { AuthVars } from '../../../src/middleware/auth.ts';
+import { initRepo } from '../../../src/repo/index.ts';
 import { initBackgroundSchedulerResolver } from '../../../src/runtime/background.ts';
 import { testAdminUser, setupAppTest } from '../../test-utils/app.ts';
 import type { HttpStreamError } from '@floway-dev/http';
 import { move, type Result } from '@floway-dev/pipeline';
 
 const { compose, defineStage } = gatewayFactSpace<{}>();
+
+test('HTTP runs share provider services across repository initialization', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const observations: GatewayServices[] = [];
+  const { compose, defineStage } = gatewayFactSpace<GatewayServices>();
+  const ending = defineStage({
+    name: 'test.provider-service-scope',
+    request: { needs: httpEntry },
+    return: { provides: ['response.http'] },
+    async execute(_facts, scope) {
+      observations.push(scope.services);
+      return { 'response.http': move(responseHead(204)) };
+    },
+  });
+  const pipeline = compose('test.provider-service-scope', { entry: httpEntry, exit: ['response.http'], stages: [], ending });
+  const app = new Hono<{ Variables: AuthVars }>();
+  app.get('/', c => {
+    c.set('apiKey', apiKey);
+    c.set('user', testAdminUser);
+    return servePipeline(c, pipeline, createGatewayServices);
+  });
+
+  expect((await app.request('/')).status).toBe(204);
+  initRepo(repo);
+  expect((await app.request('/')).status).toBe(204);
+  const [first, second] = observations;
+  expect(observations).toHaveLength(2);
+  for (const kind of ['chatgpt', 'claudeCode', 'copilot', 'kimiCode', 'ollama'] as const) {
+    expect(second![kind]).toBe(first![kind]);
+  }
+  expect(first!.fetcher).not.toBe(second!.fetcher);
+});
 
 test('the HTTP host aborts on client cancellation and waits through native done', async () => {
   const client = new AbortController();

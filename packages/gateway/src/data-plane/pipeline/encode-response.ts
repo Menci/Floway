@@ -43,7 +43,6 @@ const renderTransportError = (outcome: ProtocolError): HttpResponseFact => {
 export const encodeResponse = <const Key extends ProtocolResponseKey>(
   responseKey: Key,
   render: ProtocolRenderer<Key>,
-  renderWithoutHttp: (outcome: ProtocolError) => HttpResponseFact = renderTransportError,
 ) => {
   const through = {
     request: { needs: ['request.delivery'], provides: [], consumes: [] },
@@ -65,7 +64,7 @@ export const encodeResponse = <const Key extends ProtocolResponseKey>(
       };
 
       const renderOutcome = async (): Promise<HttpResponseFact> => {
-        if (outcome.kind === 'error') return head === null ? renderWithoutHttp(outcome) : jsonResponseBody(head, outcome.error);
+        if (outcome.kind === 'error') return head === null ? renderTransportError(outcome) : jsonResponseBody(head, outcome.error);
         if (head === null) throw new TypeError('A protocol success requires an HTTP response head');
 
         return await render(outcome as Success<Key>, head, facts['request.delivery'], {

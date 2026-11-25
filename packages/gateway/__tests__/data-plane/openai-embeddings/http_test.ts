@@ -185,6 +185,7 @@ test('/v1/embeddings meters both candidates and records upstream-reported zero',
   expect(await repo.usage.listAll()).toMatchObject([{
     upstream: 'second', modelKey: 'embedding-model', requests: 1, metrics: [{ metric: 'input_tokens', quantity: '0' }],
   }]);
+  expect((await repo.apiKeys.getById(apiKey.id))?.lastUsedAt).toEqual(expect.any(String));
   expect(await repo.performance.listAll()).toEqual(expect.arrayContaining([
     expect.objectContaining({ upstream: 'first', operation: 'embeddings', requests: 1, errorsNoOutput: 1 }),
     expect.objectContaining({ upstream: 'second', operation: 'embeddings', requests: 1, neutral: 1 }),
@@ -210,6 +211,7 @@ test.each([
   await flushBackground();
 
   expect(await repo.usage.listAll()).toEqual([]);
+  expect((await repo.apiKeys.getById(apiKey.id))?.lastUsedAt).toBeUndefined();
   expect(await repo.performance.listAll()).toMatchObject([{ upstream: 'rejecting', errorsNoOutput: 1 }]);
 });
 

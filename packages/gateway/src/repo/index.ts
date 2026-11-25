@@ -1,4 +1,5 @@
 import type { Repo } from './types.ts';
+import { initGatewayProviderServices } from '../data-plane/pipeline/provider-services.ts';
 import { createUpstreamMetricsRecorder } from '../upstream-metrics/recorder.ts';
 import { initProviderRepo } from '@floway-dev/provider';
 
@@ -9,7 +10,9 @@ export function initRepo(repo: Repo): void {
   // Hand provider-package helpers (models-store, etc.) a lazy accessor for the
   // same singleton so they read the cache through the live repo.
   const recordUpstreamMetric = createUpstreamMetricsRecorder(repo);
-  initProviderRepo(() => ({ upstreams: getRepo().upstreams, recordUpstreamMetric }));
+  const providerRepo = { upstreams: repo.upstreams, recordUpstreamMetric };
+  initProviderRepo(() => providerRepo);
+  initGatewayProviderServices();
 }
 
 export function getRepo(): Repo {
