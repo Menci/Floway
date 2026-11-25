@@ -53,7 +53,7 @@ export const createClaudeCodeService = (repo: ProviderRepo): ClaudeCodeService =
   return {
     async requestBlock(upstreamId, modelId, now) {
       const current = await repo.upstreams.getById(upstreamId);
-      if (!current) throw new Error(`Claude Code upstream ${upstreamId} disappeared mid-request`);
+      if (current === null) return { kind: 'terminal', message: `Claude Code upstream ${upstreamId} disappeared mid-request` };
       const account = readClaudeCodeUpstreamState(current.state).accounts[0];
       if (account.state !== 'active') {
         return { kind: 'terminal', message: `Claude Code account is ${account.state}: ${account.stateMessage}` };
@@ -63,28 +63,33 @@ export const createClaudeCodeService = (repo: ProviderRepo): ClaudeCodeService =
     },
     authorization,
     async reauthorize(upstreamId, rejectedBearer, fetcher) {
-      await invalidateClaudeCodeAccessToken({
+      const invalidated = await invalidateClaudeCodeAccessToken({
         upstreamId,
         repo: repo.upstreams,
         rejectedAuthorization: rejectedBearer.reveal(),
       });
+      if (!invalidated.ok) return invalidated;
       return await authorization(upstreamId, fetcher);
     },
     async persistQuota(upstreamId, modelId, snapshot) {
-      return await observePersistence('claude_code_quota_persist_failed', upstreamId, async () => {
-        const fetchedAt = Date.now();
-        let previousAccount!: ClaudeCodeAccountCredential;
-        await repo.upstreams.saveState(upstreamId, current => {
+      const event = 'claude_code_quota_persist_failed';
+      const fetchedAt = Date.now();
+      let previousAccount!: ClaudeCodeAccountCredential;
+      const state = await observePersistence(event, upstreamId, () =>
+        repo.upstreams.saveState(upstreamId, current => {
           const state = readClaudeCodeUpstreamState(current);
           previousAccount = state.accounts[0];
           return replaceSoleAccount(state, account => ({
             ...account,
             quotaSnapshot: { fetchedAt, modelId, data: snapshot },
           }));
-        });
-        await recordMetrics(repo, upstreamId, claudeCodeQuotaMetrics(snapshot), fetchedAt);
-        const priorStatus = previousAccount.quotaSnapshot?.data.status ?? null;
-        if (priorStatus === snapshot.status) return;
+        }));
+      if (!state.persisted) return state;
+      const metrics = claudeCodeQuotaMetrics(snapshot);
+      const persisted = await observePersistence(event, upstreamId, () => recordMetrics(repo, upstreamId, metrics, fetchedAt));
+      if (!persisted.persisted) return persisted;
+      const priorStatus = previousAccount.quotaSnapshot?.data.status ?? null;
+      if (priorStatus !== snapshot.status) {
         logInfo('claude_code_quota_state_transition', {
           upstream_id: upstreamId,
           account_uuid: previousAccount.accountUuid,
@@ -94,13 +99,14 @@ export const createClaudeCodeService = (repo: ProviderRepo): ClaudeCodeService =
           representative_claim: snapshot.representativeClaim,
           model: modelId,
         });
-      });
+      }
+      return persisted;
     },
     async persistTerminal(upstreamId, status, message) {
-      return await observePersistence('claude_code_terminal_sentinel_persist_failed', upstreamId, async () => {
-        const flippedAt = new Date().toISOString();
-        let previousAccount!: ClaudeCodeAccountCredential;
-        await repo.upstreams.saveState(upstreamId, current => {
+      const flippedAt = new Date().toISOString();
+      let previousAccount!: ClaudeCodeAccountCredential;
+      const persisted = await observePersistence('claude_code_terminal_sentinel_persist_failed', upstreamId, () =>
+        repo.upstreams.saveState(upstreamId, current => {
           const state = readClaudeCodeUpstreamState(current);
           previousAccount = state.accounts[0];
           if (previousAccount.state !== 'active') return state;
@@ -111,8 +117,8 @@ export const createClaudeCodeService = (repo: ProviderRepo): ClaudeCodeService =
             stateUpdatedAt: flippedAt,
             accessToken: null,
           }));
-        });
-        if (previousAccount.state !== 'active') return;
+        }));
+      if (persisted.persisted && previousAccount.state === 'active') {
         logWarn('claude_code_account_state_flip', {
           upstream_id: upstreamId,
           account_uuid: previousAccount.accountUuid,
@@ -122,7 +128,8 @@ export const createClaudeCodeService = (repo: ProviderRepo): ClaudeCodeService =
           upstream_status: status,
           message,
         });
-      });
+      }
+      return persisted;
     },
     ensureAccessToken,
     async persistUsageProbe(upstreamId, probe) {
@@ -145,11 +152,11 @@ const observePersistence = async (
 ): Promise<ClaudeCodePersistenceResult> => {
   try {
     await persist();
-    return { persisted: true };
   } catch (error) {
     logWarn(event, { upstream_id: upstreamId, error: String(error) });
     return { persisted: false, error };
   }
+  return { persisted: true };
 };
 
 const recordMetrics = async (repo: ProviderRepo, upstreamId: string, metrics: UpstreamMetrics, timestamp: number): Promise<void> => {

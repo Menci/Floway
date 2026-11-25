@@ -14,7 +14,7 @@ import {
   type ClaudeCodeAccountCredential,
 } from './state.ts';
 import type { Result } from '@floway-dev/pipeline';
-import type { Fetcher, UpstreamsRepoSlim } from '@floway-dev/provider';
+import { UpstreamGoneError, type Fetcher, type UpstreamsRepoSlim } from '@floway-dev/provider';
 
 export type { ClaudeCodeAccessTokenEntry };
 
@@ -105,7 +105,7 @@ export const getClaudeCodeAccessTokenService = (repo: UpstreamsRepoSlim) => {
 export const ensureClaudeCodeAccessToken = async ({ repo, fetcher, ...args }: EnsureClaudeCodeAccessTokenArgs): Promise<EnsuredAccessToken> =>
   unwrapOAuthResult(await getClaudeCodeAccessTokenService(repo)({ ...args, fetcher: controlOAuthFetcher(fetcher) }));
 
-const terminalAccess = (code: string, message: string): AccessTokenResult => ({
+const terminalAccess = (code: string, message: string): Result<never, ClaudeCodeOAuthFailure> => ({
   ok: false,
   error: { cause: new ClaudeCodeOAuthSessionTerminatedError({ code, message }), http: null, body: null },
 });
@@ -133,7 +133,7 @@ const ensureClaudeCodeAccessTokenInner = async (
   recoveryAllowed: boolean,
 ): Promise<AccessTokenResult> => {
   const fresh = await args.repo.getById(args.upstreamId);
-  if (!fresh) throw new Error(`Claude Code upstream ${args.upstreamId} not found`);
+  if (fresh === null) return terminalAccess('upstream_missing', `Claude Code upstream ${args.upstreamId} not found`);
   const state = readClaudeCodeUpstreamState(fresh.state);
 
   const account = state.accounts[0];
@@ -302,11 +302,17 @@ export const invalidateClaudeCodeAccessToken = async (args: {
   upstreamId: string;
   repo: UpstreamsRepoSlim;
   rejectedAuthorization: string;
-}): Promise<void> => {
-  await args.repo.saveState(args.upstreamId, current => {
-    const state = readClaudeCodeUpstreamState(current);
-    const token = state.accounts[0].accessToken;
-    if (token === null || `Bearer ${token.token}` !== args.rejectedAuthorization) return state;
-    return replaceSoleAccount(state, account => ({ ...account, accessToken: null }));
-  });
+}): Promise<Result<void, ClaudeCodeOAuthFailure>> => {
+  try {
+    await args.repo.saveState(args.upstreamId, current => {
+      const state = readClaudeCodeUpstreamState(current);
+      const token = state.accounts[0].accessToken;
+      if (token === null || `Bearer ${token.token}` !== args.rejectedAuthorization) return state;
+      return replaceSoleAccount(state, account => ({ ...account, accessToken: null }));
+    });
+  } catch (error) {
+    if (!(error instanceof UpstreamGoneError)) throw error;
+    return terminalAccess('upstream_missing', error.message);
+  }
+  return { ok: true, value: undefined };
 };

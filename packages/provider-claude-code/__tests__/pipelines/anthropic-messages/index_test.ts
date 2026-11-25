@@ -6,6 +6,7 @@ import { claudeCodePipelines } from '../../../src/pipelines/index.ts';
 import { parseClaudeCodeQuotaHeaders } from '../../../src/quota.ts';
 import { createClaudeCodeService } from '../../../src/service.ts';
 import { readClaudeCodeUpstreamState, type ClaudeCodeAccountCredential } from '../../../src/state.ts';
+import * as upstreamMetrics from '../../../src/upstream-metrics.ts';
 import { getHeader, type HttpHeaders, type HttpRequestFact } from '@floway-dev/http';
 import { move, run, Secret, type RunEvent } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
@@ -58,12 +59,13 @@ const payload = {
 
 const createHarness = (account: ClaudeCodeAccountCredential = activeAccount) => {
   let state = readClaudeCodeUpstreamState({ accounts: [account] });
+  const getById = vi.fn<ProviderRepo['upstreams']['getById']>(async () => ({ ...record, state }));
   const saveState = vi.fn<ProviderRepo['upstreams']['saveState']>(async (_id, mutate) => {
     state = readClaudeCodeUpstreamState(mutate(state, record.configVersion));
   });
   const recordUpstreamMetric = vi.fn<ProviderRepo['recordUpstreamMetric']>().mockResolvedValue(undefined);
   const claudeCode = createClaudeCodeService({
-    upstreams: { getById: async () => ({ ...record, state }), saveState },
+    upstreams: { getById, saveState },
     recordUpstreamMetric,
   });
   const send = vi.fn<ReturnType<ProviderServices['fetcher']>>();
@@ -81,7 +83,7 @@ const createHarness = (account: ClaudeCodeAccountCredential = activeAccount) => 
       events: event => { events.push(event); },
     },
   );
-  return { start, send, saveState, recordUpstreamMetric, claudeCode, events, account: () => state.accounts[0]! };
+  return { start, send, getById, saveState, recordUpstreamMetric, claudeCode, events, account: () => state.accounts[0]! };
 };
 
 const reply = (value: Response) => ({ ok: true, value }) as const;
@@ -100,6 +102,33 @@ const finish = async (call: ReturnType<ReturnType<typeof createHarness>['start']
 };
 
 describe('Claude Code Anthropic Messages pipeline', () => {
+  test.each([false, true])('returns a local 503 for removal before dispatch (after gate: %s)', async afterGate => {
+    const h = createHarness();
+    if (afterGate) h.getById.mockResolvedValueOnce({ ...record, state: { accounts: [activeAccount] } });
+    h.getById.mockResolvedValueOnce(null);
+    const { answer, outcome } = await finish(h.start());
+    expect(answer['response.http']).toMatchObject({ status: 503, statusText: 'Service Unavailable' });
+    expect(outcome).toMatchObject({ kind: 'error', source: 'local', error: { error: { type: 'claude_code_upstream_unavailable' } } });
+    expect(h.send).not.toHaveBeenCalled();
+  });
+
+  test('a quota metrics bug propagates through the persistence stage', async () => {
+    const h = createHarness();
+    const bug = new TypeError('quota metrics bug');
+    const metrics = vi.spyOn(upstreamMetrics, 'claudeCodeQuotaMetrics').mockImplementationOnce(() => { throw bug; });
+    try {
+      h.send.mockResolvedValueOnce(reply(new Response('quota exhausted', {
+        status: 429,
+        headers: { 'anthropic-ratelimit-unified-status': 'rejected' },
+      })));
+      const call = h.start();
+      await expect(call.done).rejects.toBe(bug);
+      expect(h.saveState).toHaveBeenCalledOnce();
+    } finally {
+      metrics.mockRestore();
+    }
+  });
+
   test('shapes an unrecognized request as Claude Code and serializes the dated model', async () => {
     const h = createHarness();
     h.send.mockResolvedValueOnce(reply(sse()));

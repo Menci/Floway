@@ -8,7 +8,7 @@ import {
   CLAUDE_CODE_REDIRECT_URI,
   CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS,
 } from '../constants.ts';
-import { responseHeaderEntries, type FetchInit, type Fetcher, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
+import { readHttpResponseText, responseHeaderEntries, type FetchInit, type Fetcher, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
 import type { Result } from '@floway-dev/pipeline';
 import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
@@ -120,12 +120,9 @@ const claudeCodeTokenRequest = async (
   const { status, statusText } = response;
   const http: HttpResponseFact = { status, statusText, headers: responseHeaderEntries(response), body: null };
 
-  let rawText: string;
-  try {
-    rawText = await response.text();
-  } catch (cause) {
-    return failed(http, { kind: 'transport', cause });
-  }
+  const text = await readHttpResponseText(response);
+  if (!text.ok) return failed(http, text.error);
+  const rawText = text.value;
   let parsed: unknown;
   try {
     parsed = rawText.length === 0 ? {} : response.ok ? JSON.parse(rawText) : parseJSONWithRawNumbers(rawText);

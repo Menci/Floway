@@ -75,7 +75,6 @@ export const callAnthropicMessages = defineStage({
       let terminalEvent: 'message_stop' | 'error' | null = null;
       let failed = false;
       const logIncomplete = (cause?: unknown): void => {
-        if (producer.signal.aborted) return;
         producer.log.warn('claude_code_messages_stream_incomplete', {
           upstream_id: id,
           model,
@@ -88,20 +87,18 @@ export const callAnthropicMessages = defineStage({
           last_sse_frames: JSON.stringify(rawFrames),
         });
       };
-      try {
-        for await (const item of source) {
-          if (item.ok) {
-            const { type } = item.value;
-            if (type === 'message_stop' || type === 'error') terminalEvent = type;
-          } else {
-            failed = true;
-            if (item.error.kind !== 'abort') logIncomplete(item.error.cause);
-          }
-          yield item;
+      const cursor = source[Symbol.asyncIterator]();
+      for (;;) {
+        const { done, value: item } = await cursor.next();
+        if (done) break;
+        if (item.ok) {
+          const { type } = item.value;
+          if (type === 'message_stop' || type === 'error') terminalEvent = type;
+        } else {
+          failed = true;
+          if (item.error.kind !== 'abort') logIncomplete(item.error.cause);
         }
-      } catch (error) {
-        logIncomplete(error);
-        throw error;
+        yield item;
       }
       if (terminalEvent === null && !failed) logIncomplete();
     });
