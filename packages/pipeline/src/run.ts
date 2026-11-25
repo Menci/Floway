@@ -461,7 +461,7 @@ class StageRun {
   #deferred<T>(): DeferredController<T> {
     const promise = Promise.withResolvers<T>();
     void promise.promise.catch(() => undefined);
-    const deferred = registerHandle({ promise: promise.promise }) as Deferred<T>;
+    const deferred = registerHandle({ promise: promise.promise }, 'deferred') as Deferred<T>;
     const finish = (result: Result<T, unknown>): void => {
       if (!this.#pendingDeferred.delete(cancel)) this.#fail(new Error('Deferred has already settled'));
       if (result.ok) promise.resolve(result.value);

@@ -1,7 +1,7 @@
 import { getGlobalHookPostLog, LogLevel, setGlobalHookPostLog, setGlobalLogLevel } from '@guiiai/logg';
 import { describe, expect, it, vi } from 'vitest';
 
-import { factSpace, move, run, transform } from '../src/index.ts';
+import { factSpace, isDeferred, move, run, transform } from '../src/index.ts';
 import type { Deferred, RunEvent } from '../src/index.ts';
 
 interface Space {
@@ -360,6 +360,8 @@ describe('deferred stage values and finalization', () => {
     const request = run(pipeline, {}, { services: {}, events: event => { events.push(event); } });
     const answer = await request.result;
     await expect(answer['response.deferred'].promise).resolves.toBe('ready');
+    expect(isDeferred(answer['response.deferred'])).toBe(true);
+    expect(isDeferred({ promise: answer['response.deferred'].promise })).toBe(false);
     await request.done;
     expect(events.find(event => event.type === 'deferred.settled')).toEqual({
       type: 'deferred.settled', deferred: answer['response.deferred'], ok: true, value: 'ready',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { factSpace, move, run } from '../src/index.ts';
+import { factSpace, isManagedStream, move, run } from '../src/index.ts';
 import type { Deferred, ManagedStream, Result, RunEvent } from '../src/index.ts';
 import { StreamResource, streamsIn } from '../src/stream.ts';
 
@@ -31,6 +31,8 @@ const createResource = () => new StreamResource(new Set(), async function* () { 
 describe('stream discovery', () => {
   it('reuses unchanged frozen subtrees as fact paths are rebuilt', () => {
     const stream = createResource();
+    expect(isManagedStream(stream.handle)).toBe(true);
+    expect(isManagedStream({ ...stream.handle })).toBe(false);
     let scans = 0;
     const shared = new Proxy({ stream: stream.handle }, {
       ownKeys: object => {

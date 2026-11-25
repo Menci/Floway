@@ -1,18 +1,26 @@
+import type { Deferred } from './values.ts';
+
 export type Facts = Readonly<Record<string, unknown>>;
 
-const moved = new WeakMap<object, 'fact' | 'handle'>();
+type HandleKind = 'stream' | 'deferred';
+const moved = new WeakMap<object, 'fact' | HandleKind>();
 const frozen = new WeakSet<object>();
 
 const isObject = (value: unknown): value is object =>
   (typeof value === 'object' && value !== null) || typeof value === 'function';
 
-export const registerHandle = <T extends object>(handle: T): T => {
-  moved.set(Object.freeze(handle), 'handle');
+export const registerHandle = <T extends object>(handle: T, kind: HandleKind): T => {
+  moved.set(Object.freeze(handle), kind);
   return handle;
 };
 
 export const isFrozenFact = (value: object): boolean => frozen.has(value);
-export const isRuntimeHandle = (value: object): boolean => moved.get(value) === 'handle';
+export const isRuntimeHandle = (value: object): boolean => {
+  const kind = moved.get(value);
+  return kind === 'stream' || kind === 'deferred';
+};
+export const isDeferred = (value: unknown): value is Deferred<unknown> =>
+  isObject(value) && moved.get(value) === 'deferred';
 
 export const move = <T>(value: T): T => {
   if (!isObject(value) || moved.has(value)) return value;

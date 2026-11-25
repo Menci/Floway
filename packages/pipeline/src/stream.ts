@@ -22,6 +22,9 @@ interface StreamHooks {
 export const resourceOf = <T, E>(stream: ManagedStream<T, E>): StreamResource<T, E> | undefined =>
   resources.get(stream) as StreamResource<T, E> | undefined;
 
+export const isManagedStream = (value: unknown): value is ManagedStream<unknown, unknown> =>
+  typeof value === 'object' && value !== null && resources.has(value);
+
 export const streamsIn = (facts: Facts): Set<AnyStream> => {
   const found = new Set<AnyStream>();
   const ancestors = new Map<object, number>();
@@ -94,7 +97,7 @@ export class StreamResource<T, E> {
         if (this.#wrappedBy) this.#wrappedBy(new Error('Cannot iterate a stream transferred to a wrapper'));
         return this.#open();
       },
-    }) as AsyncIterable<Result<T, E>> as ManagedStream<T, E>;
+    }, 'stream') as AsyncIterable<Result<T, E>> as ManagedStream<T, E>;
     resources.set(this.handle, this);
     owner.add(this);
     void this.done.catch(() => undefined);
