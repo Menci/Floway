@@ -44,12 +44,9 @@ const call = defineStage({
         const parse = (bytes: Uint8Array) => {
           const json = parseJsonObject(bytes, parseJSONWithRawNumbers);
           if (!json.ok) return json;
-          try {
-            return { ok: true, value: parseDecisionResponse(target.protocol, json.value) } as const;
-          } catch (error) {
-            invalidBody = json.value;
-            return { ok: false, error } as const;
-          }
+          const parsed = parseDecisionResponse(target.protocol, json.value);
+          if (!parsed.ok) invalidBody = json.value;
+          return parsed;
         };
         const { http, outcome } = await parseResultBody(back, parse, formatDecisionError);
         const { 'response.transport': _transport, ...response } = back;

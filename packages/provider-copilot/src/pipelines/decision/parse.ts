@@ -30,12 +30,9 @@ export const parseDecision = defineCopilotStage({
         const parse = (bytes: Uint8Array) => {
           const json = parseJsonObject(bytes);
           if (!json.ok) return json;
-          try {
-            return { ok: true, value: parseDecisionResponse(target.protocol, json.value) } as const;
-          } catch (error) {
-            invalidBody = json.value;
-            return { ok: false, error } as const;
-          }
+          const parsed = parseDecisionResponse(target.protocol, json.value);
+          if (!parsed.ok) invalidBody = json.value;
+          return parsed;
         };
         const { 'response.transport': _transport, ...rest } = facts;
         const { http, outcome } = await parseResultBody(facts, parse, formatOpenAIChatCompletionsError);

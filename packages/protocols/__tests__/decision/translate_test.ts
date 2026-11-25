@@ -86,8 +86,9 @@ describe('decision response parsing', () => {
       usage: { input_tokens: 56, output_tokens: 1 },
     };
     const response = parseDecisionResponse('typesafe-systemone', body);
-    expect(response.model).toBe('microsoft-decision-1');
-    expect(response.answers).toEqual([
+    assert(response.ok);
+    expect(response.value.model).toBe('microsoft-decision-1');
+    expect(response.value.answers).toEqual([
       {
         type: 'choice',
         name: 'team',
@@ -111,11 +112,21 @@ describe('decision response parsing', () => {
         { type: 'score', name: 'sev', score: 1.1, confidence: 0.55, probabilities: [{ value: 0, label: 'Cosmetic', probability: 0.1 }, { value: 2, label: 'Blocked', probability: 0.9 }] },
       ],
     });
-    expect(response.answers).toEqual([
+    assert(response.ok);
+    expect(response.value.answers).toEqual([
       { type: 'noul', name: 'damage', noul: 0.92 },
       { type: 'choice', name: 'dept', choice: 'billing', confidence: 0.93, probabilities: [{ value: 'billing', probability: 0.95 }, { value: 'other', probability: 0.05 }] },
       { type: 'score', name: 'sev', score: 1.1, confidence: 0.55, probabilities: [{ value: 0, label: 'Cosmetic', probability: 0.1 }, { value: 2, label: 'Blocked', probability: 0.9 }], legend: { '0': 'Cosmetic', '2': 'Blocked' } },
     ]);
+  });
+
+  test('returns invalid answer fields as a failure and propagates an accessor bug', () => {
+    const invalid = parseDecisionResponse('openai-decisions', {
+      answers: [{ type: 'choice', name: 'q', choice: true, confidence: 1, probabilities: null }],
+    });
+    expect(invalid).toEqual({ ok: false, error: new Error('answers.q.probabilities must be an array') });
+    const bug = new TypeError('answers accessor bug');
+    expect(() => parseDecisionResponse('openai-decisions', { get answers() { throw bug; } })).toThrow(bug);
   });
 });
 
@@ -130,7 +141,8 @@ describe('OpenAI Decisions ingress', () => {
       },
       usage: { input_tokens: 12 },
     });
-    expect(renderDecisionResponse('openai-decisions', response)).toEqual({
+    assert(response.ok);
+    expect(renderDecisionResponse('openai-decisions', response.value)).toEqual({
       answers: [
         { type: 'predicate', name: 'is_bug', probability: 0.92 },
         { type: 'choice', name: 'team', choice: 'billing', confidence: 0.93, probabilities: [{ value: 'billing', probability: 0.95 }, { value: 'other', probability: 0.05 }] },
@@ -184,7 +196,8 @@ describe('refusal answers', () => {
     const response = parseDecisionResponse('openai-decisions', {
       answers: [{ type: 'refusal', name: 'private' }],
     });
-    expect(() => renderDecisionResponse('typesafe-systemone', response)).toThrow();
+    assert(response.ok);
+    expect(() => renderDecisionResponse('typesafe-systemone', response.value)).toThrow();
   });
 });
 
@@ -192,8 +205,9 @@ describe('number token fidelity', () => {
   test('a raw-number parse keeps a probability lexeme through a cross-dialect render', () => {
     const body = parseJSONWithRawNumbers('{"answers":{"q":{"type":"noul","noul":1.0}}}') as Record<string, unknown>;
     const response = parseDecisionResponse('typesafe-systemone', body);
+    assert(response.ok);
     // The source wrote `1.0`; a plain JSON.parse would re-emit `1`.
-    expect(JSON.stringify(renderDecisionResponse('openai-decisions', response))).toContain('"probability":1.0');
+    expect(JSON.stringify(renderDecisionResponse('openai-decisions', response.value))).toContain('"probability":1.0');
   });
 
 });

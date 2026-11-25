@@ -5,9 +5,11 @@ import { customPipelines } from '../../src/pipelines/index.ts';
 import { customUpstreamFact } from '../../src/upstream.ts';
 import type { HttpRequestFact } from '@floway-dev/http';
 import { move, run, Secret, type Pipeline } from '@floway-dev/pipeline';
+import * as decisions from '@floway-dev/protocols/decision';
 import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
+import * as rerankProtocol from '@floway-dev/protocols/rerank';
 import { toProviderModelFact, type OpenAIImagesEditsRequest, type ProtocolOutcome, type ProviderServices, type UpstreamRecord } from '@floway-dev/provider';
 import { stubProviderModel } from '@floway-dev/test-utils';
 
@@ -311,6 +313,33 @@ test('rerank parses vendor scores with ordinary number semantics and rejects mal
   await failed.done;
 });
 
+test.each([false, true])('rerank drains an out-of-range response and propagates a parser bug when injected (%s)', async injectBug => {
+  const bug = new TypeError('rerank parser bug');
+  const response = Response.json({ results: [{ index: 8, relevance_score: 1 }] });
+  const { services } = transport(response);
+  const parse = injectBug ? vi.spyOn(rerankProtocol, 'parseRerankResponse').mockImplementationOnce(() => { throw bug; }) : undefined;
+  try {
+    const exchange = run(customPipelines.rerank, {
+      ...facts,
+      'provider.model': move(toProviderModelFact(stubProviderModel({ rerankTarget: { protocol: 'cohere-v2' } }))),
+      'request.rerank': move<CanonicalRerankRequest>({ sourceProtocol: 'voyage-v1', raw: {}, query: 'best match', documents: ['one'], returnDocuments: true }),
+    }, { services });
+    if (injectBug) {
+      await expect(exchange.result).rejects.toBe(bug);
+      await expect(exchange.done).rejects.toBe(bug);
+    } else {
+      expect((await exchange.result)['response.rerank']).toMatchObject({
+        kind: 'error', source: 'upstream', cause: expect.objectContaining({ message: 'Rerank response result index 8 is outside the request documents array' }),
+      });
+      await exchange.done;
+    }
+    expect(response.bodyUsed).toBe(true);
+    expect(response.body?.locked).toBe(false);
+  } finally {
+    parse?.mockRestore();
+  }
+});
+
 test('OpenAI Completions selects streaming from the request and requires the sentinel', async () => {
   const chunk = { id: 'completion', object: 'text_completion', created: 1, model: 'publisher/model', choices: [{ index: 0, text: 'hello', finish_reason: 'stop' }] };
   const completions = (stream: boolean, response: Response) => {
@@ -483,11 +512,33 @@ verifyOperation(customPipelines.anthropicMessagesCountTokens, {
   'request.anthropicMessages': move({ model: 'public', messages: [] }),
 }, 'response.anthropicMessages', () => Response.json({ input_tokens: 8 }), 'result');
 
-verifyOperation(customPipelines.decision, {
+const decisionFacts = {
   ...facts,
   'provider.model': move(toProviderModelFact(stubProviderModel({ decisionTarget: { protocol: 'typesafe-systemone' } }))),
   'request.decision': move<CanonicalDecisionRequest>({ sourceProtocol: 'typesafe-systemone', raw: { state: 'evidence', questions: {} }, state: { kind: 'text', value: 'evidence' }, questions: [] }),
-}, 'response.decision', () => new Response('{"answers":{"choice":{"type":"noul","noul":0.5000}}}', { headers: { 'content-type': 'application/json' } }), 'result');
+};
+verifyOperation(customPipelines.decision, decisionFacts, 'response.decision', () => new Response('{"answers":{"choice":{"type":"noul","noul":0.5000}}}', { headers: { 'content-type': 'application/json' } }), 'result');
+
+test.each([false, true])('Decision drains an invalid response and propagates a parser bug when injected (%s)', async injectBug => {
+  const bug = new TypeError('Decision parser bug');
+  const response = Response.json({ answers: [] });
+  const { services } = transport(response);
+  const parse = injectBug ? vi.spyOn(decisions, 'parseDecisionResponse').mockImplementationOnce(() => { throw bug; }) : undefined;
+  try {
+    const exchange = run(customPipelines.decision, decisionFacts, { services });
+    if (injectBug) {
+      await expect(exchange.result).rejects.toBe(bug);
+      await expect(exchange.done).rejects.toBe(bug);
+    } else {
+      expect((await exchange.result)['response.decision']).toMatchObject({ kind: 'error', source: 'upstream', error: { answers: [] } });
+      await exchange.done;
+    }
+    expect(response.bodyUsed).toBe(true);
+    expect(response.body?.locked).toBe(false);
+  } finally {
+    parse?.mockRestore();
+  }
+});
 
 verifyOperation(customPipelines.geminiGenerateContent, {
   ...facts,

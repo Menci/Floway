@@ -15,21 +15,12 @@ import type {
   DecisionState,
   ParsedDecisionRequest,
 } from './index.ts';
-import { parseJsonNumber, type JsonNumber } from '../common/json.ts';
+import { isRawNumber, type JsonNumber } from '../common/json.ts';
 import type { DecisionProtocol } from '../common/models.ts';
 import type { Result } from '@floway-dev/pipeline';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const requiredString = (value: unknown, field: string): string => {
-  if (typeof value !== 'string' || value.length === 0) throw new Error(`${field} must be a non-empty string`);
-  return value;
-};
-
-// Answer numbers keep their source token when the upstream body was parsed with
-// `parseJSONWithRawNumbers`, so a probability re-serializes byte for byte.
-const finiteNumber = (value: unknown, field: string): JsonNumber => parseJsonNumber(value, field);
 
 // OpenAI requires 2–255 choices and 2–10 levels; System One's schema permits a
 // single option or level, and these stricter bounds are applied to both.
@@ -550,9 +541,16 @@ export const serializeDecisionRequest = (protocol: DecisionProtocol, model: stri
 
 const optionalNumber = (value: unknown): number | undefined => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
 
-const requiredNumberRecord = (value: unknown, field: string): Record<string, number> => {
-  if (!isRecord(value)) throw new Error(`${field} must be an object`);
-  return numberRecord(value) ?? {};
+const invalidResponse = (message: string): Result<never, Error> => ({ ok: false, error: new Error(message) });
+
+const finiteNumber = (value: unknown, field: string): Result<JsonNumber, Error> => {
+  if (isRawNumber(value)) {
+    const raw = value as { readonly rawJSON: string };
+    if (Number.isFinite(Number(raw.rawJSON))) return { ok: true, value: raw };
+  } else if (typeof value === 'number' && Number.isFinite(value)) {
+    return { ok: true, value };
+  }
+  return invalidResponse(`${field} must be a finite number`);
 };
 
 const numberRecord = (value: unknown): Record<string, number> | undefined => {
@@ -573,133 +571,184 @@ const entryRecord = (value: unknown): Record<string, DecisionEntry> | undefined 
 // Score answers, so a missing one is a broken response rather than an answer
 // without detail. System One also carries a separate `legend`; the OpenAI shape
 // inlines each label instead.
-const typesafeSystemOneAnswer = (name: string, value: unknown): DecisionAnswer => {
-  if (!isRecord(value)) throw new Error(`answers.${name} must be an object`);
-  if (value.type === 'noul') return { type: 'noul', name, noul: finiteNumber(value.noul, `answers.${name}.noul`) };
+const typesafeSystemOneAnswer = (name: string, value: unknown): Result<DecisionAnswer, Error> => {
+  if (!isRecord(value)) return invalidResponse(`answers.${name} must be an object`);
+  if (value.type === 'noul') {
+    const noul = finiteNumber(value.noul, `answers.${name}.noul`);
+    return noul.ok ? { ok: true, value: { type: 'noul', name, noul: noul.value } } : noul;
+  }
   const confidence = finiteNumber(value.confidence, `answers.${name}.confidence`);
+  if (!confidence.ok) return confidence;
   if (value.type === 'choice') {
-    const choice = requiredString(value.choice, `answers.${name}.choice`);
-    const record = requiredNumberRecord(value.probabilities, `answers.${name}.probabilities`);
+    if (typeof value.choice !== 'string' || value.choice.length === 0) return invalidResponse(`answers.${name}.choice must be a non-empty string`);
+    const record = numberRecord(value.probabilities);
+    if (record === undefined) return invalidResponse(`answers.${name}.probabilities must be an object`);
     return {
-      type: 'choice',
-      name,
-      choice,
-      confidence,
-      probabilities: Object.entries(record).map(([option, probability]) => ({ value: option, probability })),
+      ok: true,
+      value: {
+        type: 'choice',
+        name,
+        choice: value.choice,
+        confidence: confidence.value,
+        probabilities: Object.entries(record).map(([option, probability]) => ({ value: option, probability })),
+      },
     };
   }
   if (value.type === 'score') {
     const score = finiteNumber(value.score, `answers.${name}.score`);
+    if (!score.ok) return score;
     const legend = entryRecord(value.legend);
-    const record = requiredNumberRecord(value.probabilities, `answers.${name}.probabilities`);
+    const record = numberRecord(value.probabilities);
+    if (record === undefined) return invalidResponse(`answers.${name}.probabilities must be an object`);
     return {
-      type: 'score',
-      name,
-      score,
-      confidence,
-      probabilities: Object.entries(record).map(([level, probability]) => {
-        // OpenAI's per-level `label` is a string; a structured System One
-        // criteria stays in `legend` and is not flattened into it.
-        const label = legend?.[level];
-        return {
-          value: Number(level),
-          ...(typeof label === 'string' ? { label } : {}),
-          probability,
-        };
-      }),
-      ...(legend === undefined ? {} : { legend }),
+      ok: true,
+      value: {
+        type: 'score',
+        name,
+        score: score.value,
+        confidence: confidence.value,
+        probabilities: Object.entries(record).map(([level, probability]) => {
+          // OpenAI's per-level `label` is a string; a structured System One
+          // criteria stays in `legend` and is not flattened into it.
+          const label = legend?.[level];
+          return {
+            value: Number(level),
+            ...(typeof label === 'string' ? { label } : {}),
+            probability,
+          };
+        }),
+        ...(legend === undefined ? {} : { legend }),
+      },
     };
   }
-  throw new Error(`answers.${name}.type must be one of noul, choice, score`);
+  return invalidResponse(`answers.${name}.type must be one of noul, choice, score`);
 };
 
-const parseSystemOneResponse = (body: Record<string, unknown>): CanonicalDecisionResponse => {
-  if (!isRecord(body.answers)) throw new Error('answers must be an object keyed by question name');
+const parseSystemOneResponse = (body: Record<string, unknown>): Result<CanonicalDecisionResponse, Error> => {
+  if (!isRecord(body.answers)) return invalidResponse('answers must be an object keyed by question name');
+  const answers: DecisionAnswer[] = [];
+  for (const [name, entry] of Object.entries(body.answers)) {
+    const answer = typesafeSystemOneAnswer(name, entry);
+    if (!answer.ok) return answer;
+    answers.push(answer.value);
+  }
   return {
-    targetProtocol: 'typesafe-systemone',
-    raw: body,
-    ...(typeof body.model === 'string' ? { model: body.model } : {}),
-    answers: Object.entries(body.answers).map(([name, entry]) => typesafeSystemOneAnswer(name, entry)),
+    ok: true,
+    value: {
+      targetProtocol: 'typesafe-systemone',
+      raw: body,
+      ...(typeof body.model === 'string' ? { model: body.model } : {}),
+      answers,
+    },
   };
 };
 
 // OpenAI marks `probabilities` required on Choice and Score answers, so a
 // non-array is a broken response. A missing entry value type is likewise an
 // upstream contract violation, not the absence of detail.
-const openAITypedProbabilities = (value: unknown, field: string): readonly { value: string | boolean; probability: JsonNumber }[] => {
-  if (!Array.isArray(value)) throw new Error(`${field} must be an array`);
-  return value.map((entry, index) => {
-    if (!isRecord(entry)) throw new Error(`${field}[${index}] must be an object`);
+const openAITypedProbabilities = (value: unknown, field: string): Result<readonly { value: string | boolean; probability: JsonNumber }[], Error> => {
+  if (!Array.isArray(value)) return invalidResponse(`${field} must be an array`);
+  const probabilities: { value: string | boolean; probability: JsonNumber }[] = [];
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry)) return invalidResponse(`${field}[${index}] must be an object`);
     const raw = entry.value;
-    if (typeof raw !== 'string' && typeof raw !== 'boolean') throw new Error(`${field}[${index}].value must be a string or boolean`);
-    return { value: raw, probability: finiteNumber(entry.probability, `${field}[${index}].probability`) };
-  });
+    if (typeof raw !== 'string' && typeof raw !== 'boolean') return invalidResponse(`${field}[${index}].value must be a string or boolean`);
+    const probability = finiteNumber(entry.probability, `${field}[${index}].probability`);
+    if (!probability.ok) return probability;
+    probabilities.push({ value: raw, probability: probability.value });
+  }
+  return { ok: true, value: probabilities };
 };
 
-const openAIScoreProbabilities = (value: unknown, field: string): readonly { value: number; label?: string; probability: JsonNumber }[] => {
-  if (!Array.isArray(value)) throw new Error(`${field} must be an array`);
-  return value.map((entry, index) => {
-    if (!isRecord(entry)) throw new Error(`${field}[${index}] must be an object`);
-    if (typeof entry.value !== 'number') throw new Error(`${field}[${index}].value must be a number`);
-    if (entry.label !== undefined && typeof entry.label !== 'string') throw new Error(`${field}[${index}].label must be a string`);
-    return {
+const openAIScoreProbabilities = (value: unknown, field: string): Result<readonly { value: number; label?: string; probability: JsonNumber }[], Error> => {
+  if (!Array.isArray(value)) return invalidResponse(`${field} must be an array`);
+  const probabilities: { value: number; label?: string; probability: JsonNumber }[] = [];
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry)) return invalidResponse(`${field}[${index}] must be an object`);
+    if (typeof entry.value !== 'number') return invalidResponse(`${field}[${index}].value must be a number`);
+    if (entry.label !== undefined && typeof entry.label !== 'string') return invalidResponse(`${field}[${index}].label must be a string`);
+    const probability = finiteNumber(entry.probability, `${field}[${index}].probability`);
+    if (!probability.ok) return probability;
+    probabilities.push({
       value: entry.value,
       ...(entry.label === undefined ? {} : { label: entry.label }),
-      probability: finiteNumber(entry.probability, `${field}[${index}].probability`),
-    };
-  });
+      probability: probability.value,
+    });
+  }
+  return { ok: true, value: probabilities };
 };
 
-const parseOpenAIDecisionsResponse = (body: Record<string, unknown>): CanonicalDecisionResponse => {
-  if (!Array.isArray(body.answers)) throw new Error('answers must be an array');
-  const answers: DecisionAnswer[] = body.answers.map((entry, index) => {
-    if (!isRecord(entry)) throw new Error(`answers[${index}] must be an object`);
-    const name = requiredString(entry.name, 'answers[].name');
+const parseOpenAIDecisionsResponse = (body: Record<string, unknown>): Result<CanonicalDecisionResponse, Error> => {
+  if (!Array.isArray(body.answers)) return invalidResponse('answers must be an array');
+  const answers: DecisionAnswer[] = [];
+  for (const [index, entry] of body.answers.entries()) {
+    if (!isRecord(entry)) return invalidResponse(`answers[${index}] must be an object`);
+    const name = entry.name;
+    if (typeof name !== 'string' || name.length === 0) return invalidResponse('answers[].name must be a non-empty string');
     // A refusal answers only its own question; the others still resolve, so it
     // is carried through as its own answer rather than failing the response. It
     // carries no probability, so it is decided before reading one.
-    if (entry.type === 'refusal') return { type: 'refusal', name };
-    if (entry.type === 'predicate') return { type: 'noul', name, noul: finiteNumber(entry.probability, `answers.${name}.probability`) };
+    if (entry.type === 'refusal') {
+      answers.push({ type: 'refusal', name });
+      continue;
+    }
+    if (entry.type === 'predicate') {
+      const noul = finiteNumber(entry.probability, `answers.${name}.probability`);
+      if (!noul.ok) return noul;
+      answers.push({ type: 'noul', name, noul: noul.value });
+      continue;
+    }
     const confidence = finiteNumber(entry.confidence, `answers.${name}.confidence`);
+    if (!confidence.ok) return confidence;
     if (entry.type === 'choice') {
       const raw = entry.choice;
-      if (typeof raw !== 'string' && typeof raw !== 'boolean') throw new Error(`answers.${name}.choice must be a string or boolean`);
-      return {
+      if (typeof raw !== 'string' && typeof raw !== 'boolean') return invalidResponse(`answers.${name}.choice must be a string or boolean`);
+      const probabilities = openAITypedProbabilities(entry.probabilities, `answers.${name}.probabilities`);
+      if (!probabilities.ok) return probabilities;
+      answers.push({
         type: 'choice',
         name,
         choice: raw,
-        confidence,
-        probabilities: openAITypedProbabilities(entry.probabilities, `answers.${name}.probabilities`),
-      };
+        confidence: confidence.value,
+        probabilities: probabilities.value,
+      });
+      continue;
     }
     if (entry.type === 'score') {
       const probabilities = openAIScoreProbabilities(entry.probabilities, `answers.${name}.probabilities`);
+      if (!probabilities.ok) return probabilities;
       // The OpenAI shape has no separate legend; derive it from the inline
       // labels so a same-dialect System One reader sees the level names.
       const legend: Record<string, string> = {};
-      for (const level of probabilities) {
+      for (const level of probabilities.value) {
         if (level.label !== undefined) legend[String(level.value)] = level.label;
       }
-      return {
+      const score = finiteNumber(entry.score, `answers.${name}.score`);
+      if (!score.ok) return score;
+      answers.push({
         type: 'score',
         name,
-        score: finiteNumber(entry.score, `answers.${name}.score`),
-        confidence,
-        probabilities,
+        score: score.value,
+        confidence: confidence.value,
+        probabilities: probabilities.value,
         ...(Object.keys(legend).length === 0 ? {} : { legend }),
-      };
+      });
+      continue;
     }
-    throw new Error(`answers[${index}].type ${JSON.stringify(entry.type)} is not supported`);
-  });
+    return invalidResponse(`answers[${index}].type ${JSON.stringify(entry.type)} is not supported`);
+  }
   return {
-    targetProtocol: 'openai-decisions',
-    raw: body,
-    ...(typeof body.model === 'string' ? { model: body.model } : {}),
-    answers,
+    ok: true,
+    value: {
+      targetProtocol: 'openai-decisions',
+      raw: body,
+      ...(typeof body.model === 'string' ? { model: body.model } : {}),
+      answers,
+    },
   };
 };
 
-export const parseDecisionResponse = (protocol: DecisionProtocol, body: Record<string, unknown>): CanonicalDecisionResponse => {
+export const parseDecisionResponse = (protocol: DecisionProtocol, body: Record<string, unknown>): Result<CanonicalDecisionResponse, Error> => {
   switch (protocol) {
   case 'typesafe-systemone': return parseSystemOneResponse(body);
   case 'openai-decisions': return parseOpenAIDecisionsResponse(body);

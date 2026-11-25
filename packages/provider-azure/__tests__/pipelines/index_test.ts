@@ -5,6 +5,7 @@ import { azurePipelines } from '../../src/pipelines/index.ts';
 import { azureUpstreamFact } from '../../src/upstream.ts';
 import type { HttpRequestFact } from '@floway-dev/http';
 import { move, run, Secret, type Pipeline } from '@floway-dev/pipeline';
+import * as decisions from '@floway-dev/protocols/decision';
 import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
@@ -288,11 +289,33 @@ verifyOperation(azurePipelines.anthropicMessagesCountTokens, {
   'request.anthropicMessages': move({ model: 'public', messages: [] }),
 }, 'response.anthropicMessages', () => Response.json({ input_tokens: 8 }), 'result');
 
-verifyOperation(azurePipelines.decision, {
+const decisionFacts = {
   ...facts,
   'provider.model': move(toProviderModelFact(stubProviderModel({ decisionTarget: { protocol: 'typesafe-systemone' } }))),
   'request.decision': move<CanonicalDecisionRequest>({ sourceProtocol: 'typesafe-systemone', raw: { state: 'evidence', questions: {} }, state: { kind: 'text', value: 'evidence' }, questions: [] }),
-}, 'response.decision', () => new Response('{"answers":{"choice":{"type":"noul","noul":0.5000}}}', { headers: { 'content-type': 'application/json' } }), 'result');
+};
+verifyOperation(azurePipelines.decision, decisionFacts, 'response.decision', () => new Response('{"answers":{"choice":{"type":"noul","noul":0.5000}}}', { headers: { 'content-type': 'application/json' } }), 'result');
+
+test.each([false, true])('Decision drains an invalid response and propagates a parser bug when injected (%s)', async injectBug => {
+  const bug = new TypeError('Decision parser bug');
+  const response = Response.json({ answers: [] });
+  const { services } = transport(response);
+  const parse = injectBug ? vi.spyOn(decisions, 'parseDecisionResponse').mockImplementationOnce(() => { throw bug; }) : undefined;
+  try {
+    const exchange = run(azurePipelines.decision, decisionFacts, { services });
+    if (injectBug) {
+      await expect(exchange.result).rejects.toBe(bug);
+      await expect(exchange.done).rejects.toBe(bug);
+    } else {
+      expect((await exchange.result)['response.decision']).toMatchObject({ kind: 'error', source: 'upstream', error: { answers: [] } });
+      await exchange.done;
+    }
+    expect(response.bodyUsed).toBe(true);
+    expect(response.body?.locked).toBe(false);
+  } finally {
+    parse?.mockRestore();
+  }
+});
 
 verifyOperation(azurePipelines.openaiAudioTranscriptions, {
   ...facts,
