@@ -60,6 +60,7 @@
 | Package | `apps/platform-node` | Hosts Floway on Node. |
 | Package | `apps/web` | Provides the operator dashboard. |
 | Package | `packages/agent-setup` | Configures supported coding agents. |
+| Package | `packages/dump` | Records and decodes pipeline run archives. |
 | Package | `packages/gateway` | Composes gateway services. |
 | Package | `packages/http` | Provides HTTP transport primitives. |
 | Package | `packages/interceptor` | Intercepts gateway traffic. |
