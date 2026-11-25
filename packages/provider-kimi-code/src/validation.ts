@@ -12,9 +12,3 @@ export const number = (value: unknown, path: string): number => {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new TypeError(`${path} must be a finite number`);
   return value;
 };
-
-export const timestamp = (value: unknown, path: string): string => {
-  const result = string(value, path);
-  if (!Number.isFinite(Date.parse(result))) throw new TypeError(`${path} must be an ISO timestamp`);
-  return result;
-};

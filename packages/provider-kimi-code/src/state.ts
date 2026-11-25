@@ -1,5 +1,7 @@
 import { readKimiCodeUsage } from './usage.ts';
 import { object, number, string } from './validation.ts';
+import type { Result } from '@floway-dev/pipeline';
+import { isJsonObject } from '@floway-dev/protocols/common';
 
 // Mirrors the profile payload the vendor's own client parses, so a field the
 // service starts returning is carried without a schema change here. Every field
@@ -55,38 +57,53 @@ const optionalString = (value: unknown, path: string): string | null =>
 const optionalNumber = (value: unknown, path: string): number | null =>
   value === undefined || value === null ? null : number(value, path);
 
-const readPhone = (value: unknown): KimiCodeAccountPhone | null => {
-  if (value === undefined || value === null) return null;
-  const body = object(value, 'Kimi Code account.phone');
-  const countryCode = optionalString(body.country_code, 'Kimi Code account.phone.country_code') ?? '';
-  const number_ = optionalString(body.number, 'Kimi Code account.phone.number') ?? '';
-  return countryCode === '' && number_ === '' ? null : { countryCode, number: number_ };
+const readPhone = (body: unknown): Result<KimiCodeAccountPhone | null, TypeError> => {
+  if (body === undefined || body === null) return { ok: true, value: null };
+  if (!isJsonObject(body)) return { ok: false, error: new TypeError('Kimi Code account.phone must be an object') };
+  const { country_code: countryCode, number: phoneNumber } = body;
+  if (countryCode != null && typeof countryCode !== 'string') return { ok: false, error: new TypeError('Kimi Code account.phone.country_code must be a string') };
+  if (phoneNumber != null && typeof phoneNumber !== 'string') return { ok: false, error: new TypeError('Kimi Code account.phone.number must be a string') };
+  return { ok: true, value: !countryCode && !phoneNumber ? null : { countryCode: countryCode ?? '', number: phoneNumber ?? '' } };
 };
 
 // Reads the vendor's snake_case profile payload directly. Display fields keep
 // the vendor's own empty-string possibility rather than becoming null, because
 // an empty nickname is the account's answer, not an absent field.
 // https://github.com/MoonshotAI/kimi-code/blob/fec742878d73678082b304c887e4fb1564088c54/packages/oauth/src/managed-userinfo.ts#L100-L128
-export const readKimiCodeAccount = (value: unknown): KimiCodeAccount => {
-  const body = object(value, 'Kimi Code /me');
+export const readKimiCodeAccount = (body: unknown): Result<KimiCodeAccount, TypeError> => {
+  if (!isJsonObject(body)) return { ok: false, error: new TypeError('Kimi Code /me must be an object') };
+  const { user_id: userId } = body;
+  if (typeof userId !== 'string' || userId === '') return { ok: false, error: new TypeError('Kimi Code /me.user_id must be a nonempty string') };
+  for (const key of ['global_id', 'nickname', 'status', 'region', 'user_level_name', 'domain_name', 'username', 'email', 'bio', 'avatar', 'created_time', 'last_login_time']) {
+    const value = body[key];
+    if (value != null && typeof value !== 'string') return { ok: false, error: new TypeError(`Kimi Code /me.${key} must be a string`) };
+  }
+  for (const key of ['user_level', 'domain', 'goods_version']) {
+    const value = body[key];
+    if (value != null && (typeof value !== 'number' || !Number.isFinite(value))) return { ok: false, error: new TypeError(`Kimi Code /me.${key} must be a finite number`) };
+  }
+  const phone = readPhone(body.phone);
+  if (!phone.ok) return phone;
   return {
-    userId: string(body.user_id, 'Kimi Code /me.user_id'),
-    globalId: optionalString(body.global_id, 'Kimi Code /me.global_id'),
-    nickname: optionalString(body.nickname, 'Kimi Code /me.nickname') ?? '',
-    status: optionalString(body.status, 'Kimi Code /me.status') ?? '',
-    region: optionalString(body.region, 'Kimi Code /me.region') ?? '',
-    userLevel: optionalNumber(body.user_level, 'Kimi Code /me.user_level') ?? 0,
-    userLevelName: optionalString(body.user_level_name, 'Kimi Code /me.user_level_name') ?? '',
-    domain: optionalNumber(body.domain, 'Kimi Code /me.domain') ?? 0,
-    domainName: optionalString(body.domain_name, 'Kimi Code /me.domain_name') ?? '',
-    goodsVersion: optionalNumber(body.goods_version, 'Kimi Code /me.goods_version'),
-    username: optionalString(body.username, 'Kimi Code /me.username'),
-    email: optionalString(body.email, 'Kimi Code /me.email'),
-    bio: optionalString(body.bio, 'Kimi Code /me.bio'),
-    avatar: optionalString(body.avatar, 'Kimi Code /me.avatar'),
-    phone: readPhone(body.phone),
-    createdTime: optionalString(body.created_time, 'Kimi Code /me.created_time'),
-    lastLoginTime: optionalString(body.last_login_time, 'Kimi Code /me.last_login_time'),
+    ok: true, value: {
+      userId,
+      globalId: optionalString(body.global_id, 'Kimi Code /me.global_id'),
+      nickname: optionalString(body.nickname, 'Kimi Code /me.nickname') ?? '',
+      status: optionalString(body.status, 'Kimi Code /me.status') ?? '',
+      region: optionalString(body.region, 'Kimi Code /me.region') ?? '',
+      userLevel: optionalNumber(body.user_level, 'Kimi Code /me.user_level') ?? 0,
+      userLevelName: optionalString(body.user_level_name, 'Kimi Code /me.user_level_name') ?? '',
+      domain: optionalNumber(body.domain, 'Kimi Code /me.domain') ?? 0,
+      domainName: optionalString(body.domain_name, 'Kimi Code /me.domain_name') ?? '',
+      goodsVersion: optionalNumber(body.goods_version, 'Kimi Code /me.goods_version'),
+      username: optionalString(body.username, 'Kimi Code /me.username'),
+      email: optionalString(body.email, 'Kimi Code /me.email'),
+      bio: optionalString(body.bio, 'Kimi Code /me.bio'),
+      avatar: optionalString(body.avatar, 'Kimi Code /me.avatar'),
+      phone: phone.value,
+      createdTime: optionalString(body.created_time, 'Kimi Code /me.created_time'),
+      lastLoginTime: optionalString(body.last_login_time, 'Kimi Code /me.last_login_time'),
+    },
   };
 };
 

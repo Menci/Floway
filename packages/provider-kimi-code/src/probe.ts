@@ -2,7 +2,8 @@ import { assertKimiCodeUpstreamRecord, type KimiCodeUpstreamConfig } from './con
 import { kimiCodeEndpoint } from './endpoints.ts';
 import { readKimiCodeUpstreamState, readKimiCodeAccount, type KimiCodeAccount, type KimiCodeObservation, type KimiCodeUpstreamState } from './state.ts';
 import { kimiCodeMetrics } from './upstream-metrics.ts';
-import { readKimiCodeUsage } from './usage.ts';
+import { parseKimiCodeUsage } from './usage.ts';
+import { readHttpResponseText } from '@floway-dev/http';
 import type { Result } from '@floway-dev/pipeline';
 import { getProviderRepo, recordUpstreamMetrics, runScheduledUsageRefresh, type Fetcher, type ProviderScheduledOptions, type ProviderServices, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -19,26 +20,37 @@ const persistProbe = async <T>(
   attemptedAt: number,
   observation: KimiCodeObservation<T> | null,
   error: string | null,
-): Promise<boolean> => {
+): Promise<Result<boolean, unknown>> => {
   let accepted = false;
-  await getProviderRepo().upstreams.saveState(upstreamId, (current, currentVersion) => {
-    accepted = false;
-    if (currentVersion !== configVersion) return current;
-    const state = readKimiCodeUpstreamState(current);
-    const previous = state[slot];
-    if (previous !== null && previous.attemptedAt > attemptedAt) return current;
-    accepted = true;
-    return { ...state, [slot]: { attemptedAt, observation: observation ?? previous?.observation ?? null, error } };
-  });
-  return accepted;
+  const { upstreams } = getProviderRepo();
+  try {
+    await upstreams.saveState(upstreamId, (current, currentVersion) => {
+      accepted = false;
+      if (currentVersion !== configVersion) return current;
+      const state = readKimiCodeUpstreamState(current);
+      const previous = state[slot];
+      if (previous !== null && previous.attemptedAt > attemptedAt) return current;
+      accepted = true;
+      return { ...state, [slot]: { attemptedAt, observation: observation ?? previous?.observation ?? null, error } };
+    });
+  } catch (error) {
+    return { ok: false, error };
+  }
+  return { ok: true, value: accepted };
 };
 
 export type KimiCodeProbeFetcher = ReturnType<ProviderServices['fetcher']>;
 
-const readKimiCodeJson = async (response: Response, path: string): Promise<unknown> => {
-  const text = await response.text();
-  if (!response.ok) throw new Error(`Kimi Code ${path} returned ${response.status}: ${text}`);
-  return JSON.parse(text) as unknown;
+const readKimiCodeJson = async (response: Response, path: string): Promise<Result<unknown, unknown>> => {
+  const text = await readHttpResponseText(response);
+  if (!text.ok) return { ok: false, error: text.error.cause };
+  if (!response.ok) return { ok: false, error: new Error(`Kimi Code ${path} returned ${response.status}: ${text.value}`) };
+  try {
+    return { ok: true, value: JSON.parse(text.value) };
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return { ok: false, error };
+  }
 };
 
 const refreshProbe = async <T>(
@@ -47,7 +59,7 @@ const refreshProbe = async <T>(
   fetcher: KimiCodeProbeFetcher,
   slot: keyof KimiCodeUpstreamState,
   path: string,
-  read: (value: unknown) => T,
+  read: (value: unknown) => Result<T, unknown>,
 ): Promise<Result<KimiCodeObservation<T>, unknown>> => {
   const attemptedAt = Date.now();
   // Draft credentials can be read under a saved id. Bind persistence only to
@@ -58,30 +70,37 @@ const refreshProbe = async <T>(
   const configVersion = saved !== null && savedConfig?.apiKey === config.apiKey && savedConfig.region === config.region ? saved.configVersion : null;
   const failed = async (error: unknown): Promise<Result<never, unknown>> => {
     if (configVersion !== null) {
-      try {
-        await persistProbe(upstreamId, configVersion, slot, attemptedAt, null, error instanceof Error ? error.message : String(error));
-      } catch (persistenceError) {
+      const message = error instanceof Error ? error.message : String(error);
+      const persisted = await persistProbe(upstreamId, configVersion, slot, attemptedAt, null, message);
+      if (!persisted.ok) {
         // Both failures matter and neither may be dropped. The aggregate's
         // message is the read failure's, so a caller matching on the upstream
         // status still sees it, while `errors` carries both.
-        return { ok: false, error: new AggregateError([error, persistenceError], error instanceof Error ? error.message : String(error)) };
+        return { ok: false, error: new AggregateError([error, persisted.error], message) };
       }
     }
     return { ok: false, error };
   };
-  let observation: KimiCodeObservation<T>;
-  try {
-    const response = await fetcher(kimiCodeEndpoint(config.region, path), {
-      method: 'GET', headers: [['accept', 'application/json'], ['authorization', `Bearer ${config.apiKey}`]],
-    });
-    if (!response.ok) return await failed(response.error.cause);
-    observation = { fetchedAt: Date.now(), data: read(await readKimiCodeJson(response.value, path)) };
-  } catch (error) {
-    return await failed(error);
-  }
+  const response = await fetcher(kimiCodeEndpoint(config.region, path), {
+    method: 'GET', headers: [['accept', 'application/json'], ['authorization', `Bearer ${config.apiKey}`]],
+  });
+  if (!response.ok) return await failed(response.error.cause);
+  const body = await readKimiCodeJson(response.value, path);
+  if (!body.ok) return await failed(body.error);
+  const parsed = read(body.value);
+  if (!parsed.ok) return await failed(parsed.error);
+  const observation = { fetchedAt: Date.now(), data: parsed.value };
   if (configVersion !== null) {
-    const accepted = await persistProbe(upstreamId, configVersion, slot, attemptedAt, observation, null);
-    if (slot === 'usageProbe' && accepted) await recordUpstreamMetrics(upstreamId, kimiCodeMetrics(observation.data), observation.fetchedAt);
+    const persisted = await persistProbe(upstreamId, configVersion, slot, attemptedAt, observation, null);
+    if (!persisted.ok) return persisted;
+    if (slot === 'usageProbe' && persisted.value) {
+      const metrics = kimiCodeMetrics(observation.data);
+      try {
+        await recordUpstreamMetrics(upstreamId, metrics, observation.fetchedAt);
+      } catch (error) {
+        return { ok: false, error };
+      }
+    }
   }
   return { ok: true, value: observation };
 };
@@ -105,8 +124,8 @@ const controlPlaneObservation = async <T>(task: Promise<Result<KimiCodeObservati
 // https://github.com/MoonshotAI/kimi-code/blob/fec742878d73678082b304c887e4fb1564088c54/packages/oauth/src/managed-userinfo.ts#L163-L178
 export const probeKimiCodeUsage = (upstreamId: string, config: KimiCodeUpstreamConfig, fetcher: KimiCodeProbeFetcher): Promise<Result<KimiCodeObservation<unknown>, unknown>> =>
   refreshProbe(upstreamId, config, fetcher, 'usageProbe', '/usages', value => {
-    readKimiCodeUsage(value);
-    return value;
+    const parsed = parseKimiCodeUsage(value);
+    return parsed.ok ? { ok: true, value } : parsed;
   });
 
 // /me enriches the account's display identity; a failed profile read does not

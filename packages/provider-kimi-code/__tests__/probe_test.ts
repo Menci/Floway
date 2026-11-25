@@ -56,6 +56,52 @@ test('a probe transport failure returns a persistence result with the original e
   expect(repo.read().usageProbe?.error).toBe(cause.message);
 });
 
+test.each(['{broken', '{"usages":null}'])('request probes drain invalid responses and persist an error result for %s', async text => {
+  const initial = recentState();
+  const repo = setupRepo(initial);
+  const body = new ReadableStream<Uint8Array>({
+    pull(output) {
+      output.enqueue(new TextEncoder().encode(text));
+      output.close();
+    },
+  }, { highWaterMark: 0 });
+  const service = createKimiCodeService();
+  const result = await service.observeResponse(kimiCodeUpstreamFact(record()), 429, async () => ({ ok: true, value: new Response(body) }));
+  expect(result).toMatchObject({ persisted: false, error: expect.any(AggregateError) });
+  expect(repo.read().usageProbe?.observation).toEqual(initial.usageProbe?.observation);
+  expect(repo.read().usageProbe?.error).toBeTypeOf('string');
+  expect(body.locked).toBe(false);
+});
+
+test('propagates a JSON parser bug through the request probe service', async () => {
+  const initial = recentState();
+  const repo = setupRepo(initial);
+  const bug = new TypeError('probe parser bug');
+  const parse = vi.spyOn(JSON, 'parse').mockImplementationOnce(() => { throw bug; });
+  try {
+    const service = createKimiCodeService();
+    await expect(service.observeResponse(kimiCodeUpstreamFact(record()), 429,
+      async () => ({ ok: true, value: Response.json(usage()) }))).rejects.toBe(bug);
+    expect(repo.read()).toEqual(initial);
+  } finally {
+    parse.mockRestore();
+  }
+});
+
+test('a successful probe reports a rejected state write as a failure value', async () => {
+  const state = recentState();
+  const cause = new Error('state store unavailable');
+  const saveState = vi.fn().mockRejectedValue(cause);
+  initProviderRepo(() => ({
+    recordUpstreamMetric: vi.fn(),
+    upstreams: { getById: async () => ({ ...record({ state }), configVersion: 1 }), saveState },
+  }));
+  const result = await createKimiCodeService().observeResponse(kimiCodeUpstreamFact(record()), 429,
+    async () => ({ ok: true, value: Response.json(usage()) }));
+  expect(result).toMatchObject({ persisted: false, error: expect.objectContaining({ errors: [cause] }) });
+  expect(saveState).toHaveBeenCalledOnce();
+});
+
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 test.each([false, true])('quota probes preserve the raw current-generation or legacy body (%s) and record percentages', async legacy => {

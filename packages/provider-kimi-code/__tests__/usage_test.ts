@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { RESET, usage } from './fixtures.ts';
 import { kimiCodeMetrics, resolveUpstreamMetricDisplay } from '../src/upstream-metrics.ts';
-import { readKimiCodeUsage } from '../src/usage.ts';
+import { parseKimiCodeUsage, readKimiCodeUsage } from '../src/usage.ts';
 
 test('new subscriptions expose five-hour and monthly quota with a Code contribution', () => {
   expect(readKimiCodeUsage(usage())).toEqual({
@@ -11,17 +11,18 @@ test('new subscriptions expose five-hour and monthly quota with a Code contribut
   });
 });
 
-test('quota violations throw instead of publishing made-up readings', () => {
+test('quota violations return a failed reading', () => {
   for (const bad of ['', -0.1]) {
     const body = usage();
     body.usages.limit_5h.used_ratio = bad as number;
-    expect(() => readKimiCodeUsage(body)).toThrow();
+    expect(parseKimiCodeUsage(body)).toMatchObject({ ok: false, error: expect.any(Error) });
   }
   const body = usage();
   body.usages.limit_5h.reset_time = 'not-a-date';
-  expect(() => readKimiCodeUsage(body)).toThrow(TypeError);
+  expect(parseKimiCodeUsage(body)).toMatchObject({ ok: false, error: expect.any(TypeError) });
   delete body.usages.limit_5h;
-  expect(() => readKimiCodeUsage(body)).toThrow();
+  expect(parseKimiCodeUsage(body)).toMatchObject({ ok: false, error: expect.any(TypeError) });
+  expect(() => readKimiCodeUsage(body)).toThrow(TypeError);
 });
 
 test('metrics contain percentages of subscription quota with used and remaining displays', () => {
