@@ -21,7 +21,7 @@ import type {
   AnthropicMessagesWebSearchToolResultError,
 } from '@floway-dev/protocols/anthropic-messages';
 import { ANTHROPIC_MESSAGES_WEB_SEARCH_ERROR_CODES } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ParsedProtocolFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 const MAX_QUERY_LENGTH = 1000;
 const WEB_SEARCH_TOOL_NAME = 'web_search';
@@ -700,7 +700,7 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   state: AnthropicMessagesWebSearchShimState,
   provider?: ActiveAnthropicMessagesWebSearchProvider,
-): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+): AsyncGenerator<ParsedProtocolFrame<AnthropicMessagesStreamEventEx>> {
   if (state.mode === 'inactive') {
     yield* frames;
     return;
@@ -724,28 +724,30 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
   let deferredBytes = 0;
   let terminated = false;
 
-  const deferFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEventEx>): void => {
+  const deferFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEventEx>): Error | undefined => {
     deferredBytes += utf8.encode(JSON.stringify(frame)).byteLength;
     if (deferredFrames.length === MAX_DEFERRED_FRAMES || deferredBytes > MAX_DEFERRED_BYTES) {
-      throw new RangeError(`Anthropic Messages web search exceeded ${MAX_DEFERRED_FRAMES} deferred frames or ${MAX_DEFERRED_BYTES} bytes`);
+      return new RangeError(`Anthropic Messages web search exceeded ${MAX_DEFERRED_FRAMES} deferred frames or ${MAX_DEFERRED_BYTES} bytes`);
     }
     deferredFrames.push(frame);
+    return undefined;
   };
 
   const processFrame = async function* (
     frame: ProtocolFrame<AnthropicMessagesStreamEventEx>,
-  ): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
-    if (activeWebSearchIndex !== undefined && frame.type === 'event') {
-      const event = frame.event;
-      const belongsToSearch = (event.type === 'content_block_delta' || event.type === 'content_block_stop')
+  ): AsyncGenerator<ParsedProtocolFrame<AnthropicMessagesStreamEventEx>> {
+    if (activeWebSearchIndex !== undefined) {
+      const event = frame.type === 'event' ? frame.event : undefined;
+      const belongsToSearch = (event?.type === 'content_block_delta' || event?.type === 'content_block_stop')
         && event.index === activeWebSearchIndex;
-      if (!belongsToSearch && event.type !== 'error' && event.type !== 'ping') {
-        deferFrame(frame);
+      if (!belongsToSearch && event?.type !== 'error' && event?.type !== 'ping') {
+        const cause = deferFrame(frame);
+        if (cause !== undefined) {
+          terminated = true;
+          yield { type: 'error', cause };
+        }
         return;
       }
-    } else if (activeWebSearchIndex !== undefined) {
-      deferFrame(frame);
-      return;
     }
 
     if (frame.type === 'done') {
@@ -756,7 +758,11 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
     const event = frame.event;
 
     if (event.type === 'content_block_start') {
-      if (activeBlocks.has(event.index)) throw new Error(`upstream Anthropic Messages SSE opened content block ${event.index} twice.`);
+      if (activeBlocks.has(event.index)) {
+        terminated = true;
+        yield { type: 'error', cause: new Error(`upstream Anthropic Messages SSE opened content block ${event.index} twice.`) };
+        return;
+      }
 
       const downstreamBase = event.index + shimState.downstreamIndexOffset;
 
@@ -789,13 +795,19 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
 
     if (event.type === 'content_block_delta') {
       const activeBlock = activeBlocks.get(event.index);
-      if (activeBlock === undefined) throw new Error(`upstream Anthropic Messages SSE emitted content_block_delta for unopened block ${event.index}.`);
+      if (activeBlock === undefined) {
+        terminated = true;
+        yield { type: 'error', cause: new Error(`upstream Anthropic Messages SSE emitted content_block_delta for unopened block ${event.index}.`) };
+        return;
+      }
 
       if (activeBlock.kind === 'web-search-tool-use') {
         if (event.delta.type === 'input_json_delta') {
           const inputJson = activeBlock.inputJson + event.delta.partial_json;
           if (inputJson.length > MAX_SEARCH_INPUT_LENGTH) {
-            throw new RangeError(`Anthropic Messages web search arguments exceeded ${MAX_SEARCH_INPUT_LENGTH} characters`);
+            terminated = true;
+            yield { type: 'error', cause: new RangeError(`Anthropic Messages web search arguments exceeded ${MAX_SEARCH_INPUT_LENGTH} characters`) };
+            return;
           }
           activeBlocks.set(event.index, { ...activeBlock, inputJson });
         }
@@ -813,7 +825,11 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
 
     if (event.type === 'content_block_stop') {
       const activeBlock = activeBlocks.get(event.index);
-      if (activeBlock === undefined) throw new Error(`upstream Anthropic Messages SSE emitted content_block_stop for unopened block ${event.index}.`);
+      if (activeBlock === undefined) {
+        terminated = true;
+        yield { type: 'error', cause: new Error(`upstream Anthropic Messages SSE emitted content_block_stop for unopened block ${event.index}.`) };
+        return;
+      }
 
       if (activeBlock.kind === 'web-search-tool-use') {
         if (state.mode !== 'active') {
@@ -873,6 +889,6 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
     if (terminated) return;
   }
   if (activeWebSearchIndex !== undefined || deferredFrames.length > 0) {
-    throw new Error('intercepted web search ended before its content block closed.');
+    yield { type: 'error', cause: new Error('intercepted web search ended before its content block closed.') };
   }
 };

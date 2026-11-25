@@ -30,7 +30,7 @@ import type {
   AnthropicMessagesToolResultContentBlock,
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
-import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ParsedProtocolFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ProtocolStreamError } from '@floway-dev/provider';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
@@ -607,10 +607,11 @@ const upstreamMessageEnd = (stopReason: NonNullable<AnthropicMessagesResult['sto
 ];
 
 const collectStreamEvents = async (
-  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
+  frames: AsyncIterable<ParsedProtocolFrame<AnthropicMessagesStreamEventEx>>,
 ): Promise<AnthropicMessagesStreamEventEx[]> => {
   const events: AnthropicMessagesStreamEventEx[] = [];
   for await (const frame of frames) {
+    if (frame.type === 'error') throw frame.cause;
     if (frame.type === 'event') events.push(frame.event);
   }
   return events;
@@ -629,13 +630,43 @@ const runStreamingShim = (
     ),
   );
 
-test('the Anthropic Messages web-search stage fails when one tool argument exceeds its buffer', async () => {
+test('the Anthropic Messages web-search stage emits an error when one tool argument exceeds its buffer', async () => {
   const provider = activeProvider(searchOnlyProvider(() => Promise.reject(new Error('The oversized tool arguments reached search'))));
   const events = [
     upstreamMessageStart(),
     ...upstreamWebSearchBlockRawJson(0, 'toolu_large', 'x'.repeat(1024 * 1024 + 1)),
   ];
-  await expect(runStreamingShim(events, activeAnthropicMessagesWebSearchShimState(), provider)).rejects.toThrow('web search arguments exceeded');
+  const frames = await Array.fromAsync(rewriteAnthropicMessagesWebSearchEventsToNative(
+    toAsyncIterable(events.map(eventFrame)),
+    activeAnthropicMessagesWebSearchShimState(),
+    provider,
+  ));
+  expect(frames.at(-1)).toMatchObject({
+    type: 'error',
+    cause: expect.objectContaining({ name: 'RangeError', message: expect.stringContaining('web search arguments exceeded') }),
+  });
+});
+
+test.each([
+  {
+    events: [upstreamMessageStart(), { type: 'content_block_stop', index: 0 }],
+    message: 'content_block_stop for unopened block',
+  },
+  {
+    events: [upstreamMessageStart(), ...upstreamWebSearchBlock(0, 'toolu_open', 'example').slice(0, -1)],
+    message: 'ended before its content block closed',
+  },
+] satisfies { events: AnthropicMessagesStreamEventEx[]; message: string }[])('the web-search shim emits a terminal frame for $message', async ({ events, message }) => {
+  const frames = await Array.fromAsync(rewriteAnthropicMessagesWebSearchEventsToNative(
+    toAsyncIterable(events.map(eventFrame)),
+    activeAnthropicMessagesWebSearchShimState(),
+    activeProvider(fakeProviderOk),
+  ));
+  expect(frames.at(-1)).toMatchObject({
+    type: 'error',
+    cause: expect.objectContaining({ message: expect.stringContaining(message) }),
+  });
+  expect(frames.filter(frame => frame.type === 'error')).toHaveLength(1);
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative single web search emits server_tool_use/result pair around text', async () => {
