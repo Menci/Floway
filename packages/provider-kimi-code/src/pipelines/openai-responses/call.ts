@@ -1,11 +1,12 @@
 import type { KimiCodeServices } from '../../service.ts';
 import { kimiCodeResponsesSpeedParser } from '../../speed.ts';
+import type { KimiCodeUpstreamFact } from '../../upstream-fact.ts';
 import { kimiCodeOpenAIModel, kimiCodeRequest } from '../request.ts';
 import { factSpace, move } from '@floway-dev/pipeline';
 import { formatOpenAIResponsesError, isOpenAIResponsesTerminalEvent, parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
 import { parseSseBody, type ProviderOperationFacts, type ProviderTransportFacts } from '@floway-dev/provider';
 
-export const { defineStage, compose } = factSpace<ProviderOperationFacts<'openaiResponses'> & ProviderTransportFacts, KimiCodeServices>();
+export const { defineStage, compose } = factSpace<ProviderOperationFacts<'openaiResponses', KimiCodeUpstreamFact> & ProviderTransportFacts, KimiCodeServices>();
 
 const output = ['response.http', 'response.modelKey', 'response.openaiResponses'] as const;
 

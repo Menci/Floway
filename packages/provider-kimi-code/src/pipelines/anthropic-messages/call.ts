@@ -1,11 +1,12 @@
 import type { KimiCodeServices } from '../../service.ts';
 import { kimiCodeMessagesSpeedParser, kimiCodeMessagesWireBody } from '../../speed.ts';
+import type { KimiCodeUpstreamFact } from '../../upstream-fact.ts';
 import { kimiCodeAnthropicMessagesModel, kimiCodeRequest } from '../request.ts';
 import { factSpace, move } from '@floway-dev/pipeline';
 import { formatAnthropicMessagesError, parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { parseSseBody, type ProviderOperationFacts, type ProviderTransportFacts } from '@floway-dev/provider';
 
-export const { defineStage, compose } = factSpace<ProviderOperationFacts<'anthropicMessages'> & ProviderTransportFacts, KimiCodeServices>();
+export const { defineStage, compose } = factSpace<ProviderOperationFacts<'anthropicMessages', KimiCodeUpstreamFact> & ProviderTransportFacts, KimiCodeServices>();
 
 const output = ['response.http', 'response.modelKey', 'response.anthropicMessages'] as const;
 

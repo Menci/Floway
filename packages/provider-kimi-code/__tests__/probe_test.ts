@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { config, profile, recentState, record, usage } from './fixtures.ts';
-import { refreshKimiCodeAccountProbe, refreshKimiCodeUsageProbe, runKimiCodeScheduledTask, scheduleKimiCodeProbes } from '../src/probe.ts';
+import { refreshKimiCodeAccountProbe, refreshKimiCodeUsageProbe, runKimiCodeScheduledTask, scheduleKimiCodeProbes, type KimiCodeProbeFetcher } from '../src/probe.ts';
 import { createKimiCodeService } from '../src/service.ts';
 import { readKimiCodeUpstreamState } from '../src/state.ts';
 import { kimiCodeUpstreamFact } from '../src/upstream-fact.ts';
@@ -25,8 +25,8 @@ test('the service defers to fresh persisted state and coalesces forced usage pro
   const repo = setupRepo(recentState());
   const service = createKimiCodeService();
   const upstream = kimiCodeUpstreamFact(record());
-  const network = Promise.withResolvers<Response>();
-  const fetcher = vi.fn<Fetcher>().mockReturnValue(network.promise);
+  const network = Promise.withResolvers<Awaited<ReturnType<KimiCodeProbeFetcher>>>();
+  const fetcher = vi.fn<KimiCodeProbeFetcher>().mockReturnValue(network.promise);
 
   await expect(service.observeResponse(upstream, 200, fetcher)).resolves.toEqual({ persisted: true });
   expect(fetcher).not.toHaveBeenCalled();
@@ -39,10 +39,21 @@ test('the service defers to fresh persisted state and coalesces forced usage pro
   ));
   const reading = usage();
   reading.usages.limit_5h.used_ratio = 0.75;
-  network.resolve(Response.json(reading));
+  network.resolve({ ok: true, value: Response.json(reading) });
   await expect(Promise.all([first, second])).resolves.toEqual([{ persisted: true }, { persisted: true }]);
   expect(fetcher).toHaveBeenCalledOnce();
   expect(repo.read().usageProbe?.observation?.data).toEqual(reading);
+});
+
+test('a probe transport failure returns a persistence result with the original error', async () => {
+  const initial = recentState();
+  const repo = setupRepo(initial);
+  const cause = new Error('Kimi connection closed');
+  const result = await createKimiCodeService().observeResponse(kimiCodeUpstreamFact(record()), 429,
+    async () => ({ ok: false, error: { kind: 'transport', cause } }));
+  expect(result).toMatchObject({ persisted: false, error: expect.objectContaining({ errors: [cause] }) });
+  expect(repo.read().usageProbe?.observation).toEqual(initial.usageProbe?.observation);
+  expect(repo.read().usageProbe?.error).toBe(cause.message);
 });
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });

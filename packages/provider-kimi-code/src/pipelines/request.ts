@@ -1,15 +1,15 @@
 import { kimiCodeEndpoint } from '../fetch.ts';
 import { selectKimiCodeModel } from '../model-selection.ts';
-import { kimiCodePipelineConfig } from '../upstream-fact.ts';
+import type { KimiCodeUpstreamFact } from '../upstream-fact.ts';
 import { setHeader, type HttpRequestFact, type HttpResponseFact } from '@floway-dev/http';
 import { move } from '@floway-dev/pipeline';
 import { FAST_SERVICE_TIER, isFastServiceTier } from '@floway-dev/protocols/common';
-import type { ProtocolError, ProviderModelFact, ProviderUpstream } from '@floway-dev/provider';
+import type { ProtocolError, ProviderModelFact } from '@floway-dev/provider';
 
 export const kimiCodeRequest = (
-  request: HttpRequestFact, upstream: ProviderUpstream, path: string, body: object,
+  request: HttpRequestFact, upstream: KimiCodeUpstreamFact, path: string, body: object,
 ): HttpRequestFact => {
-  const { region, apiKey } = kimiCodePipelineConfig(upstream);
+  const { region, apiKey } = upstream.config;
   const authorization = apiKey.map(key => `Bearer ${key}`);
   return move({
     ...request,
@@ -26,7 +26,7 @@ type KimiCodeRequestError = {
 };
 
 const invalidSpeed = (message: string, anthropicMessages: boolean): KimiCodeRequestError => ({
-  http: { status: 400, statusText: '', headers: [['content-type', 'application/json']], body: null },
+  http: { status: 400, statusText: 'Bad Request', headers: [['content-type', 'application/json']], body: null },
   outcome: {
     kind: 'error',
     source: 'local',

@@ -1,11 +1,12 @@
 import type { KimiCodeServices } from '../../service.ts';
 import { kimiCodeChatSpeedParser } from '../../speed.ts';
+import type { KimiCodeUpstreamFact } from '../../upstream-fact.ts';
 import { kimiCodeOpenAIModel, kimiCodeRequest } from '../request.ts';
 import { factSpace, move } from '@floway-dev/pipeline';
 import { formatOpenAIChatCompletionsError, parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseSseBody, type ProviderOperationFacts, type ProviderTransportFacts } from '@floway-dev/provider';
 
-export const { defineStage, compose } = factSpace<ProviderOperationFacts<'openaiChatCompletions'> & ProviderTransportFacts, KimiCodeServices>();
+export const { defineStage, compose } = factSpace<ProviderOperationFacts<'openaiChatCompletions', KimiCodeUpstreamFact> & ProviderTransportFacts, KimiCodeServices>();
 
 const output = ['response.http', 'response.modelKey', 'response.openaiChatCompletions'] as const;
 
