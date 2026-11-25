@@ -585,9 +585,15 @@ importers:
 
   packages/provider-chatgpt:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
       '@floway-dev/interceptor':
         specifier: workspace:*
         version: link:../interceptor
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -685,6 +691,12 @@ importers:
 
   packages/provider-kimi-code:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
