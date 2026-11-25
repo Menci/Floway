@@ -11,7 +11,7 @@ interface MultipartUpload {
 export interface R2BucketLike {
   put(key: string, value: ReadableStream | ArrayBuffer | ArrayBufferView | string | null): Promise<unknown>;
   createMultipartUpload(key: string): Promise<MultipartUpload>;
-  get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null>;
+  get(key: string): Promise<{ readonly body: ReadableStream<Uint8Array>; arrayBuffer(): Promise<ArrayBuffer> } | null>;
   delete(keys: string | string[]): Promise<void>;
 }
 
@@ -79,6 +79,10 @@ export class R2FileStore implements FileStore {
   async get(key: string): Promise<Uint8Array | null> {
     const object = await this.bucket.get(key);
     return object ? new Uint8Array(await object.arrayBuffer()) : null;
+  }
+
+  async getStream(key: string): Promise<ReadableStream<Uint8Array> | null> {
+    return (await this.bucket.get(key))?.body ?? null;
   }
 
   async deleteKeys(keys: readonly string[]): Promise<void> {

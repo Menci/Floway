@@ -37,4 +37,7 @@ test('putStream preserves all bytes across file write chunks', () => withTempRoo
     },
   }));
   assertEquals(await store.get('archive/run.ndjson'), Uint8Array.of(1, 0, 0x80, 0xff));
+  const body = await store.getStream('archive/run.ndjson');
+  assertEquals(new Uint8Array(await new Response(body).arrayBuffer()), Uint8Array.of(1, 0, 0x80, 0xff));
+  assertEquals(await store.getStream('missing'), null);
 }));

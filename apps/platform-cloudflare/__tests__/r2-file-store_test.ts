@@ -42,10 +42,13 @@ class FakeR2Bucket implements R2BucketLike {
     };
   }
 
-  get(key: string): Promise<{ arrayBuffer(): Promise<ArrayBuffer> } | null> {
+  get(key: string): ReturnType<R2BucketLike['get']> {
     const body = this.store.get(key);
     if (!body) return Promise.resolve(null);
-    return Promise.resolve({ arrayBuffer: () => Promise.resolve(body.slice().buffer) });
+    return Promise.resolve({
+      body: new Blob([body.slice()]).stream(),
+      arrayBuffer: () => Promise.resolve(body.slice().buffer),
+    });
   }
 
   async delete(keys: string | string[]): Promise<void> {
@@ -80,6 +83,9 @@ test('R2FileStore sends a small archive with one put', async () => {
   expect(bucket.singlePuts).toBe(1);
   expect(bucket.parts).toHaveLength(0);
   expect(bucket.store.get('dump')).toEqual(Uint8Array.of(0, 0xff, 2));
+  const store = new R2FileStore(bucket);
+  expect(new Uint8Array(await new Response(await store.getStream('dump')).arrayBuffer())).toEqual(Uint8Array.of(0, 0xff, 2));
+  expect(await store.getStream('missing')).toBeNull();
 });
 
 const partSize = 5 * 1024 * 1024;

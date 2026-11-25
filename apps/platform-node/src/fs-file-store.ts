@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve, sep } from 'node:path';
 
 import type { FileStore } from '@floway-dev/platform';
@@ -40,6 +40,19 @@ export class FsFileStore implements FileStore {
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw e;
+    }
+  }
+
+  async getStream(key: string): Promise<ReadableStream<Uint8Array> | null> {
+    try {
+      const file = await open(this.pathFor(key), 'r');
+      // Node supplies a byte-oriented Web Stream through its separate
+      // node:stream/web declaration.
+      // https://github.com/nodejs/node/commit/6f4c9dd423
+      return file.readableWebStream({ autoClose: true }) as unknown as ReadableStream<Uint8Array>;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
     }
   }
 

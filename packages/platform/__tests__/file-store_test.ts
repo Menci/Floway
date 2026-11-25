@@ -12,4 +12,7 @@ test('stores complete streamed bytes in order', async () => {
     },
   }));
   expect(await store.get('archive')).toEqual(Uint8Array.of(0xff, 0, 2));
+  const body = await store.getStream('archive');
+  expect(new Uint8Array(await new Response(body).arrayBuffer())).toEqual(Uint8Array.of(0xff, 0, 2));
+  expect(await store.getStream('missing')).toBeNull();
 });
