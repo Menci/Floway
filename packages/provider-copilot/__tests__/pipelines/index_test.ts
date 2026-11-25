@@ -75,7 +75,7 @@ test('Copilot embeddings preserve the wire model and mark credentials across the
   expect(observeQuota).toHaveBeenCalledWith('copilot-1', expect.arrayContaining([['x-quota-snapshot-chat', 'ent=100']]));
 });
 
-test('GitHub token exchange failures use the operation error envelope without calling the Copilot API', async () => {
+test.each(['openaiResponses', 'openaiResponsesCompact'] as const)('GitHub token failure preserves the HTTP response and model key for %s', async operation => {
   const { services, fetcher } = servicesFor(() => Response.json({}), {
     credentials: async () => ({
       ok: false,
@@ -86,10 +86,13 @@ test('GitHub token exchange failures use the operation error envelope without ca
       },
     }),
   });
-  const started = run(copilotPipelines.openaiResponses, {
+  const facts = {
     ...requestFacts(),
     'request.openaiResponses': move({ model: 'visible-model', input: [] }),
-  }, { services });
+  };
+  const started = operation === 'openaiResponses'
+    ? run(copilotPipelines.openaiResponses, facts, { services })
+    : run(copilotPipelines.openaiResponsesCompact, facts, { services });
   const result = await started.result;
   await started.done;
 
@@ -101,6 +104,35 @@ test('GitHub token exchange failures use the operation error envelope without ca
     source: 'upstream',
     error: { type: 'error', message: 'access denied' },
   });
+});
+
+test('Copilot generates Anthropic Messages with selected Fast Mode and reports it in the opening event', async () => {
+  const events = [
+    { type: 'message_start', message: { id: 'm', usage: { input_tokens: 10, output_tokens: 0 } } },
+    { type: 'message_delta', usage: { output_tokens: 4 } },
+    { type: 'message_stop' },
+  ];
+  const { services, fetcher, selectModel } = servicesFor(() => new Response(
+    events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''),
+    { headers: { 'content-type': 'text/event-stream' } },
+  ));
+  const started = run(copilotPipelines.anthropicMessages, {
+    ...requestFacts([['anthropic-beta', 'context-1m-2025-08-07, advanced-tool-use-2025-11-20']]),
+    'request.anthropicMessages': move({ model: 'visible-model', max_tokens: 16, messages: [], speed: 'fast', stream: false }),
+  }, { services });
+  const outcome = (await started.result)['response.anthropicMessages'];
+  if (outcome.kind !== 'stream') throw new Error('Expected Anthropic Messages stream');
+  const items = await Array.fromAsync(outcome.stream);
+  await started.done;
+
+  const init = fetcher.mock.calls[0][1];
+  expect(wireJson(init)).toMatchObject({ model: 'raw-model', stream: true });
+  expect(wireJson(init)).not.toHaveProperty('speed');
+  expect(selectModel).toHaveBeenCalledWith('copilot-1', expect.any(String), 'anthropicMessages', expect.objectContaining({ fast: true, context1m: true }));
+  expect(new Headers(init.headers).get('anthropic-beta')).toBe('advanced-tool-use-2025-11-20');
+  expect(items[0]).toMatchObject({ ok: true, value: { message: { usage: { speed: 'fast' } } } });
+  expect(items[1]).toMatchObject({ ok: true, value: { type: 'message_delta', usage: { output_tokens: 4 } } });
+  expect(items[1]).not.toHaveProperty('value.usage.speed');
 });
 
 test('Copilot preserves upstream JSON errors and repeated response headers', async () => {
@@ -282,19 +314,26 @@ test('Copilot compact sends one trigger turn and returns normalized compaction s
     ...requestFacts(),
     'request.openaiResponses': move({
       model: 'visible-model',
-      input: [{ type: 'message' as const, role: 'user' as const, content: 'retain me' }],
+      input: [{
+        type: 'message' as const,
+        role: 'user' as const,
+        content: [{ type: 'input_image' as const, image_url: 'https://example.test/retain.png' }],
+      }],
       service_tier: 'priority',
       store: true,
     }),
   }, { services });
   const result = await started.result;
   await started.done;
-  const body = wireJson(fetcher.mock.calls[0][1]);
+  const init = fetcher.mock.calls[0][1];
+  const body = wireJson(init);
+  expect(new Headers(init.headers).get('copilot-vision-request')).toBe('true');
+  expect(new Headers(init.headers).get('x-initiator')).toBe('user');
   expect(selectModel).toHaveBeenCalledWith('copilot-1', expect.any(String), 'openaiResponses', expect.objectContaining({ fast: true }));
   expect(body).toMatchObject({
     model: 'raw-model',
     stream: false,
-    input: [{ type: 'message', role: 'user', content: 'retain me' }, { type: 'compaction_trigger' }],
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.test/retain.png' }] }, { type: 'compaction_trigger' }],
   });
   expect(body).not.toHaveProperty('service_tier');
   expect(body).not.toHaveProperty('store');
@@ -326,7 +365,20 @@ test('Copilot image edits send multipart bytes with the matching boundary', asyn
   expect(result['response.openaiImagesEdits']).toEqual({ kind: 'result', result: { data: [] } });
 });
 
-test('Copilot Decision uses the model dialect on both sides of the HTTP exchange', async () => {
+test.each([
+  {
+    protocol: 'openai-decisions' as const,
+    path: '/v1/decisions',
+    request: { questions: [{ name: 'green', type: 'predicate' }] },
+    answers: [{ name: 'green', type: 'predicate', probability: 0.75 }],
+  },
+  {
+    protocol: 'typesafe-systemone' as const,
+    path: '/v1/systemone',
+    request: { state: 'Is the test green?', questions: { green: { type: 'noul', criteria: { true: 'green', false: 'red' } } } },
+    answers: { green: { type: 'noul', noul: 0.75 } },
+  },
+])('Copilot Decision uses $protocol on both sides of the HTTP exchange', async ({ protocol, path, request: wire, answers }) => {
   const request = parseDecisionRequest('typesafe-systemone', {
     model: 'visible-model',
     state: 'Is the test green?',
@@ -334,14 +386,14 @@ test('Copilot Decision uses the model dialect on both sides of the HTTP exchange
   }).request;
   const { services, fetcher } = servicesFor(() => Response.json({
     model: 'raw-model',
-    answers: [{ name: 'green', type: 'predicate', probability: 0.75 }],
+    answers,
   }));
-  const model = { ...stubProviderModel({}), enabledFlags: [], decisionTarget: { protocol: 'openai-decisions' as const } };
+  const model = { ...stubProviderModel({}), enabledFlags: [], decisionTarget: { protocol } };
   const started = run(copilotPipelines.decision, { ...requestFacts([], model), 'request.decision': move(request) }, { services });
   const result = await started.result;
   await started.done;
   const [url, init] = fetcher.mock.calls[0];
-  expect(url).toBe('https://copilot.test/v1/decisions');
-  expect(wireJson(init)).toMatchObject({ model: 'raw-model', questions: [{ name: 'green', type: 'predicate' }] });
+  expect(url).toBe(`https://copilot.test${path}`);
+  expect(wireJson(init)).toMatchObject({ ...wire, model: 'raw-model' });
   expect(result['response.decision']).toMatchObject({ kind: 'result', result: { answers: [{ name: 'green', type: 'noul', noul: 0.75 }] } });
 });
