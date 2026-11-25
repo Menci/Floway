@@ -1,5 +1,6 @@
+import parseHttpDate from 'http-dates';
+
 import { gatewayFactSpace, type GatewayPipelineFacts, type ProtocolResponseKey, type ServeCandidate, type ServeCandidates } from './facts.ts';
-import { retryTime } from '../shared/iterate-candidates.ts';
 import { getHeader, type HttpResponseFact } from '@floway-dev/http';
 import { isManagedStream, move, type Facts, type ManagedStream } from '@floway-dev/pipeline';
 import type { GatewayFacts } from '@floway-dev/provider';
@@ -106,6 +107,23 @@ const chooseCandidate = async <Target, Answer extends { readonly 'response.http'
     if (signal.aborted) break;
   }
   return selected!.answer;
+};
+
+// https://www.rfc-editor.org/rfc/rfc9110.html#section-10.2.3
+const retryTime = (retryAfter: string): number | null => {
+  const value = retryAfter.trim();
+  if (!value) return null;
+  const now = Date.now();
+  if (/^\d+(?:\.\d+)?$/.test(value)) {
+    const time = now + Number(value) * 1000;
+    return Number.isFinite(time) ? time : null;
+  }
+  try {
+    return Math.max(now, parseHttpDate(value).getTime());
+  } catch {
+    // http-dates signals malformed input by throwing.
+    return null;
+  }
 };
 
 const drainAnswer = async (answer: Facts): Promise<void> => {

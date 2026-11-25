@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { cachedTokenConventionFromTotals, foldsExclusiveCacheTokens } from '../../../../src/data-plane/shared/telemetry/usage.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { foldsExclusiveCacheTokens } from '../../../../src/data-plane/shared/telemetry/usage.ts';
 
 const counts = (overrides: Partial<Parameters<typeof foldsExclusiveCacheTokens>[1]> = {}) => ({
   inputTokens: 479,
@@ -10,13 +9,6 @@ const counts = (overrides: Partial<Parameters<typeof foldsExclusiveCacheTokens>[
   cacheRead: 13312,
   cacheWrite: 0,
   ...overrides,
-});
-
-test('the inclusive sum reaching total_tokens witnesses the inclusive convention', () => {
-  assertEquals(
-    cachedTokenConventionFromTotals({ inputTokens: 1000, outputTokens: 50, totalTokens: 1050, cacheRead: 400, cacheWrite: 0 }),
-    'inclusive',
-  );
 });
 
 test('a declaration the totals contradict raises rather than over-charging', () => {

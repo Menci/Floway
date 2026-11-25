@@ -1,9 +1,6 @@
 import { test } from 'vitest';
 
-import { openAICacheTokensFromUsage, recordUsage } from '../../../../src/data-plane/shared/telemetry/usage.ts';
-import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
-import { basePricing } from '@floway-dev/protocols/common';
+import { openAICacheTokensFromUsage } from '../../../../src/data-plane/shared/telemetry/usage.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('Flat shape — top-level cached_tokens (Moonshot / Cohere v2 / Qwen Singapore legacy)', () => {
@@ -37,27 +34,4 @@ test('Zero is a valid count, not a missing signal', () => {
     openAICacheTokensFromUsage({ prompt_tokens: 10, completion_tokens: 2, prompt_tokens_details: { cached_tokens: 0 }, cached_tokens: 999 }),
     { cacheRead: 0, cacheWrite: 0 },
   );
-});
-
-test('recordUsage prices audio duration and token metrics together', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-
-  await recordUsage(
-    'key-a',
-    {
-      model: 'composite-audio-model',
-      upstream: 'upstream-a',
-      modelKey: 'composite-audio-model',
-      pricing: basePricing({ input_audio_seconds: '0.0001', input_audio_tokens: '0.000005' }),
-    },
-    { input_audio_seconds: '90.5', input_audio_tokens: '2400' },
-    { inputTokens: 2400 },
-  );
-
-  const [row] = await repo.usage.listAll();
-  assertEquals(row.metrics, [
-    { metric: 'input_audio_tokens', quantity: '2400', unitPrice: '0.000005' },
-    { metric: 'input_audio_seconds', quantity: '90.5', unitPrice: '0.0001' },
-  ]);
 });

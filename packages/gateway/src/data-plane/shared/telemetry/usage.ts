@@ -1,9 +1,6 @@
-import { currentHour } from './hour.ts';
-import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage, UsageQuantities } from '../../../repo/types.ts';
-import { tokenUsageQuantities, usageMetrics } from '../../../repo/usage-metrics.ts';
-import { priceRequest, type BillableUsage, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
-import type { TelemetryModelIdentity } from '@floway-dev/provider';
+import { tokenUsageQuantities } from '../../../repo/usage-metrics.ts';
+import type { BillableUsage, PricingRuntimeFacts } from '@floway-dev/protocols/common';
 
 const TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];
 const INPUT_TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];
@@ -95,7 +92,7 @@ const firstNumber = (candidates: readonly unknown[]): number => {
 // response where the verdict is unavailable.
 export type CachedTokenConvention = 'inclusive' | 'exclusive';
 
-export const cachedTokenConventionFromTotals = (counts: {
+const cachedTokenConventionFromTotals = (counts: {
   readonly inputTokens: number;
   readonly outputTokens: number;
   readonly totalTokens: number | undefined;
@@ -240,34 +237,6 @@ const splitModalityCounts = (
   // A details object that carries neither split is as good as absent.
   if (text === undefined && image === undefined) return { [textUsageKey]: total };
   return { [textUsageKey]: text ?? 0, [imageUsageKey]: image ?? 0 };
-};
-
-export const recordUsage = async (
-  keyId: string,
-  modelIdentity: TelemetryModelIdentity,
-  quantities: UsageQuantities,
-  pricingFacts: PricingRuntimeFacts,
-): Promise<void> => {
-  const priced = priceRequest(modelIdentity.pricing, pricingFacts);
-  const metrics = usageMetrics(quantities, priced.rates);
-  await Promise.all([
-    getRepo().usage.record({
-      keyId,
-      model: modelIdentity.model,
-      upstream: modelIdentity.upstream,
-      modelKey: modelIdentity.modelKey,
-      hour: currentHour(),
-      pricingSelector: priced.selector,
-      requests: 1,
-      metrics,
-    }),
-    getRepo().apiKeys.update(keyId, { lastUsedAt: new Date().toISOString() }),
-  ]);
-};
-
-export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
-  const measurement = tokenUsageMeasurement(usage);
-  await recordUsage(keyId, modelIdentity, measurement.quantities, measurement.pricingFacts);
 };
 
 // `BillableUsage` is already the canonical exclusive/split shape, so pricing is
