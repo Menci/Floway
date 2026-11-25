@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { analyzeGeminiGenerateContentAffinity } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/ingress.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
+import { acceptedAffinityEvaluation, projectAffinityTestCandidate } from '../../shared/affinity/helpers.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -40,7 +40,7 @@ test('removes originless affinity by protocol shape and preserves visible conten
     }],
   }, codec);
 
-  expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().contents?.[0].parts).toEqual([
+  expect(acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA)).materialize().contents?.[0].parts).toEqual([
     { text: 'answer' },
     { text: 'synthetic on content' },
     { text: 'foreign', thoughtSignature: 'not-floway' },
@@ -56,7 +56,7 @@ test.each([
     contents: [{ role: 'model', parts: [{ ...metadata, thoughtSignature: owned }] }],
   }, codec);
 
-  expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().contents).toEqual([]);
+  expect(acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB)).materialize().contents).toEqual([]);
 });
 
 test('drops incompatible thought parts and preserves ordinary text and tool calls', async () => {
@@ -78,8 +78,8 @@ test('drops incompatible thought parts and preserves ordinary text and tool call
     }],
   }, codec);
 
-  const compatible = acceptedAffinityEvaluation(prepared, candidateA);
-  const incompatible = acceptedAffinityEvaluation(prepared, candidateB);
+  const compatible = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA));
+  const incompatible = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB));
   expect(compatible.degrades).toBe(false);
   expect(compatible.materialize().contents?.[0].parts).toEqual([
     answer,

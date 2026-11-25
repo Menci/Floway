@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { wrapGeminiGenerateContentAffinityEgress } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/egress.ts';
 import { analyzeGeminiGenerateContentAffinity } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/ingress.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
+import { acceptedAffinityEvaluation, projectAffinityTestCandidate } from '../../shared/affinity/helpers.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { reassembleGeminiGenerateContentEvents, type GeminiGenerateContentContent, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -61,8 +61,8 @@ test('a carrier a real codec emits on thoughtSignature decodes on the next turn'
 
   const prepared = await analyzeGeminiGenerateContentAffinity({ contents }, codec);
 
-  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  const projectionA = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateA));
+  const projectionB = acceptedAffinityEvaluation(prepared, projectAffinityTestCandidate(candidateB));
   expect(projectionA.degrades).toBe(false);
   expect(projectionB.degrades).toBe(true);
   expect(projectionA.materialize().contents?.[0].parts).toEqual([
