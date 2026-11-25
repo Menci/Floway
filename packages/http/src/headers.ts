@@ -1,4 +1,5 @@
 import type { HeaderEntry, HttpHeaders } from './facts.ts';
+import type { HttpHeaderLines } from './types.ts';
 
 export const getHeader = (headers: readonly HeaderEntry[], name: string): HeaderEntry[1] | undefined => {
   const lowercase = name.toLowerCase();
@@ -41,13 +42,27 @@ export const deleteHeader = (headers: readonly HeaderEntry[], name: string): Htt
 export const materializeHeaders = (headers: readonly HeaderEntry[]): [string, string][] =>
   headers.map(([key, value]) => [key, typeof value === 'string' ? value : value.reveal()]);
 
-export const responseHeaderEntries = ({ headers }: Response): HttpHeaders => {
+const responseHeaderLines = new WeakMap<Response, HttpHeaderLines>();
+
+export const preserveResponseHeaderLines = (response: Response, lines: HttpHeaderLines): Response => {
+  responseHeaderLines.set(response, lines);
+  return response;
+};
+
+export const responseHeaderEntries = (response: Response): HttpHeaders => {
+  const lines = responseHeaderLines.get(response);
+  if (lines) return lines.map(([name, value]) => [name, value]);
+
+  const { headers } = response;
   const cookies = headers.getSetCookie();
+  if (cookies.length === 0) return [...headers];
+  let emittedCookies = false;
   const entries: HttpHeaders = [];
   for (const [name, value] of headers) {
     if (name !== 'set-cookie') entries.push([name, value]);
-    else if (cookies.length > 0) {
-      entries.push(...cookies.splice(0).map((cookie): HeaderEntry => [name, cookie]));
+    else if (!emittedCookies) {
+      entries.push(...cookies.map((cookie): HeaderEntry => [name, cookie]));
+      emittedCookies = true;
     }
   }
   return entries;

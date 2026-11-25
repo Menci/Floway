@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { appendHeader, deleteHeader, filterHeaders, getHeader, getHeaders, hasHeader, materializeHeaders, responseHeaderEntries, setHeader, type HttpHeaders } from '../src/index.ts';
+import { appendHeader, deleteHeader, filterHeaders, getHeader, getHeaders, hasHeader, materializeHeaders, parseHttpResponse, responseHeaderEntries, setHeader, toWebResponse, type HttpHeaders } from '../src/index.ts';
 import { Secret } from '@floway-dev/pipeline';
 
 describe('HTTP fact headers', () => {
@@ -45,5 +45,21 @@ describe('HTTP fact headers', () => {
       ['set-cookie', 'first=a; Expires=Wed, 25 Nov 2026 12:00:00 GMT'],
       ['set-cookie', 'second=b'],
     ]);
+  });
+
+  it('retains the original response field lines through the socket transport bridge', async () => {
+    const raw = await parseHttpResponse(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('HTTP/1.1 200 OK\r\nX-Test: first\r\nVary: Accept\r\nx-test: second\r\nContent-Length: 0\r\n\r\n'));
+        controller.close();
+      },
+    }));
+    const response = toWebResponse(raw);
+
+    expect(response.headers.get('x-test')).toBe('first, second');
+    expect(responseHeaderEntries(response)).toEqual([
+      ['X-Test', 'first'], ['Vary', 'Accept'], ['x-test', 'second'], ['Content-Length', '0'],
+    ]);
+    await response.body?.cancel();
   });
 });

@@ -12,7 +12,7 @@ export type HttpBody = string | object | Uint8Array | ManagedStream<Uint8Array, 
 
 export interface HttpRequestFact {
   readonly method: string;
-  readonly url: string | Secret<string>;
+  readonly url: string;
   readonly headers: HttpHeaders;
   readonly body: HttpBody;
 }

@@ -5,6 +5,7 @@ import { copy } from './bytes.ts';
 import { decodeChunked } from './chunked.ts';
 import { HttpProtocolError } from './errors.ts';
 import { STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes } from './grammar.ts';
+import { preserveResponseHeaderLines } from './headers.ts';
 import { readHeadSection } from './read-head-section.ts';
 import type { HttpContentDecoders, RawHttpResponse } from './types.ts';
 
@@ -37,11 +38,13 @@ export const toWebResponse = (raw: RawHttpResponse, contentDecoders?: HttpConten
   // construct with `null`.
   if (raw.status === 204 || raw.status === 304) {
     raw.body.cancel().catch(() => {});
-    return new Response(null, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
+    const response = new Response(null, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
+    return preserveResponseHeaderLines(response, raw.headerLines);
   }
   const headers = new Headers(raw.headers);
   const body = decodeContentEncoding(raw.body, headers, contentDecoders);
-  return new Response(body, { status: raw.status, statusText: raw.statusText, headers });
+  const response = new Response(body, { status: raw.status, statusText: raw.statusText, headers });
+  return preserveResponseHeaderLines(response, raw.headerLines.filter(([name]) => headers.has(name)));
 };
 
 // Native fetch transparently decodes gzip/deflate responses, but the socket
