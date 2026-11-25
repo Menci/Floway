@@ -33,7 +33,7 @@ export const selectAnthropicMessagesModel = (generate: boolean) => defineCopilot
       // https://docs.claude.com/en/build-with-claude/fast-mode
       // https://github.com/Yeachan-Heo/gajae-code/blob/main/packages/ai/test/anthropic-fast-mode.test.ts
       return {
-        'response.http': move({ status: 400, statusText: '', headers: [['content-type', 'application/json']], body: null }),
+        'response.http': move({ status: 400, statusText: 'Bad Request', headers: [['content-type', 'application/json']], body: null }),
         'response.modelKey': model.upstreamModelId,
         'response.anthropicMessages': move({
           kind: 'error',
