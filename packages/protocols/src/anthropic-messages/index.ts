@@ -243,6 +243,7 @@ export interface AnthropicMessagesErrorEventEx {
 }
 
 export { decodeAnthropicMessagesStream, parseAnthropicMessagesStream, type ParseAnthropicMessagesStreamOptions } from './stream.ts';
+export { decodeAnthropicMessagesCountTokensResult, type AnthropicMessagesCountTokensResult } from './count-tokens.ts';
 
 // Parse an inbound `anthropic-beta` header into the comma-separated beta
 // slice that variant selection and policy filters consume. Returns an empty

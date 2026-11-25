@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseJSONWithRawNumbers } from '../../src/common/json.ts';
-import { parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, serializeDecisionRequest } from '../../src/decision/translate.ts';
+import { isJsonObject, parseJSONWithRawNumbers } from '../../src/common/json.ts';
+import { decodeDecisionResponse, parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, serializeDecisionRequest } from '../../src/decision/translate.ts';
 
 const choiceRequest = {
   model: 'microsoft-decision-1',
@@ -57,6 +57,45 @@ describe('decision request serialization', () => {
 });
 
 describe('decision response parsing', () => {
+  test('retains all System One probabilities and their exact number tokens', () => {
+    const body = parseJSONWithRawNumbers(`{
+      "answers":{
+        "dept":{"type":"choice","choice":"billing","confidence":0.9,"probabilities":{"billing":0.900,"support":0.100}},
+        "severity":{"type":"score","score":2,"confidence":0.9,"probabilities":{"0":0.00,"2":1.0}}
+      },
+      "vendor":{"preserved":true}
+    }`);
+    if (!isJsonObject(body)) throw new Error('Expected the decision fixture to be an object');
+    const decoded = decodeDecisionResponse('typesafe-systemone', body);
+    if (!decoded.ok) throw decoded.error;
+    expect(decoded.value.raw).toBe(body);
+    expect(JSON.stringify(decoded.value.answers)).toContain('[{"value":"billing","probability":0.900},{"value":"support","probability":0.100}]');
+    expect(JSON.stringify(decoded.value.answers)).toContain('[{"value":0,"probability":0.00},{"value":2,"probability":1.0}]');
+  });
+
+  test.each([
+    ['malformed envelope', '{"answers":[]}'],
+    ['malformed probabilities', '{"answers":{"q":{"type":"choice","choice":"yes","confidence":1,"probabilities":[]}}}'],
+    ['non-number probability', '{"answers":{"q":{"type":"choice","choice":"yes","confidence":1,"probabilities":{"yes":1,"no":"0"}}}}'],
+    ['non-finite raw number', '{"answers":{"q":{"type":"choice","choice":"yes","confidence":1,"probabilities":{"yes":1e400}}}}'],
+    ['non-numeric score level', '{"answers":{"q":{"type":"score","score":0,"confidence":1,"probabilities":{"low":1}}}}'],
+    ['malformed legend value', '{"answers":{"q":{"type":"score","score":0,"confidence":1,"probabilities":{"0":1},"legend":{"0":true}}}}'],
+  ])('rejects a System One result with %s', (_description, text) => {
+    const body = parseJSONWithRawNumbers(text);
+    if (!isJsonObject(body)) throw new Error('Expected the decision fixture to be an object');
+    expect(decodeDecisionResponse('typesafe-systemone', body)).toMatchObject({ ok: false, error: expect.any(Error) });
+  });
+
+  test('rejects a malformed OpenAI level and propagates an unexpected exception', () => {
+    const result = decodeDecisionResponse('openai-decisions', {
+      answers: [{ type: 'score', name: 'q', score: 0, confidence: 1, probabilities: [{ value: 'low', probability: 1 }] }],
+    });
+    expect(result).toMatchObject({ ok: false, error: expect.any(Error) });
+    const failure = new Error('unexpected error in the value source');
+    const body = { get answers() { throw failure; } };
+    expect(() => decodeDecisionResponse('openai-decisions', body)).toThrow(failure);
+  });
+
   test('parses the observed Copilot / Azure System One response', () => {
     const body = {
       model: 'microsoft-decision-1',

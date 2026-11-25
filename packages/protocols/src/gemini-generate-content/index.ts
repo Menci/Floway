@@ -140,6 +140,7 @@ export { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateC
 export { createGeminiGenerateContentEventAccumulator, reassembleGeminiGenerateContentEvents, type GeminiGenerateContentEventAccumulator } from './reassemble.ts';
 export { geminiGenerateContentProtocolFrameToSSEFrame } from './to-sse.ts';
 export { decodeGeminiGenerateContentStream, parseGeminiGenerateContentStream, type ParseGeminiGenerateContentStreamOptions } from './stream.ts';
+export { decodeGeminiGenerateContentCountTokensResult, type GeminiGenerateContentCountTokensResult } from './count-tokens.ts';
 
 export { geminiGenerateContentPartKind, type GeminiGenerateContentPartKind } from './part.ts';
 export { geminiGenerateContentStatusForHttpStatus } from './error-status.ts';
