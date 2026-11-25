@@ -152,6 +152,92 @@ describe('composition', () => {
   });
 });
 
+describe('cyclic composition', () => {
+  const { defineStage, compose, composeGroup } = factSpace<{
+    'request.protocol': 'first' | 'second';
+    'request.detail': string;
+    'response.protocol': string;
+    'response.detail': string;
+  }>();
+  const egress = compose('egress', {
+    entry: ['request.protocol'],
+    exit: ['response.protocol'],
+    stages: [],
+    ending: defineStage({
+      name: 'egress',
+      request: { needs: ['request.protocol'] },
+      return: { provides: ['response.protocol'] },
+      execute: async facts => ({ 'response.protocol': facts['request.protocol'] }),
+    }),
+  });
+  const route = {
+    request: { ...none, needs: ['request.protocol'] },
+    response: { ...none, needs: ['response.protocol'] },
+  } as const;
+  const boundary = { entry: ['request.protocol'], exit: ['response.protocol'], stages: [] } as const;
+  const ending = (protocol: 'first' | 'second') => defineStage({
+    name: protocol,
+    request: { needs: ['request.protocol'] },
+    into: { sibling: route, egress: route },
+    execute: async (facts, scope) => await (facts['request.protocol'] === protocol
+      ? scope.into.egress(facts)
+      : scope.into.sibling(facts)),
+  });
+  const members = {
+    first: { ...boundary, ending: ending('first'), targets: { sibling: 'second', egress } },
+    second: { ...boundary, ending: ending('second'), targets: { sibling: 'first', egress } },
+  } as const;
+
+  it('resolves both cyclic edges and existing pipeline targets during module assembly', async () => {
+    const group = composeGroup(members);
+    expect(Object.keys(group.first)).toEqual(['name']);
+    expect(Object.isFrozen(group.first)).toBe(true);
+    for (const [source, target] of [['first', 'second'], ['second', 'first']] as const) {
+      const recording = host({});
+      const execution = run(group[source], { 'request.protocol': target }, recording.options);
+      expectTypeOf(execution.result).resolves.toExtend<{ 'response.protocol': string }>();
+      await expect(execution.result).resolves.toEqual({ 'response.protocol': target });
+      expect(recording.events.flatMap(event => event.type === 'stage.entered' ? [event.name] : []))
+        .toEqual([source, target, 'egress']);
+    }
+  });
+
+  it('rejects a local edge request that misses the target boundary during assembly', () => {
+    const needsDetail = defineStage({
+      name: 'second',
+      request: { needs: ['request.protocol', 'request.detail'] },
+      into: { sibling: route, egress: route },
+      execute: async (facts, scope) => await scope.into.egress(facts),
+    });
+    expect(() => composeGroup({
+      ...members,
+      second: { ...members.second, ending: needsDetail, entry: ['request.protocol', 'request.detail'] },
+    })).toThrow('first into "sibling" request does not guarantee "request.detail"');
+  });
+
+  it('rejects a local edge response that misses the caller requirements during assembly', () => {
+    const needsDetail = defineStage({
+      name: 'first',
+      request: { needs: ['request.protocol'] },
+      into: { sibling: { ...route, response: { ...none, needs: ['response.detail'] } }, egress: route },
+      execute: async (facts, scope) => await scope.into.egress(facts),
+    });
+    expect(() => composeGroup({ ...members, first: { ...members.first, ending: needsDetail } }))
+      .toThrow('first into "sibling" response does not guarantee "response.detail"');
+  });
+
+  it('rejects an unknown local target key in the type and at module assembly', () => {
+    expect(() => composeGroup({
+      ...members,
+      first: {
+        ...members.first,
+        // @ts-expect-error Local targets must name a member of the group.
+        targets: { sibling: 'missing', egress },
+      },
+    })).toThrow('Pipeline "first" targets unknown group member "missing"');
+  });
+});
+
 describe('handoff assertions', () => {
   it('preserves a needed value when a stage does not need to update it', async () => {
     const { defineStage, compose } = factSpace<{ 'request.text': string; 'response.text': string }>();

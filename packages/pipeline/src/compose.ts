@@ -11,7 +11,15 @@ export interface Pipeline<in I, out O, in S = {}> {
 }
 
 export type AnyPipeline = Pipeline<never, unknown, never>;
-type Targets<S> = Readonly<Record<string, Pipeline<never, unknown, S>>>;
+type TargetPipeline<S> = Pipeline<never, unknown, S>;
+
+interface ComposeOptions<K extends string, S, T> {
+  readonly entry: KeyList<K>;
+  readonly exit: KeyList<K>;
+  readonly stages: readonly Stage<S>[];
+  readonly ending: Stage<S>;
+  readonly targets?: Readonly<Record<string, T>>;
+}
 
 interface Target {
   readonly assembly: Assembly;
@@ -23,6 +31,12 @@ export interface Assembly {
   readonly exit: Keys;
   readonly stages: readonly StageDefinition[];
   readonly targets: ReadonlyMap<string, Target>;
+}
+
+interface PreparedAssembly<T> {
+  readonly handle: AnyPipeline;
+  readonly assembly: Assembly & { readonly targets: Map<string, Target> };
+  readonly supplied: Readonly<Record<string, T>>;
 }
 
 const assemblies = new WeakMap<AnyPipeline, Assembly>();
@@ -59,16 +73,7 @@ const match = (declared: Keys, derived: Keys, where: string): void => {
   }
 };
 
-export const composeFor = <Space, S>() => <
-  const Entry extends KeyList<FactKey<Space>>,
-  const Exit extends KeyList<FactKey<Space>>,
->(name: string, options: {
-  readonly entry: Entry;
-  readonly exit: Exit;
-  readonly stages: readonly Stage<S>[];
-  readonly ending: Stage<S>;
-  readonly targets?: Targets<S>;
-}): Pipeline<FactShape<Space, Entry[number]>, FactShape<Space, Exit[number]>, S> => {
+const prepare = <T>(name: string, options: ComposeOptions<string, never, T>): PreparedAssembly<T> => {
   const stages = options.stages.map(definitionOf);
   for (const stage of stages) {
     if (stage.into) throw new TypeError(`Stage "${stage.name}" declares into outside ending`);
@@ -78,8 +83,22 @@ export const composeFor = <Space, S>() => <
   if (ending.through) throw new TypeError(`Ending "${ending.name}" declares through`);
   stages.push(ending);
 
-  const entry = parseKeys(options.entry, `${name} entry`);
-  const exit = parseKeys(options.exit, `${name} exit`);
+  const handle = Object.freeze({ name }) as AnyPipeline;
+  return {
+    handle,
+    assembly: {
+      entry: parseKeys(options.entry, `${name} entry`),
+      exit: parseKeys(options.exit, `${name} exit`),
+      stages,
+      targets: new Map(),
+    },
+    supplied: options.targets ?? {},
+  };
+};
+
+const validate = <T>(prepared: PreparedAssembly<T>, resolve: (target: T) => Assembly): void => {
+  const { handle: { name }, assembly: { entry, exit, stages, targets }, supplied } = prepared;
+  const ending = stages.at(-1)!;
   const external = new Map<string, boolean>();
   const available = new Map<string, boolean>();
   const consumed = new Set<string>();
@@ -102,15 +121,13 @@ export const composeFor = <Space, S>() => <
     }
   }
 
-  const targets = new Map<string, Target>();
-  const supplied = options.targets ?? {};
   for (const key of Object.keys(supplied)) {
     if (!ending.into?.has(key)) throw new TypeError(`Ending "${ending.name}" has an undeclared target "${key}"`);
   }
   for (const declaration of ending.into?.values() ?? []) need(ending.name, declaration.request.needs);
   for (const [key, declaration] of ending.into ?? []) {
     if (!Object.hasOwn(supplied, key)) throw new TypeError(`Ending "${ending.name}" has no target "${key}"`);
-    const target = assemblyOf(supplied[key]);
+    const target = resolve(supplied[key]);
     const after = new Map(available);
     apply(after, declaration.request);
     requireGuaranteed(after, target.entry, `${name} into "${key}" request`);
@@ -139,8 +156,52 @@ export const composeFor = <Space, S>() => <
     response = join(paths);
   }
   match(exit, response, `${name} exit`);
+};
 
-  const pipeline = Object.freeze({ name }) as Pipeline<FactShape<Space, Entry[number]>, FactShape<Space, Exit[number]>, S>;
-  assemblies.set(pipeline, { entry, exit, stages, targets });
-  return pipeline;
+export const composeFor = <Space, S>() => <
+  const Entry extends KeyList<FactKey<Space>>,
+  const Exit extends KeyList<FactKey<Space>>,
+>(
+  name: string,
+  options: ComposeOptions<FactKey<Space>, S, TargetPipeline<S>> & { readonly entry: Entry; readonly exit: Exit },
+): Pipeline<FactShape<Space, Entry[number]>, FactShape<Space, Exit[number]>, S> => {
+  const prepared = prepare(name, options);
+  validate(prepared, assemblyOf);
+  assemblies.set(prepared.handle, prepared.assembly);
+  return prepared.handle as Pipeline<FactShape<Space, Entry[number]>, FactShape<Space, Exit[number]>, S>;
+};
+
+type Members<Space, S> = Readonly<Record<string, ComposeOptions<FactKey<Space>, S, TargetPipeline<S> | string>>>;
+type LocalTargets<S, Group> = {
+  readonly [Name in keyof Group]: {
+    readonly targets?: Readonly<Record<string, TargetPipeline<S> | NoInfer<keyof Group & string>>>;
+  };
+};
+type GroupPipelines<Space, S, Group extends Members<Space, S>> = {
+  readonly [Name in keyof Group]: Pipeline<
+    FactShape<Space, Group[Name]['entry'][number]>,
+    FactShape<Space, Group[Name]['exit'][number]>,
+    S
+  >;
+};
+
+export const composeGroupFor = <Space, S>() => <const Group extends Members<Space, S>>(
+  members: Group & LocalTargets<S, Group>,
+): GroupPipelines<Space, S, Group> => {
+  const definitions: Members<Space, S> = members;
+  const prepared = Object.entries(definitions).map(([name, options]) => prepare(name, options));
+  const local = new Map(prepared.map(({ handle, assembly }) => [handle.name, assembly]));
+  for (const member of prepared) {
+    validate(member, target => {
+      if (typeof target !== 'string') return assemblyOf(target);
+      const assembly = local.get(target);
+      if (!assembly) throw new TypeError(`Pipeline "${member.handle.name}" targets unknown group member "${target}"`);
+      return assembly;
+    });
+  }
+  const handles = Object.fromEntries(prepared.map(({ handle, assembly }) => {
+    assemblies.set(handle, assembly);
+    return [handle.name, handle];
+  }));
+  return Object.freeze(handles) as GroupPipelines<Space, S, Group>;
 };
