@@ -8,16 +8,18 @@ type PreparedJsonRequest =
   | { type: 'invalid'; message: string };
 
 export const prepareJsonModelRequest = (bytes: Uint8Array, requestName: string): PreparedJsonRequest => {
-  let request: JsonModelRequestBody;
+  const text = new TextDecoder().decode(bytes);
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { type: 'invalid', message: `${requestName} request body must be an object.` };
-    }
-    request = parsed as JsonModelRequestBody;
-  } catch {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
     return { type: 'invalid', message: `${requestName} request body must be valid JSON.` };
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { type: 'invalid', message: `${requestName} request body must be an object.` };
+  }
+  const request = parsed as JsonModelRequestBody;
   if (typeof request.model !== 'string' || request.model.length === 0) {
     return { type: 'invalid', message: `${requestName} request body must include a model string.` };
   }

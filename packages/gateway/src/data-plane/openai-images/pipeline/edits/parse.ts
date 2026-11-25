@@ -55,10 +55,12 @@ const parseJson = (bytes: Uint8Array): PreparedOpenAIImagesEdits => {
 };
 
 const parseMultipart = async (bytes: Uint8Array, contentType: string): Promise<PreparedOpenAIImagesEdits> => {
+  const response = new Response(bytes as BodyInit, { headers: { 'content-type': contentType } });
   let form: FormData;
   try {
-    form = await new Response(bytes as BodyInit, { headers: { 'content-type': contentType } }).formData();
-  } catch {
+    form = await response.formData();
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
     return invalid('OpenAI Images Edits request body must be valid multipart/form-data.');
   }
   const model = form.get('model');

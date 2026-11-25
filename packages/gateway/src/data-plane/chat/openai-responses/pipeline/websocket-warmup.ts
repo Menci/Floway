@@ -53,8 +53,6 @@ export const answerOpenAIResponsesWebSocketWarmup = defineStage({
       pricingSelector: priceRequest(model.pricing ?? null, {}).selector,
       requests: 1,
       metrics: [],
-    }).catch(error => {
-      scope.log.warn('Floway could not record OpenAI Responses warmup usage', { error });
     }));
 
     return {

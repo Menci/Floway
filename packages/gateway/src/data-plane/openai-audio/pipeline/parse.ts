@@ -33,10 +33,12 @@ export const parseOpenAIAudioTranscriptions = defineStage({
     }
     if (!raw.ok) return invalid('OpenAI Audio Transcriptions request body must be valid multipart/form-data.');
 
+    const response = new Response(raw.value as BodyInit, { headers: { 'content-type': contentType } });
     let form: FormData;
     try {
-      form = await new Response(raw.value as BodyInit, { headers: { 'content-type': contentType } }).formData();
-    } catch {
+      form = await response.formData();
+    } catch (error) {
+      if (!(error instanceof TypeError)) throw error;
       return invalid('OpenAI Audio Transcriptions request body must be valid multipart/form-data.');
     }
     const model = form.get('model');
