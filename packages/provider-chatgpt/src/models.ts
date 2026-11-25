@@ -200,7 +200,7 @@ export const chatgptCodexModelMetadata = (model: ProviderModel): ChatGPTCodexMod
   };
 };
 
-export const chatgptModelUsesResponsesLite = (model: ProviderModel): boolean => {
+export const chatgptModelUsesResponsesLite = (model: Pick<ProviderModel, 'id' | 'providerData'>): boolean => {
   const providerData = model.providerData;
   if (providerData === undefined) return false;
   if (!isPlainRecord(providerData)) {

@@ -1,0 +1,306 @@
+import { assert, beforeEach, expect, test, vi } from 'vitest';
+
+import { CHATGPT_OAUTH_TOKEN_URL, CHATGPT_ORIGINATOR, CHATGPT_RESPONSES_LITE_HEADER } from '../../src/constants.ts';
+import { chatgptPipelines } from '../../src/pipelines/index.ts';
+import { createChatGPTService, type ChatGPTServices } from '../../src/service.ts';
+import type { ChatGPTAccountCredential, ChatGPTUpstreamState } from '../../src/state.ts';
+import { chatgptUpstreamFact } from '../../src/upstream-fact.ts';
+import { createUpstreamStateRepoStub } from '../upstream-state-repo.ts';
+import { getHeader, getHeaders, type HttpRequestFact } from '@floway-dev/http';
+import { move, run, Secret } from '@floway-dev/pipeline';
+import { initProviderRepo, toProviderModelFact, type UpstreamRecord } from '@floway-dev/provider';
+import { stubProviderModel } from '@floway-dev/test-utils';
+
+const config = { accounts: [{ email: null, chatgptAccountId: 'acct', chatgptUserId: null, planType: 'plus' }] };
+const credential = (): ChatGPTAccountCredential => ({
+  chatgptAccountId: 'acct', refresh_token: 'refresh-old', state: 'active', state_updated_at: '2026-01-01T00:00:00Z',
+  openaiDeviceId: '11111111-2222-4333-8444-555555555555', quotaSnapshot: null,
+  accessToken: { token: 'access-old', expiresAt: Date.now() + 3_600_000, refreshedAt: '2026-01-01T00:00:00Z' },
+});
+let state: ChatGPTUpstreamState = { accounts: [credential()] };
+const account = () => state.accounts[0];
+const record = (): UpstreamRecord => ({
+  id: 'chatgpt', kind: 'chatgpt', name: 'ChatGPT', config, state, enabled: true, usageRefreshIntervalMinutes: 0,
+  sortOrder: 0, createdAt: '', updatedAt: '', flagOverrides: {}, disabledPublicModelIds: [],
+  proxyFallbackList: [], modelPrefix: null, modelsCache: null, hue: 210,
+});
+const upstream = move(chatgptUpstreamFact(record()));
+const request = move<HttpRequestFact>({
+  method: 'POST', url: 'https://floway.test/', body: null,
+  headers: [['authorization', Secret.from('Bearer client')], ['originator', 'client-origin'], ['session_id', 'client-session'],
+    ['x-codex-image-turn-id', 'image-turn'], ['x-client-request-id', 'client-request'], ['x-extra', 'stripped']],
+});
+const model = move(toProviderModelFact(stubProviderModel({ id: 'public-model', upstreamModelId: 'wire-model' })));
+const entry = { 'request.http': request, 'provider.upstream': upstream, 'provider.model': model };
+
+beforeEach(() => {
+  state = { accounts: [credential()] };
+  initProviderRepo(() => ({
+    recordUpstreamMetric: async () => {},
+    upstreams: createUpstreamStateRepoStub(record, next => { state = next as ChatGPTUpstreamState; }),
+  }));
+});
+
+const service = (respond: (url: string, init: Parameters<ReturnType<ChatGPTServices['fetcher']>>[1]) => Response) => {
+  const fetcher = vi.fn<ReturnType<ChatGPTServices['fetcher']>>(async (url, init) => ({ ok: true, value: respond(url, init) }));
+  return { services: { fetcher: () => fetcher, chatgpt: createChatGPTService() }, fetcher };
+};
+
+const terminal = { id: 'resp', object: 'response', model: 'wire-model', status: 'completed', output: [] };
+const nativeItem = { type: 'compaction', id: 'compacted', encrypted_content: 'opaque' };
+const sse = (...events: ReadonlyArray<Record<string, unknown> & { type: string }>) =>
+  events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('');
+
+test('only exposes the five implemented operations', () => {
+  expect(Object.keys(chatgptPipelines).sort()).toEqual(['alphaSearch', 'openaiImagesEdits', 'openaiImagesGenerations', 'openaiResponses', 'openaiResponsesCompact']);
+  expect(Object.isFrozen(chatgptPipelines)).toBe(true);
+});
+
+test('normalizes Codex Responses headers and payload, restores terminal output, and records quota', async () => {
+  const { services, fetcher } = service(() => new Response(`${sse(
+    { type: 'response.output_item.done', output_index: 0, item: nativeItem } as const,
+    { type: 'response.completed', response: terminal } as const,
+  )  }data: [DONE]\n\n`, { headers: { 'x-codex-primary-used-percent': '10', 'x-codex-active-limit': 'codex' } }));
+  const exchange = run(chatgptPipelines.openaiResponses, {
+    ...entry,
+    'request.openaiResponses': move({ model: 'client', input: [], stream: false, temperature: 0.1, max_output_tokens: 100 }),
+  }, { services });
+  const response = await exchange.result;
+  expect(response['response.modelKey']).toBe('wire-model');
+  const http = response['response.http'];
+  assert(http !== null);
+  expect(getHeader(http.headers, 'content-type')).toBe('text/event-stream');
+  expect(http.body).toBeNull();
+  const result = response['response.openaiResponses'];
+  assert(result.kind === 'stream');
+  expect(await Array.fromAsync(result.stream)).toMatchObject([
+    { ok: true, value: { type: 'response.output_item.done', item: nativeItem } },
+    { ok: true, value: { type: 'response.completed', response: { output: [nativeItem] } } },
+  ]);
+  await exchange.done;
+  expect(account().quotaSnapshot).toMatchObject({ codex: { data: { primary_used_percent: 10 } } });
+
+  const [send] = fetcher.mock.calls;
+  assert(send !== undefined);
+  expect(send[0]).toBe('https://chatgpt.com/backend-api/codex/responses');
+  const sent = new Headers(send[1].headers);
+  expect(sent.get('originator')).toBe(CHATGPT_ORIGINATOR);
+  expect(sent.get('authorization')).toBe('Bearer access-old');
+  expect(sent.get('chatgpt-account-id')).toBe('acct');
+  expect(sent.get('session-id')).toBe('client-session');
+  expect(sent.get('x-client-request-id')).toBe('client-request');
+  expect(sent.has('session_id')).toBe(false);
+  expect(sent.has('x-extra')).toBe(false);
+  expect(sent.has('x-codex-image-turn-id')).toBe(false);
+  assert(typeof send[1].body === 'string');
+  const body: unknown = JSON.parse(send[1].body);
+  expect(body).toMatchObject({
+    model: 'wire-model', stream: true, store: false, instructions: "You're a helpful assistant.",
+    prompt_cache_key: 'client-session', client_metadata: { 'x-codex-installation-id': account().openaiDeviceId },
+  });
+  expect(body).not.toHaveProperty('max_output_tokens');
+  expect(body).not.toHaveProperty('temperature');
+});
+
+test('projects Lite fields through the same invocation without replaying them in the wire body', async () => {
+  const { services, fetcher } = service(() => new Response(sse({ type: 'response.completed', response: terminal } as const)));
+  const exchange = run(chatgptPipelines.openaiResponses, {
+    ...entry,
+    'provider.model': move({ ...model, providerData: { useResponsesLite: true } }),
+    'request.openaiResponses': move({ model: 'client', input: [], instructions: 'Be brief.' }),
+  }, { services });
+  const response = (await exchange.result)['response.openaiResponses'];
+  assert(response.kind === 'stream');
+  const items = await Array.fromAsync(response.stream);
+  expect(items).toContainEqual(expect.objectContaining({
+    ok: true, value: expect.objectContaining({ type: 'response.completed', response: expect.objectContaining({ instructions: 'Be brief.' }) }),
+  }));
+  await exchange.done;
+  const sent = fetcher.mock.calls[0]?.[1];
+  assert(sent !== undefined && typeof sent.body === 'string');
+  expect(new Headers(sent.headers).get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
+  const body: unknown = JSON.parse(sent.body);
+  expect(body).not.toHaveProperty('instructions');
+  expect(body).toMatchObject({ input: [{ type: 'additional_tools' }, { type: 'message', role: 'developer' }] });
+});
+
+test('aborts and joins a live upstream when Codex gives conflicting output indices', async () => {
+  const cancel = vi.fn();
+  const { services } = service(() => new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(sse(
+        { type: 'response.output_item.added', output_index: 0, item: nativeItem },
+        { type: 'response.output_item.done', output_index: 1, item: nativeItem },
+      )));
+    },
+    cancel,
+  })));
+  const exchange = run(chatgptPipelines.openaiResponses, {
+    ...entry,
+    'request.openaiResponses': move({ model: 'client', input: [] }),
+  }, { services });
+  const response = (await exchange.result)['response.openaiResponses'];
+  assert(response.kind === 'stream');
+  expect(await Array.fromAsync(response.stream)).toMatchObject([
+    { ok: true, value: { type: 'response.output_item.added' } },
+    { ok: false, error: { kind: 'protocol', cause: expect.objectContaining({ message: expect.stringContaining('conflicting output_index') }) } },
+  ]);
+  await exchange.done;
+  expect(cancel).toHaveBeenCalledOnce();
+});
+
+test('drains a renewable 401, rotates credentials once, and replays the compact request', async () => {
+  let exhausted = false;
+  let attempts = 0;
+  const { services, fetcher } = service((url, init) => {
+    const bearer = new Headers(init.headers).get('authorization');
+    if (url === CHATGPT_OAUTH_TOKEN_URL) {
+      expect(exhausted).toBe(true);
+      expect(init.body).toContain('refresh_token=refresh-old');
+      return Response.json({ access_token: 'access-new', refresh_token: 'refresh-new', expires_in: 3600 });
+    }
+    if (++attempts === 1) {
+      expect(bearer).toBe('Bearer access-old');
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.enqueue(new TextEncoder().encode('{"error":{"code":"token_expired"}}'));
+          controller.close();
+          exhausted = true;
+        },
+      }, { highWaterMark: 0 });
+      return new Response(body, { status: 401 });
+    }
+    expect(bearer).toBe('Bearer access-new');
+    return Response.json({ id: 'compact', object: 'response.compaction', output: [nativeItem] });
+  });
+  const exchange = run(chatgptPipelines.openaiResponsesCompact, {
+    ...entry,
+    'request.openaiResponses': move({ model: 'client', input: [], prompt_cache_options: null, store: true }),
+  }, { services });
+  const response = await exchange.result;
+  expect(response['response.openaiResponses']).toEqual({ kind: 'result', result: { id: 'compact', object: 'response.compaction', output: [nativeItem] } });
+  await exchange.done;
+  expect(account()).toMatchObject({ refresh_token: 'refresh-new', accessToken: { token: 'access-new' } });
+  expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+    'https://chatgpt.com/backend-api/codex/responses/compact', CHATGPT_OAUTH_TOKEN_URL, 'https://chatgpt.com/backend-api/codex/responses/compact',
+  ]);
+  expect(fetcher.mock.calls[2]?.[1].body).toBe(fetcher.mock.calls[0]?.[1].body);
+  const body = fetcher.mock.calls[0]?.[1].body;
+  assert(typeof body === 'string');
+  const parsed: unknown = JSON.parse(body);
+  expect(parsed).toMatchObject({ model: 'wire-model', instructions: "You're a helpful assistant.", prompt_cache_options: null });
+  expect(parsed).not.toHaveProperty('stream');
+  expect(parsed).not.toHaveProperty('store');
+});
+
+test('relays the OAuth failure response and persists the refresh failure', async () => {
+  account().accessToken = null;
+  const oauth = { error: { code: 'invalid_grant', message: 'Revoked' } };
+  const { services, fetcher } = service(url => {
+    expect(url).toBe(CHATGPT_OAUTH_TOKEN_URL);
+    return Response.json(oauth, { status: 400, headers: [['set-cookie', 'first=yes'], ['set-cookie', 'second=yes']] });
+  });
+  const exchange = run(chatgptPipelines.alphaSearch, { ...entry, 'request.alphaSearch': move({ query: 'example' }) }, { services });
+  const response = await exchange.result;
+  await exchange.done;
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(account()).toMatchObject({ state: 'refresh_failed', state_message: 'Revoked' });
+  expect(response['response.modelKey']).toBe('wire-model');
+  expect(response['response.alphaSearch']).toEqual({ kind: 'error', source: 'upstream', error: oauth });
+  const http = response['response.http'];
+  assert(http !== null);
+  expect(http.status).toBe(400);
+  expect(getHeaders(http.headers, 'set-cookie')).toEqual(['first=yes', 'second=yes']);
+});
+
+test('returns an OAuth transport failure with its original cause and no HTTP head', async () => {
+  account().accessToken = null;
+  const failure = { kind: 'transport', cause: new Error('OAuth connection closed') } as const;
+  const fetcher = vi.fn<ReturnType<ChatGPTServices['fetcher']>>().mockResolvedValue({ ok: false, error: failure });
+  const exchange = run(chatgptPipelines.alphaSearch, {
+    ...entry,
+    'request.alphaSearch': move({ query: 'example' }),
+  }, { services: { fetcher: () => fetcher, chatgpt: createChatGPTService() } });
+  const result = await exchange.result;
+  await exchange.done;
+  expect(fetcher).toHaveBeenCalledExactlyOnceWith(CHATGPT_OAUTH_TOKEN_URL, expect.objectContaining({ method: 'POST' }));
+  expect(result['response.http']).toBeNull();
+  const outcome = result['response.alphaSearch'];
+  assert(outcome.kind === 'error');
+  expect(outcome).toMatchObject({ source: 'upstream', error: { message: failure.cause.message } });
+  expect(outcome.cause).toBe(failure);
+  expect(account().state).toBe('active');
+});
+
+test.each([true, false])('persists terminal upstream 401 for a renewable credential of %s', async renewable => {
+  if (!renewable) account().refresh_token = null;
+  const upstreamError = { error: { code: 'token_invalidated', message: 'Session revoked' } };
+  const { services, fetcher } = service(() => Response.json(upstreamError, { status: 401, headers: { 'x-upstream': 'yes' } }));
+  const input = { ...entry, 'request.openaiResponses': move({ model: 'client', input: [] }) };
+  const first = run(chatgptPipelines.openaiResponses, input, { services });
+  const result = await first.result;
+  await first.done;
+  expect(result['response.http']?.status).toBe(renewable ? 503 : 401);
+  expect(result['response.openaiResponses']).toEqual(renewable
+    ? { kind: 'error', source: 'local', error: { error: { type: 'chatgpt_upstream_unavailable', message: 'ChatGPT session terminated: Session revoked' } } }
+    : { kind: 'error', source: 'upstream', error: upstreamError });
+  expect(account()).toMatchObject({ state: 'session_terminated', accessToken: null });
+
+  const second = run(chatgptPipelines.openaiResponses, input, { services });
+  expect(await second.result).toMatchObject({
+    'response.http': { status: 503 }, 'response.openaiResponses': { kind: 'error', source: 'local' },
+  });
+  await second.done;
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+test('serializes Alpha Search and both image operations with their own fields and paths', async () => {
+  const { services, fetcher } = service(() => Response.json({ data: ['upstream result'] }));
+  const search = run(chatgptPipelines.alphaSearch, { ...entry, 'request.alphaSearch': move({ id: ' query-id ', query: 'x' }) }, { services });
+  const generation = run(chatgptPipelines.openaiImagesGenerations, {
+    ...entry, 'request.openaiImagesGenerations': move({ model: 'client', prompt: 'A tree' }),
+  }, { services });
+  const edit = run(chatgptPipelines.openaiImagesEdits, {
+    ...entry, 'request.openaiImagesEdits': move({
+      images: [{ type: 'upload' as const, file: { name: 'source.png', type: 'image/png', bytes: new TextEncoder().encode('body') } }],
+      parameters: { prompt: 'A bigger tree' },
+    }),
+  }, { services });
+  expect((await search.result)['response.alphaSearch']).toEqual({ kind: 'result', result: { data: ['upstream result'] } });
+  expect((await generation.result)['response.openaiImagesGenerations']).toEqual({ kind: 'result', result: { data: ['upstream result'] } });
+  expect((await edit.result)['response.openaiImagesEdits']).toEqual({ kind: 'result', result: { data: ['upstream result'] } });
+  await Promise.all([search.done, generation.done, edit.done]);
+  const calls = Object.fromEntries(fetcher.mock.calls.map(([url, init]) => [new URL(url).pathname, init]));
+  const searchRequest = calls['/backend-api/codex/alpha/search'];
+  const generationRequest = calls['/backend-api/codex/images/generations'];
+  const editRequest = calls['/backend-api/codex/images/edits'];
+  assert(searchRequest !== undefined && generationRequest !== undefined && editRequest !== undefined);
+  expect(searchRequest.body).toBe('{"id":"query-id","query":"x","model":"wire-model"}');
+  expect(new Headers(searchRequest.headers).get('thread-id')).toBe('query-id');
+  expect(generationRequest.body).toBe('{"model":"wire-model","prompt":"A tree"}');
+  expect(editRequest.body).toBe('{"prompt":"A bigger tree","images":[{"image_url":"data:image/png;base64,Ym9keQ=="}],"model":"wire-model"}');
+  for (const { headers } of [generationRequest, editRequest]) {
+    expect(new Headers(headers).get('x-codex-image-turn-id')).toBe('image-turn');
+    expect(new Headers(headers).get('originator')).toBe('client-origin');
+  }
+});
+
+test('uses the hydrated plan for the image gate and formats a non-JSON upstream failure', async () => {
+  const accessToken = account().accessToken;
+  assert(accessToken !== null);
+  accessToken.planType = 'free';
+  const { services, fetcher } = service(() => new Response('upstream refused search', { status: 422, headers: { 'x-upstream': 'kept' } }));
+  const image = run(chatgptPipelines.openaiImagesGenerations, { ...entry, 'request.openaiImagesGenerations': move({ model: 'client', prompt: 'A tree' }) }, { services });
+  expect(await image.result).toMatchObject({
+    'response.http': { status: 403 }, 'response.openaiImagesGenerations': { kind: 'error', source: 'local', error: { error: { type: 'image_tools_unavailable' } } },
+  });
+  await image.done;
+  expect(fetcher).not.toHaveBeenCalled();
+
+  const search = run(chatgptPipelines.alphaSearch, { ...entry, 'request.alphaSearch': move({ query: 'take it' }) }, { services });
+  expect(await search.result).toMatchObject({
+    'response.http': { status: 422, headers: expect.arrayContaining([['x-upstream', 'kept']]) },
+    'response.alphaSearch': { kind: 'error', source: 'upstream', error: { type: 'error', message: 'upstream refused search' } },
+  });
+  await search.done;
+});

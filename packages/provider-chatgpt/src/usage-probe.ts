@@ -1,8 +1,9 @@
-import { ensureChatGPTAccessToken, mintChatGPTAccessToken } from './access-token.ts';
+import { mintChatGPTAccessToken } from './access-token.ts';
 import { ChatGPTOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { assertChatGPTUpstreamRecord } from './config.ts';
 import { CHATGPT_BACKEND_BASE, CHATGPT_USER_AGENT } from './constants.ts';
 import { putChatGPTQuota } from './quota.ts';
+import { ensureChatGPTAccessToken } from './service.ts';
 import { readChatGPTUpstreamState, persistChatGPTRefreshTokenRotation, persistChatGPTTerminalState, type ChatGPTQuotaSnapshot } from './state.ts';
 import { runScheduledUsageRefresh, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
 

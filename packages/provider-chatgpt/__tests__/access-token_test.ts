@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import {
-  ensureChatGPTAccessToken,
   mintChatGPTAccessToken,
   putChatGPTAccessToken,
   type ChatGPTAccessTokenEntry,
 } from '../src/access-token.ts';
 import { ChatGPTOAuthSessionTerminatedError } from '../src/auth/oauth.ts';
+import { ensureChatGPTAccessToken } from '../src/service.ts';
 import type { ChatGPTUpstreamState } from '../src/state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 

@@ -1,15 +1,12 @@
-import { ensureChatGPTAccessToken, mintChatGPTAccessToken } from './access-token.ts';
-import { ChatGPTOAuthSessionTerminatedError } from './auth/oauth.ts';
+import { getChatGPTProvidedModels } from './catalog.ts';
 import { assertChatGPTUpstreamRecord, type ChatGPTUpstreamConfig } from './config.ts';
-import { CHATGPT_DEFAULT_FLAGS } from './defaults.ts';
 import { callChatGPTAlphaSearch, callChatGPTOpenAIImagesEdits, callChatGPTOpenAIImagesGenerations, callChatGPTOpenAIResponses, callChatGPTOpenAIResponsesCompact, type ChatGPTCallEffects } from './fetch.ts';
 import { CHATGPT_OPENAI_RESPONSES_BOUNDARY } from './interceptors/openai-responses/index.ts';
 import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses/types.ts';
-import { chatgptImageProviderModel, chatgptPlanSupportsImages, chatgptRawToProviderModel, fetchChatGPTCatalog } from './models.ts';
 import { assertChatGPTUpstreamState, findChatGPTAccountIndex, persistChatGPTRefreshTokenRotation, persistChatGPTTerminalState } from './state.ts';
 import { runChatGPTScheduledTask } from './usage-probe.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
 
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/requests/headers.rs#L5-L12
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/endpoint/responses.rs#L87-L96
@@ -35,12 +32,6 @@ export const createChatGPTProvider = (record: UpstreamRecord): Provider => {
   // array so a future fan-out can pick a different active account per call
   // without a wire migration.
   const accountIdentity = config.accounts[0];
-
-  // Computed once per provider instance: only the upstream layer applies
-  // (no per-model override layer). Threaded into every ProviderModel emitted
-  // by getProvidedModels so interceptors can read the effective flag set
-  // without re-resolving.
-  const enabledFlags = resolveEffectiveFlags([CHATGPT_DEFAULT_FLAGS, record.flagOverrides]);
 
   // Locate the pool's active credential inside a state document. Throw rather
   // than guess when it is missing — a row that has lost its credential by id
@@ -73,34 +64,7 @@ export const createChatGPTProvider = (record: UpstreamRecord): Provider => {
 
   const instance: ProviderInstance = {
     runScheduledTask: options => runChatGPTScheduledTask(record, options),
-    getProvidedModels: async fetcher => {
-      // A model-list refresh is the first thing a brand-new ChatGPT upstream
-      // does, and it is the only place outside the data plane that mints an
-      // access token. If the refresh_token has been revoked upstream, the
-      // mint throws ChatGPTOAuthSessionTerminatedError; flip the row to
-      // `refresh_failed` so the dashboard stops claiming the credential is
-      // active, then rethrow so the caller's models-cache records the
-      // failure and surfaces it to the operator.
-      let access;
-      try {
-        access = await ensureChatGPTAccessToken(record.id, accountIdentity.chatgptAccountId, refreshToken =>
-          mintChatGPTAccessToken(refreshToken, fetcher, effects.persistRefreshTokenRotation));
-      } catch (err) {
-        if (err instanceof ChatGPTOAuthSessionTerminatedError) {
-          await effects.persistTerminalState('refresh_failed', err.upstreamMessage);
-        }
-        throw err;
-      }
-      const raw = await fetchChatGPTCatalog({ accessToken: access.token, accountId: accountIdentity.chatgptAccountId, fetcher });
-      // Surface every model the upstream returns, including ones whose
-      // ChatGPT-side `visibility` is `hide` (e.g. codex-auto-review). The
-      // operator's gateway is its own surface — they can dispatch to those
-      // models even though the ChatGPT UI hides them — and the dashboard
-      // toggles them per-upstream when needed.
-      const models = raw.map(r => chatgptRawToProviderModel(r, enabledFlags));
-      if (chatgptPlanSupportsImages(access.planType ?? accountIdentity.planType ?? undefined)) models.push(chatgptImageProviderModel(enabledFlags));
-      return models;
-    },
+    getProvidedModels: fetcher => getChatGPTProvidedModels(record, fetcher),
 
     callAlphaSearch: async (model, body, signal, opts) => {
       const { account } = await readActiveAccount();

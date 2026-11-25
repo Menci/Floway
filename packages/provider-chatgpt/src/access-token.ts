@@ -1,6 +1,7 @@
 import { parseChatGPTIdTokenPlanType } from './auth/jwt.ts';
-import { ChatGPTOAuthSessionTerminatedError, chatgptTokenExpiresAt, refreshChatGPTAccessToken } from './auth/oauth.ts';
+import { ChatGPTOAuthSessionTerminatedError, chatgptTokenExpiresAt, refreshChatGPTAccessToken, refreshChatGPTAccessTokenResult, type ChatGPTOAuthFailure, type ChatGPTOAuthFetcher, type ChatGPTOAuthRefreshTokens } from './auth/oauth.ts';
 import { findChatGPTAccountIndex, readChatGPTUpstreamState, replaceChatGPTAccount, type ChatGPTAccessTokenEntry } from './state.ts';
+import type { Result } from '@floway-dev/pipeline';
 import { getProviderRepo, UpstreamGoneError, type Fetcher } from '@floway-dev/provider';
 
 export type { ChatGPTAccessTokenEntry };
@@ -86,6 +87,12 @@ interface PersistChatGPTAccessTokenOptions {
   entry: ChatGPTAccessTokenEntry | null;
   where: string;
   fallbackPlan?: ChatGPTPlanObservation | undefined;
+  log?: ChatGPTTokenLog | undefined;
+}
+
+export interface ChatGPTTokenLog {
+  readonly log: (event: string, fields: Record<string, unknown>) => unknown;
+  readonly warn: (event: string, fields: Record<string, unknown>) => unknown;
 }
 
 // The whole change is expressed against the state the repo hands us, so a
@@ -120,11 +127,11 @@ const persistAccessToken = async (opts: PersistChatGPTAccessTokenOptions): Promi
     // operator deleting the upstream mid-request is not worth failing that
     // request over. Every other storage failure still propagates.
     if (!(err instanceof UpstreamGoneError)) throw err;
-    console.warn(`${opts.where}: ChatGPT upstream ${opts.upstreamId} disappeared mid-request`);
+    opts.log?.warn('chatgpt_access_token_upstream_removed', { upstream_id: opts.upstreamId, operation: opts.where });
     return effectiveEntry;
   }
   if (accountMissing) {
-    console.warn(`${opts.where}: ChatGPT account ${opts.accountId} not found in upstream ${opts.upstreamId}`);
+    opts.log?.warn('chatgpt_access_token_account_removed', { upstream_id: opts.upstreamId, account_id: opts.accountId, operation: opts.where });
   }
   return effectiveEntry;
 };
@@ -178,50 +185,25 @@ export const invalidateChatGPTAccessToken = async (
 // other terminal codes (`app_session_terminated`, `invalid_refresh_token`,
 // `invalid_client`, `unauthorized_client`, `access_denied`) signal
 // credential death under any race scenario and skip recovery.
-// Process-local coalescing of concurrent ensure calls. On a cold start N
-// requests on the same isolate would all see `accessToken === null` and
-// each POST /oauth/token; the upstream rotates on every call so only one
-// survives and the rest fall into `recoverFromRefreshRace`, burning N
-// round-trips for one usable token. Coalescing here collapses the
-// within-isolate herd to a single mint. Key includes `force` so a
-// dashboard `force: true` click never rides on a concurrent lazy call's
-// cache-hit result (and vice versa); concurrent forces still collapse.
-//
-// Scope: per-isolate only. Cross-isolate siblings still race and are
-// caught by `recoverFromRefreshRace` — same trade-off as claude-code.
-const inFlightEnsures = new Map<string, Promise<ChatGPTAccessTokenEntry>>();
+export type ChatGPTAccessTokenResult = Result<ChatGPTAccessTokenEntry, ChatGPTOAuthFailure>;
+export type ChatGPTAccessTokenMint = (refreshToken: string) => Promise<ChatGPTAccessTokenResult>;
 
-export const ensureChatGPTAccessToken = async (
+export const resolveChatGPTAccessToken = async (
   upstreamId: string,
   accountId: string | null,
-  mint: (refreshToken: string) => Promise<ChatGPTAccessTokenEntry>,
-  // When true, skip the "cached access_token is still fresh" fast-path and
-  // always mint a fresh one. Dashboard's Refresh button sets this so the
-  // operator sees the row's tokens actually rotate; the data plane leaves
-  // it false so a live request served from cache stays cheap.
-  force = false,
-): Promise<ChatGPTAccessTokenEntry> => {
-  // `null` is a legitimate account id, so the key has to keep it distinct from
-  // the string "null" a template would produce.
-  const key = JSON.stringify([upstreamId, accountId, force]);
-  const existing = inFlightEnsures.get(key);
-  if (existing) return await existing;
-  const promise = ensureChatGPTAccessTokenInner(upstreamId, accountId, mint, true, force);
-  inFlightEnsures.set(key, promise);
-  try {
-    return await promise;
-  } finally {
-    inFlightEnsures.delete(key);
-  }
-};
+  mint: ChatGPTAccessTokenMint,
+  force: boolean,
+  log?: ChatGPTTokenLog,
+): Promise<ChatGPTAccessTokenResult> => await ensureAccessToken(upstreamId, accountId, mint, true, force, log);
 
-const ensureChatGPTAccessTokenInner = async (
+const ensureAccessToken = async (
   upstreamId: string,
   accountId: string | null,
-  mint: (refreshToken: string) => Promise<ChatGPTAccessTokenEntry>,
+  mint: ChatGPTAccessTokenMint,
   recoveryAllowed: boolean,
   force: boolean,
-): Promise<ChatGPTAccessTokenEntry> => {
+  log: ChatGPTTokenLog | undefined,
+): Promise<ChatGPTAccessTokenResult> => {
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) throw new Error(`ChatGPT upstream ${upstreamId} not found`);
   const state = readChatGPTUpstreamState(fresh.state);
@@ -229,7 +211,7 @@ const ensureChatGPTAccessTokenInner = async (
   if (!account) throw new Error(`ChatGPT account ${accountId} not found in upstream ${upstreamId}`);
   const renewable = account.refresh_token !== null;
   if (account.accessToken && isAccessTokenUsable(account.accessToken, renewable) && !force) {
-    return account.accessToken;
+    return { ok: true, value: account.accessToken };
   }
   // Nothing left to try for an access-only credential: the bearer in hand is
   // all there is, and it is either expired or absent. Say which, because the
@@ -245,23 +227,23 @@ const ensureChatGPTAccessTokenInner = async (
   }
 
   const refreshToken = account.refresh_token;
-  let minted;
-  try {
-    minted = await mint(refreshToken);
-  } catch (err) {
-    if (err instanceof ChatGPTOAuthSessionTerminatedError && err.code === 'invalid_grant' && recoveryAllowed) {
-      const recovered = await recoverFromRefreshRace(upstreamId, accountId, refreshToken, mint);
+  const minted = await mint(refreshToken);
+  if (!minted.ok) {
+    if (minted.error instanceof ChatGPTOAuthSessionTerminatedError && minted.error.code === 'invalid_grant' && recoveryAllowed) {
+      const recovered = await recoverFromRefreshRace(upstreamId, accountId, refreshToken, mint, log);
       if (recovered) return recovered;
     }
-    throw err;
+    return minted;
   }
-  return (await persistAccessToken({
+  const persisted = await persistAccessToken({
     upstreamId,
     accountId,
-    entry: minted,
+    entry: minted.value,
     where: 'ensureChatGPTAccessToken',
     fallbackPlan: chatgptPlanObservation(account.accessToken) ?? undefined,
-  })) ?? minted;
+    log,
+  });
+  return { ok: true, value: persisted ?? minted.value };
 };
 
 // `invalid_grant` ambiguity: dead refresh token, or a sibling worker raced
@@ -276,8 +258,9 @@ const recoverFromRefreshRace = async (
   upstreamId: string,
   accountId: string | null,
   usedRefreshToken: string,
-  mint: (refreshToken: string) => Promise<ChatGPTAccessTokenEntry>,
-): Promise<ChatGPTAccessTokenEntry | null> => {
+  mint: ChatGPTAccessTokenMint,
+  log: ChatGPTTokenLog | undefined,
+): Promise<ChatGPTAccessTokenResult | null> => {
   const reread = await getProviderRepo().upstreams.getById(upstreamId);
   if (!reread) return null;
   const rereadState = readChatGPTUpstreamState(reread.state);
@@ -285,11 +268,9 @@ const recoverFromRefreshRace = async (
   if (!rereadAccount) return null;
   if (rereadAccount.state !== 'active') return null;
   if (rereadAccount.refresh_token === usedRefreshToken) return null;
-  console.info(
-    `ChatGPT refresh-race recovered for upstream ${upstreamId} account ${accountId}: sibling rotated, using their access token`,
-  );
+  log?.log('chatgpt_refresh_race_recovered', { upstream_id: upstreamId, account_id: accountId });
   if (rereadAccount.accessToken && isAccessTokenUsable(rereadAccount.accessToken, rereadAccount.refresh_token !== null)) {
-    return rereadAccount.accessToken;
+    return { ok: true, value: rereadAccount.accessToken };
   }
   // Sibling rotated the refresh token but no usable access token sits in
   // state — most likely an `invalidateChatGPTAccessToken` ran between the
@@ -298,7 +279,7 @@ const recoverFromRefreshRace = async (
   // through the standard mint path. The depth guard suppresses a second
   // recovery attempt — if `invalid_grant` strikes again the refresh token
   // really is dead and we want the terminal flip.
-  return await ensureChatGPTAccessTokenInner(upstreamId, accountId, mint, false, false);
+  return await ensureAccessToken(upstreamId, accountId, mint, false, false, log);
 };
 
 // Mints a fresh access token via /oauth/token and routes the rotated
@@ -311,8 +292,22 @@ export const mintChatGPTAccessToken = async (
   refreshToken: string,
   fetcher: Fetcher,
   persistRefreshTokenRotation: (newRefreshToken: string) => Promise<void>,
+): Promise<ChatGPTAccessTokenEntry> =>
+  await persistMint(await refreshChatGPTAccessToken(refreshToken, fetcher), persistRefreshTokenRotation);
+
+export const mintChatGPTAccessTokenResult = async (
+  refreshToken: string,
+  fetcher: ChatGPTOAuthFetcher,
+  persistRefreshTokenRotation: (newRefreshToken: string) => Promise<void>,
+): Promise<ChatGPTAccessTokenResult> => {
+  const result = await refreshChatGPTAccessTokenResult(refreshToken, fetcher);
+  return result.ok ? { ok: true, value: await persistMint(result.value, persistRefreshTokenRotation) } : result;
+};
+
+const persistMint = async (
+  tokens: ChatGPTOAuthRefreshTokens,
+  persistRefreshTokenRotation: (newRefreshToken: string) => Promise<void>,
 ): Promise<ChatGPTAccessTokenEntry> => {
-  const tokens = await refreshChatGPTAccessToken(refreshToken, fetcher);
   await persistRefreshTokenRotation(tokens.refresh_token);
   const planType = tokens.id_token === undefined ? undefined : parseChatGPTIdTokenPlanType(tokens.id_token);
   const refreshedAt = new Date().toISOString();

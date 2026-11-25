@@ -9,18 +9,11 @@ import type { OpenAIResponsesOutputItemEx, OpenAIResponsesStreamEventEx } from '
 // precedence when they disagree.
 // https://github.com/openai/codex/blob/0a2eb4696c/codex-rs/codex-api/src/sse/responses.rs#L357-L362
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2864-L2889
-export const restoreChatGPTResponsesOutput = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+export const createChatGPTResponsesOutputRestore = () => {
   const closedItems = new Map<number, OpenAIResponsesOutputItemEx>();
   const itemIndices = new Map<string, number>();
   const indexedIds = new Map<number, string>();
-  for await (const frame of frames) {
-    if (frame.type !== 'event') {
-      yield frame;
-      continue;
-    }
-    const event = frame.event;
+  return (event: OpenAIResponsesStreamEventEx): OpenAIResponsesStreamEventEx => {
     if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') {
       if (event.item.id != null) {
         const previousIndex = itemIndices.get(event.item.id);
@@ -59,10 +52,18 @@ export const restoreChatGPTResponsesOutput = async function* (
           if (outputIndex !== index) throw new TypeError(`ChatGPT terminal output is missing output_index ${index}`);
           return item;
         });
-        yield eventFrame({ ...event, response: { ...event.response, output } });
-        continue;
+        return { ...event, response: { ...event.response, output } };
       }
     }
-    yield frame;
+    return event;
+  };
+};
+
+export const restoreChatGPTResponsesOutput = async function* (
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  const restore = createChatGPTResponsesOutputRestore();
+  for await (const frame of frames) {
+    yield frame.type === 'event' ? eventFrame(restore(frame.event)) : frame;
   }
 };

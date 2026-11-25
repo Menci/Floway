@@ -7,7 +7,9 @@ import {
   CHATGPT_ORIGINATOR,
   CHATGPT_REDIRECT_URI,
 } from '../constants.ts';
-import type { Fetcher } from '@floway-dev/provider';
+import { responseHeaderEntries, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
+import type { Result } from '@floway-dev/pipeline';
+import type { Fetcher, ProviderServices } from '@floway-dev/provider';
 
 // What /token actually guarantees. A refresh response has been observed to
 // omit `id_token`, so the field is optional here and each caller states
@@ -56,16 +58,29 @@ export const buildChatGPTAuthorizeUrl = (input: { state: string; codeChallenge: 
 // `invalid_grant` — the only terminal code that might mean "a sibling
 // worker just rotated the refresh token, and our copy is stale" — from
 // codes that signal genuine credential death under any race scenario.
-export class ChatGPTOAuthSessionTerminatedError extends Error {
+export class ChatGPTOAuthResponseError extends Error {
+  constructor(message: string, readonly http?: HttpResponseFact) {
+    super(message);
+    this.name = 'ChatGPTOAuthResponseError';
+  }
+}
+
+export class ChatGPTOAuthSessionTerminatedError extends ChatGPTOAuthResponseError {
   readonly code: string;
   readonly upstreamMessage: string;
-  constructor(args: { code: string; message: string }) {
-    super(`ChatGPT OAuth session terminated: ${args.message}`);
+  constructor(args: { code: string; message: string; http?: HttpResponseFact }) {
+    super(`ChatGPT OAuth session terminated: ${args.message}`, args.http);
     this.name = 'ChatGPTOAuthSessionTerminatedError';
     this.code = args.code;
     this.upstreamMessage = args.message;
   }
 }
+
+export type ChatGPTOAuthFailure = ChatGPTOAuthResponseError | {
+  readonly http: HttpResponseFact | null;
+  readonly transport: HttpStreamError;
+};
+export type ChatGPTOAuthFetcher = ReturnType<ProviderServices['fetcher']>;
 
 // Terminal codes accepted on the authorization-code exchange. This is OUR
 // classification (codex-rs/login/src/server.rs does not split errors into
@@ -100,9 +115,9 @@ const REFRESH_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
 const chatgptTokenRequest = async (
   body: URLSearchParams,
   terminalCodes: ReadonlySet<string>,
-  fetcher: Fetcher,
-): Promise<ChatGPTOAuthRefreshTokens> => {
-  const response = await fetcher(CHATGPT_OAUTH_TOKEN_URL, {
+  fetcher: ChatGPTOAuthFetcher,
+): Promise<Result<ChatGPTOAuthRefreshTokens, ChatGPTOAuthFailure>> => {
+  const sent = await fetcher(CHATGPT_OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
@@ -111,8 +126,16 @@ const chatgptTokenRequest = async (
     },
     body: body.toString(),
   });
+  if (!sent.ok) return { ok: false, error: { http: null, transport: sent.error } };
+  const response = sent.value;
+  const head = { status: response.status, statusText: response.statusText, headers: responseHeaderEntries(response) };
 
-  const rawText = await response.text();
+  let rawText: string;
+  try {
+    rawText = await response.text();
+  } catch (cause) {
+    return { ok: false, error: { http: { ...head, body: null }, transport: { kind: 'transport', cause } } };
+  }
   let parsed: unknown;
   try {
     parsed = rawText.length > 0 ? JSON.parse(rawText) : {};
@@ -136,10 +159,9 @@ const chatgptTokenRequest = async (
     // Some OpenAI errors put the human-readable text under top-level `.detail`.
     if (message === null && typeof root?.detail === 'string') message = root.detail as string;
     message ??= rawText.slice(0, 256);
-    if (code && terminalCodes.has(code)) {
-      throw new ChatGPTOAuthSessionTerminatedError({ code, message });
-    }
-    throw new Error(`ChatGPT OAuth /token returned ${response.status}: ${message}`);
+    const http = { ...head, body: rawText };
+    if (code && terminalCodes.has(code)) return { ok: false, error: new ChatGPTOAuthSessionTerminatedError({ code, message, http }) };
+    return { ok: false, error: new ChatGPTOAuthResponseError(`ChatGPT OAuth /token returned ${response.status}: ${message}`, http) };
   }
 
   if (root === null) throw new Error('ChatGPT OAuth /token response is not an object');
@@ -152,11 +174,27 @@ const chatgptTokenRequest = async (
     throw new Error('ChatGPT OAuth /token response missing expires_in');
   }
   return {
-    access_token: root.access_token as string,
-    refresh_token: root.refresh_token as string,
-    ...(typeof root.id_token === 'string' && root.id_token !== '' ? { id_token: root.id_token } : {}),
-    expires_in: root.expires_in as number,
+    ok: true,
+    value: {
+      access_token: root.access_token as string,
+      refresh_token: root.refresh_token as string,
+      ...(typeof root.id_token === 'string' && root.id_token !== '' ? { id_token: root.id_token } : {}),
+      expires_in: root.expires_in as number,
+    },
   };
+};
+
+const controlPlaneFetcher = (fetcher: Fetcher): ChatGPTOAuthFetcher => async (url, init) => {
+  try {
+    return { ok: true, value: await fetcher(url, init) };
+  } catch (cause) {
+    return { ok: false, error: { kind: 'transport', cause } };
+  }
+};
+
+const controlPlaneTokens = (result: Result<ChatGPTOAuthRefreshTokens, ChatGPTOAuthFailure>): ChatGPTOAuthRefreshTokens => {
+  if (!result.ok) throw result.error instanceof ChatGPTOAuthResponseError ? result.error : result.error.transport.cause;
+  return result.value;
 };
 
 // PKCE exchange runs before the upstream record exists, so there is no
@@ -179,7 +217,7 @@ export const exchangeChatGPTAuthorizationCode = async (opts: { code: string; cod
     redirect_uri: CHATGPT_REDIRECT_URI,
     code_verifier: opts.codeVerifier,
   });
-  const tokens = await chatgptTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher);
+  const tokens = controlPlaneTokens(await chatgptTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, controlPlaneFetcher(opts.fetcher)));
   // The authorization-code grant is the one path that must return an
   // id_token: it is a fresh consent, and the identity claims it carries are
   // the only ones this flow ever gets to see.
@@ -192,7 +230,9 @@ export const exchangeChatGPTAuthorizationCode = async (opts: { code: string; cod
 // `fetcher` is required because the refresh has an associated upstream
 // and must flow through that upstream's proxy-aware fallback chain rather
 // than direct egress.
-export const refreshChatGPTAccessToken = async (refreshToken: string, fetcher: Fetcher): Promise<ChatGPTOAuthRefreshTokens> => {
+export const refreshChatGPTAccessTokenResult = async (
+  refreshToken: string, fetcher: ChatGPTOAuthFetcher,
+): Promise<Result<ChatGPTOAuthRefreshTokens, ChatGPTOAuthFailure>> => {
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
@@ -204,9 +244,11 @@ export const refreshChatGPTAccessToken = async (refreshToken: string, fetcher: F
   // worker raced us, won the rotation, and our copy is now stale. The
   // access-token module's `recoverFromRefreshRace` distinguishes by re-reading
   // upstream state; the other codes here always mean credential death.
-  const tokens = await chatgptTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
   // A refresh only re-mints the bearer. Whatever identity the account has was
   // settled at import, so the id_token here (when present) is used for the
   // account's latest plan observation, never to re-litigate identity.
-  return tokens;
+  return await chatgptTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
 };
+
+export const refreshChatGPTAccessToken = async (refreshToken: string, fetcher: Fetcher): Promise<ChatGPTOAuthRefreshTokens> =>
+  controlPlaneTokens(await refreshChatGPTAccessTokenResult(refreshToken, controlPlaneFetcher(fetcher)));

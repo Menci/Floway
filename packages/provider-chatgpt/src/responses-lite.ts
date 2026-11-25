@@ -189,6 +189,17 @@ export const encodeChatGPTResponsesLiteRequest = (
 // those fields in its response resource; preserve output items, event families,
 // and all other response fields. Positional Lite callers move no top-level
 // fields and bypass this projection entirely.
+export const projectChatGPTResponsesEvent = (
+  event: OpenAIResponsesStreamEventEx,
+  movedFields: ChatGPTResponsesLiteRequest['movedFields'],
+): OpenAIResponsesStreamEventEx => {
+  if (event.type === 'response.queued' || event.type === 'response.created' || event.type === 'response.in_progress'
+    || event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
+    return { ...event, response: { ...event.response, ...movedFields } };
+  }
+  return event;
+};
+
 export const projectMovedChatGPTResponsesFields = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   movedFields: ChatGPTResponsesLiteRequest['movedFields'],
@@ -198,10 +209,6 @@ export const projectMovedChatGPTResponsesFields = async function* (
       yield frame;
       continue;
     }
-    const event = frame.event;
-    if (event.type === 'response.queued' || event.type === 'response.created' || event.type === 'response.in_progress'
-      || event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
-      yield { ...frame, event: { ...event, response: { ...event.response, ...movedFields } } };
-    } else yield frame;
+    yield { ...frame, event: projectChatGPTResponsesEvent(frame.event, movedFields) };
   }
 };

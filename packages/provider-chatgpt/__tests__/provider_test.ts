@@ -178,7 +178,7 @@ describe('createChatGPTProvider', () => {
     const options = noopUpstreamCallOptions();
     options.headers.set('originator', 'chatgpt_cca');
     const result = await instance.instance.callOpenAIImagesEdits(model, {
-      images: [{ type: 'upload', file: new File(['image'], 'image.png', { type: 'image/png' }) }],
+      images: [{ type: 'upload', file: { name: 'image.png', type: 'image/png', bytes: new TextEncoder().encode('image') } }],
       parameters: { prompt: 'make it blue' },
     }, undefined, options);
     expect(result.http.status).toBe(200);

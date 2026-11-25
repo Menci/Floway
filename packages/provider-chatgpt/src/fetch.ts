@@ -1,5 +1,4 @@
-import { ChatGPTAccessOnlyCredentialError, chatgptPlanObservation, ensureChatGPTAccessToken, invalidateChatGPTAccessToken, mintChatGPTAccessToken, type ChatGPTPlanObservation } from './access-token.ts';
-import { isObject } from './auth/guards.ts';
+import { ChatGPTAccessOnlyCredentialError, chatgptPlanObservation, invalidateChatGPTAccessToken, mintChatGPTAccessToken, type ChatGPTPlanObservation } from './access-token.ts';
 import { ChatGPTOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CHATGPT_BACKEND_BASE,
@@ -10,29 +9,24 @@ import {
   CHATGPT_ORIGINATOR,
   CHATGPT_OPENAI_RESPONSES_COMPACT_PATH,
   CHATGPT_OPENAI_RESPONSES_PATH,
-  CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY,
   CHATGPT_RESPONSES_LITE_HEADER,
   CHATGPT_USER_AGENT,
 } from './constants.ts';
-import { sha256JsonUuid, uuidV7 } from './ids.ts';
-import { chatgptModelUsesResponsesLite, chatgptPlanSupportsImages } from './models.ts';
+import { uuidV7 } from './ids.ts';
+import { chatgptPlanSupportsImages } from './models.ts';
 import {
   hasChatGPTQuotaReading,
   parseChatGPTQuotaHeaders,
   putChatGPTQuota,
 } from './quota.ts';
-import {
-  encodeChatGPTResponsesLiteRequest,
-  projectMovedChatGPTResponsesFields,
-  type ChatGPTResponsesBody,
-  type ChatGPTResponsesLiteRequest,
-} from './responses-lite.ts';
+import { projectMovedChatGPTResponsesFields } from './responses-lite.ts';
 import { restoreChatGPTResponsesOutput } from './responses-output.ts';
+import { prepareChatGPTResponsesRequest, stringField, type ChatGPTRequestIdentity } from './responses-request.ts';
+import { ensureChatGPTAccessToken } from './service.ts';
 import type { ChatGPTAccessTokenEntry, ChatGPTAccountCredential } from './state.ts';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { parseOpenAIResponsesStream, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
+import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { jsonRequestBody, serializeOpenAIImagesEditsJsonPayload, type OpenAIImagesEditsRequest, type ProviderCallResult, type ProviderCompactionResult, type ProviderModel, type ProviderStreamResult, type ReplayableBody, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
 
 // Hooks for repo-side state transitions. Refresh-token rotations and
@@ -81,17 +75,15 @@ export interface CallChatGPTOpenAIImagesEditsOptions extends ChatGPTBackendCallB
   fallbackPlanType: string | undefined;
 }
 
-type ChatGPTOpenAIResponsesBody = ChatGPTResponsesBody;
-
 export const callChatGPTOpenAIResponses = async (opts: CallChatGPTOpenAIResponsesOptions): Promise<ProviderStreamResult<OpenAIResponsesStreamEventEx>> => {
-  const prepared = prepareChatGPTResponsesRequest(opts, 'generate');
+  const prepared = prepareLegacyChatGPTResponsesRequest(opts, 'generate');
   const ready = await prepareChatGPTCall(opts);
   if (!ready.ok) return { ok: false, modelKey: opts.model.id, http: ready.response };
   return await performStreamingOpenAIResponsesCall(opts, prepared, ready.accessToken, false);
 };
 
 export const callChatGPTOpenAIResponsesCompact = async (opts: CallChatGPTOpenAIResponsesCompactOptions): Promise<ProviderCompactionResult> => {
-  const prepared = prepareChatGPTResponsesRequest(opts, 'compact');
+  const prepared = prepareLegacyChatGPTResponsesRequest(opts, 'compact');
   const ready = await prepareChatGPTCall(opts);
   if (!ready.ok) return { ok: false, modelKey: opts.model.id, http: ready.response };
   return await performUnaryCompactCall(opts, prepared, ready.accessToken, false);
@@ -128,7 +120,7 @@ export const callChatGPTOpenAIImagesGenerations = async (opts: CallChatGPTOpenAI
 export const callChatGPTOpenAIImagesEdits = async (opts: CallChatGPTOpenAIImagesEditsOptions): Promise<ProviderCallResult> => {
   const prepared = await prepareChatGPTImageCall(opts);
   if (!prepared.ok) return { modelKey: opts.model.id, http: prepared.response };
-  const body = await serializeOpenAIImagesEditsJsonPayload(opts.request, opts.model.id);
+  const body = serializeOpenAIImagesEditsJsonPayload(opts.request, opts.model.id);
   const request: ChatGPTImageCallRequest = { path: CHATGPT_OPENAI_IMAGES_EDITS_PATH, body, turnId: prepared.turnId };
   return await performImageCall(opts, request, prepared.accessToken, prepared.effectivePlan, false);
 };
@@ -156,311 +148,26 @@ const prepareChatGPTCall = async (opts: ChatGPTBackendCallBase): Promise<{ ok: t
 const mintAccessToken = (opts: ChatGPTBackendCallBase, refreshToken: string) =>
   mintChatGPTAccessToken(refreshToken, opts.call.fetcher, opts.effects.persistRefreshTokenRotation);
 
-interface ChatGPTRequestIdentity {
-  installationId: string;
-  sessionId: string;
-  threadId: string;
-  clientRequestId: string;
-  turnId: string;
-  windowId: string;
-}
-
-export interface ChatGPTCompactionTurnMetadata {
-  trigger: 'manual' | 'auto';
-  reason: 'user_requested' | 'context_limit';
-  implementation: 'responses_compact' | 'responses_compaction_v2';
-  phase: 'standalone_turn' | 'mid_turn';
-  strategy: 'memento';
-}
-
-export interface ChatGPTTurnMetadataOptions {
-  requestKind: 'turn' | 'compaction';
-  compaction?: ChatGPTCompactionTurnMetadata;
-}
-
-export const CHATGPT_OPENAI_RESPONSES_COMPACTION_V2_TURN_METADATA: ChatGPTTurnMetadataOptions = {
-  requestKind: 'compaction',
-  compaction: {
-    trigger: 'manual',
-    reason: 'user_requested',
-    implementation: 'responses_compaction_v2',
-    phase: 'standalone_turn',
-    strategy: 'memento',
-  },
-};
-
 const trimHeader = (headers: Headers, name: string): string | null => {
   const value = headers.get(name)?.trim() ?? '';
   return value.length > 0 ? value : null;
 };
 
-const stringField = (record: Record<string, unknown> | null, key: string): string | null => {
-  if (record === null) return null;
-  const value = record[key];
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-const clientChatGPTClientMetadata = (body: unknown): Record<string, unknown> => {
-  if (!isObject(body)) return {};
-  const candidate = body.client_metadata;
-  return isObject(candidate) ? candidate : {};
-};
-
-const parseClientTurnMetadataJson = (raw: string | null): Record<string, unknown> | null => {
-  if (raw === null) return null;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return isObject(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-};
-
-// Codex owns one metadata snapshot per turn and projects it onto three
-// surfaces — the request headers, the body's flat `client_metadata` keys, and
-// the body's `client_metadata["x-codex-turn-metadata"]` blob — with the blob
-// declared canonical and the other two declared "compatibility projections of
-// this snapshot, not separate sources of truth":
-// https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/responses_metadata.rs#L184-L189
-//
-// Only the body surfaces are rebuilt per turn on every transport. The
-// WebSocket transport writes its headers once, during the upgrade, and then
-// carries many turns of differing `request_kind` and `window_id` over that one
-// socket without reconnecting, so reading a header there yields the
-// handshake's value for the life of the connection. Resolve the body first and
-// keep the header as the fallback for callers that only speak the header
-// projection.
-const callerTurnMetadata = (opts: ChatGPTBackendCallBase, clientMetadata: Record<string, unknown>): Record<string, unknown> | null =>
-  parseClientTurnMetadataJson(stringField(clientMetadata, 'x-codex-turn-metadata'))
-    ?? parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
-
-// Identity-mirror keys live on `identity` and are projected onto every
-// surface (headers, body's `client_metadata`, body's `x-codex-turn-metadata`
-// blob). Drop them from caller spreads so a caller that supplies the same
-// key on a different surface than identity already absorbed can't force the
-// three projections to disagree.
-const IDENTITY_MIRRORED_TURN_METADATA_KEYS = new Set<string>([
-  'installation_id', 'session_id', 'thread_id', 'turn_id', 'window_id',
-]);
-
-const IDENTITY_MIRRORED_CLIENT_METADATA_KEYS = new Set<string>([
-  'x-codex-installation-id', 'session_id', 'thread_id', 'x-codex-window-id', 'turn_id', 'x-codex-turn-metadata',
-]);
-
-const buildChatGPTRequestIdentity = (
-  opts: ChatGPTBackendCallBase,
-  body: ChatGPTOpenAIResponsesBody,
-  clientMetadata: Record<string, unknown>,
-  clientTurnMetadata: Record<string, unknown> | null,
-): ChatGPTRequestIdentity => {
-  // Identity priority for every mirrored id follows the same per-turn rule as
-  // `callerTurnMetadata`: caller body `client_metadata` key → parsed
-  // `x-codex-turn-metadata` key → caller-supplied header → gateway default. So
-  // a caller can split its identity across surfaces and we still emit
-  // consistent values everywhere, and a long-lived socket's frozen handshake
-  // headers never outrank the current turn's body.
-  const sessionId = stringField(clientMetadata, 'session_id')
-    ?? stringField(clientTurnMetadata, 'session_id')
-    ?? trimHeader(opts.headers, 'session-id')
-    ?? trimHeader(opts.headers, 'session_id')
-    ?? deriveSessionIdFromInput(body)
-    ?? uuidV7();
-  const threadId = stringField(clientMetadata, 'thread_id')
-    ?? stringField(clientTurnMetadata, 'thread_id')
-    ?? trimHeader(opts.headers, 'thread-id')
-    ?? sessionId;
-  // Codex has no `client_metadata` counterpart for this one — both transports
-  // send it as a header carrying the thread id, which is immutable for the
-  // life of a connection anyway:
-  // https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/codex-api/src/endpoint/responses.rs#L87-L91
-  // https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/client.rs#L1134-L1136
-  const clientRequestId = trimHeader(opts.headers, 'x-client-request-id') ?? threadId;
-  const installationId = stringField(clientMetadata, 'x-codex-installation-id')
-    ?? stringField(clientTurnMetadata, 'installation_id')
-    ?? opts.account.openaiDeviceId;
-  // Codex advances the window on every auto-compaction — the id is
-  // `{thread_id}:{auto_compact_window_number}` — and a reused socket carries
-  // the advanced value in the frame body alone:
-  // https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/session/mod.rs#L3684-L3689
-  const windowId = stringField(clientMetadata, 'x-codex-window-id')
-    ?? stringField(clientTurnMetadata, 'window_id')
-    ?? trimHeader(opts.headers, 'x-codex-window-id')
-    ?? `${sessionId}:0`;
-  const turnId = stringField(clientMetadata, 'turn_id')
-    ?? stringField(clientTurnMetadata, 'turn_id')
-    ?? uuidV7();
-  return { installationId, sessionId, threadId, clientRequestId, turnId, windowId };
-};
-
-// A stateless caller that re-sends the full conversation every turn would
-// otherwise mint a fresh UUIDv7 per request and never hit chatgpt.com's
-// prompt cache. Hash `instructions` + every item up to and including the
-// first user message so the id is stable across turns of the same
-// conversation (subsequent turns append tail items after the first user
-// message, so the seed shape is unchanged) and different conversations get
-// different ids. Stateful callers using `previous_response_id` reach this
-// code path with the input already expanded from the snapshot in
-// attempt.ts, so they hash the same prefix as the original turn and get
-// the same session id — no server-side session map required.
-const deriveSessionIdFromInput = (body: ChatGPTOpenAIResponsesBody): string | null => {
-  const seed = seedUpToFirstUserMessage(body.input);
-  if (seed === null) return null;
-  const instructions = typeof body.instructions === 'string' ? body.instructions : '';
-  // U+0001 keeps the instructions and JSON seed components unambiguous in the
-  // hash input.
-  return sha256JsonUuid(seed, `${instructions}`);
-};
-
-const seedUpToFirstUserMessage = (input: readonly CanonicalOpenAIResponsesInputItem[]): readonly CanonicalOpenAIResponsesInputItem[] | null => {
-  const collected: CanonicalOpenAIResponsesInputItem[] = [];
-  for (const item of input) {
-    collected.push(item);
-    if (isUserMessageItem(item)) return collected;
-  }
-  return null;
-};
-
-const isUserMessageItem = (item: CanonicalOpenAIResponsesInputItem): boolean =>
-  item.type === 'message' && item.role === 'user';
-
-const buildChatGPTTurnMetadata = (
-  identity: ChatGPTRequestIdentity,
-  options: ChatGPTTurnMetadataOptions,
-  clientOverrides: Record<string, unknown> | null,
-): Record<string, unknown> => {
-  const base: Record<string, unknown> = {
-    installation_id: identity.installationId,
-    session_id: identity.sessionId,
-    thread_id: identity.threadId,
-    turn_id: identity.turnId,
-    window_id: identity.windowId,
-    request_kind: options.requestKind,
-  };
-  if (options.compaction !== undefined) base.compaction = options.compaction;
-  if (clientOverrides === null) return base;
-  // Identity-mirror keys already came from `identity`; only carry the
-  // caller's extras (turn_started_at_unix_ms, sandbox, workspaces,
-  // parent_thread_id, …) into the outgoing blob.
-  for (const [k, v] of Object.entries(clientOverrides)) {
-    if (!IDENTITY_MIRRORED_TURN_METADATA_KEYS.has(k)) base[k] = v;
-  }
-  return base;
-};
-
-// The blob rides both the body and a header. Codex keeps the unbounded tool
-// inventory in the body copy only, "so HTTP and WebSocket compatibility
-// headers remain bounded":
-// https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/responses_metadata.rs#L291-L300
-const HEADER_OMITTED_TURN_METADATA_KEYS = new Set<string>(['tool_namespaces_info']);
-
-interface ChatGPTTurnMetadataJson {
-  body: string;
-  header: string;
-}
-
-const buildChatGPTTurnMetadataJson = (
-  identity: ChatGPTRequestIdentity,
-  options: ChatGPTTurnMetadataOptions,
-  clientOverrides: Record<string, unknown> | null,
-): ChatGPTTurnMetadataJson => {
-  const turnMetadata = buildChatGPTTurnMetadata(identity, options, clientOverrides);
-  return {
-    body: JSON.stringify(turnMetadata),
-    header: JSON.stringify(Object.fromEntries(
-      Object.entries(turnMetadata).filter(([key]) => !HEADER_OMITTED_TURN_METADATA_KEYS.has(key)),
-    )),
-  };
-};
-
-const buildChatGPTClientMetadata = (identity: ChatGPTRequestIdentity, turnMetadataJson: string): Record<string, string> => ({
-  'x-codex-installation-id': identity.installationId,
-  session_id: identity.sessionId,
-  thread_id: identity.threadId,
-  'x-codex-window-id': identity.windowId,
-  turn_id: identity.turnId,
-  'x-codex-turn-metadata': turnMetadataJson,
-});
-
-interface PreparedChatGPTResponsesRequest {
-  identity: ChatGPTRequestIdentity;
-  turnMetadataJson: ChatGPTTurnMetadataJson;
-  responsesLite: boolean;
-  movedFields: ChatGPTResponsesLiteRequest['movedFields'];
-  body: ReplayableBody;
-}
-
-const prepareChatGPTResponsesRequest = (
+const prepareLegacyChatGPTResponsesRequest = (
   opts: CallChatGPTOpenAIResponsesOptions | CallChatGPTOpenAIResponsesCompactOptions,
   action: 'generate' | 'compact',
-): PreparedChatGPTResponsesRequest => {
-  const clientMetadata = { ...clientChatGPTClientMetadata(opts.body) };
-  delete clientMetadata[CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY];
-  const clientTurnMetadata = callerTurnMetadata(opts, clientMetadata);
-  const identity = buildChatGPTRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
-  const metadata: ChatGPTTurnMetadataOptions = action === 'compact'
-    ? { requestKind: 'compaction' }
-    : opts.body.input.some(item => item.type === 'compaction_trigger')
-      ? CHATGPT_OPENAI_RESPONSES_COMPACTION_V2_TURN_METADATA
-      : { requestKind: 'turn' };
-  const turnMetadataJson = buildChatGPTTurnMetadataJson(identity, metadata, clientTurnMetadata);
-  const standard = { ...opts.body, client_metadata: clientMetadata };
-  const responsesLite = chatgptModelUsesResponsesLite(opts.model);
-  const encoded = responsesLite ? encodeChatGPTResponsesLiteRequest(standard, identity.threadId) : undefined;
-  const wire = encoded?.body ?? standard;
-  return {
-    identity,
-    turnMetadataJson,
-    responsesLite,
-    movedFields: encoded?.movedFields ?? {},
-    body: jsonRequestBody(action === 'compact'
-      ? buildChatGPTOpenAIResponsesCompactBody(wire, opts.model.id)
-      : buildChatGPTOpenAIResponsesBody(wire, opts.model.id, identity, turnMetadataJson.body)),
-  };
+) => {
+  const prepared = prepareChatGPTResponsesRequest({
+    body: opts.body,
+    deviceId: opts.account.openaiDeviceId,
+    model: opts.model,
+    modelKey: opts.model.id,
+    getHeader: name => trimHeader(opts.headers, name),
+  }, action);
+  return { ...prepared, body: jsonRequestBody(prepared.body) };
 };
 
-const buildChatGPTOpenAIResponsesBody = (
-  wire: ChatGPTResponsesBody,
-  modelKey: string,
-  identity: ChatGPTRequestIdentity,
-  turnMetadataJson: string,
-): Record<string, unknown> => {
-  const callerExtras: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(clientChatGPTClientMetadata(wire))) {
-    if (!IDENTITY_MIRRORED_CLIENT_METADATA_KEYS.has(k)) callerExtras[k] = v;
-  }
-  const body: Record<string, unknown> = {
-    ...wire,
-    model: modelKey,
-    store: false,
-    stream: true,
-    client_metadata: {
-      ...buildChatGPTClientMetadata(identity, turnMetadataJson),
-      ...callerExtras,
-    },
-  };
-  if (body.prompt_cache_key === undefined) body.prompt_cache_key = identity.threadId;
-  return body;
-};
-
-// Codex's private compact endpoint accepts these create-only fields in addition
-// to the public compact payload. Encode before projecting so tool and
-// instruction carriers reach the wire.
-// https://github.com/openai/codex/blob/3d2ee51ca2d5db578f328aa75e20aa22c0197c9a/codex-rs/core/src/client.rs#L651-L678
-const CHATGPT_COMPACT_EXTENSION_FIELDS = ['tools', 'parallel_tool_calls', 'reasoning', 'text'] as const;
-
-const buildChatGPTOpenAIResponsesCompactBody = (
-  wire: ChatGPTResponsesBody,
-  modelKey: string,
-): Record<string, unknown> => {
-  const body: Record<string, unknown> = { ...toCompactPayloadShape(wire), model: modelKey };
-  for (const field of CHATGPT_COMPACT_EXTENSION_FIELDS) {
-    const value = wire[field];
-    if (value !== undefined) body[field] = value;
-  }
-  return body;
-};
+type PreparedChatGPTResponsesRequest = ReturnType<typeof prepareLegacyChatGPTResponsesRequest>;
 
 interface ChatGPTHttpCallRequest {
   accessToken: string;
