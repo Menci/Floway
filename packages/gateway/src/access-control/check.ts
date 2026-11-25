@@ -10,7 +10,7 @@ const assertCompatible = (target: AccessTarget, requirement: AccessRequirement):
 };
 
 export const checkMany = async (
-  subject: User,
+  subject: Pick<User, 'id' | 'isAdmin'>,
   checks: readonly AccessCheck[],
 ): Promise<boolean[]> => {
   for (const check of checks) assertCompatible(check.target, check.requirement);

@@ -20,8 +20,8 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
 };
 
 // https://www.rfc-editor.org/rfc/rfc9110.html#section-10.2.3
-const retryTime = (result: IterableAttemptResult): number | null => {
-  const value = result.http?.headers.get('retry-after')?.trim();
+export const retryTime = (retryAfter: string | null | undefined): number | null => {
+  const value = retryAfter?.trim();
   if (!value) return null;
   const now = Date.now();
   if (/^\d+(?:\.\d+)?$/.test(value)) {
@@ -83,7 +83,7 @@ export const iterateCandidates = async <T extends IterableAttemptResult>(
 
       if (isAttemptSuccess(result)) return result;
       lastTransportError = undefined;
-      const time = retryTime(result);
+      const time = retryTime(result.http?.headers.get('retry-after'));
       if (earliestRetryTime !== null && (time === null || time >= earliestRetryTime)) {
         discardFailure(ctx, result);
         continue;

@@ -50,11 +50,10 @@ export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
 //
 // `preFetchedUpstreams` lets a caller reuse a list it already loaded on
 // this request instead of paying a second `upstreams.list()` round-trip.
-export const listModelProviders = async (
+export const selectEnabledUpstreams = (
   upstreamFilter: readonly string[] | null,
-  preFetchedUpstreams?: readonly StoredUpstreamRecord[],
-): Promise<GatewayProvider[]> => {
-  const upstreams = preFetchedUpstreams ?? await getRepo().upstreams.list();
+  upstreams: readonly StoredUpstreamRecord[],
+): StoredUpstreamRecord[] => {
   const enabledById = new Map<string, StoredUpstreamRecord>();
   for (const upstream of upstreams) {
     if (upstream.enabled) enabledById.set(upstream.id, upstream);
@@ -66,9 +65,15 @@ export const listModelProviders = async (
   // than fatal: it narrows the scope and drops out on the next write to the
   // user or key. The principal keeps serving on the rest of its cap; a
   // selection emptied this way is an empty catalog, not an error.
-  const selection = upstreamFilter
+  return upstreamFilter
     ? upstreamFilter.map(id => enabledById.get(id)).filter((u): u is StoredUpstreamRecord => u !== undefined)
     : [...enabledById.values()];
-
-  return selection.map(record => createProvider(record));
 };
+
+export const listModelProviders = async (
+  upstreamFilter: readonly string[] | null,
+  preFetchedUpstreams?: readonly StoredUpstreamRecord[],
+): Promise<GatewayProvider[]> => selectEnabledUpstreams(
+  upstreamFilter,
+  preFetchedUpstreams ?? await getRepo().upstreams.list(),
+).map(createProvider);

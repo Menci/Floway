@@ -1,16 +1,30 @@
 import { isEqual, uniqWith } from 'es-toolkit';
 
 import { internalModelFromProviderModel } from './catalog.ts';
-import { readUpstreamModelsSnapshotAndScheduleRefresh } from './models-cache.ts';
-import { listModelProviders, type GatewayProvider } from './registry.ts';
+import { modelCatalogSource, readUpstreamModelsSnapshotAndScheduleRefresh, type ModelCatalogSource } from './models-cache.ts';
+import { listModelProviders, selectEnabledUpstreams, type GatewayProvider } from './registry.ts';
 import { checkMany } from '../../access-control/check.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { createModelsRefreshScheduler, type ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ModelAliasRecord, User } from '../../repo/types.ts';
+import type { ModelAliasRecord, StoredUpstreamRecord, User } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ModelKind } from '@floway-dev/protocols/common';
-import type { Fetcher, ModelCandidate } from '@floway-dev/provider';
+import type { AliasRules, ModelKind } from '@floway-dev/protocols/common';
+import type { Fetcher, ModelCandidate, ProviderModel } from '@floway-dev/provider';
+
+type Subject = Pick<User, 'id' | 'isAdmin'>;
+
+interface CatalogCandidate<Source> {
+  readonly source: Source;
+  readonly model: ProviderModel;
+  readonly rules?: AliasRules;
+}
+
+interface CandidateSearch<Candidate> {
+  readonly candidates: readonly Candidate[];
+  readonly sawModel: boolean;
+  readonly failedUpstreams: readonly string[];
+}
 
 // Resolve one inbound id against one upstream. The upstream's
 // `modelPrefix.addressable` configuration decides which lookup branches
@@ -26,17 +40,13 @@ import type { Fetcher, ModelCandidate } from '@floway-dev/provider';
 // a candidate. `sawModel` is true whenever the lookup id appeared in the
 // catalog regardless of kind, so the caller can distinguish
 // "id is unknown to this upstream" from "id exists but wrong kind".
-const enumerateOneUpstreamCandidates = (
-  provider: GatewayProvider,
+const enumerateOneUpstreamCandidates = <Source extends ModelCatalogSource>(
+  source: Source,
   modelId: string,
   kind: ModelKind,
-  context: {
-    fetcher: Fetcher;
-    scheduleRefresh: ModelsRefreshScheduler;
-  },
-): { candidates: ModelCandidate[]; sawModel: boolean; modelsError: boolean } => {
-  const { fetcher, scheduleRefresh } = context;
-  const cfg = provider.modelPrefix;
+  scheduleRefresh: ModelsRefreshScheduler,
+): { candidates: CatalogCandidate<Source>[]; sawModel: boolean; modelsError: boolean } => {
+  const cfg = source.modelPrefix;
   const lookupIds: string[] = [];
   if (cfg === null) {
     lookupIds.push(modelId);
@@ -48,16 +58,16 @@ const enumerateOneUpstreamCandidates = (
   }
   if (lookupIds.length === 0) return { candidates: [], sawModel: false, modelsError: false };
 
-  const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(provider, scheduleRefresh);
-  const disabled = new Set(provider.disabledPublicModelIds);
-  const candidates: ModelCandidate[] = [];
+  const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(source, scheduleRefresh);
+  const disabled = new Set(source.disabledPublicModelIds);
+  const candidates: CatalogCandidate<Source>[] = [];
   let sawModel = false;
   for (const lookupId of lookupIds) {
     const match = snapshot.models.find(m => m.id === lookupId && !disabled.has(m.id));
     if (!match) continue;
     sawModel = true;
     if (match.kind === kind) {
-      candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId), fetcher });
+      candidates.push({ source, model: match });
     }
   }
   return { candidates, sawModel, modelsError: snapshot.lastError !== null };
@@ -83,8 +93,48 @@ const shuffled = <T>(items: readonly T[]): T[] => {
 //
 // `sawModel` aggregates only permitted catalogs, regardless of kind. Denied
 // entries do not disclose model existence through this signal.
+const enumerateCatalogModelCandidates = async <Source extends ModelCatalogSource>(
+  subject: Subject,
+  modelId: string,
+  kind: ModelKind,
+  sources: readonly Source[],
+  context: {
+    randomizeUpstreams: boolean;
+    scheduleRefresh: ModelsRefreshScheduler;
+  },
+): Promise<CandidateSearch<CatalogCandidate<Source>>> => {
+  const { randomizeUpstreams, scheduleRefresh } = context;
+  const allowed = await checkMany(subject, sources.map(source => ({
+    target: { kind: 'upstreamModel' as const, upstreamId: source.upstreamId, model: { kind: 'exact' as const, value: modelId } },
+    requirement: { permission: 'Model.Use' as const },
+  })));
+  const failedUpstreams: string[] = [];
+  const candidateGroups: CatalogCandidate<Source>[][] = [];
+  let sawModel = false;
+  for (let index = 0; index < sources.length; index++) {
+    if (!allowed[index]) continue;
+    const source = sources[index]!;
+    const result = enumerateOneUpstreamCandidates(source, modelId, kind, scheduleRefresh);
+    if (result.candidates.length > 0) candidateGroups.push(result.candidates);
+    sawModel = sawModel || result.sawModel;
+    if (result.modelsError) failedUpstreams.push(source.name);
+  }
+  const orderedGroups = randomizeUpstreams ? shuffled(candidateGroups) : candidateGroups;
+  return { candidates: orderedGroups.flat(), sawModel, failedUpstreams };
+};
+
+const modelCandidate = (
+  { source: provider, model, rules }: CatalogCandidate<GatewayProvider>,
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+): ModelCandidate => ({
+  provider,
+  model: internalModelFromProviderModel(model, provider.upstreamId),
+  fetcher: fetcherForUpstream(provider.upstreamId),
+  ...(rules === undefined ? {} : { rules }),
+});
+
 export const enumerateRealModelCandidates = async (
-  subject: User,
+  subject: Subject,
   modelId: string,
   kind: ModelKind,
   providers: readonly GatewayProvider[],
@@ -93,32 +143,9 @@ export const enumerateRealModelCandidates = async (
     randomizeUpstreams: boolean;
     scheduleRefresh: ModelsRefreshScheduler;
   },
-): Promise<{
-  readonly candidates: readonly ModelCandidate[];
-  readonly sawModel: boolean;
-  readonly failedUpstreams: readonly string[];
-}> => {
-  const { fetcherForUpstream, randomizeUpstreams, scheduleRefresh } = context;
-  const allowed = await checkMany(subject, providers.map(provider => ({
-    target: { kind: 'upstreamModel' as const, upstreamId: provider.upstreamId, model: { kind: 'exact' as const, value: modelId } },
-    requirement: { permission: 'Model.Use' as const },
-  })));
-  const failedUpstreams: string[] = [];
-  const candidateGroups: ModelCandidate[][] = [];
-  let sawModel = false;
-  for (let index = 0; index < providers.length; index++) {
-    if (!allowed[index]) continue;
-    const provider = providers[index]!;
-    const result = enumerateOneUpstreamCandidates(provider, modelId, kind, {
-      fetcher: fetcherForUpstream(provider.upstreamId),
-      scheduleRefresh,
-    });
-    if (result.candidates.length > 0) candidateGroups.push(result.candidates);
-    sawModel = sawModel || result.sawModel;
-    if (result.modelsError) failedUpstreams.push(provider.name);
-  }
-  const orderedGroups = randomizeUpstreams ? shuffled(candidateGroups) : candidateGroups;
-  return { candidates: orderedGroups.flat(), sawModel, failedUpstreams };
+): Promise<CandidateSearch<ModelCandidate>> => {
+  const { candidates, ...diagnostics } = await enumerateCatalogModelCandidates(subject, modelId, kind, providers, context);
+  return { ...diagnostics, candidates: candidates.map(candidate => modelCandidate(candidate, context.fetcherForUpstream)) };
 };
 
 const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['targets'][number][] => {
@@ -126,42 +153,10 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
   return shuffled(alias.targets);
 };
 
-// Per-request model resolution. Two-branch chain:
-//
-//   1. Look the inbound id up in the alias repo. When the id names an
-//      alias, walk every target in `selection`-mode order, delegate to the
-//      real-catalog resolver for each one, tag each returned candidate
-//      with that target's rule overlay, flatten across targets, and dedup
-//      by (modelId, upstreamId, rules) — same (model, upstream) with
-//      differing rules stays as distinct candidates so both variants can
-//      be dispatched. `iterateCandidates` at the serve layer then cascades
-//      across every kept candidate: a target's upstreams all failing over
-//      falls through into the next target's candidates instead of hard-
-//      failing at the first target.
-//   2. Otherwise (no alias match at all) run the real-catalog resolver
-//      directly on the inbound id.
-//
-// The real-catalog resolver applies Model.Use before reading each catalog,
-// then filters by kind. `sawModel` tracks non-disabled addressable matches in
-// permitted catalogs. With no candidates, false keeps hidden/missing IDs at 404;
-// true identifies wrong-kind matches (400).
-//
-// Endpoint-level narrowing — picking the chat target protocol from
-// `model.endpoints`, or checking the specific `openaiImagesEdits` /
-// `openaiImagesGenerations` / `openaiAudioTranscriptions` / `openaiCompletions` endpoint key —
-// is the caller's job.
-// This function stays endpoint-blind so the same path serves chat,
-// OpenAI Embeddings, OpenAI Images Generations/Edits, rerank, OpenAI Audio
-// Transcriptions, and OpenAI Completions.
-//
-// The alias walk is a natural top-of-chain check: by construction an
-// alias's target id is a real model id, so the shadow pattern (an alias
-// whose first target matches its own name) resolves to the real model on
-// the first pass; alias names never re-enter the alias layer.
 export const enumerateModelCandidates = async ({
   subject, upstreamIds, randomizeUpstreams, model, kind, scheduler, runtimeLocation,
 }: {
-  subject: User;
+  subject: Subject;
   // null = unrestricted; empty list = no providers visible.
   upstreamIds: readonly string[] | null;
   randomizeUpstreams: boolean;
@@ -172,25 +167,55 @@ export const enumerateModelCandidates = async ({
   // Threaded into the per-request fetcher so colo-scoped fallback entries
   // can be honoured at dial time.
   runtimeLocation: string;
-}): Promise<{
-  readonly candidates: readonly ModelCandidate[];
-  readonly sawModel: boolean;
-  readonly failedUpstreams: readonly string[];
-}> => {
+}): Promise<CandidateSearch<ModelCandidate>> => {
   const upstreams = await getRepo().upstreams.list();
   const [createFetcherForUpstream, listedProviders] = await Promise.all([
     createPerRequestFetcher(runtimeLocation, upstreams),
     listModelProviders(upstreamIds, upstreams),
   ]);
-  const resolutionContext = {
-    fetcherForUpstream: createFetcherForUpstream,
+  const { candidates, ...diagnostics } = await resolveCatalogCandidates(subject, model, kind, listedProviders, {
     randomizeUpstreams,
     scheduleRefresh: createModelsRefreshScheduler(runtimeLocation, scheduler),
-  };
+  });
+  return { ...diagnostics, candidates: candidates.map(candidate => modelCandidate(candidate, createFetcherForUpstream)) };
+};
 
+export interface FindCandidatesInput {
+  readonly subject: Subject;
+  readonly upstreamIds: readonly string[] | null;
+  readonly randomizeUpstreams: boolean;
+  readonly model: string;
+  readonly kind: ModelKind;
+  readonly scheduleRefresh: ModelsRefreshScheduler;
+}
+
+export const findCatalogCandidates = async (
+  upstreams: readonly StoredUpstreamRecord[],
+  { subject, model, kind, upstreamIds, randomizeUpstreams, scheduleRefresh }: FindCandidatesInput,
+): Promise<CandidateSearch<{ readonly upstream: StoredUpstreamRecord; readonly model: ProviderModel; readonly rules?: AliasRules }>> => {
+  const sources = selectEnabledUpstreams(upstreamIds, upstreams).map(upstream => ({ ...modelCatalogSource(upstream), upstream }));
+  const { candidates, ...diagnostics } = await resolveCatalogCandidates(subject, model, kind, sources, { randomizeUpstreams, scheduleRefresh });
+  return {
+    ...diagnostics,
+    candidates: candidates.map(({ source, model: matched, rules }) => ({
+      upstream: source.upstream,
+      model: matched,
+      ...(rules === undefined ? {} : { rules }),
+    })),
+  };
+};
+
+// Alias targets walk the real catalog directly, including aliases that share a real model's name.
+const resolveCatalogCandidates = async <Source extends ModelCatalogSource>(
+  subject: Subject,
+  model: string,
+  kind: ModelKind,
+  sources: readonly Source[],
+  context: { randomizeUpstreams: boolean; scheduleRefresh: ModelsRefreshScheduler },
+): Promise<CandidateSearch<CatalogCandidate<Source>>> => {
   const alias = await getRepo().modelAliases.getByName(model);
   if (alias === null) {
-    return await enumerateRealModelCandidates(subject, model, kind, listedProviders, resolutionContext);
+    return await enumerateCatalogModelCandidates(subject, model, kind, sources, context);
   }
 
   // Walk every target, tag each returned candidate with the target's rule
@@ -200,9 +225,9 @@ export const enumerateModelCandidates = async ({
   // same physical binding under two rule variants.
   const aggregatedFailed = new Set<string>();
   let sawModel = false;
-  const flat: ModelCandidate[] = [];
+  const flat: CatalogCandidate<Source>[] = [];
   for (const target of orderAliasTargets(alias)) {
-    const result = await enumerateRealModelCandidates(subject, target.target_model_id, kind, listedProviders, resolutionContext);
+    const result = await enumerateCatalogModelCandidates(subject, target.target_model_id, kind, sources, context);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);
     if (result.sawModel) sawModel = true;
     for (const candidate of result.candidates) {
@@ -211,7 +236,7 @@ export const enumerateModelCandidates = async ({
   }
   const deduped = uniqWith(flat, (candidate, existing) =>
     candidate.model.id === existing.model.id
-    && candidate.provider.upstreamId === existing.provider.upstreamId
+    && candidate.source.upstreamId === existing.source.upstreamId
     && isEqual(candidate.rules, existing.rules));
   return {
     candidates: deduped,
