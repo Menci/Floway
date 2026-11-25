@@ -17,7 +17,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/re
 import { tokenUsageFromOpenAIImagesBody } from '../shared/telemetry/usage.ts';
 import { isJsonMediaType, isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import type { OpenAIImageEditReference } from '@floway-dev/protocols/openai-images';
-import { isBase64ImageDataUrl, type OpenAIImagesEditsRequest, type OpenAIImagesEditsSource } from '@floway-dev/provider';
+import { isBase64ImageDataUrl, readUploadedFile, type OpenAIImagesEditsRequest, type OpenAIImagesEditsSource, type UploadedFile } from '@floway-dev/provider';
 
 type PreparedOpenAIImagesEdit =
   | { type: 'ok'; request: OpenAIImagesEditsRequest }
@@ -150,17 +150,17 @@ export const openaiImagesEdits = async (c: Context): Promise<Response> => {
   if (typeof model !== 'string' || model.length === 0) {
     return invalid('OpenAI Images Edits request body must include a model field.');
   }
-  const images: File[] = [];
-  let mask: File | undefined;
+  const images: UploadedFile[] = [];
+  let mask: UploadedFile | undefined;
   const parameters: Record<string, string | number | boolean> = {};
   for (const [name, value] of form.entries()) {
     if (name === 'model') continue;
     if (name === 'image' || name === 'image[]') {
       if (!(value instanceof File)) return invalid(`OpenAI Images Edits ${name} fields must be files.`);
-      images.push(value);
+      images.push(await readUploadedFile(value));
     } else if (name === 'mask') {
       if (!(value instanceof File)) return invalid('OpenAI Images Edits mask field must be a file.');
-      mask = value;
+      mask = await readUploadedFile(value);
     } else {
       if (typeof value !== 'string') return invalid(`OpenAI Images Edits ${name} field must be text.`);
       parameters[name] = value;

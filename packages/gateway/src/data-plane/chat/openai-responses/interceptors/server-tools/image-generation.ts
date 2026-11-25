@@ -965,11 +965,11 @@ const buildEditsRequest = (
   };
   const images = sources.map((source, index) => ({
     type: 'upload' as const,
-    file: new File([source.bytes], `image_${index}.${editFileExt(source.mimeType)}`, { type: source.mimeType }),
+    file: { name: `image_${index}.${editFileExt(source.mimeType)}`, type: source.mimeType, bytes: new Uint8Array(source.bytes) },
   }));
   const maskFile = mask === undefined
     ? undefined
-    : new File([mask.bytes], `mask.${editFileExt(mask.mimeType)}`, { type: mask.mimeType });
+    : { name: `mask.${editFileExt(mask.mimeType)}`, type: mask.mimeType, bytes: new Uint8Array(mask.bytes) };
   return {
     images,
     ...(maskFile === undefined ? {} : { mask: { type: 'upload' as const, file: maskFile } }),

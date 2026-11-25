@@ -4,10 +4,7 @@ import { serializeModelPathOpenAIAudioTranscriptionRequest, serializeModelFieldO
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 test('serializeModelFieldOpenAIAudioTranscriptionRequest preserves ordered fields and file metadata while replacing model', async () => {
-  const file = new File([new Uint8Array([1, 2, 3, 4])], 'meeting.wav', {
-    type: 'audio/wav',
-    lastModified: 1_700_000_000_000,
-  });
+  const file = { name: 'meeting.wav', type: 'audio/wav', bytes: Uint8Array.of(1, 2, 3, 4) };
   const form = serializeModelFieldOpenAIAudioTranscriptionRequest({
     entries: [
       { name: 'file', value: file },
@@ -26,15 +23,14 @@ test('serializeModelFieldOpenAIAudioTranscriptionRequest preserves ordered field
   assertExists(serializedFile as File);
   assertEquals((serializedFile as File).name, 'meeting.wav');
   assertEquals((serializedFile as File).type, 'audio/wav');
-  assertEquals((serializedFile as File).lastModified, file.lastModified);
-  assertEquals(new Uint8Array(await (serializedFile as File).arrayBuffer()), new Uint8Array([1, 2, 3, 4]));
+  assertEquals(new Uint8Array(await (serializedFile as File).arrayBuffer()), file.bytes);
 });
 
 test('serializeModelPathOpenAIAudioTranscriptionRequest omits model fields selected by the URL', () => {
   const form = serializeModelPathOpenAIAudioTranscriptionRequest({
     entries: [
       { name: 'model', value: 'public-model' },
-      { name: 'file', value: new File(['audio'], 'meeting.wav', { type: 'audio/wav' }) },
+      { name: 'file', value: { name: 'meeting.wav', type: 'audio/wav', bytes: new TextEncoder().encode('audio') } },
       { name: 'response_format', value: 'json' },
     ],
   });

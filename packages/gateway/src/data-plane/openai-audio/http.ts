@@ -12,7 +12,7 @@ import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gat
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
-import type { OpenAIAudioTranscriptionFormEntry } from '@floway-dev/provider';
+import { readUploadedFile, type OpenAIAudioTranscriptionFormEntry } from '@floway-dev/provider';
 
 type PreparedOpenAIAudioTranscription =
   | {
@@ -46,7 +46,7 @@ const prepareOpenAIAudioTranscription = async (bytes: Uint8Array, contentType: s
 
   const entries: OpenAIAudioTranscriptionFormEntry[] = [];
   for (const [name, value] of form.entries()) {
-    entries.push({ name, value });
+    entries.push({ name, value: typeof value === 'string' ? value : await readUploadedFile(value) });
   }
   return {
     type: 'ok',
