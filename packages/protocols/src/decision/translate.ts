@@ -94,12 +94,14 @@ const isImageDetail = (value: unknown): value is 'low' | 'high' | 'auto' | 'orig
 
 const openAIContentPart = (part: unknown, field: string): Result<DecisionContentPart, string> => {
   if (!isRecord(part)) return { ok: false, error: `${field} must be an object` };
-  if (part.type === 'input_text') {
+  const { type } = part;
+  if (typeof type !== 'string') return { ok: false, error: `${field}.type must be a string` };
+  if (type === 'input_text') {
     const { text } = part;
     if (typeof text !== 'string' || text.length === 0) return { ok: false, error: `${field}.text must be a non-empty string` };
     return { ok: true, value: { type: 'text', text } };
   }
-  if (part.type === 'input_image') {
+  if (type === 'input_image') {
     const detail = part.detail ?? undefined;
     if (detail !== undefined && !isImageDetail(detail)) return { ok: false, error: `${field}.detail must be one of low, high, auto, original` };
     const { image_url: imageUrl } = part;
@@ -113,11 +115,11 @@ const openAIContentPart = (part: unknown, field: string): Result<DecisionContent
       },
     };
   }
-  if (part.type === 'input_json') {
+  if (type === 'input_json') {
     if (!isRecord(part.data) && !Array.isArray(part.data)) return { ok: false, error: `${field}.data must be an object or an array` };
     return { ok: true, value: { type: 'json', data: part.data } };
   }
-  return { ok: false, error: `${field}.type ${JSON.stringify(part.type)} is not supported` };
+  return { ok: false, error: `${field}.type ${JSON.stringify(type)} is not supported` };
 };
 
 const openAIContent = (content: unknown, field: string): Result<readonly DecisionContentPart[] | string, string> => {
@@ -143,7 +145,8 @@ const openAIInputState = (input: unknown): Result<DecisionState, string> => {
   const parts: DecisionContentPart[] = [];
   for (const [index, item] of input.entries()) {
     if (!isRecord(item)) return { ok: false, error: `input[${index}] must be an object` };
-    if (!OPENAI_MESSAGE_ROLES.has(String(item.role))) return { ok: false, error: `input[${index}].role is not supported` };
+    const { role } = item;
+    if (typeof role !== 'string' || !OPENAI_MESSAGE_ROLES.has(role)) return { ok: false, error: `input[${index}].role is not supported` };
     const content = openAIContent(item.content, `input[${index}].content`);
     if (!content.ok) return content;
     if (typeof content.value === 'string') parts.push({ type: 'text', text: content.value });

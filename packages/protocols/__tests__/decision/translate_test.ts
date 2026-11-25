@@ -26,6 +26,14 @@ describe('decision request ingress', () => {
     const defect = new TypeError('unexpected state access');
     expect(() => parseDecisionRequest('typesafe-systemone', { ...choiceRequest, get state() { throw defect; } })).toThrow(defect);
   });
+
+  test('rejects object-valued OpenAI roles and content types at the field', () => {
+    const object = { toString: null, valueOf: null };
+    expect(parseDecisionRequest('openai-decisions', { model: 'm', input: [{ role: object, content: 'hello' }] }))
+      .toEqual({ ok: false, error: 'input[0].role is not supported' });
+    expect(parseDecisionRequest('openai-decisions', { model: 'm', input: [{ role: 'user', content: [{ type: object }] }] }))
+      .toEqual({ ok: false, error: 'input[0].content[0].type must be a string' });
+  });
 });
 
 describe('decision request serialization', () => {
