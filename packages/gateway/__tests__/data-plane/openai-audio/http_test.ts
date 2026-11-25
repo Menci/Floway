@@ -1,25 +1,24 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import type { InMemoryRepo } from '../../repo/memory.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { flushAsyncWork, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
-const registerAudioModel = async (
+const saveAudioModel = async (
   repo: InMemoryRepo,
-  pricing?: ModelPricing,
+  { id, host, sortOrder, pricing }: { id: string; host: string; sortOrder: number; pricing: ModelPricing | undefined },
 ): Promise<void> => {
-  await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
   await saveUpstreamForTest(repo.upstreams, {
-    id: 'up_audio',
+    id,
     kind: 'custom',
     name: 'Audio Provider',
     enabled: true,
     usageRefreshIntervalMinutes: 0,
-    sortOrder: 1,
+    sortOrder,
     createdAt: '2026-07-21T00:00:00.000Z',
     updatedAt: '2026-07-21T00:00:00.000Z',
     state: null,
@@ -30,7 +29,7 @@ const registerAudioModel = async (
     modelsCache: null,
     hue: 210,
     config: {
-      baseUrl: 'https://audio.example.com',
+      baseUrl: `https://${host}`,
       ingressHeadersRules: [],
       apiKey: 'sk-audio',
       endpoints: {},
@@ -44,6 +43,12 @@ const registerAudioModel = async (
       }],
     },
   });
+};
+
+const registerAudioModel = async (repo: InMemoryRepo, pricing?: ModelPricing): Promise<void> => {
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+  await saveAudioModel(repo, { id: 'up_audio', host: 'audio.example.com', sortOrder: 1, pricing });
 };
 
 const transcriptionForm = (fields: readonly [string, string][] = []): FormData => {
@@ -102,7 +107,7 @@ test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, a
   assertEquals((file as File).type, 'audio/wav');
   assertEquals(new Uint8Array(await (file as File).arrayBuffer()), new Uint8Array([1, 2, 3, 4]));
 
-  await flushAsyncWork();
+  await flushBackground();
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.requests, 1);
   assertEquals(usage.metrics, [
@@ -136,7 +141,7 @@ test('/v1/audio/transcriptions opens SSE with 200 and streams through transcript
       assertEquals(stream.includes('[DONE]'), false);
     },
   );
-  await flushAsyncWork();
+  await flushBackground();
   const [usage] = await repo.usage.listAll();
   assertEquals(usage.metrics.map(row => ({ metric: row.metric, quantity: row.quantity })), [
     { metric: 'input_tokens', quantity: '3' },
@@ -206,9 +211,8 @@ test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/audio/t
       assertEquals((await reader.read()).done, true);
     },
   );
-  await flushAsyncWork();
-  const [usage] = await repo.usage.listAll();
-  assertEquals(usage.requests, 1);
+  await flushBackground();
+  expect(await repo.usage.listAll()).toEqual([]);
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
 });
@@ -226,9 +230,70 @@ test('/v1/audio/transcriptions counts a bodyless SSE response as a failed reques
       assertEquals(response.headers.get('x-empty-trace'), 'empty-sse');
     },
   );
-  await flushAsyncWork();
-  const [usage] = await repo.usage.listAll();
-  assertEquals(usage.requests, 1);
+  await flushBackground();
+  expect(await repo.usage.listAll()).toEqual([]);
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
+});
+
+test.each([
+  {
+    name: 'JSON error',
+    upstream: () => Response.json({ error: { code: 'vendor_failure' } }, { status: 422, headers: { 'x-upstream': 'second' } }),
+    status: 422,
+    body: { error: { code: 'vendor_failure' } },
+  },
+  {
+    name: 'text error',
+    upstream: () => new Response('temporarily unavailable', { status: 503, headers: { 'x-upstream': 'second' } }),
+    status: 503,
+    body: { error: { message: 'temporarily unavailable', type: 'api_error' } },
+  },
+  {
+    name: 'WebVTT result',
+    upstream: () => new Response('WEBVTT\n\n00:00:00.000 --> 00:00:03.000\nhello\n', {
+      status: 201, headers: { 'content-type': 'text/vtt', 'x-upstream': 'second' },
+    }),
+    status: 201,
+    body: 'WEBVTT\n\n00:00:00.000 --> 00:00:03.000\nhello\n',
+  },
+])('/v1/audio/transcriptions selects the $name and rebuilds the upload for failover', async ({ upstream, status, body }) => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerAudioModel(repo);
+  await saveAudioModel(repo, { id: 'second', host: 'second.example.com', sortOrder: 2, pricing: undefined });
+  const calls: string[] = [];
+
+  await withMockedFetch(async request => {
+    const url = new URL(request.url);
+    expect(url.pathname).toBe('/v1/audio/transcriptions');
+    const form = await request.formData();
+    expect(form.get('model')).toBe('gpt-4o-transcribe-upstream');
+    const file = form.get('file');
+    if (!(file instanceof File)) throw new TypeError('Expected the multipart audio file');
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(Uint8Array.of(1, 2, 3, 4));
+    calls.push(url.hostname);
+    return url.hostname === 'audio.example.com' ? new Response('first failure', { status: 500 }) : upstream();
+  }, async () => {
+    const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key },
+      body: transcriptionForm([['response_format', 'vtt']]),
+    });
+    expect(response.status).toBe(status);
+    expect(response.headers.get('x-upstream')).toBe('second');
+    if (typeof body === 'string') {
+      expect(response.headers.get('content-type')).toBe('text/vtt');
+      expect(await response.text()).toBe(body);
+    } else {
+      expect(await response.json()).toEqual(body);
+    }
+  });
+  await flushBackground();
+
+  expect(calls).toEqual(['audio.example.com', 'second.example.com']);
+  expect(await repo.performance.listAll()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ upstream: 'up_audio', operation: 'audio_transcription', requests: 1, errorsNoOutput: 1 }),
+    expect.objectContaining({ upstream: 'second', operation: 'audio_transcription', requests: 1, errorsNoOutput: status === 201 ? 0 : 1 }),
+  ]));
+  expect(await repo.usage.listAll()).toMatchObject(status === 201 ? [{ upstream: 'second', requests: 1, metrics: [] }] : []);
 });

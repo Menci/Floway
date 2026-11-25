@@ -1,6 +1,9 @@
 import type { UsageQuantities } from '../../repo/types.ts';
+import type { StreamUsageObserver, UsageObserverContext } from '../pipeline/compute-usage.ts';
 import { requestOnlyUsageMeasurement, tokenUsage, type UsageMeasurement } from '../shared/telemetry/usage.ts';
-import { parseDecimalString } from '@floway-dev/protocols/common';
+import { getHeader } from '@floway-dev/http';
+import { isJsonMediaType, parseDecimalString } from '@floway-dev/protocols/common';
+import { isOpenAIAudioTranscriptionDoneEvent, type OpenAIAudioTranscriptionStreamEvent } from '@floway-dev/protocols/openai-audio';
 
 // OpenAI transcription responses discriminate usage by `type`. Token-based
 // models split input_token_details into text and audio metrics; without that
@@ -98,3 +101,27 @@ export const measureOpenAIAudioTranscriptionUsage = (value: unknown, sourceApi: 
     return requestOnlyUsageMeasurement();
   }
 };
+
+const reported = (body: unknown): UsageMeasurement | null => {
+  const measurement = measureOpenAIAudioTranscriptionUsage(body, '/audio/transcriptions');
+  return Object.keys(measurement.quantities).length === 0 ? null : measurement;
+};
+
+export const measureOpenAIAudioTranscriptionsResult = (result: Uint8Array, { http }: UsageObserverContext): UsageMeasurement | null => {
+  const contentType = http === null ? undefined : getHeader(http.headers, 'content-type');
+  if (typeof contentType !== 'string' || !isJsonMediaType(contentType)) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(result));
+  } catch (error) {
+    console.warn('Floway could not read usage in a non-JSON OpenAI Audio Transcriptions response', error);
+    return null;
+  }
+  return reported(parsed);
+};
+
+export const observeOpenAIAudioTranscriptionsStream = (): StreamUsageObserver<OpenAIAudioTranscriptionStreamEvent> => ({
+  observe: event => isOpenAIAudioTranscriptionDoneEvent(event) ? reported(event) : null,
+  finish: () => null,
+});
