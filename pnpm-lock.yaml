@@ -616,15 +616,21 @@ importers:
 
   packages/provider-claude-code:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/http':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
       '@floway-dev/provider':
         specifier: workspace:*
         version: link:../provider
+      '@guiiai/logg':
+        specifier: ^1.2.12
+        version: 1.2.12(patch_hash=de522858bc944cae0a37c85fe1e78c56e51365946d5d3d5bad36efde98de4846)
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.2.0

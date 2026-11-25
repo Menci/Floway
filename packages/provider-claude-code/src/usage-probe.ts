@@ -22,7 +22,7 @@
 import { CLAUDE_CODE_OAUTH_USER_AGENT, CLAUDE_CODE_USAGE_PROBE_URL } from './constants.ts';
 import { readClaudeCodeUpstreamState, type ClaudeCodeUpstreamState } from './state.ts';
 import { claudeCodeProbeMetrics } from './upstream-metrics.ts';
-import { getProviderRepo, recordUpstreamMetrics, type Fetcher } from '@floway-dev/provider';
+import type { Fetcher, ProviderRepo } from '@floway-dev/provider';
 
 export interface ClaudeCodeUsageProbeResult {
   // Stamped by the caller onto its persisted slot so the dashboard can show staleness.
@@ -83,8 +83,10 @@ export const mergeClaudeCodeUsageProbe = (state: ClaudeCodeUpstreamState, probe:
   };
 };
 
-export const persistClaudeCodeUsageProbe = async (upstreamId: string, probe: ClaudeCodeUsageProbeResult): Promise<void> => {
-  await getProviderRepo().upstreams.saveState(upstreamId, current =>
+export const persistClaudeCodeUsageProbe = async (upstreamId: string, probe: ClaudeCodeUsageProbeResult, repo: ProviderRepo): Promise<void> => {
+  await repo.upstreams.saveState(upstreamId, current =>
     mergeClaudeCodeUsageProbe(readClaudeCodeUpstreamState(current), probe));
-  await recordUpstreamMetrics(upstreamId, claudeCodeProbeMetrics(probe.body), Date.parse(probe.fetched_at));
+  const fetchedAt = Date.parse(probe.fetched_at);
+  await Promise.all(claudeCodeProbeMetrics(probe.body).map(({ name, labels, value }) =>
+    repo.recordUpstreamMetric(upstreamId, name, labels, value, fetchedAt)));
 };

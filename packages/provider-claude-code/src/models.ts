@@ -10,16 +10,24 @@
 // 4.6+ and Fable 5+ return with the alias already (no date),
 // so the alias derivation is the identity. The catalog id we publish is
 // always the alias; the original /v1/models id rides on
-// `providerData.upstreamModelId` so the wire fetch in `fetch.ts` and the
+// `providerData.upstreamModelId` so the dial stage and the
 // pricing table key by the per-revision id.
 
 import { CLAUDE_CODE_HEADERS_SONNET_OPUS } from './headers.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
-import { ProviderModelsUnavailableError, type Fetcher, type FlagId, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, type Fetcher, type FlagId, type ProviderModel, type ProviderModelFact, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 export interface ClaudeCodeProviderData {
   readonly upstreamModelId: string;
 }
+
+export const claudeCodeUpstreamModelId = ({ id, providerData }: ProviderModelFact): string => {
+  const data = providerData as Partial<ClaudeCodeProviderData> | undefined;
+  if (typeof data?.upstreamModelId !== 'string' || data.upstreamModelId === '') {
+    throw new TypeError(`Claude Code model '${id}' is missing its upstream model id`);
+  }
+  return data.upstreamModelId;
+};
 
 const ANTHROPIC_MODELS_ENDPOINT = 'https://api.anthropic.com/v1/models?limit=100';
 

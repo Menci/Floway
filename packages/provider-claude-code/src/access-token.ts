@@ -2,7 +2,7 @@ import {
   ClaudeCodeOAuthSessionTerminatedError,
   refreshClaudeCodeAccessToken,
 } from './auth/oauth.ts';
-import { logInfo, logWarn } from './log.ts';
+import type { ClaudeCodeLog } from './log.ts';
 import {
   readClaudeCodeUpstreamState,
   replaceSoleAccount,
@@ -40,7 +40,6 @@ const isAccessTokenFresh = (entry: ClaudeCodeAccessTokenEntry): boolean =>
 
 export interface EnsureClaudeCodeAccessTokenArgs {
   upstreamId: string;
-  repo: UpstreamsRepoSlim;
   fetcher: Fetcher;
   // When true, skip the "cached access_token is still fresh" fast-path and
   // always call the OAuth refresh endpoint. The dashboard's Refresh button
@@ -52,7 +51,7 @@ export interface EnsureClaudeCodeAccessTokenArgs {
   force?: boolean;
 }
 
-// Process-local coalescing of concurrent ensure calls. On a cold start N
+// Service-local coalescing of concurrent ensure calls. On a cold start N
 // requests on the same isolate would all see `accessToken === null` and
 // each fire a `/v1/oauth/token` POST; the upstream rotates on every call so
 // only one survives and the rest fall into `recoverFromRefreshRace`,
@@ -68,22 +67,24 @@ export interface EnsureClaudeCodeAccessTokenArgs {
 // for true cluster-wide single-mint; we trade that for zero coordination
 // state at the cost of cross-isolate-only round-trip duplication, which is
 // the rare case.
-const inFlightEnsures = new Map<string, Promise<EnsuredAccessToken>>();
+export const createClaudeCodeAccessTokenEnsurer = (repo: UpstreamsRepoSlim) => {
+  const inFlightEnsures = new Map<string, Promise<EnsuredAccessToken>>();
 
-export const ensureClaudeCodeAccessToken = async (
-  args: EnsureClaudeCodeAccessTokenArgs,
-): Promise<EnsuredAccessToken> => {
-  const key = `${args.upstreamId}:${args.force ? 'force' : 'lazy'}`;
-  const existing = inFlightEnsures.get(key);
-  if (existing) return await existing;
-  const promise = ensureClaudeCodeAccessTokenInner(args, true);
-  inFlightEnsures.set(key, promise);
-  try {
-    return await promise;
-  } finally {
-    inFlightEnsures.delete(key);
-  }
+  return async (args: EnsureClaudeCodeAccessTokenArgs, log: ClaudeCodeLog): Promise<EnsuredAccessToken> => {
+    const key = `${args.upstreamId}:${args.force ? 'force' : 'lazy'}`;
+    const existing = inFlightEnsures.get(key);
+    if (existing) return await existing;
+    const promise = ensureClaudeCodeAccessTokenInner({ ...args, repo, log }, true);
+    inFlightEnsures.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      inFlightEnsures.delete(key);
+    }
+  };
 };
+
+type LoggedEnsureArgs = EnsureClaudeCodeAccessTokenArgs & { repo: UpstreamsRepoSlim; log: ClaudeCodeLog };
 
 // Reads, refreshes, and persists. The rotated refresh token and the new
 // cached access token are committed together in a single state write; the
@@ -104,7 +105,7 @@ export const ensureClaudeCodeAccessToken = async (
 // `access_denied`) signal credential death under any race scenario and
 // flip to terminal without a recovery attempt.
 const ensureClaudeCodeAccessTokenInner = async (
-  args: EnsureClaudeCodeAccessTokenArgs,
+  args: LoggedEnsureArgs,
   recoveryAllowed: boolean,
 ): Promise<EnsuredAccessToken> => {
   const fresh = await args.repo.getById(args.upstreamId);
@@ -130,7 +131,7 @@ const ensureClaudeCodeAccessTokenInner = async (
       return { entry: account.accessToken, freshlyMinted: false };
     }
     const message = 'Setup token expired or absent; re-import to recover';
-    await persistTerminalState(args.repo, args.upstreamId, account, {
+    await persistTerminalState(args, account, {
       reason: 'setup_token_expired',
       message,
       oauthCode: null,
@@ -151,7 +152,7 @@ const ensureClaudeCodeAccessTokenInner = async (
         const recovered = await recoverFromRefreshRace(args, account.refreshToken);
         if (recovered) return recovered;
       }
-      await persistTerminalState(args.repo, args.upstreamId, account, {
+      await persistTerminalState(args, account, {
         reason: 'oauth_refresh_failed',
         message: error.upstreamMessage,
         oauthCode: error.code,
@@ -189,23 +190,21 @@ const ensureClaudeCodeAccessTokenInner = async (
         ? { ...stored, refreshToken: rotatedRefreshToken, accessToken: newAccessTokenEntry }
         : stored
     )));
-  logInfo('claude_code_refresh_token_rotated', {
+  args.log.withFields({
     upstream_id: args.upstreamId,
     account_uuid: account.accountUuid,
     expires_in_seconds: refreshed.expires_in,
     refreshed_at: now,
-  });
+  }).log('claude_code_refresh_token_rotated');
   return { entry: newAccessTokenEntry, freshlyMinted: true };
 };
 
-// Terminal flip from the oauth-error path. Distinct from fetch.ts's
-// `persistTerminalAccountState`: the caller has already read the account and
+// Terminal flip from the OAuth-error path. The caller has already read the account and
 // established that it is active, so the log's identity and `from_state` come
 // from that read instead of a second one, and the trigger is an oauth-protocol
 // code (logged as `oauth_code`, possibly null for code-internal flips).
 const persistTerminalState = async (
-  repo: UpstreamsRepoSlim,
-  upstreamId: string,
+  { repo, upstreamId, log }: LoggedEnsureArgs,
   previousAccount: ClaudeCodeAccountCredential,
   fields: {
     reason: string;
@@ -228,15 +227,14 @@ const persistTerminalState = async (
       stateUpdatedAt: flippedAt,
       accessToken: null,
     })));
-  logWarn('claude_code_account_state_flip', {
+  log.withFields({
     upstream_id: upstreamId,
     account_uuid: previousAccount.accountUuid,
     from_state: previousAccount.state,
     to_state: 'refresh_failed',
     reason: fields.reason,
     oauth_code: fields.oauthCode,
-    message: fields.message,
-  });
+  }).warn('claude_code_account_state_flip');
 };
 
 // `invalid_grant` ambiguity: dead refresh token, or a sibling worker raced
@@ -248,7 +246,7 @@ const persistTerminalState = async (
 // `null` when the original error should be re-raised as a real session
 // termination.
 const recoverFromRefreshRace = async (
-  args: EnsureClaudeCodeAccessTokenArgs,
+  args: LoggedEnsureArgs,
   usedRefreshToken: string,
 ): Promise<EnsuredAccessToken | null> => {
   const reread = await args.repo.getById(args.upstreamId);
@@ -263,11 +261,10 @@ const recoverFromRefreshRace = async (
   // surface.
   if (rereadAccount.tokenKind === 'setup-token') return null;
   if (rereadAccount.refreshToken === usedRefreshToken) return null;
-  logInfo('claude_code_refresh_race_recovered', {
+  args.log.withFields({
     upstream_id: args.upstreamId,
     account_uuid: rereadAccount.accountUuid,
-    rotated_refresh_token_prefix: rereadAccount.refreshToken.slice(0, 6),
-  });
+  }).log('claude_code_refresh_race_recovered');
   if (rereadAccount.accessToken && isAccessTokenFresh(rereadAccount.accessToken)) {
     return { entry: rereadAccount.accessToken, freshlyMinted: false };
   }

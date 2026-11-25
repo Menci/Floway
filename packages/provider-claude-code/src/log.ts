@@ -1,33 +1,24 @@
-// One line per event: `event_name field1=value1 field2="quoted with spaces"`.
-// Strings are bare when safe and JSON-quoted otherwise; `null` / `undefined`
-// render as the literal `null` so an absent field stays visible to the
-// operator instead of vanishing. Event names are snake_case and prefixed
-// with `claude_code_` so a single grep isolates this provider's events.
+import { createLogg } from '@guiiai/logg';
 
-export type LogFieldValue = string | number | boolean | null | undefined;
-export type LogFields = Record<string, LogFieldValue>;
+export const claudeCodeLog = createLogg('claude-code').useGlobalConfig();
+export type ClaudeCodeLog = typeof claudeCodeLog;
 
-const NEEDS_QUOTING = /[\s"=]/;
+const CREDENTIAL_FIELD = /^(?:authorization|(?:x-)?api[-_]?key|(?:access|refresh|setup)[-_]?token|client[-_]?secret|token)$/i;
+const CREDENTIAL_PAIR = /((?:authorization|(?:x-)?api[-_]?key|(?:access|refresh|setup)[-_]?token|client[-_]?secret|token)["']?\s*[:=]\s*)(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^\s,;}\]]+)/gi;
+// https://github.com/anthropics/claude-code/issues/11544
+const CREDENTIAL_VALUE = /\b(?:Bearer\s+[^"'\\\s,;]+|sk-ant-[\w-]+)/gi;
 
-const formatValue = (value: LogFieldValue): string => {
-  if (value === null || value === undefined) return 'null';
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (value === '' || NEEDS_QUOTING.test(value)) return JSON.stringify(value);
-  return value;
+export const diagnosticText = (value: string, limit: number): string => {
+  const safe = value.replace(CREDENTIAL_VALUE, '[redacted]').replace(CREDENTIAL_PAIR, '$1"[redacted]"');
+  return safe.length <= limit ? safe : `${safe.slice(0, limit - 3)}...`;
 };
 
-const formatLogLine = (event: string, fields: LogFields): string => {
-  const parts = [event];
-  for (const [key, value] of Object.entries(fields)) {
-    parts.push(`${key}=${formatValue(value)}`);
-  }
-  return parts.join(' ');
-};
+export const diagnosticPayload = (value: object): string => diagnosticText(
+  JSON.stringify(value, (name, field: unknown) => CREDENTIAL_FIELD.test(name) ? '[redacted]' : field),
+  256,
+);
 
-export const logInfo = (event: string, fields: LogFields = {}): void => {
-  console.info(formatLogLine(event, fields));
-};
-
-export const logWarn = (event: string, fields: LogFields = {}): void => {
-  console.warn(formatLogLine(event, fields));
-};
+export const diagnosticError = (error: unknown): string => diagnosticText(
+  (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim(),
+  512,
+);

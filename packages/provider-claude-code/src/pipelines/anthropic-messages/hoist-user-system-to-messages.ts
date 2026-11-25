@@ -1,5 +1,18 @@
-import type { AnthropicMessagesBoundaryCtx } from './types.ts';
-import type { AnthropicMessagesMessage, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
+import { defineStage } from './facts.ts';
+import type { AnthropicMessagesMessage, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+
+export const hoistUserSystemToMessages = defineStage({
+  name: 'claude-code.anthropic-messages.hoist-user-system-to-messages',
+  through: {
+    request: { needs: ['request.anthropicMessages', 'request.claudeCodeShaped'], provides: ['request.anthropicMessages'], consumes: [] },
+    response: { needs: [], provides: [], consumes: [] },
+  },
+  async execute(facts, scope) {
+    if (facts['request.claudeCodeShaped']) return await scope.next(facts);
+    const payload = facts['request.anthropicMessages'];
+    return await scope.next({ ...facts, 'request.anthropicMessages': withSystemInMessages(payload) });
+  },
+});
 
 // Synthetic assistant turn that closes the hoisted user/assistant pair so the
 // upstream's role-alternation guard stays satisfied. The text is visible to
@@ -27,12 +40,8 @@ const SYNTHETIC_ACK = 'Understood. I will follow these instructions.';
 //
 // References:
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L4480-L4486
-export const hoistUserSystemToMessages = async <TResult>(
-  ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
-  run: () => Promise<TResult>,
-): Promise<TResult> => {
-  const system: string | AnthropicMessagesTextBlockParam[] | undefined = ctx.payload.system;
+export const withSystemInMessages = (payload: AnthropicMessagesPayload): AnthropicMessagesPayload => {
+  const { system, ...nextPayload } = payload;
   let captured = '';
   if (typeof system === 'string') {
     captured = system;
@@ -42,11 +51,6 @@ export const hoistUserSystemToMessages = async <TResult>(
       .filter(text => typeof text === 'string' && text.length > 0)
       .join('\n\n');
   }
-  // inject-billing-block et al rebuild `system` from scratch as a three-block
-  // array; removing the field here keeps the boundary mutation self-contained.
-  const nextPayload = { ...ctx.payload };
-  delete nextPayload.system;
-
   if (captured !== '') {
     // Wrapper format `[System Instructions]\n${text}` matches sub2api
     // `gateway_service.go:4480` byte-for-byte; the synthetic user content is
@@ -59,6 +63,5 @@ export const hoistUserSystemToMessages = async <TResult>(
     nextPayload.messages = [...synthetic, ...nextPayload.messages];
   }
 
-  ctx.payload = nextPayload;
-  return await run();
+  return nextPayload;
 };

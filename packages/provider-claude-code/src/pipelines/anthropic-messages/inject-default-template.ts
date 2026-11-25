@@ -1,6 +1,19 @@
+import { defineStage } from './facts.ts';
 import { DEFAULT_TEMPLATE_BLOCK } from './system-blocks.ts';
-import type { AnthropicMessagesBoundaryCtx } from './types.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+
+export const injectDefaultTemplate = defineStage({
+  name: 'claude-code.anthropic-messages.inject-default-template',
+  through: {
+    request: { needs: ['request.anthropicMessages', 'request.claudeCodeShaped'], provides: ['request.anthropicMessages'], consumes: [] },
+    response: { needs: [], provides: [], consumes: [] },
+  },
+  async execute(facts, scope) {
+    if (facts['request.claudeCodeShaped']) return await scope.next(facts);
+    const payload = facts['request.anthropicMessages'];
+    return await scope.next({ ...facts, 'request.anthropicMessages': withDefaultTemplate(payload) });
+  },
+});
 
 // Anthropic's prompt-caching API rejects requests that carry more than four
 // `cache_control` markers; the docs state "the API enforces a maximum of 4
@@ -55,22 +68,15 @@ const countCacheBreakpoints = (payload: AnthropicMessagesPayload): number => {
 // un-cached block. The caller's own breakpoints stay where they are — if
 // the caller already exceeds the cap, that overage is theirs to fix.
 //
-// Chain order in ./index.ts guarantees `system` is already a fresh array
-// when this runs.
-export const injectDefaultTemplate = async <TResult>(
-  ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
-  run: () => Promise<TResult>,
-): Promise<TResult> => {
-  if (!Array.isArray(ctx.payload.system)) {
+export const withDefaultTemplate = (payload: AnthropicMessagesPayload): AnthropicMessagesPayload => {
+  const { system } = payload;
+  if (!Array.isArray(system)) {
     throw new Error('inject-default-template: expected system to be an array (inject-billing-block must run first)');
   }
-  const system = ctx.payload.system;
-  const callerBreakpoints = countCacheBreakpoints(ctx.payload);
+  const callerBreakpoints = countCacheBreakpoints(payload);
   const wouldOverflowBreakpointCap = callerBreakpoints >= ANTHROPIC_CACHE_BREAKPOINT_CAP;
   const templateBlock = wouldOverflowBreakpointCap
     ? { type: 'text' as const, text: DEFAULT_TEMPLATE_BLOCK.text }
     : DEFAULT_TEMPLATE_BLOCK;
-  ctx.payload = { ...ctx.payload, system: [...system, templateBlock] };
-  return await run();
+  return { ...payload, system: [...system, templateBlock] };
 };

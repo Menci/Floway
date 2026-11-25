@@ -2,7 +2,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { CLAUDE_CODE_PROFILE_URL } from '../constants.ts';
-import { logWarn } from '../log.ts';
+import { claudeCodeLog } from '../log.ts';
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
 
 // Identity derived from `GET /api/oauth/profile` plus the optional CLI
@@ -67,10 +67,10 @@ export const fetchClaudeCodeIdentity = async (
   }
   if (response.status === 403 && parsedError?.type === 'permission_error') {
     const accountUuid = deriveDegradedAccountUuid(accessToken);
-    logWarn('claude_code_identity_degraded_fallback', {
+    claudeCodeLog.withFields({
       account_uuid: accountUuid,
       reason: 'profile_403_missing_user_profile_scope',
-    });
+    }).warn('claude_code_identity_degraded_fallback');
     return { email: null, accountUuid, organizationUuid: null, subscriptionType: null, rateLimitTier: null };
   }
 
@@ -154,8 +154,6 @@ const deriveSubscriptionType = (
   if (organizationType === 'claude_pro') return 'pro';
   if (organizationType === 'claude_enterprise') return 'enterprise';
   if (organizationType === 'claude_team') return 'team';
-  logWarn('claude_code_unknown_organization_type', {
-    organization_type: organizationType,
-  });
+  claudeCodeLog.withField('organization_type', organizationType).warn('claude_code_unknown_organization_type');
   return null;
 };
