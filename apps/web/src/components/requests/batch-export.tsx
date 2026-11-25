@@ -1,12 +1,12 @@
 import { useState } from 'react';
 
-import { downloadRecords } from './export';
-import { api, callApi } from '../../api/client';
+import { getArchive } from './archive';
+import type { RequestArchive } from './archive';
+import { downloadArchives } from './export';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { Checkbox } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
-import type { DumpRecord } from '@floway-dev/gateway/browser';
 
 const { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger } = fluentComponents;
 
@@ -18,13 +18,11 @@ export function BatchExport({ keyId, selected, loadedIds, onChange }: { keyId: s
     setBusy(true);
     setError(false);
     try {
-      const records: DumpRecord[] = [];
+      const archives: RequestArchive[] = [];
       for (const recordId of selected) {
-        const result = await callApi(() => api.api.dump.keys[':keyId'].records[':recordId'].$get({ param: { keyId, recordId } }));
-        if (result.error) throw result.error;
-        records.push(result.data);
+        archives.push(await getArchive(keyId, recordId));
       }
-      downloadRecords(records, separate);
+      downloadArchives(archives, separate);
     } catch {
       setError(true);
     } finally {

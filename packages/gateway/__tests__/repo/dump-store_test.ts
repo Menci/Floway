@@ -1,181 +1,90 @@
 import { expect, test } from 'vitest';
 
-import { createSqliteTestDb, mapRunChangeCount } from './test-sqlite.ts';
-import type { DumpWriteRecord } from '../../src/dump/types.ts';
+import { createSqliteTestDb, createSqlJsDatabase, mapRunChangeCount, migrationSqlByFilename, wrapSqlJsDatabase } from './test-sqlite.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { collectSpilledFiles } from '../../src/scheduled/spilled-files.ts';
+import { archiveBody, archiveMetadata, dumpContents, writeArchive } from '../dump/archive-fixtures.ts';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 import type { SqlDatabase } from '@floway-dev/platform';
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const openDb = async (): Promise<SqlDatabase> => {
   const db = await createSqliteTestDb();
   await new SqlRepo(db).apiKeys.save({
-    id: 'key_x',
-    userId: 1,
-    name: 'Dump key',
-    key: 'raw-dump-key',
-    serverSecret: '44'.repeat(32),
-    createdAt: '2026-01-01T00:00:00.000Z',
-    upstreamIds: null,
-    randomizeUpstreams: false,
-    deletedAt: null,
-    dumpRetentionSeconds: 10 * 365 * 24 * 60 * 60,
-    openaiResponsesRetentionSeconds: 0,
+    id: 'key_x', userId: 1, name: 'Dump key', key: 'raw-dump-key', serverSecret: '44'.repeat(32),
+    createdAt: '2026-01-01T00:00:00.000Z', upstreamIds: null, randomizeUpstreams: false,
+    deletedAt: null, dumpRetentionSeconds: 86400, openaiResponsesRetentionSeconds: 0,
   });
   return db;
 };
 
-const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
-
-const requestBody = utf8('{"hello":"world"}');
-
-const baseRecord = (id: string, completedAt: number): DumpWriteRecord => ({
-  meta: {
-    id, startedAt: completedAt - 1, completedAt, method: 'POST', path: '/v1/x', status: 200,
-    upstream: null, model: 'm', inputTokens: 1, outputTokens: 2,
-    requestBytes: 3, responseBytes: 4, durationMs: 1, error: null,
-  },
-  request: {
-    method: 'POST', path: '/v1/x',
-    headers: [['content-type', 'application/json']],
-    body: { encoding: 'identity', bytes: requestBody, decodedByteLength: requestBody.byteLength },
-  },
-  response: {
-    status: 200,
-    headers: [['content-type', 'application/json']],
-    body: { type: 'bytes', body: utf8('{"id":"abc"}') },
-  },
-});
-
-test('FileDumpStore prepares request gzip before terminal persistence', async () => {
+test('adopts an archive only when its index row is committed and reads the exact bytes', async () => {
   const db = await openDb();
   const files = new MemoryFileStore();
-  const store = new FileDumpStore(db, files);
-  const raw = utf8(`{"content":"${'repeatable '.repeat(4096)}"}`);
-  const prepared = await store.prepareRequestBody(raw);
-  const base = baseRecord('01HZZ0000000000000000000P1', Date.UTC(2026, 5, 1, 12, 0, 0));
-  const record: DumpWriteRecord = {
-    ...base,
-    meta: { ...base.meta, requestBytes: raw.byteLength },
-    request: {
-      method: 'POST',
-      path: '/v1/x',
-      headers: [['content-type', 'application/json']],
-      body: prepared,
-    },
-  };
+  const store = new FileDumpStore(db, files).archives;
+  const commit = await store.writeArchive('key_x', 'archive', archiveBody());
+  expect(await store.list('key_x', { limit: 10 })).toEqual([]);
+  expect(await db.prepare("SELECT state FROM spilled_files WHERE file_key = 'dumps/v2/key_x/archive.ndjson'").first()).toEqual({ state: 'staged' });
 
-  assertEquals(prepared.encoding, 'gzip');
-  assertEquals(prepared.decodedByteLength, raw.byteLength);
-  assertEquals(prepared.bytes.byteLength < raw.byteLength, true);
-  await store.put('key_x', record);
-  const fetched = await store.get('key_x', record.meta.id);
-  assertExists(fetched);
-  assertEquals(Array.from(fetched.request.body), Array.from(raw));
+  const metadata = archiveMetadata('archive', Date.now());
+  await commit(metadata, null);
+  expect(await store.list('key_x', { limit: 10 })).toEqual([{ ...metadata, upstream: null }]);
+  expect(await db.prepare("SELECT state FROM spilled_files WHERE file_key = 'dumps/v2/key_x/archive.ndjson'").first()).toEqual({ state: 'owned' });
+  expect(await new Response(await store.get('key_x', 'archive')).text()).toBe(dumpContents);
+  expect(await store.get('unknown', 'archive')).toBeNull();
 });
 
-test('FileDumpStore applies retention immediately and retires exact expired files', async () => {
+test('filters and pages the retained index, retires expired bytes and counts only deleted records', async () => {
   const db = await openDb();
-  const repo = new SqlRepo(db);
-  initRepo(repo);
   const files = new MemoryFileStore();
+  initRepo(new SqlRepo(db));
   initFileStore(files);
-  const store = new FileDumpStore(db, files);
-  const now = Date.UTC(2026, 5, 1, 12, 0, 0);
-  // Old bucket 9:xx, current bucket 12:xx.
-  await store.put('key_x', baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
-  await store.put('key_x', baseRecord('01HZZ0000000000000000000A2', now));
-  await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 2 * 3600 });
-  const originalNow = Date.now;
-  Date.now = () => now + 1;
-  try {
-    const left = await store.list('key_x', { limit: 10 });
-    assertEquals(left.map(m => m.id), ['01HZZ0000000000000000000A2']);
-    const afterExpiredCursor = await store.list('key_x', { limit: 10, before: '01HZZ0000000000000000000A1' });
-    assertEquals(afterExpiredCursor, []);
-    assertEquals(await store.deleteExpiredBatch('key_x', now + 1, 100), 1);
-    const afterDeletedCursor = await store.list('key_x', { limit: 10, before: '01HZZ0000000000000000000A1' });
-    assertEquals(afterDeletedCursor, []);
-    await collectSpilledFiles(now + 1);
-  } finally {
-    Date.now = originalNow;
-  }
-
-  const { results: remainingFiles } = await db
-    .prepare("SELECT file_key FROM spilled_files WHERE state = 'owned' ORDER BY file_key")
-    .all<{ file_key: string }>();
-  assertEquals(remainingFiles.every(row => !row.file_key.includes('2026060109')), true);
-});
-
-test('FileDumpStore counts returned dump rows instead of trigger-amplified changes', async () => {
-  const db = await openDb();
-  const repo = new SqlRepo(db);
-  const files = new MemoryFileStore();
-  const store = new FileDumpStore(db, files);
-  await store.put('key_x', baseRecord('01HZZ0000000000000000000C1', Date.UTC(2026, 5, 1, 9)));
-  await store.put('key_x', baseRecord('01HZZ0000000000000000000C2', Date.UTC(2026, 5, 1, 10)));
-  await repo.apiKeys.update('key_x', { dumpRetentionSeconds: null });
-
-  const d1LikeStore = new FileDumpStore(mapRunChangeCount(db, changes => changes * 3), files);
-  expect(await d1LikeStore.deleteExpiredBatch('key_x', Date.now(), 1)).toBe(1);
-  expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>())?.count).toBe(1);
-});
-
-test('a record-ID race leaves only the losing write\'s uniquely keyed files collectible', async () => {
-  const db = await openDb();
-  const repo = new SqlRepo(db);
-  initRepo(repo);
-  const files = new MemoryFileStore();
-  initFileStore(files);
-  const store = new FileDumpStore(db, files);
-  const record = baseRecord('01HZZ0000000000000000000A3', Date.now());
-  await store.put('key_x', record);
-
-  await expect(store.put('key_x', record)).rejects.toThrow();
-  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'owned'").first<{ count: number }>())?.count).toBe(2);
-  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'staged'").first<{ count: number }>())?.count).toBe(2);
-
-  await collectSpilledFiles(Date.now() + 60 * 60 * 1000 + 1);
-  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'staged'").first<{ count: number }>())?.count).toBe(0);
-  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'owned'").first<{ count: number }>())?.count).toBe(2);
-  assertExists(await store.get('key_x', record.meta.id));
-});
-
-test('FileDumpStore round-trips raw exchanges and parsed events in one owned spill', async () => {
-  const db = await openDb();
-  const files = new MemoryFileStore();
-  const store = new FileDumpStore(db, files);
-  const record = baseRecord('raw-exchange', Date.now());
-  record.capture = {
-    exchanges: [{ upstreamId: 'u', request: { url: 'https://u.test', method: 'POST', headers: [], body: { encoding: 'utf8', data: '{"model":"upstream"}' } }, response: { status: 200, headers: [['content-type', 'text/event-stream']], body: { encoding: 'utf8', data: 'data: {broken\n' }, complete: false, error: 'socket reset' }, error: null }],
-    response: { body: { encoding: 'utf8', data: 'downstream' }, complete: true, error: null },
-  };
-  record.response = { ...record.response, upstream: { status: 200, headers: [['x-trace', 'upstream']], body: { type: 'stream', events: [{ ts: 0, frame: { type: 'done' } }] } } };
-  await store.put('key_x', record);
-  const stored = await store.get('key_x', record.meta.id);
-  expect(stored?.capture).toEqual(record.capture);
-  expect(stored?.response.upstream).toEqual(record.response.upstream);
-  const spill = await db.prepare("SELECT file_key, state FROM spilled_files WHERE owner_kind = 'dump-response-upstream'").first<{ file_key: string; state: string }>();
-  expect(spill?.state).toBe('owned');
-  await db.prepare('DELETE FROM dump_records WHERE id = ?').bind(record.meta.id).run();
-  expect((await db.prepare('SELECT state FROM spilled_files WHERE file_key = ?').bind(spill!.file_key).first<{ state: string }>())?.state).toBe('retired');
-});
-
-test('FileDumpStore filters all retained history before applying the page limit', async () => {
-  const db = await openDb();
-  const store = new FileDumpStore(db, new MemoryFileStore());
+  const store = new FileDumpStore(mapRunChangeCount(db, changes => changes * 3), files);
   const now = Date.now();
-  for (let i = 0; i < 5; i++) {
-    const record = baseRecord(`filter-${i}`, now - i);
-    record.meta.model = i === 4 ? 'needle-model' : 'other';
-    record.meta.error = i === 4 ? { kind: 'failed', reason: 'socket reset' } : null;
-    await store.put('key_x', record);
+  await writeArchive(store.archives, 'key_x', archiveMetadata('old', now - 2 * 86400 * 1000));
+  await writeArchive(store.archives, 'key_x', archiveMetadata('a-failed', now, { status: 429, model: 'wanted' }));
+  await writeArchive(store.archives, 'key_x', archiveMetadata('b-newer', now));
+  expect(await store.archives.get('key_x', 'old')).toBeNull();
+  expect((await store.archives.list('key_x', { limit: 1 })).map(({ id }) => id)).toEqual(['b-newer']);
+  expect((await store.archives.list('key_x', { limit: 1, before: 'b-newer' })).map(({ id }) => id)).toEqual(['a-failed']);
+  expect((await store.archives.list('key_x', { limit: 1, failures: true, q: 'WANTED' })).map(({ id }) => id)).toEqual(['a-failed']);
+
+  expect(await store.deleteExpiredBatch('key_x', now, 10)).toBe(1);
+  await collectSpilledFiles(now);
+  expect(await files.get('dumps/v2/key_x/old.ndjson')).toBeNull();
+  expect(await files.get('dumps/v2/key_x/b-newer.ndjson')).not.toBeNull();
+});
+
+test('purges edge records and queues their files and staged orphans for physical collection', async () => {
+  const raw = await createSqlJsDatabase();
+  const migration = '0102_pipeline_dump_archives.sql';
+  for (const [file, sql] of migrationSqlByFilename) {
+    if (file === migration) break;
+    raw.run(sql);
   }
-  expect((await store.list('key_x', { q: 'needle', limit: 1 })).map(meta => meta.id)).toEqual(['filter-4']);
-  expect((await store.list('key_x', { q: 'SOCKET', failures: true, limit: 1 })).map(meta => meta.id)).toEqual(['filter-4']);
-  expect(await store.list('key_x', { q: "' OR 1=1 --", limit: 1 })).toEqual([]);
-  expect(await store.list('other-key', { q: 'needle', limit: 1 })).toEqual([]);
+  const files = new MemoryFileStore();
+  const old = 'dumps/v1/key/1970010100/edge.req.gz';
+  const orphan = 'dumps/v1/key/1970010100/orphan.resp.gz';
+  const unrelated = 'responses/another-file.gz';
+  await Promise.all([old, orphan, unrelated].map(key => files.put(key, Uint8Array.of(1))));
+  raw.run(`INSERT INTO dump_records (key_id, id, created_at, meta_json, request_headers_json, request_body_descriptor)
+    VALUES ('key', 'edge', 1000, '{}', '[]', ?)`, [JSON.stringify({ key: old, type: 'bytes' })]);
+  raw.run('DELETE FROM spilled_files WHERE file_key = ?', [old]);
+  raw.run(`INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after) VALUES
+    (?, 'dump-response', '["key", "orphan"]', 'staged', 9999999),
+    (?, 'responses-item', '["key", "item"]', 'owned', NULL)`, [orphan, unrelated]);
+
+  raw.run(migrationSqlByFilename.find(([file]) => file === migration)![1]);
+  const db = wrapSqlJsDatabase(raw);
+  initRepo(new SqlRepo(db));
+  initFileStore(files);
+  expect(await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first()).toEqual({ count: 0 });
+  expect(await db.prepare("SELECT COUNT(*) AS count FROM cleanup_backfills WHERE source = 'dump_records'").first()).toEqual({ count: 0 });
+  expect((await db.prepare("SELECT file_key FROM spilled_files WHERE state = 'retired' ORDER BY file_key").all()).results)
+    .toEqual([{ file_key: old }, { file_key: orphan }]);
+  await collectSpilledFiles(1);
+  expect(await files.get(old)).toBeNull();
+  expect(await files.get(orphan)).toBeNull();
+  expect(await files.get(unrelated)).toEqual(Uint8Array.of(1));
 });

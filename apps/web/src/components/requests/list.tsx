@@ -13,7 +13,7 @@ import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 
 import { BatchExport } from './batch-export';
 import { RequestFilters } from './filters';
-import { errorLabel, requestSeverity, totalTokens } from './format';
+import { requestSeverity } from './format';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -31,7 +31,7 @@ import { useRouteAddress } from '../ui/route-link';
 import { useScrollAreaHost } from '../ui/scroll-area';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { ProviderBadge } from '../upstreams/provider-badge';
-import type { DumpMetadata } from '@floway-dev/gateway/browser';
+import type { PipelineDumpMetadata } from '@floway-dev/gateway/browser';
 
 const { Option, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 const ROW_HEIGHT = 84;
@@ -172,7 +172,7 @@ interface RequestListProps {
   apiKeys: ApiKey[];
   selectedKeyId: string;
   onKeyChange: (keyId: string) => void;
-  records: DumpMetadata[];
+  records: PipelineDumpMetadata[];
   selectedRecordId: string | null;
   onRecordChange: (recordId: string) => void;
   hasOlder: boolean;
@@ -187,7 +187,7 @@ interface RowProps {
   addressOfRecord: (recordId: string) => string;
   now: number;
   onSelect: (recordId: string) => void;
-  records: DumpMetadata[];
+  records: PipelineDumpMetadata[];
   selectedId: string | null;
   selectByIndex: (index: number) => void;
 }
@@ -200,7 +200,7 @@ function RequestRow({ index, records, style, ...rest }: RowComponentProps<RowPro
 
 function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, now, onSelect, record, records, selectByIndex, selectedId, style }: RowProps & {
   index: number;
-  record: DumpMetadata;
+  record: PipelineDumpMetadata;
   style: CSSProperties;
 }) {
   const s = useStyles();
@@ -208,8 +208,7 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
   const locale = useLocale();
   const address = useRouteAddress(addressOfRecord(record.id), () => onSelect(record.id));
   const severity = requestSeverity(record.status, record.error);
-  const tokens = totalTokens(record);
-  const rowError = errorLabel(record.error, record.status);
+  const tokens = record.inputTokens === null && record.outputTokens === null ? null : (record.inputTokens ?? 0) + (record.outputTokens ?? 0);
   const StatusIcon = severity === 'success' ? CheckmarkCircleRegular : DismissCircleRegular;
   const selected = selectedId === record.id;
 
@@ -272,7 +271,7 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
               <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.durationMs, locale)}</Text>
             </span>
           </Tooltip>
-          {record.ttftMs != null && (
+          {record.ttftMs !== null && (
             <Tooltip content={t('requests.ttft', { value: formatDuration(record.ttftMs, locale) })} relationship="description">
               <span className="inline-flex items-center gap-1 shrink-0">
                 <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.ttftMs, locale)}</Text>
@@ -289,9 +288,9 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
               <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatBytes(record.responseBytes, locale)}</Text>
             </span>
           </Tooltip>
-          {rowError
-            ? <TruncationTooltip content={rowError} relationship="label">
-                {measureRef => <Text size={200} className={mergeClasses('ml-auto', s.error)} ref={measureRef} truncate wrap={false}>{rowError}</Text>}
+          {record.error
+            ? <TruncationTooltip content={record.error} relationship="label">
+                {measureRef => <Text size={200} className={mergeClasses('ml-auto', s.error)} ref={measureRef} truncate wrap={false}>{record.error}</Text>}
               </TruncationTooltip>
             : <Text size={200} className="ml-auto text-fui-fg3 tabular-nums" truncate wrap={false}>
                 {tokens === null ? NO_READING : `${formatCompactCount(tokens, locale)} tok`}

@@ -1,150 +1,56 @@
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
-import type { DumpStore } from '../../src/dump/store-contract.ts';
-import type { DumpMetadata, StoredDumpRecord } from '../../src/dump/types.ts';
-import { fakeMeta as baseFakeMeta, fakeRecord as baseFakeRecord, installDumpStubs } from '../dump/test-fixtures.ts';
+import type { DumpArchiveStore } from '../../src/dump/store-contract.ts';
+import { installDumpStubs } from '../dump/test-fixtures.ts';
 import { requestApp, setupAppTest } from '../test-utils/app.ts';
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
-const fakeMeta = (id: string, completedAt: number): DumpMetadata =>
-  baseFakeMeta({ id, completedAt, startedAt: completedAt - 1 });
+const install = (archive: Partial<DumpArchiveStore> = {}) => {
+  const { store } = installDumpStubs(initDumpStore, initDumpBroker);
+  const archives: DumpArchiveStore = {
+    writeArchive: async () => { throw new Error('Unexpected archive write'); },
+    list: async () => [],
+    get: async () => null,
+    ...archive,
+  };
+  initDumpStore({ ...store, archives });
+  return archives;
+};
 
-const fakeRecord = (id: string, completedAt: number): StoredDumpRecord =>
-  baseFakeRecord({ id, completedAt, startedAt: completedAt - 1 });
-
-test('GET /api/dump/keys/:keyId/records 404s when the key has no retention', async () => {
+test('GET /api/dump/keys/:keyId/records requires an owned key with retention', async () => {
   const { apiKey } = await setupAppTest();
-  installDumpStubs(initDumpStore, initDumpBroker);
-
-  const response = await requestApp(`/api/dump/keys/${apiKey.id}/records`, {
-    headers: { 'x-api-key': apiKey.key },
-  });
-  assertEquals(response.status, 404);
+  const list = vi.fn(async () => []);
+  install({ list });
+  const response = await requestApp(`/api/dump/keys/${apiKey.id}/records`, { headers: { 'x-api-key': apiKey.key } });
+  expect(response.status).toBe(404);
+  expect(list).not.toHaveBeenCalled();
 });
 
-test('GET /api/dump/keys/:keyId/records defaults an absent limit and coerces a supplied one', async () => {
+test('GET /api/dump/keys/:keyId/records applies pagination and filter parameters', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const { store } = installDumpStubs(initDumpStore, initDumpBroker);
-  const list = vi.fn(store.list);
-  initDumpStore({ ...store, list });
+  const list = vi.fn<DumpArchiveStore['list']>(async () => []);
+  install({ list });
 
   const path = `/api/dump/keys/${apiKey.id}/records`;
   const request = { headers: { 'x-api-key': apiKey.key } };
-  assertEquals((await requestApp(path, request)).status, 200);
-  assertEquals((await requestApp(`${path}?limit=2`, request)).status, 200);
-  assertEquals(list.mock.calls.map(([, options]) => options.limit), [100, 2]);
+  expect((await requestApp(path, request)).status).toBe(200);
+  expect((await requestApp(`${path}?limit=2&q=model&failures=true&before=cursor`, request)).status).toBe(200);
+  expect(list.mock.calls.map(([, options]) => options)).toMatchObject([
+    { limit: 100, failures: false }, { limit: 2, failures: true, q: 'model', before: 'cursor' },
+  ]);
 });
 
-// Read N SSE frames (`\n\n` delimited) off the response body. A deterministic
-// barrier — no timeout — that returns as soon as the requested count lands.
-const readFrames = async (response: Response, count: number): Promise<string[]> => {
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  const collected: string[] = [];
-  let buffer = '';
-  while (collected.length < count) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    while (buffer.includes('\n\n')) {
-      const idx = buffer.indexOf('\n\n');
-      collected.push(buffer.slice(0, idx));
-      buffer = buffer.slice(idx + 2);
-      if (collected.length >= count) break;
-    }
-  }
-  void reader.cancel();
-  return collected;
-};
-
-const parseSseFrame = (frame: string): { event: string; data: unknown } => {
-  let event = 'message';
-  let data = '';
-  for (const line of frame.split('\n')) {
-    if (line.startsWith('event: ')) event = line.slice(7);
-    else if (line.startsWith('data: ')) data = line.slice(6);
-  }
-  return { event, data: JSON.parse(data) };
-};
-
-test('GET /api/dump/keys/:keyId/stream emits event: error when broker throws mid-stream', async () => {
+test('serves the completed archive with its exact text', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  initDumpBroker({
-    ...stubs.broker,
-    subscribe(_keyId, _signal) {
-      return (async function*() {
-        throw new Error('broker exploded');
-      })();
-    },
-  });
-
-  const response = await requestApp(`/api/dump/keys/${apiKey.id}/stream`, {
-    headers: { 'x-api-key': apiKey.key },
-  });
-  assertEquals(response.status, 200);
-
-  const frames = await readFrames(response, 2);
-  assertExists(frames.find(frame => frame.includes('event: error') && frame.includes('broker exploded')));
-});
-
-test('GET /api/dump/keys/:keyId/stream delivers a frame appended between snapshot SELECT and subscribe arm', async () => {
-  // A record published during the snapshot read must surface as an `appended`
-  // frame after the snapshot frame — proving the subscribe was already armed
-  // when the publish landed (so the buffered-subscribe path delivered it
-  // rather than the snapshot picking it up post-hoc).
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  // Hold the snapshot read on a gate so the publish lands in the window
-  // between subscribe-arm and snapshot-return; release the gate only after
-  // the publish completes. Also wrap subscribe so the test can wait for the
-  // handler to arm before publishing — without that, a publish run before
-  // subscribe is registered goes nowhere.
-  let releaseSnapshot: (() => void) | null = null;
-  const snapshotGate = new Promise<void>(resolve => { releaseSnapshot = resolve; });
-  let onSubscribed: (() => void) | null = null;
-  const subscribedSignal = new Promise<void>(resolve => { onSubscribed = resolve; });
-  const slowStore: DumpStore = {
-    ...stubs.store,
-    list: async (keyId, opts) => {
-      await snapshotGate;
-      return await stubs.store.list(keyId, opts);
-    },
-  };
-  initDumpStore(slowStore);
-  initDumpBroker({
-    ...stubs.broker,
-    subscribe: (keyId, signal) => {
-      const iter = stubs.broker.subscribe(keyId, signal);
-      onSubscribed!();
-      return iter;
-    },
-  });
-  stubs.seed(apiKey.id, fakeRecord('01HZZ0000000000000000000A1', 1000));
-
-  const responsePromise = requestApp(`/api/dump/keys/${apiKey.id}/stream`, {
-    headers: { 'x-api-key': apiKey.key },
-  });
-  await subscribedSignal;
-  await stubs.broker.publish(apiKey.id, fakeMeta('01HZZ0000000000000000000A2', 2000));
-  releaseSnapshot!();
-
-  const response = await responsePromise;
-  const frames = await readFrames(response, 2);
-  const snapshot = frames.find(f => f.includes('event: snapshot'));
-  const appended = frames.find(f => f.includes('event: appended'));
-  assertExists(snapshot);
-  assertExists(appended);
-  // The published id is not in the snapshot — proves the snapshot SELECT ran
-  // before the publish landed in the store.
-  const snapshotIds = (parseSseFrame(snapshot).data as { records: { id: string }[] }).records.map(r => r.id);
-  assertEquals(snapshotIds.includes('01HZZ0000000000000000000A2'), false);
-  // The published id arrived as an appended frame — proves the subscribe
-  // was armed before the publish, so the buffered-subscribe path delivered
-  // it.
-  assertEquals((parseSseFrame(appended).data as { id: string }).id, '01HZZ0000000000000000000A2');
+  const contents = '{"type":"object","fromObjectId":1,"nodes":[900719925474099312345]}\n';
+  const get = vi.fn(async () => new Blob([contents]).stream());
+  install({ get });
+  const response = await requestApp(`/api/dump/keys/${apiKey.id}/records/archive`, { headers: { 'x-api-key': apiKey.key } });
+  expect(response.status).toBe(200);
+  expect(response.headers.get('Content-Type')).toBe('application/x-ndjson; charset=utf-8');
+  expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+  expect(await response.text()).toBe(contents);
+  expect(get).toHaveBeenCalledWith(apiKey.id, 'archive');
 });

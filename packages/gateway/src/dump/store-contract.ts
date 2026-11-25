@@ -1,3 +1,5 @@
+import type { PipelineDumpMetadata } from './archive-metadata.ts';
+import type { WriteDumpArchive } from './archive-recorder.ts';
 import type { DumpMetadata, DumpRecordId, DumpWriteRecord, PreparedDumpRequestBody, StoredDumpRecord } from './types.ts';
 
 // Per-API-key request dump storage contract: metadata in SQL, bodies in the
@@ -12,6 +14,7 @@ export interface DumpListOptions {
 }
 
 export interface DumpStore {
+  readonly archives?: DumpArchiveStore;
   // Starts body preparation while the request is in flight. Implementations
   // may return identity bytes, but persistent stores compress here so the
   // accumulator can release the original request buffer before terminal IO.
@@ -29,4 +32,10 @@ export interface DumpStore {
 
   deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number>;
   findOldestCreatedAt(keyId: string): Promise<number | null>;
+}
+
+export interface DumpArchiveStore {
+  writeArchive: WriteDumpArchive;
+  list(keyId: string, opts: DumpListOptions): Promise<PipelineDumpMetadata[]>;
+  get(keyId: string, recordId: string): Promise<ReadableStream<Uint8Array> | null>;
 }

@@ -10,8 +10,6 @@ import { renderInApp } from '../render';
 // list carrying an error. Null would be a fetch that never landed a list at
 // all, which the page reports differently.
 const loaderData = {
-  collected: null,
-  upstreamCollected: null,
   error: 'HTTP 500',
   keys: [],
   record: null,

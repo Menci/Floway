@@ -6,6 +6,7 @@ import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
+import { archiveMetadata, writeArchive } from '../dump/archive-fixtures.ts';
 import { MemoryFileStore } from '@floway-dev/platform';
 
 const integrityMigration = (): string => {
@@ -25,22 +26,6 @@ const createPreIntegrityDatabase = async (): Promise<{ raw: Awaited<ReturnType<t
   } catch (error) {
     raw.close();
     throw error;
-  }
-};
-
-// Run every migration at and after `fromMigration` so a DB seeded before that
-// migration reaches the present schema. The backfill SQL selects columns
-// introduced by later migrations (e.g. the upstream body descriptor from
-// 0089), so a DB frozen at an earlier migration would fail on a missing
-// column instead of the behavior under test.
-const runMigrationsFrom = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>, fromMigration: string): void => {
-  let started = false;
-  for (const [filename, sql] of migrationSqlByFilename) {
-    if (!started) {
-      if (filename === fromMigration) started = true;
-      else continue;
-    }
-    raw.run(sql);
   }
 };
 
@@ -187,12 +172,7 @@ test('drained completion cannot remove a queue whose domain still has rows', asy
     dumpRetentionSeconds: 3600,
     openaiResponsesRetentionSeconds: 0,
   });
-  await db.prepare(
-    `INSERT INTO dump_records
-     (key_id, id, created_at, upstream_id, meta_json, request_headers_json,
-      response_headers_json, request_body_descriptor, response_body_descriptor)
-     VALUES ('key-a', 'dump-a', 1, NULL, '{}', '[]', NULL, NULL, NULL)`,
-  ).run();
+  await writeArchive(new FileDumpStore(db, new MemoryFileStore()).archives, 'key-a', archiveMetadata('dump-a', 1));
   await repo.expirationSweeps.schedule('dumps', 'key-a', 0);
   const first = await repo.expirationSweeps.claim('claim-a', 10, 0);
   if (first === null) throw new Error('expected first expiration claim');
@@ -211,25 +191,23 @@ test('drained completion cannot remove a queue whose domain still has rows', asy
   expect(await db.prepare("SELECT domain FROM expiration_sweeps WHERE key_id = 'key-a'").first()).toBeNull();
 });
 
-test('repaired inactive dump queues drain in bounded ticks', async () => {
-  const { raw, db } = await createPreIntegrityDatabase();
+test('inactive dump archive queues drain in bounded ticks', async () => {
+  const raw = await createSqlJsDatabase();
+  const db = wrapSqlJsDatabase(raw);
   try {
+    for (const [, sql] of migrationSqlByFilename) raw.run(sql);
     insertApiKey(raw, 'disabled');
     insertApiKey(raw, 'deleted');
+    const repo = new SqlRepo(db);
+    initRepo(repo);
+    const store = new FileDumpStore(db, new MemoryFileStore());
+    initDumpStore(store);
     for (let index = 0; index < 75; index += 1) {
-      insertDump(raw, 'disabled', `disabled-${index}`);
-      insertDump(raw, 'deleted', `deleted-${index}`);
+      await writeArchive(store.archives, 'disabled', archiveMetadata(`disabled-${index}`, 1));
+      await writeArchive(store.archives, 'deleted', archiveMetadata(`deleted-${index}`, 1));
     }
     raw.run("UPDATE api_keys SET dump_retention_seconds = NULL WHERE id = 'disabled'");
     raw.run("UPDATE api_keys SET deleted_at = '2026-01-02T00:00:00Z' WHERE id = 'deleted'");
-    raw.run("DELETE FROM expiration_sweeps WHERE domain = 'dumps'");
-    runMigrationsFrom(raw, '0082_expiration_sweep_integrity.sql');
-
-    const repo = new SqlRepo(db);
-    initRepo(repo);
-    const files = new MemoryFileStore();
-    initDumpStore(new FileDumpStore(db, files));
-
     await sweepExpirations(Date.UTC(2026, 0, 3));
     expect((await db.prepare(
       'SELECT key_id, COUNT(*) AS count FROM dump_records GROUP BY key_id ORDER BY key_id',

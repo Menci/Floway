@@ -1,5 +1,6 @@
 import { DUMP_FILE_PREFIX, SPILLED_FILE_STAGE_GRACE_MS } from './spilled-files-policy.ts';
 import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
+import { FileArchiveStore } from '../dump/archive-store.ts';
 import { dumpCaptureEnvelopeSchema } from '../dump/schemas.ts';
 import {
   decodeDumpBodyDescriptor,
@@ -108,7 +109,11 @@ const fetchBody = async (files: FileStore, descriptor: DumpBodyDescriptor): Prom
 };
 
 export class FileDumpStore implements DumpStore {
-  constructor(private readonly db: SqlDatabase, private readonly files: FileStore) {}
+  readonly archives: FileArchiveStore;
+
+  constructor(private readonly db: SqlDatabase, private readonly files: FileStore) {
+    this.archives = new FileArchiveStore(db, files);
+  }
 
   async prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody> {
     return {

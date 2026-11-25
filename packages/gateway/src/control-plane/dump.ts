@@ -1,11 +1,9 @@
 import type { Context } from 'hono';
 import { Hono } from 'hono';
-import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 
 import { ownedKeyForUser } from './shared/owned-key.ts';
-import { getDumpBroker, getDumpStore } from '../dump/registry.ts';
-import { dumpRecordToWire } from '../dump/wire.ts';
+import { getDumpArchiveStore } from '../dump/registry.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 
 const LIST_LIMIT_DEFAULT = 100;
@@ -35,7 +33,7 @@ export const dumpRoutes = new Hono()
     const owned = await ownedKey(c);
     if (owned.id === null) return c.json({ error: owned.error }, 404);
     const { limit, before, q, failures } = c.req.valid('query');
-    const records = await getDumpStore().list(owned.id, {
+    const records = await getDumpArchiveStore().list(owned.id, {
       limit: limit ?? LIST_LIMIT_DEFAULT,
       q, failures: failures === 'true',
       ...(before !== undefined ? { before } : {}),
@@ -45,50 +43,10 @@ export const dumpRoutes = new Hono()
   .get('/keys/:keyId/records/:recordId', async c => {
     const owned = await ownedKey(c);
     if (owned.id === null) return c.json({ error: owned.error }, 404);
-    const record = await getDumpStore().get(owned.id, c.req.param('recordId')!);
-    if (!record) return c.json({ error: 'Record not found' }, 404);
-    return c.json(dumpRecordToWire(record));
-  })
-  .get('/keys/:keyId/stream', zValidator('query', listQuery), async c => {
-    const { q, failures } = c.req.valid('query');
-    // Browsers cannot set custom headers on EventSource, so this SSE route
-    // accepts the session token via `?session=` (path-pinned in
-    // authMiddleware).
-    const owned = await ownedKey(c);
-    if (owned.id === null) return c.json({ error: owned.error }, 404);
-
-    // Subscribe first, then read the snapshot, so the live broker covers
-    // anything new while the snapshot supplies history.
-    const controller = new AbortController();
-    const subscription = getDumpBroker().subscribe(owned.id, controller.signal);
-    let snapshot;
-    try {
-      snapshot = await getDumpStore().list(owned.id, { limit: LIST_LIMIT_DEFAULT, q, failures: failures === 'true' });
-    } catch (err) {
-      controller.abort();
-      throw err;
-    }
-
-    return streamSSE(c, async stream => {
-      const onAbort = () => controller.abort();
-      c.req.raw.signal.addEventListener('abort', onAbort, { once: true });
-      try {
-        await stream.writeSSE({ event: 'snapshot', data: JSON.stringify({ records: snapshot }) });
-        try {
-          for await (const meta of subscription) {
-            if (failures === 'true' && meta.error === null && (meta.status ?? 0) < 400) continue;
-            if (q && ![meta.id, meta.path, meta.model, meta.upstream?.name, meta.status, meta.error?.kind === 'failed' ? meta.error.reason : meta.error?.kind].join(' ').toLowerCase().includes(q.toLowerCase())) continue;
-            await stream.writeSSE({ event: 'appended', data: JSON.stringify(meta) });
-          }
-        } catch (err) {
-          await stream.writeSSE({
-            event: 'error',
-            data: JSON.stringify({ message: err instanceof Error ? err.message : String(err) }),
-          });
-        }
-      } finally {
-        c.req.raw.signal.removeEventListener('abort', onAbort);
-        controller.abort();
-      }
+    const archive = await getDumpArchiveStore().get(owned.id, c.req.param('recordId'));
+    if (archive === null) return c.json({ error: 'Record not found' }, 404);
+    return c.body(archive, 200, {
+      'Content-Type': 'application/x-ndjson; charset=utf-8',
+      'Cache-Control': 'private, no-store',
     });
   });
