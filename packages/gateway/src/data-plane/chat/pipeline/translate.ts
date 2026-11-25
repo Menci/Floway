@@ -81,10 +81,20 @@ export const translateChat = <
   const targetResponseKey: ChatResponseKey<Target> = `response.${target}`;
   const entry = chatBodyEntry(source);
   const exit = chatBodyExit(source);
+  const crossesAnthropicMessages = source === 'anthropicMessages' || target === 'anthropicMessages';
+  const generatesOpenAIResponses = target === 'openaiResponses';
   const request = { needs: entry } as const;
   const into = {
     target: {
-      request: { needs: entry, provides: [targetRequestKey], consumes: [sourceRequestKey] },
+      request: {
+        needs: entry,
+        provides: [
+          targetRequestKey,
+          ...(crossesAnthropicMessages ? ['request.http'] as const : []),
+          ...(generatesOpenAIResponses ? ['request.openaiResponsesAction'] as const : []),
+        ],
+        consumes: [sourceRequestKey],
+      },
       response: { needs: chatBodyExit(target), provides: ['response.http', sourceResponseKey], consumes: [targetResponseKey] },
     },
   } as const;
@@ -102,14 +112,26 @@ export const translateChat = <
       const { model } = facts['serve.candidate'];
       const trip = await translate({ ...payload, model: model.id, stream: true } as StreamingRequest<Source>, {
         sidecarCodec: scope.services.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
-        ...(source === 'geminiGenerateContent' ? { fallbackMaxOutputTokens: model.limits.max_output_tokens } : {}),
+        ...(source === 'geminiGenerateContent' || target === 'anthropicMessages'
+          ? { fallbackMaxOutputTokens: model.limits.max_output_tokens }
+          : {}),
       });
       if (trip.type === 'input-error') return {
         'response.http': move(responseHead(400)),
         [sourceResponseKey]: move({ kind: 'error', source: 'local', error: formatInputError(trip) } as const),
       } as Answer;
 
-      const handoff = { ...forward, [targetRequestKey]: move(trip.target) };
+      const requestHttp = facts['request.http'];
+      const handoff = {
+        ...forward,
+        // Client-selected Anthropic betas apply only to native requests.
+        // https://platform.claude.com/docs/en/api/beta-headers
+        ...(crossesAnthropicMessages && {
+          'request.http': move({ ...requestHttp, headers: deleteHeader(requestHttp.headers, 'anthropic-beta') }),
+        }),
+        ...(generatesOpenAIResponses && { 'request.openaiResponsesAction': 'generate' as const }),
+        [targetRequestKey]: move(trip.target),
+      };
       const call = scope.into.target(handoff as Parameters<typeof scope.into.target>[0]);
       const back = await call as Pick<GatewayPipelineFacts, 'response.http' | ChatResponseKey<Target>>;
       const { 'response.http': http, [targetResponseKey]: outcome, ...response } = back;

@@ -5,14 +5,15 @@ import { translateChat } from '../../../../src/data-plane/chat/pipeline/translat
 import { gatewayFactSpace, type ServeCandidate } from '../../../../src/data-plane/pipeline/facts.ts';
 import { responseHead } from '../../../../src/data-plane/pipeline/response.ts';
 import { createGatewayServices, type GatewayServices } from '../../../../src/data-plane/pipeline/services.ts';
-import { setupAppTest } from '../../../test-utils/app.ts';
-import { getHeader, getHeaders } from '@floway-dev/http';
+import { initRepo } from '../../../../src/repo/index.ts';
+import { InMemoryRepo } from '../../../repo/memory.ts';
+import { getHeader, getHeaders, type HttpRequestFact } from '@floway-dev/http';
 import { move, run, type Result } from '@floway-dev/pipeline';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import { formatOpenAIChatCompletionsError, type OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { ProtocolStreamError } from '@floway-dev/provider';
-import { routeOpenAIChatCompletionsViaAnthropicMessages } from '@floway-dev/translate';
+import { routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses } from '@floway-dev/translate';
 
 const source = 'openaiChatCompletions';
 const target = 'anthropicMessages';
@@ -24,7 +25,7 @@ const candidate: ServeCandidate = {
     id: 'translated-model',
     kind: 'chat',
     upstreamModelId: 'native-model',
-    limits: {},
+    limits: { max_output_tokens: 10 },
     endpoints: { anthropicMessages: {}, openaiResponses: {} },
     opaqueBlobCompatibilityScope: { bindToUpstream: false },
     enabledFlags: [],
@@ -32,20 +33,22 @@ const candidate: ServeCandidate = {
 };
 
 const facts = {
-  'request.http': move({ url: 'http://localhost/v1/chat/completions', method: 'POST', headers: [], body: null }),
+  'request.http': move<HttpRequestFact>({
+    url: 'http://localhost/v1/chat/completions', method: 'POST', body: null,
+    headers: [['anthropic-beta', 'client-beta'], ['x-trace-id', 'preserved']],
+  }),
   'request.auth.apiKeyId': 'test-key',
   'serve.candidate': move(candidate),
   'request.openaiChatCompletions': move<OpenAIChatCompletionsPayloadEx>({
     model: 'client-model',
     stream: false,
-    max_tokens: 10,
     messages: [{ role: 'user', content: 'hello' }],
   }),
 };
 
-const services = async (): Promise<GatewayServices> => {
-  const { apiKey } = await setupAppTest();
-  return createGatewayServices({ requestBody: null, runtimeLocation: 'test', serverSecret: apiKey.serverSecret });
+const services = (): GatewayServices => {
+  initRepo(new InMemoryRepo());
+  return createGatewayServices({ requestBody: null, runtimeLocation: 'test', serverSecret: '00'.repeat(32) });
 };
 
 const sourceBody = (
@@ -88,6 +91,7 @@ test('translation selects the preferred available target, preserves its trip and
     return: { provides: chatBodyExit(target) },
     async execute(request, scope) {
       expect(Object.hasOwn(request, 'request.openaiChatCompletions')).toBe(false);
+      expect(request['request.http'].headers).toEqual([['x-trace-id', 'preserved']]);
       expect(request['request.anthropicMessages']).toMatchObject({ model: candidate.model.id, stream: true, max_tokens: 10 });
       const stream = scope.createStream(async function* ({ signal }): AsyncIterable<Result<AnthropicMessagesStreamEventEx, ProtocolStreamError>> {
         yield { ok: true, value: { type: 'message_stop' } };
@@ -106,6 +110,7 @@ test('translation selects the preferred available target, preserves its trip and
     expect(payload.stream).toBe(true);
     const message = payload.messages[0];
     if (message?.role !== 'user' || typeof message.content !== 'string') throw new TypeError('Expected source text');
+    const { content } = message;
     const trip = await routeOpenAIChatCompletionsViaAnthropicMessages(payload, options);
     if (trip.type === 'input-error') return trip;
     return {
@@ -118,14 +123,14 @@ test('translation selects the preferred available target, preserves its trip and
             object: 'chat.completion.chunk',
             created: 1,
             model: payload.model,
-            choices: [{ index: 0, delta: { content: message.content as string }, finish_reason: 'stop' }],
+            choices: [{ index: 0, delta: { content }, finish_reason: 'stop' }],
           });
           yield doneFrame();
         }
       },
     };
   });
-  const handle = run(pipeline, facts, { services: await services() });
+  const handle = run(pipeline, facts, { services: services() });
   const answer = await handle.result;
   expect(Object.hasOwn(answer, 'response.anthropicMessages')).toBe(false);
   const outcome = answer['response.openaiChatCompletions'];
@@ -169,7 +174,7 @@ test('translation restates the target failure and retains its origin, status and
       };
     },
   });
-  const handle = run(sourceBody(targetEgress), facts, { services: await services() });
+  const handle = run(sourceBody(targetEgress), facts, { services: services() });
   const answer = await handle.result;
   expect(answer['response.openaiChatCompletions']).toMatchObject({
     kind: 'error', source: 'upstream', cause: 'target diagnostic', error: { error: { message: 'Please retry.' } },
@@ -193,11 +198,36 @@ test('translation rejects invalid source input before entering the target pipeli
   const pipeline = sourceBody(targetEgress, async () => ({
     type: 'input-error', param: 'messages', message: 'Invalid message.',
   }));
-  const handle = run(pipeline, facts, { services: await services() });
+  const handle = run(pipeline, facts, { services: services() });
   const answer = await handle.result;
   expect(answer['response.http']?.status).toBe(400);
   expect(answer['response.openaiChatCompletions']).toMatchObject({
     kind: 'error', source: 'local', error: { error: { message: 'Invalid message.', param: 'messages' } },
   });
+  await handle.done;
+});
+
+test('translation into OpenAI Responses enters the generate action', async () => {
+  const responses = 'openaiResponses';
+  const entry = [...chatBodyEntry(responses), 'request.openaiResponsesAction'] as const;
+  const exit = chatBodyExit(responses);
+  const ending = defineStage({
+    name: 'test.openai-responses-action',
+    request: { needs: entry },
+    return: { provides: exit },
+    async execute(request) {
+      expect(request['request.openaiResponsesAction']).toBe('generate');
+      expect(request['request.http']).toBe(facts['request.http']);
+      expect(request['request.openaiResponses'].model).toBe(candidate.model.id);
+      return {
+        'response.http': move(responseHead(429)),
+        'response.openaiResponses': move({ kind: 'error', source: 'upstream', error: { message: 'Please retry.' } } as const),
+      };
+    },
+  });
+  const body = compose('test.openaiResponses.body', { entry, exit, stages: [], ending });
+  const translation = translateChat(source, responses, routeOpenAIChatCompletionsViaOpenAIResponses, () => body, error => error);
+  const handle = run(translation, facts, { services: services() });
+  expect((await handle.result)['response.http']?.status).toBe(429);
   await handle.done;
 });
