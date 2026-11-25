@@ -38,7 +38,8 @@ const translateFrames = async function* <In, Out>(
     }
     failure = source.failure;
   } catch (cause) {
-    failure = source.failure === cause ? source.failure : { kind: 'protocol', cause };
+    const upstream = source.failure;
+    failure = upstream !== undefined && cause === upstream ? upstream : { kind: 'protocol', cause };
   }
   if (!source.done) abort();
   if (failure !== undefined) yield { ok: false, error: failure };
