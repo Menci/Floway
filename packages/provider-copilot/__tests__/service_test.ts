@@ -1,11 +1,12 @@
 import { expect, test, vi } from 'vitest';
 
 import { copilotUpstreamFact } from '../src/config.ts';
+import { copilotPipelines } from '../src/pipelines/index.ts';
 import { createCopilotService, getCopilotProvidedModels } from '../src/service.ts';
 import { readCopilotUpstreamState } from '../src/state.ts';
 import { getHeader, type FetchInit } from '@floway-dev/http';
-import { move, Secret } from '@floway-dev/pipeline';
-import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { move, run, Secret } from '@floway-dev/pipeline';
+import { initProviderRepo, toProviderModelFact, type UpstreamRecord } from '@floway-dev/provider';
 
 const setup = () => {
   let upstream: UpstreamRecord = {
@@ -37,7 +38,10 @@ const setup = () => {
       async saveState(_id, mutate) { upstream = { ...upstream, state: mutate(upstream.state, 1) }; },
     },
   }));
-  return () => upstream;
+  return {
+    record: () => upstream,
+    setState(state: unknown) { upstream = { ...upstream, state }; },
+  };
 };
 
 const tokenApi = 'https://api.github.com/copilot_internal/v2/token';
@@ -50,7 +54,7 @@ const exchangeResponse = () => Response.json({
 });
 
 test('Copilot keeps GitHub and temporary bearer credentials marked when exposing facts and service results', async () => {
-  const record = setup();
+  const { record } = setup();
   const upstream = move(copilotUpstreamFact(record()));
   const service = createCopilotService();
   const fetcher = vi.fn(async (_url: string, _init: FetchInit) => ({ ok: true, value: exchangeResponse() } as const));
@@ -71,7 +75,7 @@ test('Copilot keeps GitHub and temporary bearer credentials marked when exposing
 });
 
 test('Concurrent Copilot credentials share the service-owned GitHub exchange', async () => {
-  const record = setup();
+  const { record } = setup();
   const upstream = move(copilotUpstreamFact(record()));
   const release = Promise.withResolvers<void>();
   const entered = Promise.withResolvers<void>();
@@ -92,7 +96,7 @@ test('Concurrent Copilot credentials share the service-owned GitHub exchange', a
 });
 
 test('Copilot projects routing metadata and resolves raw variants from its stored catalog on a cold service', async () => {
-  const record = setup();
+  const { record } = setup();
   const service = createCopilotService();
   const fetcher = vi.fn(async (url: string, _init: FetchInit): Promise<Response> => {
     if (url === tokenApi) return exchangeResponse();
@@ -114,4 +118,92 @@ test('Copilot projects routing metadata and resolves raw variants from its store
   const cold = createCopilotService();
   await expect(cold.selectModel(record().id, models[0].upstreamModelId, 'openaiResponses', { fast: true }))
     .resolves.toEqual({ kind: 'model', id: 'example-model-fast' });
+});
+
+test('a transport abort during the Copilot token exchange preserves its cause without retrying', async () => {
+  const { record } = setup();
+  const failure = { kind: 'abort', cause: 'transport stopped' } as const;
+  const fetcher = vi.fn(async () => ({ ok: false, error: failure } as const));
+  const result = await createCopilotService().credentials(copilotUpstreamFact(record()), fetcher);
+  expect(result).toEqual({ ok: false, error: { kind: 'transport', error: failure } });
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+test('Copilot merges a refreshed catalog into the state written during its fetch', async () => {
+  const { record, setState } = setup();
+  const service = createCopilotService();
+  const quotaSnapshot = { fetchedAt: 1, data: { observed_at: '2026-08-01T00:00:00.000Z', reset_at: null, quotas: {} } };
+  const fetcher = async (url: string): Promise<Response> => {
+    if (url === tokenApi) return exchangeResponse();
+    if (url !== `${copilotApi}/models`) throw new Error(`Unexpected URL ${url}`);
+    setState({ ...readCopilotUpstreamState(record().state), quotaSnapshot });
+    return Response.json({
+      object: 'list',
+      data: [
+        { id: 'claude-opus-4.7', supported_endpoints: ['/responses'], capabilities: { supports: { reasoning_effort: ['medium'] } } },
+        { id: 'claude-opus-4.7-xhigh', supported_endpoints: ['/v1/messages'], capabilities: { supports: { reasoning_effort: ['xhigh'] } } },
+      ],
+    });
+  };
+  const [model] = await getCopilotProvidedModels(service, record(), fetcher);
+  const state = readCopilotUpstreamState(record().state);
+  expect(state.knownModels?.models).toHaveProperty('claude-opus-4.7');
+  expect(state.copilotToken?.token).toBe('copilot-access-token');
+  expect(state.quotaSnapshot).toEqual(quotaSnapshot);
+  await expect(service.selectModel(record().id, model.upstreamModelId, 'openaiResponses', { reasoningEffort: 'xhigh' }))
+    .resolves.toEqual({ kind: 'model', id: 'claude-opus-4.7' });
+
+  await expect(getCopilotProvidedModels(service, record(), async () => new Response('unavailable', { status: 503 })))
+    .rejects.toMatchObject({ httpResponse: { status: 503, body: 'unavailable' } });
+  expect(readCopilotUpstreamState(record().state).knownModels).toEqual(state.knownModels);
+});
+
+test.each([
+  {
+    quota: 'ent=300&ov=0.0&ovPerm=false&rem=90.0&rst=2026-09-01T00%3A00%3A00Z&totRem=270',
+    remaining: 270,
+  },
+  {
+    quota: 'ent=-2&ov=0.0&ovPerm=false&rem=0.0&rst=2026-09-01T00%3A00%3A00Z&totRem=0',
+    remaining: null,
+  },
+])('Copilot quota outcome persists the valid observation or leaves the response available on failure', async ({ quota, remaining }) => {
+  const { record } = setup();
+  const service = createCopilotService();
+  const fetcher = async (url: string): Promise<Response> => {
+    if (url === tokenApi) return exchangeResponse();
+    if (url === `${copilotApi}/models`) {
+      return Response.json({ object: 'list', data: [{ id: 'gpt-chat', supported_endpoints: ['/chat/completions'] }] });
+    }
+    if (url === `${copilotApi}/chat/completions`) {
+      return new Response('data: [DONE]\n\n', {
+        headers: {
+          'content-type': 'text/event-stream',
+          'x-quota-snapshot-premium_interactions': quota,
+        },
+      });
+    }
+    throw new Error(`Unexpected URL ${url}`);
+  };
+  const [model] = await getCopilotProvidedModels(service, record(), fetcher);
+  const started = run(copilotPipelines.openaiChatCompletions, {
+    'provider.upstream': move(copilotUpstreamFact(record())),
+    'provider.model': move(toProviderModelFact(model)),
+    'request.http': move({ url: 'https://floway.test', method: 'POST', headers: [], body: null }),
+    'request.openaiChatCompletions': move({ model: model.id, messages: [] }),
+  }, {
+    services: {
+      copilot: service,
+      fetcher: () => async url => ({ ok: true, value: await fetcher(url) }),
+    },
+  });
+  const result = await started.result;
+  const outcome = result['response.openaiChatCompletions'];
+  if (outcome.kind !== 'stream') throw new Error('Expected Chat Completions stream');
+  await Array.fromAsync(outcome.stream);
+  await started.done;
+  expect(result['response.http']?.status).toBe(200);
+  const snapshot = readCopilotUpstreamState(record().state).quotaSnapshot;
+  if (remaining === null) expect(snapshot).toBeNull();
+  else expect(snapshot).toMatchObject({ data: { quotas: { premium_interactions: { quota_remaining: remaining } } } });
 });

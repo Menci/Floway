@@ -46,6 +46,7 @@ export interface CopilotServices extends ProviderServices {
 class CopilotCredentialTransportError extends Error {
   constructor(readonly failure: HttpStreamError) {
     super('GitHub Copilot credential exchange failed', { cause: failure.cause });
+    this.name = failure.kind === 'abort' ? 'AbortError' : 'CopilotCredentialTransportError';
   }
 }
 
