@@ -59,7 +59,7 @@ const INITIAL_DECISION_TARGET: DecisionTarget = { protocol: 'typesafe-systemone'
 
 // What a discovered model declares when it names no kind of its own, or names
 // `chat`. The gateway hands both the upstream's configured map unchanged
-// (autoModelEndpoints, packages/provider-custom/src/provider.ts) and the auto
+// (autoModelEndpoints, packages/provider-custom/src/catalog.ts) and the auto
 // row says what the gateway will serve, so the row mirrors it rather than
 // taking the chat family the kind picker offers -- that filter would drop a
 // configured OpenAI Embeddings or rerank path and then persist the loss through the

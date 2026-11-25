@@ -4,11 +4,11 @@
 // https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/balance.mdx
 
 import { readOllamaAccountUsage } from './account-usage.ts';
+import { fetchOllamaApi } from './api.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
-import { ollamaFetchUsage, ollamaFetchBalance } from './fetch.ts';
 import { type OllamaUsageObservation, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { ollamaMetrics } from './upstream-metrics.ts';
-import { type Fetcher, getProviderRepo, identityWrapUpstreamCall, normalizeUpstreamMetricIdentity, runScheduledUsageRefresh, type ProviderRepo, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { type Fetcher, getProviderRepo, normalizeUpstreamMetricIdentity, runScheduledUsageRefresh, type ProviderRepo, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // Reading account usage takes two things the operator states: that this upstream
 // is an Ollama Cloud account (`cloudUsage` — the endpoint belongs to
@@ -73,10 +73,9 @@ export const refreshOllamaUsageProbe = async (
   let observation: OllamaUsageObservation;
   try {
     const init = { method: 'GET', headers: new Headers({ accept: 'application/json' }) };
-    const options = { fetcher, wrapUpstreamCall: identityWrapUpstreamCall };
     const [usage, balance] = await Promise.all([
-      ollamaFetchUsage(config, init, options).then(response => readOllamaObservation(response, '/api/usage')),
-      ollamaFetchBalance(config, init, options).then(response => readOllamaObservation(response, '/api/balance')),
+      fetchOllamaApi(config, '/api/usage', init, fetcher).then(response => readOllamaObservation(response, '/api/usage')),
+      fetchOllamaApi(config, '/api/balance', init, fetcher).then(response => readOllamaObservation(response, '/api/balance')),
     ]);
     const data = { usage, balance };
     readOllamaAccountUsage(data);
@@ -98,23 +97,6 @@ export const refreshOllamaUsageProbe = async (
 export const isOllamaUsageProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
   const probe = state.usageProbe;
   return probe === null || now - probe.attemptedAt >= OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS;
-};
-
-// A dashboard refresh must not replace the model response with its failure.
-// Record the error on the paired reading and extend the runtime with waitUntil
-// so persistence can finish after the response is relayed.
-export const scheduleOllamaUsageProbe = (
-  upstreamId: string,
-  config: OllamaUpstreamConfig,
-  state: OllamaUpstreamState,
-  fetcher: Fetcher,
-  waitUntil: (promise: Promise<unknown>) => void,
-): void => {
-  if (!isOllamaUsageEnabled(config)) return;
-  if (!isOllamaUsageProbeDue(state, Date.now())) return;
-  waitUntil(refreshOllamaUsageProbe(upstreamId, config, fetcher).catch((error: unknown) => {
-    console.warn(`Failed to refresh Ollama usage for ${upstreamId}:`, error);
-  }));
 };
 
 export const runOllamaScheduledTask = async (record: UpstreamRecord, options: ProviderScheduledOptions): Promise<void> => {

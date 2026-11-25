@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
+import { projectCustomDiscoveredModels } from '../src/catalog.ts';
 import { inferEndpointsFromModelId } from '../src/infer-endpoints.ts';
-import { projectCustomDiscoveredModels } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 

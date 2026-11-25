@@ -1,13 +1,4 @@
-import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
-import { createOllamaProvider } from './provider.ts';
-import type { ProviderModule } from '@floway-dev/provider';
-
-export const ollamaProviderModule: ProviderModule = {
-  create: createOllamaProvider,
-  defaultFlags: OLLAMA_DEFAULT_FLAGS,
-};
-
-export { createOllamaProvider, getOllamaProvidedModels } from './provider.ts';
+export { getOllamaProvidedModels } from './catalog.ts';
 export { assertOllamaUpstreamRecord, parseOllamaUpstreamConfig, type OllamaUpstreamConfig, type OllamaUpstreamRecord } from './config.ts';
 export { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 export { ollamaPipelines } from './pipelines/index.ts';

@@ -15,9 +15,8 @@
 // follows `nextPageToken` until the catalog is complete.
 
 import type { CustomUpstreamConfig } from './config.ts';
-import { customFetchModels } from './fetch.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, type OpaqueBlobCompatibilityScope, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, opaqueBlobCompatibilityScopeField } from '@floway-dev/provider';
+import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, joinBaseAndPath, opaqueBlobCompatibilityScopeField } from '@floway-dev/provider';
 
 export interface CustomRawModel {
   id: string;
@@ -186,12 +185,27 @@ const parseCustomModelsPage = (value: unknown): CustomModelsPage | null => {
   return { data };
 };
 
+const modelsHeaders = ({ apiKey, modelsFetch: { authStyle } }: CustomUpstreamConfig): [string, string][] => {
+  if (apiKey === '') return [];
+  switch (authStyle) {
+  case 'bearer': return [['Authorization', `Bearer ${apiKey}`]];
+  // https://docs.anthropic.com/en/api/versioning
+  case 'x-api-key': return [['x-api-key', apiKey], ['anthropic-version', '2023-06-01']];
+  // https://ai.google.dev/gemini-api/docs/api-key
+  case 'x-goog-api-key': return [['x-goog-api-key', apiKey]];
+  }
+};
+
 export const fetchCustomModels = async (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> => {
+  const endpoint = config.modelsFetch.endpoint ?? '/v1/models';
   const data: CustomRawModel[] = [];
   let pageToken: string | undefined;
   do {
+    const path = pageToken === undefined
+      ? endpoint
+      : `${endpoint}${endpoint.includes('?') ? '&' : '?'}pageToken=${encodeURIComponent(pageToken)}`;
     const page = await fetchUpstreamModels(
-      () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }, pageToken),
+      () => fetcher(joinBaseAndPath(config.baseUrl, path), { method: 'GET', headers: modelsHeaders(config) }),
       parseCustomModelsPage,
     );
     data.push(...page.data);

@@ -1,10 +1,12 @@
 import { assert, expect, test, vi } from 'vitest';
 
+import { OLLAMA_ACCOUNT_PROBE_MIN_INTERVAL_MS } from '../../src/account-probe.ts';
 import type { OllamaUpstreamConfig } from '../../src/config.ts';
 import { ollamaPipelines } from '../../src/pipelines/index.ts';
 import { createOllamaService, type OllamaServices } from '../../src/service.ts';
 import { readOllamaUpstreamState } from '../../src/state.ts';
 import { ollamaUpstreamFact } from '../../src/upstream.ts';
+import { OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS } from '../../src/usage-probe.ts';
 import { CREDIT_BALANCE, USAGE_TOTALS } from '../usage-fixture.ts';
 import type { HttpRequestFact } from '@floway-dev/http';
 import { move, run, Secret, type Pipeline } from '@floway-dev/pipeline';
@@ -43,8 +45,8 @@ const facts = {
   'provider.model': move(toProviderModelFact(stubProviderModel({ upstreamModelId: 'publisher/model' }))),
 };
 
-const repoFixture = () => {
-  const saved = { ...record, configVersion: 1 };
+const repoFixture = (state: unknown = null) => {
+  const saved = { ...record, state, configVersion: 1 };
   const repo: ProviderRepo = {
     upstreams: {
       getById: vi.fn(async () => ({ ...saved })),
@@ -141,6 +143,8 @@ test('keeps a bodyless Anthropic count-tokens success', async () => {
 test.each([
   [{ max_completion_tokens: 17 }, { max_tokens: 17 }],
   [{ max_completion_tokens: 17, max_tokens: 9 }, { max_completion_tokens: 17, max_tokens: 9 }],
+  [{ max_completion_tokens: 0 }, { max_tokens: 0 }],
+  [{ max_completion_tokens: 128000, max_tokens: null }, { max_completion_tokens: 128000, max_tokens: null }],
 ])('chat shapes output caps for Ollama and accepts normal EOF', async (supplied, expected) => {
   const chunk = { id: 'chunk', object: 'chat.completion.chunk', created: 1, model: 'publisher/model', choices: [] };
   const fetch = vi.fn<ReturnType<ProviderServices['fetcher']>>().mockResolvedValue({
@@ -272,6 +276,66 @@ test('malformed streaming success and token counting leave probes unarmed', asyn
     ['authorization', 'Bearer cloud-key'],
   ]);
   expect(refreshProbes).not.toHaveBeenCalled();
+});
+
+test.each([
+  { accountAge: 60 * 60_000, usageAge: 1_000, paths: [] },
+  { accountAge: 60 * 60_000, usageAge: OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS, paths: ['/api/usage', '/api/balance'] },
+  { accountAge: OLLAMA_ACCOUNT_PROBE_MIN_INTERVAL_MS, usageAge: 1_000, paths: ['/api/me'] },
+])('uses independent Ollama probe intervals when the account age is $accountAge and attempt age is $usageAge', async ({ accountAge, usageAge, paths }) => {
+  const now = Date.now();
+  const { repo } = repoFixture({
+    account: { fetchedAt: now - accountAge, plan: 'free', name: null, email: null },
+    usageProbe: { attemptedAt: now - usageAge, observation: null, error: 'Last attempt failed' },
+  });
+  const fetcher = vi.fn<ReturnType<ProviderServices['fetcher']>>(async url => {
+    switch (new URL(url).pathname) {
+    case '/v1/chat/completions': return { ok: true, value: sse('[DONE]') };
+    case '/api/me': return { ok: true, value: Response.json({ Plan: 'free' }) };
+    case '/api/usage': return { ok: true, value: Response.json(USAGE_TOTALS) };
+    case '/api/balance': return { ok: true, value: Response.json(CREDIT_BALANCE) };
+    default: throw new Error(`Unexpected URL ${url}`);
+    }
+  });
+  const exchange = run(ollamaPipelines.openaiChatCompletions, {
+    ...facts,
+    'request.openaiChatCompletions': move({ model: 'public', messages: [] }),
+  }, { services: { fetcher: () => fetcher, ollama: createOllamaService(repo) } });
+  const outcome = (await exchange.result)['response.openaiChatCompletions'];
+  assert(outcome.kind === 'stream');
+  expect(await Array.fromAsync(outcome.stream)).toEqual([]);
+  await exchange.done;
+
+  const observed = fetcher.mock.calls.map(([url]) => new URL(url).pathname);
+  expect(observed.toSorted()).toEqual(['/v1/chat/completions', ...paths].toSorted());
+  expect(new Headers(fetcher.mock.calls[0][1].headers).get('authorization')).toBe('Bearer cloud-key');
+});
+
+test('Ollama transcription replaces the form model with the selected upstream ID', async () => {
+  const fetcher = vi.fn<ReturnType<ProviderServices['fetcher']>>().mockResolvedValue({ ok: true, value: new Response('hello') });
+  const exchange = run(ollamaPipelines.openaiAudioTranscriptions, {
+    ...facts,
+    'request.openaiAudioTranscriptions': move({
+      entries: [
+        { name: 'file', value: { name: 'clip.wav', type: 'audio/wav', bytes: Uint8Array.of(1, 2) } },
+        { name: 'model', value: 'public' },
+      ],
+    }),
+  }, { services: { fetcher: () => fetcher, ollama: { refreshProbes: vi.fn().mockResolvedValue(undefined) } } });
+  const answer = await exchange.result;
+  await exchange.done;
+  expect(answer).toMatchObject({ 'response.modelKey': 'publisher/model', 'response.openaiAudioTranscriptions': { kind: 'result', result: new TextEncoder().encode('hello') } });
+
+  const [[url, options]] = fetcher.mock.calls;
+  const headers = new Headers(options.headers);
+  expect(url).toBe('https://ollama.example.test/v1/audio/transcriptions');
+  expect(headers.get('authorization')).toBe('Bearer cloud-key');
+  const form = await new Response(options.body as Uint8Array<ArrayBuffer>, { headers }).formData();
+  expect(form.get('model')).toBe('publisher/model');
+  const file = form.get('file');
+  assert(file instanceof File);
+  expect(file.name).toBe('clip.wav');
+  expect(new Uint8Array(await file.arrayBuffer())).toEqual(Uint8Array.of(1, 2));
 });
 
 const sse = (data: string): Response => new Response(`data: ${data}\n\n`, { headers: { 'content-type': 'text/event-stream' } });

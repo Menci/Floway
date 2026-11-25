@@ -89,6 +89,8 @@ test.each([true, false])('applies DeepSeek Chat Completions normalization when e
   await exchange.done;
 
   const wire = JSON.parse(String(fetcher.mock.calls[0][1].body)) as Record<string, unknown>;
+  expect(fetcher.mock.calls[0][0]).toBe('https://azure.services.ai.azure.com/api/projects/floway/openai/v1/chat/completions');
+  expect(wire).toMatchObject({ model: 'deployment/model', stream: true });
   if (enabled) {
     expect(wire).toMatchObject({
       thinking: { type: 'disabled' },
@@ -221,6 +223,31 @@ test('audio transcriptions selects the deployment path and sends matching multip
   assert(file instanceof File);
   expect(file.name).toBe('input.wav');
   expect(new Uint8Array(await file.arrayBuffer())).toEqual(Uint8Array.of(1, 2));
+});
+
+test('Azure image edits sends the deployment id and image bytes to the preview endpoint', async () => {
+  const result = { data: [{ b64_json: 'image' }], usage: { input_tokens: 3, output_tokens: 4 } };
+  const { fetch, services } = transport(Response.json(result));
+  const exchange = run(azurePipelines.openaiImagesEdits, {
+    ...facts,
+    'request.openaiImagesEdits': move<OpenAIImagesEditsRequest>({
+      parameters: { prompt: 'replace sky' },
+      images: [{ type: 'upload', file: { name: 'photo.png', type: 'image/png', bytes: Uint8Array.of(1, 2, 3) } }],
+    }),
+  }, { services });
+  const answer = await exchange.result;
+  await exchange.done;
+  expect(answer).toMatchObject({ 'response.modelKey': 'deployment/model', 'response.openaiImagesEdits': { kind: 'result', result } });
+
+  const [[url, options]] = fetch.mock.calls;
+  expect(url).toBe('https://azure.services.ai.azure.com/api/projects/floway/openai/v1/images/edits?api-version=preview');
+  const form = await new Response(options.body as Uint8Array<ArrayBuffer>, { headers: new Headers(options.headers) }).formData();
+  expect(form.get('model')).toBe('deployment/model');
+  expect(form.get('prompt')).toBe('replace sky');
+  const image = form.get('image');
+  assert(image instanceof File);
+  expect(image.name).toBe('photo.png');
+  expect(new Uint8Array(await image.arrayBuffer())).toEqual(Uint8Array.of(1, 2, 3));
 });
 
 const sse = (data: string): Response => new Response(`data: ${data}\n\n`, { headers: { 'content-type': 'text/event-stream' } });

@@ -79,3 +79,28 @@ test('fetchCustomModels keeps models but omits one malformed pricing block', asy
     },
   );
 });
+
+test.each([
+  { authStyle: 'bearer', apiKey: 'token', authorization: 'Bearer token', xApiKey: null, version: null, googleKey: null },
+  { authStyle: 'x-api-key', apiKey: 'token', authorization: null, xApiKey: 'token', version: '2023-06-01', googleKey: null },
+  { authStyle: 'x-goog-api-key', apiKey: 'token', authorization: null, xApiKey: null, version: null, googleKey: 'token' },
+  { authStyle: 'x-api-key', apiKey: '', authorization: null, xApiKey: null, version: null, googleKey: null },
+])('uses $authStyle catalog authentication independently from Anthropic inference', async ({ authStyle, apiKey, authorization, xApiKey, version, googleKey }) => {
+  const record = upstreamRecord();
+  const { config } = assertCustomUpstreamRecord({
+    ...record,
+    config: { ...record.config, apiKey, endpoints: { anthropicMessages: {} }, modelsFetch: { enabled: true, authStyle } },
+  });
+  await withMockedFetch(
+    request => {
+      assertEquals(request.url, 'https://custom.example.com/v1/models');
+      assertEquals(request.method, 'GET');
+      assertEquals(request.headers.get('authorization'), authorization);
+      assertEquals(request.headers.get('x-api-key'), xApiKey);
+      assertEquals(request.headers.get('anthropic-version'), version);
+      assertEquals(request.headers.get('x-goog-api-key'), googleKey);
+      return jsonResponse({ data: [] });
+    },
+    async () => await fetchCustomModels(config, directFetcher),
+  );
+});

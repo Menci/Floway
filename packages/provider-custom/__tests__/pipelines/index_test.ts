@@ -8,7 +8,7 @@ import { move, run, Secret, type Pipeline } from '@floway-dev/pipeline';
 import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
-import { toProviderModelFact, type OpenAIImagesEditsRequest, type ProtocolOutcome, type ProviderServices } from '@floway-dev/provider';
+import { toProviderModelFact, type OpenAIImagesEditsRequest, type ProtocolOutcome, type ProviderServices, type UpstreamRecord } from '@floway-dev/provider';
 import { stubProviderModel } from '@floway-dev/test-utils';
 
 const config: CustomUpstreamConfig = {
@@ -27,7 +27,7 @@ const config: CustomUpstreamConfig = {
   models: [],
 };
 
-const upstream = customUpstreamFact({
+const record: UpstreamRecord = {
   id: 'custom-upstream',
   name: 'Custom upstream',
   kind: 'custom',
@@ -44,7 +44,8 @@ const upstream = customUpstreamFact({
   modelPrefix: null,
   modelsCache: null,
   hue: 210,
-});
+};
+const upstream = customUpstreamFact(record);
 
 const facts = {
   'request.http': move<HttpRequestFact>({
@@ -103,6 +104,8 @@ test.each([true, false])('applies DeepSeek Chat Completions normalization when e
   await exchange.done;
 
   const wire = JSON.parse(String(fetcher.mock.calls[0][1].body)) as Record<string, unknown>;
+  expect(fetcher.mock.calls[0][0]).toBe('https://custom.example.test/prefix/v1/chat/completions');
+  expect(wire).toMatchObject({ model: 'publisher/model', stream: true });
   if (enabled) {
     expect(wire).toMatchObject({
       thinking: { type: 'disabled' },
@@ -296,6 +299,11 @@ test('rerank parses vendor scores with ordinary number semantics and rejects mal
   });
   await succeeded.done;
   expect(valid.fetch.mock.calls[0][0]).toBe('https://custom.example.test/prefix/rerank');
+  expect(JSON.parse(String(valid.fetch.mock.calls[0][1].body))).toEqual({
+    model: 'vendor/reranker',
+    query: 'best match',
+    documents: ['one', 'two'],
+  });
 
   const invalid = transport(Response.json({ results: 'wrong shape' }));
   const failed = run(customPipelines.rerank, request, { services: invalid.services });
@@ -329,6 +337,100 @@ test('OpenAI Completions selects streaming from the request and requires the sen
   expect(JSON.parse(String(truncated.fetch.mock.calls[0][1].body)).stream).toBe(true);
 });
 
+test.each([
+  { rules: [null], incoming: [], expected: [] },
+  { rules: [null], incoming: ['client-a', 'client-b'], expected: ['client-a', 'client-b'] },
+  { rules: ['one', null], incoming: [], expected: ['one'] },
+  { rules: ['one', null], incoming: ['client-a', 'client-b'], expected: ['one', 'client-a', 'client-b'] },
+  { rules: ['', 'one'], incoming: [], expected: ['', 'one'] },
+  { rules: ['', 'one'], incoming: ['client-a', 'client-b'], expected: ['', 'one'] },
+])('resolves Custom header rules $rules for input fields $incoming', async ({ rules, incoming, expected }) => {
+  const ingressHeadersRules = rules.map(value => ({ key: 'x-route', value }));
+  const { fetch, services } = transport(Response.json({ data: [] }));
+  const exchange = run(customPipelines.openaiEmbeddings, {
+    ...facts,
+    'provider.upstream': move(customUpstreamFact({ ...record, config: { ...config, ingressHeadersRules } })),
+    'request.http': move({ ...facts['request.http'], headers: incoming.map((value): [string, string] => ['X-Route', value]) }),
+    'request.openaiEmbeddings': move({ model: 'public', input: 'text' }),
+  }, { services });
+  await exchange.result;
+  await exchange.done;
+  const lines = fetch.mock.calls[0][1].headers as [string, string][];
+  expect(lines.filter(([name]) => name === 'x-route').map(([, value]) => value)).toEqual(expected);
+});
+
+test.each([
+  ['https://generativelanguage.googleapis.com', 'gemini-3-flash'],
+  ['https://gemini-proxy.example.test/api/gemini', 'models/gemini-3-flash'],
+])('Gemini generation forms the model action URL beneath %s', async (baseUrl, upstreamModelId) => {
+  const { pathOverrides: _pathOverrides, ...settings } = config;
+  const { fetch, services } = transport(sse('{"candidates":[{"finishReason":"STOP"}]}'));
+  const payload = { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] };
+  const exchange = run(customPipelines.geminiGenerateContent, {
+    ...facts,
+    'provider.upstream': move(customUpstreamFact({ ...record, config: { ...settings, baseUrl } })),
+    'provider.model': move(toProviderModelFact(stubProviderModel({ upstreamModelId }))),
+    'request.geminiGenerateContent': move(payload),
+  }, { services });
+  const answer = await exchange.result;
+  const outcome = answer['response.geminiGenerateContent'];
+  assert(outcome.kind === 'stream');
+  expect(await Array.fromAsync(outcome.stream)).toMatchObject([{ ok: true, value: { candidates: [{ finishReason: 'STOP' }] } }]);
+  await exchange.done;
+  const [[url, options]] = fetch.mock.calls;
+  expect(url).toBe(`${baseUrl}/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse`);
+  expect(options.method).toBe('POST');
+  expect(JSON.parse(String(options.body))).toEqual(payload);
+  expect(new Headers(options.headers).get('x-goog-api-key')).toBe('configured-key');
+  expect(new Headers(options.headers).get('authorization')).toBeNull();
+  expect(answer['response.modelKey']).toBe('gemini-3-flash');
+});
+
+test('Custom compact and Alpha Search use their configured paths', async () => {
+  const fetch = vi.fn<ReturnType<ProviderServices['fetcher']>>()
+    .mockResolvedValueOnce({ ok: true, value: Response.json({ id: 'compact', object: 'response.compaction', output: [] }) })
+    .mockResolvedValueOnce({ ok: true, value: Response.json({ results: [] }) });
+  const services = { fetcher: () => fetch };
+  const configured = {
+    ...facts,
+    'provider.upstream': move(customUpstreamFact({
+      ...record,
+      config: { ...config, pathOverrides: { '/responses': '/native/responses', '/alpha/search': '/native/search' } },
+    })),
+  };
+  const compact = run(customPipelines.openaiResponsesCompact, {
+    ...configured,
+    'request.openaiResponses': move({ model: 'public', input: [] }),
+  }, { services });
+  expect((await compact.result)['response.openaiResponses'].kind).toBe('result');
+  await compact.done;
+  const search = run(customPipelines.alphaSearch, {
+    ...configured,
+    'request.alphaSearch': move({ query: 'text' }),
+  }, { services });
+  expect((await search.result)['response.alphaSearch'].kind).toBe('result');
+  await search.done;
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+    'https://custom.example.test/prefix/native/responses/compact',
+    'https://custom.example.test/prefix/native/search',
+  ]);
+});
+
+test.each(['openaiChatCompletions', 'anthropicMessagesCountTokens'] as const)('anonymous Custom %s sends only serialized body headers', async operation => {
+  const { fetch, services } = transport(Response.json({ error: { message: 'overloaded' } }, { status: 503 }));
+  const anonymous = {
+    ...facts,
+    'provider.upstream': move(customUpstreamFact({ ...record, config: { ...config, apiKey: '', ingressHeadersRules: [] } })),
+    'request.http': move({ ...facts['request.http'], headers: [] }),
+  };
+  const exchange = operation === 'openaiChatCompletions'
+    ? run(customPipelines.openaiChatCompletions, { ...anonymous, 'request.openaiChatCompletions': move({ model: 'public', messages: [] }) }, { services })
+    : run(customPipelines.anthropicMessagesCountTokens, { ...anonymous, 'request.anthropicMessages': move({ model: 'public', messages: [] }) }, { services });
+  await exchange.result;
+  await exchange.done;
+  expect(fetch.mock.calls[0][1].headers).toEqual([['content-type', 'application/json']]);
+});
+
 const sse = (data: string): Response => new Response(`data: ${data}\n\n`, { headers: { 'content-type': 'text/event-stream' } });
 
 const verifyOperation = <Input, Key extends string, Output extends Record<Key, ProtocolOutcome<unknown, unknown>>>(
@@ -351,6 +453,15 @@ const verifyOperation = <Input, Key extends string, Output extends Record<Key, P
     }
     await exchange.done;
     expect(fetch).toHaveBeenCalledOnce();
+    const [[, options]] = fetch.mock.calls;
+    expect(options.headers).toEqual(expect.arrayContaining([
+      ['x-tenant', 'before'], ['x-tenant', 'first'], ['x-tenant', 'second'], ['x-tenant', 'after'],
+    ]));
+    if (expectedKind === 'stream' && (key === 'response.anthropicMessages' || key === 'response.openaiResponses' || key === 'response.openaiChatCompletions')) {
+      expect(JSON.parse(String(options.body))).toMatchObject({ stream: true });
+    } else if (key === 'response.openaiEmbeddings' || key === 'response.anthropicMessages') {
+      expect(JSON.parse(String(options.body))).not.toHaveProperty('stream');
+    }
     expect(answer).toMatchObject({ 'response.http': { status: variant === 'success' ? 200 : 503, body: null } });
     if (variant === 'success') expect(outcome.kind).toBe(expectedKind);
     else expect(outcome).toEqual({ kind: 'error', source: 'upstream', error });
