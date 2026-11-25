@@ -11,12 +11,8 @@ const frameBytes = (frame: SseWritableFrame): Uint8Array => encoder.encode(seria
 const defaultKeepAlive = sseCommentFrame('keepalive');
 
 const openAIErrorFrame = ({ cause }: ProtocolStreamError) => {
-  const parsed = cause && typeof cause === 'object' && !(cause instanceof Error) && 'cause' in cause ? cause.cause : cause;
-  const error = isOpenAIErrorPayload(parsed) ? parsed : openaiInternalErrorPayload(toInternalDebugError(
-    cause && typeof cause === 'object' && !(cause instanceof Error) && 'message' in cause && typeof cause.message === 'string'
-      ? new Error(cause.message, { cause: parsed })
-      : cause,
-  ));
+  const parsed = cause instanceof Error ? cause.cause : cause;
+  const error = isOpenAIErrorPayload(parsed) ? parsed : openaiInternalErrorPayload(toInternalDebugError(cause));
   return sseFrame(JSON.stringify(error));
 };
 

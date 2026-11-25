@@ -16,7 +16,7 @@ export const parseOpenAICompletionsStream = (
       return;
     }
     if (isOpenAIErrorPayload(frame.data)) {
-      yield { type: 'error', cause: { message: frame.data.error.message, cause: frame.data } };
+      yield { type: 'error', cause: new Error(frame.data.error.message, { cause: frame.data }) };
       return;
     }
     yield eventFrame(frame.data);

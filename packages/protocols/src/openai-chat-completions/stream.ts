@@ -21,7 +21,7 @@ export const parseOpenAIChatCompletionsStream = (
     }
     const errorMessage = openaiChatCompletionsErrorPayloadMessage(frame.data);
     if (errorMessage) {
-      yield { type: 'error', cause: { message: `Upstream OpenAI Chat Completions SSE error: ${errorMessage}`, cause: frame.data } };
+      yield { type: 'error', cause: new Error(`Upstream OpenAI Chat Completions SSE error: ${errorMessage}`, { cause: frame.data }) };
       return;
     }
     yield eventFrame(frame.data);

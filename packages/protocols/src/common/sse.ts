@@ -37,7 +37,7 @@ export type ProtocolFrame<TEvent> = EventFrame<TEvent> | DoneFrame;
 
 export interface SseErrorFrame {
   readonly type: 'error';
-  readonly cause: { readonly message: string; readonly cause: unknown };
+  readonly cause: Error;
 }
 
 export type ParsedProtocolFrame<TEvent> = ProtocolFrame<TEvent> | SseErrorFrame;

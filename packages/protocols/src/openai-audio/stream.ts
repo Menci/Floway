@@ -21,13 +21,13 @@ export const parseOpenAIAudioTranscriptionStream = (
       return;
     }
     if (frame.type === 'done') {
-      yield { type: 'error', cause: { message: 'OpenAI Transcriptions stream ended without a transcript.text.done event.', cause: '[DONE]' } };
+      yield { type: 'error', cause: new Error('OpenAI Transcriptions stream ended without a transcript.text.done event.', { cause: '[DONE]' }) };
       return;
     }
 
     const event = frame.data;
     if (isOpenAIErrorPayload(event)) {
-      yield { type: 'error', cause: { message: event.error.message, cause: event }, frame: frame.frame };
+      yield { type: 'error', cause: new Error(event.error.message, { cause: event }), frame: frame.frame };
       return;
     }
     yield { ...eventFrame(event), frame: frame.frame };

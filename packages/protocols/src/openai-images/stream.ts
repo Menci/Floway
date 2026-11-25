@@ -32,7 +32,7 @@ export const parseOpenAIImagesStream = async function* (
     const type = isJsonObject(data) && typeof data.type === 'string' ? data.type : eventName;
     if (type === 'keepalive' || type === 'ping') continue;
     if (!isJsonObject(data) || type === undefined) {
-      yield { type: 'error', cause: { message: 'Malformed OpenAI Images stream event', cause: data } };
+      yield { type: 'error', cause: new Error('Malformed OpenAI Images stream event', { cause: data }) };
       return;
     }
     yield eventFrame({ ...data, type });

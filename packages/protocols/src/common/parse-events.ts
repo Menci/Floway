@@ -39,7 +39,7 @@ export const parseTargetStreamFrames = async function* <TEvent>(frames: AsyncIte
       if (!(error instanceof SyntaxError)) throw error;
       const eventName = (frame.type === 'sse' ? frame.event : undefined) ?? options.malformedJsonEventName;
       const eventContext = eventName ? ` for event "${eventName}"` : '';
-      yield { type: 'error', cause: { message: `Malformed upstream ${options.protocol} SSE JSON${eventContext}: ${data}`, cause: error } };
+      yield { type: 'error', cause: new Error(`Malformed upstream ${options.protocol} SSE JSON${eventContext}: ${data}`, { cause: error }) };
       return;
     }
 

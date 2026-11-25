@@ -17,13 +17,13 @@ test('preserves an upstream transcription error event and its wire frame', async
   const error = { error: { type: 'server_error', message: 'unavailable' } };
   const frame = sseFrame(JSON.stringify(error), 'error');
 
-  expect(await Array.fromAsync(parseOpenAIAudioTranscriptionStream(sseFrameBody(frame)))).toEqual([
+  expect(await Array.fromAsync(parseOpenAIAudioTranscriptionStream(sseFrameBody(frame)))).toMatchObject([
     { type: 'error', cause: { message: 'unavailable', cause: error }, frame },
   ]);
 });
 
 test('reports a raw done sentinel before the required transcription event as a protocol error', async () => {
-  expect(await Array.fromAsync(parseOpenAIAudioTranscriptionStream(sseFrameBody(sseFrame('[DONE]'))))).toEqual([
+  expect(await Array.fromAsync(parseOpenAIAudioTranscriptionStream(sseFrameBody(sseFrame('[DONE]'))))).toMatchObject([
     { type: 'error', cause: { message: 'OpenAI Transcriptions stream ended without a transcript.text.done event.', cause: '[DONE]' } },
   ]);
 });

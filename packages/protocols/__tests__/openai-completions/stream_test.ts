@@ -16,7 +16,7 @@ test('carries a Completions error payload as the terminal frame', async () => {
   const error = { error: { type: 'server_error', message: 'unavailable' } };
   const body = sseFrameBody(sseFrame(JSON.stringify(error)), sseFrame('[DONE]'));
 
-  expect(await Array.fromAsync(parseOpenAICompletionsStream(body))).toEqual([
+  expect(await Array.fromAsync(parseOpenAICompletionsStream(body))).toMatchObject([
     { type: 'error', cause: { message: 'unavailable', cause: error } },
   ]);
 });
