@@ -149,6 +149,7 @@ test('Chat Completions ingress and body enter the native egress and preserve the
     });
     const invalid = await request({ model: 'native-model' });
     expect(invalid.status).toBe(400);
+    expect(invalid.statusText).toBe('Bad Request');
     expect(await invalid.json()).toMatchObject({ error: { message: 'Expected model and messages.' } });
     expect(upstreamCalls).toBe(0);
 
