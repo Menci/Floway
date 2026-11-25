@@ -82,8 +82,6 @@ export const copilotFetchOpenAIImagesGenerations = (config: CopilotFetchConfig, 
   copilotFetchInternal(config, '/v1/images/generations', init, options);
 export const copilotFetchOpenAIImagesEdits = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/v1/images/edits', init, options);
-export const copilotFetchModels = (config: CopilotFetchConfig, init: FetchInit, options: CopilotDataPlaneFetchOptions): Promise<Response> =>
-  copilotFetchInternal(config, '/models', init, options);
 // Copilot serves decision models at the path each one advertises in
 // `supported_endpoints` — `/v1/systemone` or `/v1/decisions` — and the body is
 // forwarded in that model's own dialect, unchanged.

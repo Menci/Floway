@@ -1,4 +1,4 @@
-import { copilotFetchModels, type CopilotFetchConfig } from './fetch.ts';
+import { copilotAuthedFetch, isCopilotTokenFetchError, type CopilotAuth, type createCopilotCredentials } from './auth.ts';
 import type { CopilotModelsResponse } from './types.ts';
 import { fetchUpstreamModels, type Fetcher, type HttpHeaderLines, identityWrapUpstreamCall } from '@floway-dev/provider';
 
@@ -25,8 +25,23 @@ const MODELS_HEADER_OVERRIDES: HttpHeaderLines = [
   ['content-type', ''],
 ];
 
-export const fetchCopilotModels = (config: CopilotFetchConfig, fetcher: Fetcher): Promise<CopilotModelsResponse> =>
+export const fetchCopilotModels = (
+  config: CopilotAuth,
+  fetcher: Fetcher,
+  credentials?: ReturnType<typeof createCopilotCredentials>,
+): Promise<CopilotModelsResponse> =>
   fetchUpstreamModels(
-    () => copilotFetchModels(config, { method: 'GET' }, { extraHeaders: MODELS_HEADER_OVERRIDES, fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
+    async () => {
+      try {
+        return await copilotAuthedFetch('/models', { method: 'GET' }, config, {
+          headers: MODELS_HEADER_OVERRIDES,
+          fetcher,
+          wrapUpstreamCall: identityWrapUpstreamCall,
+        }, credentials);
+      } catch (error) {
+        if (!isCopilotTokenFetchError(error)) throw error;
+        return new Response(error.body, { status: error.status, headers: error.headers });
+      }
+    },
     v => (isCopilotModelsResponse(v) ? v : null),
   );

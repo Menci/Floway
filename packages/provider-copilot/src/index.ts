@@ -7,6 +7,11 @@ export const copilotProviderModule: ProviderModule = {
   defaultFlags: COPILOT_DEFAULT_FLAGS,
 };
 
+export { COPILOT_DEFAULT_FLAGS } from './defaults.ts';
+export { copilotPipelines } from './pipelines/index.ts';
+export { runCopilotScheduledTask } from './scheduled.ts';
+export { createCopilotService, getCopilotProvidedModels, type CopilotService, type CopilotServices } from './service.ts';
+
 export {
   clearInProcessCopilotTokenCache,
   exchangeCopilotToken,
