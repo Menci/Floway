@@ -1,6 +1,8 @@
 import { customPath } from '../../endpoint.ts';
 import { applyIngressHeaderRules } from '../apply-ingress-header-rules.ts';
 import { prepareRequest, upstreamConfig } from '../prepare-request.ts';
+import { normalizeDeepSeek } from './vendor-deepseek-normalize.ts';
+import { normalizeQwen } from './vendor-qwen-normalize.ts';
 import { factSpace, move, transform } from '@floway-dev/pipeline';
 import { formatOpenAIResponsesError, parseOpenAIResponsesStream, isOpenAIResponsesTerminalEvent, isOpenAIResponsesErrorEvent } from '@floway-dev/protocols/openai-responses';
 import { httpTerminal, type ProviderOperationFacts, type ProviderTransportFacts, type ProviderServices, parseSseBody } from '@floway-dev/provider';
@@ -44,6 +46,6 @@ const call = defineStage({
 export const openaiResponses = compose('custom.openaiResponses', {
   entry: ['request.http', 'request.openaiResponses', 'provider.upstream', 'provider.model'],
   exit: ['response.http', 'response.modelKey', 'response.openaiResponses'],
-  stages: [applyIngressHeaderRules, call],
+  stages: [normalizeDeepSeek, normalizeQwen, applyIngressHeaderRules, call],
   ending: httpTerminal,
 });

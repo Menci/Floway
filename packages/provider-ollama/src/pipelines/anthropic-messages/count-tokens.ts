@@ -43,7 +43,8 @@ const call = defineStage({
   }),
 });
 
-const parseCountTokens = (bytes: Uint8Array): Result<AnthropicMessagesCountTokensResult, unknown> => {
+const parseCountTokens = (bytes: Uint8Array): Result<AnthropicMessagesCountTokensResult | null, unknown> => {
+  if (bytes.byteLength === 0) return { ok: true, value: null };
   const json = parseJsonObject(bytes);
   if (!json.ok) return json;
   const { input_tokens } = json.value;

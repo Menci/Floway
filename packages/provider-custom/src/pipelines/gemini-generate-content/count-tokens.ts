@@ -45,7 +45,8 @@ const call = defineStage({
   }),
 });
 
-const parseCountTokens = (bytes: Uint8Array): Result<GeminiGenerateContentCountTokensResult, unknown> => {
+const parseCountTokens = (bytes: Uint8Array): Result<GeminiGenerateContentCountTokensResult | null, unknown> => {
+  if (bytes.byteLength === 0) return { ok: true, value: null };
   const json = parseJsonObject(bytes);
   if (!json.ok) return json;
   const { totalTokens } = json.value;

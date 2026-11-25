@@ -2,6 +2,8 @@ import { azureOpenAiV1BaseUrl } from '../../endpoint.ts';
 import { prepareRequest, upstreamConfig } from '../prepare-request.ts';
 import { stripAzureHeaders } from '../strip-headers.ts';
 import { fillEmptyNamespaceDescriptions } from './fill-empty-namespace-descriptions.ts';
+import { normalizeDeepSeek } from './vendor-deepseek-normalize.ts';
+import { normalizeQwen } from './vendor-qwen-normalize.ts';
 import { factSpace, move, transform } from '@floway-dev/pipeline';
 import { formatOpenAIResponsesError, parseOpenAIResponsesStream, isOpenAIResponsesTerminalEvent, isOpenAIResponsesErrorEvent } from '@floway-dev/protocols/openai-responses';
 import { httpTerminal, type ProviderOperationFacts, type ProviderTransportFacts, type ProviderServices, joinBaseAndPath, parseSseBody } from '@floway-dev/provider';
@@ -45,6 +47,6 @@ const call = defineStage({
 export const openaiResponses = compose('azure.openaiResponses', {
   entry: ['request.http', 'request.openaiResponses', 'provider.upstream', 'provider.model'],
   exit: ['response.http', 'response.modelKey', 'response.openaiResponses'],
-  stages: [stripAzureHeaders, fillEmptyNamespaceDescriptions, call],
+  stages: [normalizeDeepSeek, normalizeQwen, stripAzureHeaders, fillEmptyNamespaceDescriptions, call],
   ending: httpTerminal,
 });

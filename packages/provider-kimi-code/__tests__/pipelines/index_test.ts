@@ -6,6 +6,7 @@ import { kimiCodeUpstreamFact } from '../../src/upstream-fact.ts';
 import { config, record } from '../fixtures.ts';
 import { getHeaders, type HttpRequestFact } from '@floway-dev/http';
 import { move, run, Secret } from '@floway-dev/pipeline';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { toProviderModelFact } from '@floway-dev/provider';
 import { stubProviderModel } from '@floway-dev/test-utils';
 
@@ -30,6 +31,109 @@ const service = (respond: (url: string, init: Parameters<ReturnType<KimiCodeServ
 const sse = (body: string) => new Response(body, {
   status: 201,
   headers: { 'content-type': 'text/event-stream', 'x-upstream': 'yes' },
+});
+
+test.each([true, false])('applies DeepSeek Chat Completions normalization when enabled is %s', async enabled => {
+  const prompt = {
+    role: 'assistant' as const,
+    content: 'replay',
+    reasoning_opaque: 'opaque-replay',
+    reasoning_items: [{ type: 'reasoning' as const, summary: [{ type: 'summary_text' as const, text: 'past thought' }] }],
+  };
+  const chunk = {
+    id: 'vendor-turn',
+    object: 'chat.completion.chunk',
+    created: 1,
+    model: 'raw-model',
+    choices: [{ index: 0, delta: { reasoning_content: 'next thought', content: 'next' }, finish_reason: null }],
+    usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13, prompt_cache_hit_tokens: 4, prompt_cache_miss_tokens: 6 },
+  };
+  const upstream = new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, { headers: { 'content-type': 'text/event-stream' } });
+  const { services, fetcher } = service(() => upstream);
+  const model = entry['provider.model'];
+  const exchange = run(kimiCodePipelines.openaiChatCompletions, {
+    ...entry,
+    'provider.model': move({ ...model, enabledFlags: enabled ? ['vendor-deepseek' as const] : [] }),
+    'request.openaiChatCompletions': move<OpenAIChatCompletionsPayloadEx>({
+      model: 'public',
+      messages: [prompt],
+      reasoning_effort: 'none',
+      response_format: { type: 'json_schema', json_schema: { name: 'result', schema: { type: 'object' } } },
+    }),
+  }, { services });
+  const result = (await exchange.result)['response.openaiChatCompletions'];
+  if (result.kind !== 'stream') throw new Error('Expected Chat Completions stream');
+  const items = await Array.fromAsync(result.stream);
+  await exchange.done;
+
+  const wire = JSON.parse(String(fetcher.mock.calls[0][1].body)) as Record<string, unknown>;
+  if (enabled) {
+    expect(wire).toMatchObject({
+      thinking: { type: 'disabled' },
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'assistant', content: 'replay', reasoning_content: 'past thought' }],
+    });
+    expect(wire).not.toHaveProperty('reasoning_effort');
+    expect(wire).not.toHaveProperty('messages.0.reasoning_opaque');
+    expect(wire).not.toHaveProperty('messages.0.reasoning_items');
+    expect(items).toMatchObject([{
+      ok: true,
+      value: {
+        choices: [{ delta: { reasoning_text: 'next thought', content: 'next' } }],
+        usage: { prompt_tokens_details: { cached_tokens: 4 } },
+      },
+    }]);
+    expect(items[0]).not.toHaveProperty('value.choices.0.delta.reasoning_content');
+    expect(items[0]).not.toHaveProperty('value.usage.prompt_cache_hit_tokens');
+    expect(items[0]).not.toHaveProperty('value.usage.prompt_cache_miss_tokens');
+  } else {
+    expect(wire).toMatchObject({
+      reasoning_effort: 'none',
+      response_format: { type: 'json_schema' },
+      messages: [prompt],
+    });
+    expect(wire).not.toHaveProperty('thinking');
+    expect(items).toMatchObject([{ ok: true, value: chunk }]);
+    expect(items[0]).not.toHaveProperty('value.choices.0.delta.reasoning_text');
+    expect(items[0]).not.toHaveProperty('value.usage.prompt_tokens_details');
+  }
+});
+
+test('keeps a bodyless Anthropic count-tokens success', async () => {
+  const upstream = new Response(null, { status: 204, headers: { 'x-upstream': 'empty-count' } });
+  const { services } = service(() => upstream);
+  const exchange = run(kimiCodePipelines.anthropicMessagesCountTokens, {
+    ...entry,
+    'request.anthropicMessages': move({ model: 'public', messages: [] }),
+  }, { services });
+  const answer = await exchange.result;
+  await exchange.done;
+  expect(answer['response.http']).toMatchObject({ status: 204, headers: [['x-upstream', 'empty-count']], body: null });
+  expect(answer['response.anthropicMessages']).toEqual({ kind: 'result', result: null });
+});
+
+test('Kimi normalizes cache usage and forwards the terminal parser failure', async () => {
+  const chunk = {
+    id: 'turn', object: 'chat.completion.chunk', created: 1, model: 'standard-id', choices: [],
+    usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13, cached_tokens: 4, prompt_tokens_details: { audio_tokens: 2 } },
+  };
+  const { services, fetcher } = service(() => sse(`data: ${JSON.stringify(chunk)}\n\ndata: {broken}\n\n`));
+  const exchange = run(kimiCodePipelines.openaiChatCompletions, {
+    ...entry,
+    'provider.model': move({ ...model, enabledFlags: ['vendor-kimi' as const] }),
+    'request.openaiChatCompletions': move<OpenAIChatCompletionsPayloadEx>({ model: 'public', messages: [], reasoning_effort: 'none' }),
+  }, { services });
+  const outcome = (await exchange.result)['response.openaiChatCompletions'];
+  assert(outcome.kind === 'stream');
+  const items = await Array.fromAsync(outcome.stream);
+  await exchange.done;
+
+  expect(items).toMatchObject([
+    { ok: true, value: { usage: { prompt_tokens_details: { audio_tokens: 2, cached_tokens: 4 } } } },
+    { ok: false, error: { kind: 'protocol' } },
+  ]);
+  expect(items[0]).not.toHaveProperty('value.usage.cached_tokens');
+  expect(JSON.parse(String(fetcher.mock.calls[0][1].body))).toMatchObject({ reasoning_effort: 'none' });
 });
 
 test('only exposes the four implemented operations', () => {

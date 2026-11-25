@@ -3,6 +3,9 @@ import { observeStreamingProbes } from '../observe-probes.ts';
 import { prepareRequest, upstreamConfig } from '../prepare-request.ts';
 import { stripOllamaHeaders } from '../strip-headers.ts';
 import { renameOutputCap } from './rename-output-cap.ts';
+import { normalizeDeepSeek } from './vendor-deepseek-normalize.ts';
+import { normalizeKimi } from './vendor-kimi-normalize.ts';
+import { normalizeQwen } from './vendor-qwen-normalize.ts';
 import { factSpace, move, transform } from '@floway-dev/pipeline';
 import { formatOpenAIChatCompletionsError, parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { httpTerminal, type ProviderOperationFacts, type ProviderTransportFacts, parseSseBody } from '@floway-dev/provider';
@@ -47,6 +50,6 @@ const call = defineStage({
 export const openaiChatCompletions = compose('ollama.openaiChatCompletions', {
   entry: ['request.http', 'request.openaiChatCompletions', 'provider.upstream', 'provider.model'],
   exit: ['response.http', 'response.modelKey', 'response.openaiChatCompletions'],
-  stages: [stripOllamaHeaders, renameOutputCap, call, observeStreamingProbes],
+  stages: [normalizeDeepSeek, normalizeQwen, normalizeKimi, stripOllamaHeaders, renameOutputCap, call, observeStreamingProbes],
   ending: httpTerminal,
 });

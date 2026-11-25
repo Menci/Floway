@@ -1,6 +1,9 @@
 import { azureOpenAiV1BaseUrl } from '../../endpoint.ts';
 import { prepareRequest, upstreamConfig } from '../prepare-request.ts';
 import { stripAzureHeaders } from '../strip-headers.ts';
+import { normalizeDeepSeek } from './vendor-deepseek-normalize.ts';
+import { normalizeKimi } from './vendor-kimi-normalize.ts';
+import { normalizeQwen } from './vendor-qwen-normalize.ts';
 import { factSpace, move, transform } from '@floway-dev/pipeline';
 import { formatOpenAIChatCompletionsError, parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { httpTerminal, type ProviderOperationFacts, type ProviderTransportFacts, type ProviderServices, joinBaseAndPath, parseSseBody } from '@floway-dev/provider';
@@ -44,6 +47,6 @@ const call = defineStage({
 export const openaiChatCompletions = compose('azure.openaiChatCompletions', {
   entry: ['request.http', 'request.openaiChatCompletions', 'provider.upstream', 'provider.model'],
   exit: ['response.http', 'response.modelKey', 'response.openaiChatCompletions'],
-  stages: [stripAzureHeaders, call],
+  stages: [normalizeDeepSeek, normalizeQwen, normalizeKimi, stripAzureHeaders, call],
   ending: httpTerminal,
 });

@@ -40,6 +40,7 @@ export const call = defineStage({
 });
 
 const parseCountTokens = (bytes: Uint8Array) => {
+  if (bytes.byteLength === 0) return { ok: true, value: null } as const;
   const result = parseJsonBody(bytes);
   if (!result.ok) return result;
   const { value } = result;

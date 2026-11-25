@@ -2,6 +2,8 @@ import type { OllamaServices } from '../../service.ts';
 import { observeStreamingProbes } from '../observe-probes.ts';
 import { prepareRequest, upstreamConfig } from '../prepare-request.ts';
 import { stripOllamaHeaders } from '../strip-headers.ts';
+import { normalizeDeepSeek } from './vendor-deepseek-normalize.ts';
+import { normalizeQwen } from './vendor-qwen-normalize.ts';
 import { factSpace, move, transform } from '@floway-dev/pipeline';
 import { formatOpenAIResponsesError, parseOpenAIResponsesStream, isOpenAIResponsesTerminalEvent, isOpenAIResponsesErrorEvent } from '@floway-dev/protocols/openai-responses';
 import { httpTerminal, type ProviderOperationFacts, type ProviderTransportFacts, parseSseBody } from '@floway-dev/provider';
@@ -46,6 +48,6 @@ const call = defineStage({
 export const openaiResponses = compose('ollama.openaiResponses', {
   entry: ['request.http', 'request.openaiResponses', 'provider.upstream', 'provider.model'],
   exit: ['response.http', 'response.modelKey', 'response.openaiResponses'],
-  stages: [stripOllamaHeaders, call, observeStreamingProbes],
+  stages: [normalizeDeepSeek, normalizeQwen, stripOllamaHeaders, call, observeStreamingProbes],
   ending: httpTerminal,
 });

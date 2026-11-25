@@ -57,10 +57,10 @@ type Operation<Name extends string, Request, Event, Output> = {
 interface Operations {
   readonly alphaSearch: Operation<'alphaSearch', JsonObject, never, JsonObject>;
   readonly anthropicMessages: Operation<'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, never>;
-  readonly anthropicMessagesCountTokens: Operation<'anthropicMessages', AnthropicMessagesCountTokensPayload, never, AnthropicMessagesCountTokensResult>;
+  readonly anthropicMessagesCountTokens: Operation<'anthropicMessages', AnthropicMessagesCountTokensPayload, never, AnthropicMessagesCountTokensResult | null>;
   readonly decision: Operation<'decision', CanonicalDecisionRequest, never, CanonicalDecisionResponse>;
   readonly geminiGenerateContent: Operation<'geminiGenerateContent', GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent, never>;
-  readonly geminiGenerateContentCountTokens: Operation<'geminiGenerateContent', GeminiGenerateContentCountTokensPayload, never, GeminiGenerateContentCountTokensResult>;
+  readonly geminiGenerateContentCountTokens: Operation<'geminiGenerateContent', GeminiGenerateContentCountTokensPayload, never, GeminiGenerateContentCountTokensResult | null>;
   readonly openaiAudioTranscriptions: Operation<'openaiAudioTranscriptions', OpenAIAudioTranscriptionRequest, OpenAIAudioTranscriptionStreamEvent, Uint8Array>;
   readonly openaiChatCompletions: Operation<'openaiChatCompletions', OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, never>;
   readonly openaiCompletions: Operation<'openaiCompletions', OpenAICompletionsPayload, OpenAICompletionsStreamEvent, OpenAICompletionsResult>;

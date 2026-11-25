@@ -6,6 +6,7 @@ import { getHeader, type FetchInit, type HttpHeaders } from '@floway-dev/http';
 import { move, run, Secret } from '@floway-dev/pipeline';
 import { PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
 import { parseDecisionRequest } from '@floway-dev/protocols/decision';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { ProviderModelFact } from '@floway-dev/provider';
 import { stubProviderModel } from '@floway-dev/test-utils';
 
@@ -45,6 +46,86 @@ const wireJson = (init: FetchInit): Record<string, unknown> => {
   if (typeof init.body !== 'string') throw new TypeError('Expected JSON request');
   return JSON.parse(init.body) as Record<string, unknown>;
 };
+
+test.each([true, false])('applies DeepSeek Chat Completions normalization when enabled is %s', async enabled => {
+  const prompt = {
+    role: 'assistant' as const,
+    content: 'replay',
+    reasoning_opaque: 'opaque-replay',
+    reasoning_items: [{ type: 'reasoning' as const, summary: [{ type: 'summary_text' as const, text: 'past thought' }] }],
+  };
+  const chunk = {
+    id: 'vendor-turn',
+    object: 'chat.completion.chunk',
+    created: 1,
+    model: 'raw-model',
+    choices: [{ index: 0, delta: { reasoning_content: 'next thought', content: 'next' }, finish_reason: null }],
+    usage: { prompt_tokens: 10, completion_tokens: 3, total_tokens: 13, prompt_cache_hit_tokens: 4, prompt_cache_miss_tokens: 6 },
+  };
+  const upstream = new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, { headers: { 'content-type': 'text/event-stream' } });
+  const { services, fetcher } = servicesFor(() => upstream);
+  const facts = requestFacts();
+  const model = facts['provider.model'];
+  const exchange = run(copilotPipelines.openaiChatCompletions, {
+    ...facts,
+    'provider.model': move({ ...model, enabledFlags: enabled ? ['vendor-deepseek' as const] : [] }),
+    'request.openaiChatCompletions': move<OpenAIChatCompletionsPayloadEx>({
+      model: 'public',
+      messages: [prompt],
+      reasoning_effort: 'none',
+      response_format: { type: 'json_schema', json_schema: { name: 'result', schema: { type: 'object' } } },
+    }),
+  }, { services });
+  const result = (await exchange.result)['response.openaiChatCompletions'];
+  if (result.kind !== 'stream') throw new Error('Expected Chat Completions stream');
+  const items = await Array.fromAsync(result.stream);
+  await exchange.done;
+
+  const wire = JSON.parse(String(fetcher.mock.calls[0][1].body)) as Record<string, unknown>;
+  if (enabled) {
+    expect(wire).toMatchObject({
+      thinking: { type: 'disabled' },
+      response_format: { type: 'json_object' },
+      messages: [{ role: 'assistant', content: 'replay', reasoning_content: 'past thought' }],
+    });
+    expect(wire).not.toHaveProperty('reasoning_effort');
+    expect(wire).not.toHaveProperty('messages.0.reasoning_opaque');
+    expect(wire).not.toHaveProperty('messages.0.reasoning_items');
+    expect(items).toMatchObject([{
+      ok: true,
+      value: {
+        choices: [{ delta: { reasoning_text: 'next thought', content: 'next' } }],
+        usage: { prompt_tokens_details: { cached_tokens: 4 } },
+      },
+    }]);
+    expect(items[0]).not.toHaveProperty('value.choices.0.delta.reasoning_content');
+    expect(items[0]).not.toHaveProperty('value.usage.prompt_cache_hit_tokens');
+    expect(items[0]).not.toHaveProperty('value.usage.prompt_cache_miss_tokens');
+  } else {
+    expect(wire).toMatchObject({
+      reasoning_effort: 'none',
+      response_format: { type: 'json_schema' },
+      messages: [prompt],
+    });
+    expect(wire).not.toHaveProperty('thinking');
+    expect(items).toMatchObject([{ ok: true, value: chunk }]);
+    expect(items[0]).not.toHaveProperty('value.choices.0.delta.reasoning_text');
+    expect(items[0]).not.toHaveProperty('value.usage.prompt_tokens_details');
+  }
+});
+
+test('keeps a bodyless Anthropic count-tokens success', async () => {
+  const upstream = new Response(null, { status: 204, headers: { 'x-upstream': 'empty-count' } });
+  const { services } = servicesFor(() => upstream);
+  const exchange = run(copilotPipelines.anthropicMessagesCountTokens, {
+    ...requestFacts(),
+    'request.anthropicMessages': move({ model: 'public', messages: [] }),
+  }, { services });
+  const answer = await exchange.result;
+  await exchange.done;
+  expect(answer['response.http']).toMatchObject({ status: 204, headers: [['x-upstream', 'empty-count']], body: null });
+  expect(answer['response.anthropicMessages']).toEqual({ kind: 'result', result: null });
+});
 
 test('Copilot embeddings preserve the wire model and mark credentials across the HTTP handoff', async () => {
   const { services, fetcher, observeQuota } = servicesFor(() =>

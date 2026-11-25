@@ -5,6 +5,7 @@ import { formatAnthropicMessagesError } from '@floway-dev/protocols/anthropic-me
 import { parseResultBody } from '@floway-dev/provider';
 
 const parseCountTokens = (bytes: Uint8Array) => {
+  if (bytes.byteLength === 0) return { ok: true, value: null } as const;
   const result = parseJsonObject(bytes);
   if (!result.ok) return result;
   const { input_tokens: inputTokens } = result.value;

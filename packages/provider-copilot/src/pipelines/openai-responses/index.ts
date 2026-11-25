@@ -10,6 +10,8 @@ import { setInitiatorHeader } from './set-initiator-header.ts';
 import { setVisionHeader } from './set-vision-header.ts';
 import { stripImageGeneration } from './strip-image-generation.ts';
 import { stripServiceTier } from './strip-service-tier.ts';
+import { normalizeDeepSeek } from './vendor-deepseek-normalize.ts';
+import { normalizeQwen } from './vendor-qwen-normalize.ts';
 import { authorize } from '../shared/authorize.ts';
 import { observeQuota } from '../shared/observe-quota.ts';
 import { setIdentityHeaders } from '../shared/set-identity-headers.ts';
@@ -21,6 +23,8 @@ export const openaiResponses = copilotOperation<'openaiResponses'>().compose('co
   entry: ['request.http', 'provider.upstream', 'provider.model', 'request.openaiResponses'],
   exit: ['response.http', 'response.modelKey', 'response.openaiResponses'],
   stages: [
+    normalizeDeepSeek,
+    normalizeQwen,
     stripClientHeaders,
     selectOpenAIResponsesModel,
     setIdentityHeaders,
