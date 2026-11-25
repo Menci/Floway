@@ -1,5 +1,5 @@
 import type { RunEvent } from './events.ts';
-import { registerHandle } from './facts.ts';
+import { isFrozenFact, isRuntimeHandle, registerHandle } from './facts.ts';
 import type { Facts } from './facts.ts';
 import type { ManagedStream, Result } from './values.ts';
 
@@ -7,6 +7,7 @@ export type AnyStream = StreamResource<unknown, unknown>;
 export type StreamOwner = Set<AnyStream>;
 
 const resources = new WeakMap<object, AnyStream>();
+const streamsBySubtree = new WeakMap<object, readonly AnyStream[]>();
 const done = Object.freeze({ done: true, value: undefined } as const);
 
 type Pull<T, E> = IteratorResult<Result<T, E>, undefined>;
@@ -23,18 +24,43 @@ export const resourceOf = <T, E>(stream: ManagedStream<T, E>): StreamResource<T,
 
 export const streamsIn = (facts: Facts): Set<AnyStream> => {
   const found = new Set<AnyStream>();
-  const visited = new WeakSet<object>();
-  const visit = (value: unknown): void => {
-    if (typeof value !== 'object' || value === null || visited.has(value) || ArrayBuffer.isView(value)) return;
-    visited.add(value);
+  const ancestors = new Map<object, number>();
+  const visit = (value: unknown, found: Set<AnyStream>): number => {
+    if (typeof value !== 'object' || value === null || ArrayBuffer.isView(value)) return Infinity;
     const resource = resources.get(value);
     if (resource) {
       found.add(resource);
-      return;
+      return Infinity;
     }
-    for (const child of Object.values(value)) visit(child);
+    if (isRuntimeHandle(value)) return Infinity;
+    const cached = streamsBySubtree.get(value);
+    if (cached) {
+      for (const stream of cached) found.add(stream);
+      return Infinity;
+    }
+    const ancestor = ancestors.get(value);
+    if (ancestor !== undefined) return ancestor;
+
+    const depth = ancestors.size;
+    ancestors.set(value, depth);
+    const local = new Set<AnyStream>();
+    let dependency = Infinity;
+    let immutable = isFrozenFact(value);
+    for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+      if (!descriptor.enumerable) continue;
+      if (!('value' in descriptor)) immutable = false;
+      const child: unknown = 'value' in descriptor ? descriptor.value : Reflect.get(value, key);
+      dependency = Math.min(dependency, visit(child, local));
+    }
+    ancestors.delete(value);
+    // A cached subtree must include the targets of every back edge in its walk.
+    if (immutable && dependency >= depth) streamsBySubtree.set(value, [...local]);
+    for (const stream of local) found.add(stream);
+    if (!immutable) return -1;
+    if (dependency < depth) return dependency;
+    return Infinity;
   };
-  visit(facts);
+  visit(facts, found);
   return found;
 };
 
@@ -104,13 +130,7 @@ export class StreamResource<T, E> {
     this.#hooks.finishProducer();
     this.#interruptRead?.(error);
     this.#completion.reject(error);
-    const iterator = this.#iterator;
     this.#iterator = undefined;
-    if (iterator?.return) {
-      // The stage already carries the first panic. Closing the generator runs its
-      // finally blocks without delaying panic propagation through a blocked read.
-      void Promise.resolve().then(() => iterator.return!()).catch(() => undefined);
-    }
   }
 
   #violation(message: string): never {

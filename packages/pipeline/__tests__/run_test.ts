@@ -469,4 +469,30 @@ describe('deferred stage values and finalization', () => {
       setGlobalHookPostLog(previous);
     }
   });
+
+  it('exposes an event emitted by unregistered work after finalization', async () => {
+    let emitLate!: () => void;
+    const output = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    setGlobalLogLevel(LogLevel.Log);
+    const events: RunEvent[] = [];
+    try {
+      const pipeline = compose('late-emitter', {
+        entry: [], exit: ['response.value'], stages: [],
+        ending: defineStage({
+          name: 'late-emitter',
+          request: { needs: [] },
+          return: { provides: ['response.value'] },
+          execute: async (_facts, scope) => {
+            emitLate = () => { scope.log.log('Late entry'); };
+            return { 'response.value': 'ok' };
+          },
+        }),
+      });
+      await run(pipeline, {}, { services: {}, events: event => { events.push(event); } }).done;
+      expect(() => emitLate()).toThrow('Cannot emit pipeline events after finalization');
+      expect(events.map(event => event.type)).toEqual(['stage.entered', 'stage.leaved']);
+    } finally {
+      output.mockRestore();
+    }
+  });
 });

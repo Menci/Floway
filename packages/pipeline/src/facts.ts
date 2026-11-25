@@ -1,20 +1,24 @@
 export type Facts = Readonly<Record<string, unknown>>;
 
-const moved = new WeakSet<object>();
+const moved = new WeakMap<object, 'fact' | 'handle'>();
+const frozen = new WeakSet<object>();
 
 const isObject = (value: unknown): value is object =>
   (typeof value === 'object' && value !== null) || typeof value === 'function';
 
 export const registerHandle = <T extends object>(handle: T): T => {
-  moved.add(Object.freeze(handle));
+  moved.set(Object.freeze(handle), 'handle');
   return handle;
 };
+
+export const isFrozenFact = (value: object): boolean => frozen.has(value);
+export const isRuntimeHandle = (value: object): boolean => moved.get(value) === 'handle';
 
 export const move = <T>(value: T): T => {
   if (!isObject(value) || moved.has(value)) return value;
   const visited = new WeakSet<object>();
   const freeze = (object: object): void => {
-    if (visited.has(object) || moved.has(object)) return;
+    if (visited.has(object) || moved.has(object) || frozen.has(object)) return;
     if (object instanceof AbortSignal) throw new TypeError('Abort signals belong to the stage scope');
     visited.add(object);
     if (ArrayBuffer.isView(object) && !(object instanceof DataView) && object.byteLength > 0) return;
@@ -26,9 +30,10 @@ export const move = <T>(value: T): T => {
       if ('value' in descriptor && isObject(descriptor.value)) freeze(descriptor.value);
     }
     Object.freeze(object);
+    frozen.add(object);
   };
   freeze(value);
-  moved.add(value);
+  moved.set(value, 'fact');
   return value;
 };
 

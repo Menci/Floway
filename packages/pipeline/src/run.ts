@@ -73,7 +73,7 @@ class Runtime {
   stageId(): number { return ++this.#id; }
 
   emit(event: RunEvent): void {
-    if (this.#finalized) return;
+    if (this.#finalized) throw new Error('Cannot emit pipeline events after finalization');
     try {
       this.options.events?.(event);
     } catch (error) {
@@ -90,13 +90,10 @@ class Runtime {
     this.#failure = { error: reason };
     const reached = [...this.stages];
     this.stages.clear();
-    for (const stage of reached) {
-      stage.stop(stage === origin ? reason : stage.withLeaks(error));
-    }
-    this.signal.abort(reason);
+    for (const stage of reached) stage.stop(reason);
     if (reached.includes(origin)) origin.recordPanic(reason, true);
     for (const stage of reached) {
-      if (stage !== origin) stage.recordPanic(stage.panicReason!.error, false);
+      if (stage !== origin) stage.recordPanic(reason, false);
     }
     return reason;
   }
@@ -136,7 +133,14 @@ class Call {
     this.done = Promise.all([
       this.result.then(async () => { await Promise.all([...this.#streams!].map(stream => stream.done)); }),
       stage.done,
-    ]).then(() => undefined).finally(() => { this.#detach(); });
+    ]).then(() => {
+      this.#detach();
+    }, error => {
+      // The host can still abort the I/O subtree after observing the panic.
+      this.#active = false;
+      this.branch.settled = undefined;
+      throw error;
+    });
     void this.done.catch(() => undefined);
   }
 
@@ -146,7 +150,7 @@ class Call {
   }
 
   abort(): void {
-    if (this.#active) this.branch.abort();
+    if (this.#active && !this.stage.panicked) this.branch.abort();
   }
 
   #detach(): void {
@@ -230,7 +234,7 @@ class StageRun {
 
   get result(): Promise<Facts> { return this.#answer.promise; }
   get done(): Promise<void> { return this.#settlement.promise; }
-  get panicReason(): Failure | undefined { return this.#panic; }
+  get panicked(): boolean { return this.#panic !== undefined; }
   get definition() { return this.assembly.stages[this.position]; }
 
   settleIfReady(): boolean {
@@ -478,7 +482,8 @@ export const run = <I, O, S>(pipeline: Pipeline<I, O, S>, facts: NoInfer<I>, opt
   linkTargets(pipeline);
   const state = new Runtime(options);
   const { signal } = options;
-  const abort = (): void => { state.signal.abort(signal!.reason); };
+  const branch = state.signal;
+  const abort = (): void => { branch.abort(signal!.reason); };
   if (signal?.aborted) abort();
   else signal?.addEventListener('abort', abort, { once: true });
 
@@ -493,7 +498,6 @@ export const run = <I, O, S>(pipeline: Pipeline<I, O, S>, facts: NoInfer<I>, opt
     signal?.removeEventListener('abort', abort);
     await state.finalize();
   }, async error => {
-    signal?.removeEventListener('abort', abort);
     try {
       await state.finalize();
     } finally {

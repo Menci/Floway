@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { factSpace, move, run } from '../src/index.ts';
 import type { Deferred, ManagedStream, Result, RunEvent } from '../src/index.ts';
+import { StreamResource, streamsIn } from '../src/stream.ts';
 
 type Frame = Result<string, string>;
 type Stream = ManagedStream<string, string>;
 
 interface Space {
+  readonly 'request.mode': string;
   readonly 'request.stream': Stream;
   readonly 'response.stream': Stream;
   readonly 'response.value': string;
@@ -19,6 +21,48 @@ const streamResponse = { ...untouched, needs: ['response.stream'] } as const;
 const valueResponse = { ...untouched, needs: ['response.value'] } as const;
 const success = (value: string): Frame => ({ ok: true, value });
 const failure = (error: string): Frame => ({ ok: false, error });
+
+const createResource = () => new StreamResource(new Set(), async function* () { yield success('frame'); }, {
+  emit: () => {},
+  finishProducer: () => {},
+  panic: error => { throw error; },
+});
+
+describe('stream discovery', () => {
+  it('reuses unchanged frozen subtrees as fact paths are rebuilt', () => {
+    const stream = createResource();
+    let scans = 0;
+    const shared = new Proxy({ stream: stream.handle }, {
+      ownKeys: object => {
+        scans += 1;
+        return Reflect.ownKeys(object);
+      },
+    });
+    const original = move({ shared, updated: { value: 'before' } });
+    scans = 0;
+    expect(streamsIn({ value: original })).toEqual(new Set([stream]));
+    expect(scans).toBe(1);
+
+    const revised = move({ ...original, updated: { value: 'after' } });
+    expect(streamsIn({ value: revised })).toEqual(new Set([stream]));
+    expect(scans).toBe(1);
+  });
+
+  it('never caches incomplete cycles or an unfrozen fact dictionary', () => {
+    const stream = createResource();
+    const source: { stream?: Stream; next?: object } = {};
+    const target = { next: source };
+    source.next = target;
+    source.stream = stream.handle;
+    move(source);
+    const facts: Record<string, unknown> = { value: source };
+    expect(streamsIn(facts)).toEqual(new Set([stream]));
+    facts.value = target;
+    expect(streamsIn(facts)).toEqual(new Set([stream]));
+    facts.value = move({});
+    expect(streamsIn(facts).size).toBe(0);
+  });
+});
 
 const terminal = (produce: () => AsyncIterable<Frame>) => defineStage({
   name: 'producer',
@@ -76,8 +120,8 @@ describe('managed stream iteration', () => {
     await expect(request.done).rejects.toThrow('yielded after an Err');
   });
 
-  it('panics on early return and runs the generator finally block', async () => {
-    const cleaned = Promise.withResolvers<void>();
+  it('panics on early return without resuming the producer', async () => {
+    let resumed = false;
     const pipeline = compose('early-return', {
       entry: [], exit: ['response.stream'], stages: [],
       ending: terminal(async function* () {
@@ -85,7 +129,7 @@ describe('managed stream iteration', () => {
           yield success('first');
           yield success('second');
         } finally {
-          cleaned.resolve();
+          resumed = true;
         }
       }),
     });
@@ -94,7 +138,7 @@ describe('managed stream iteration', () => {
     await iterator.next();
     await expect(iterator.return!()).rejects.toThrow('before native done');
     await expect(request.done).rejects.toThrow('before native done');
-    await cleaned.promise;
+    expect(resumed).toBe(false);
   });
 
   it('returns done from an iterator after native exhaustion', async () => {
@@ -291,6 +335,82 @@ describe('stream producers and wrappers', () => {
 });
 
 describe('streaming child calls and abort', () => {
+  it('preserves pending I/O through propagated panic until the host aborts', async () => {
+    const host = new AbortController();
+    const reading = Promise.withResolvers<void>();
+    const observed = Promise.withResolvers<unknown>();
+    const ioStopped = Promise.withResolvers<void>();
+    const events: RunEvent[] = [];
+    const bug = new Error('sibling panic');
+    let pendingSignal!: AbortSignal;
+    let staleAbort!: () => void;
+    const ending = defineStage({
+      name: 'panic-or-stream',
+      request: { needs: ['request.mode'] },
+      return: { provides: ['response.stream'] },
+      execute: async (facts, scope) => {
+        if (facts['request.mode'] === 'panic') throw bug;
+        pendingSignal = scope.signal;
+        return {
+          'response.stream': scope.createStream<string, string>(async function* (producer) {
+            reading.resolve();
+            await new Promise<void>(resolve => { producer.signal.addEventListener('abort', () => resolve(), { once: true }); });
+            ioStopped.resolve();
+            yield failure('host abort');
+          }),
+        };
+      },
+    });
+    const owner = defineStage({
+      name: 'holding-owner',
+      through: {
+        request: { ...untouched, needs: ['request.mode'] },
+        response: { ...streamResponse, consumes: ['response.stream'], provides: ['response.value'] },
+      },
+      execute: async (facts, scope) => {
+        const { 'response.stream': stream, ...rest } = await scope.next(facts);
+        const iterator = stream[Symbol.asyncIterator]();
+        try {
+          await iterator.next();
+        } catch (error) {
+          observed.resolve(error);
+          throw error;
+        }
+        return { ...rest, 'response.value': 'complete' };
+      },
+    });
+    const parent = defineStage({
+      name: 'panic-forks',
+      through: { request: { ...untouched, provides: ['request.mode'] }, response: valueResponse },
+      execute: async (facts, scope) => {
+        const pending = scope.next({ ...facts, 'request.mode': 'hold' });
+        staleAbort = () => { scope.abort(pending); };
+        await reading.promise;
+        return await scope.next({ ...facts, 'request.mode': 'panic' });
+      },
+    });
+    const pipeline = compose('host-owned-panic-abort', {
+      entry: [], exit: ['response.value'], stages: [parent, owner], ending,
+    });
+    const request = run(pipeline, {}, { services: {}, signal: host.signal, events: event => { events.push(event); } });
+    await expect(request.result).rejects.toBe(bug);
+    expect(pendingSignal.aborted).toBe(false);
+    staleAbort();
+    expect(pendingSignal.aborted).toBe(false);
+    await expect(observed.promise).resolves.toBe(bug);
+    await expect(request.done).rejects.toBe(bug);
+    const holding = events.filter(event => event.type === 'stage.entered')
+      .find(event => event.name === 'holding-owner' && event.facts['request.mode'] === 'hold');
+    const reached = events.find(event => event.type === 'stage.panicked' && event.stageId === holding?.stageId);
+    expect(reached).toEqual({ type: 'stage.panicked', stageId: holding?.stageId, error: bug });
+    expect(pendingSignal.aborted).toBe(false);
+    staleAbort();
+    expect(pendingSignal.aborted).toBe(false);
+    host.abort('host saw the panic');
+    expect(pendingSignal.reason).toBe('host saw the panic');
+    await ioStopped.promise;
+  });
+
   it('detaches a forwarded child immediately at native done even while the parent remains live', async () => {
     const host = new AbortController();
     const signals: AbortSignal[] = [];
