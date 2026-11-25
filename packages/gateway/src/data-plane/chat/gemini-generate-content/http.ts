@@ -8,7 +8,7 @@ import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import type { GeminiCountTokensPayload, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentCountTokensPayload, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { internalErrorResult, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 
 interface GeminiGenerateContentModelAction {
@@ -33,7 +33,7 @@ const parseGeminiGenerateContentModelAction = (modelAction: string | undefined):
 // `generateContentRequest` envelope (Google's SDK shape). Normalize both to a
 // single `GeminiGenerateContentPayload` for the rest of the chain.
 const parseGeminiGenerateContentCountTokensPayload = (body: unknown): GeminiGenerateContentPayload => {
-  const shape = body as GeminiCountTokensPayload;
+  const shape = body as GeminiGenerateContentCountTokensPayload;
   if (shape.generateContentRequest !== undefined) return shape.generateContentRequest;
   return { contents: shape.contents ?? [] };
 };

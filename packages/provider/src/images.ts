@@ -96,3 +96,16 @@ export const serializeOpenAIImagesEditsRequest = async (request: OpenAIImagesEdi
   if (multipart !== null) return multipart;
   return jsonRequestBody(await serializeOpenAIImagesEditsJsonPayload(request, model));
 };
+
+export const serializeOpenAIImagesEditsHttpBody = async (
+  request: OpenAIImagesEditsRequest,
+  model: string,
+): Promise<{ readonly body: Uint8Array<ArrayBuffer>; readonly contentType: string }> => {
+  const serialized = await serializeOpenAIImagesEditsRequest(request, model);
+  const response = serialized instanceof FormData
+    ? new Response(serialized)
+    : new Response(serialized.open(), { headers: { 'content-type': 'application/json' } });
+  const contentType = response.headers.get('content-type');
+  if (contentType === null) throw new TypeError('Image edit serialization did not produce a Content-Type');
+  return { body: new Uint8Array(await response.arrayBuffer()), contentType };
+};

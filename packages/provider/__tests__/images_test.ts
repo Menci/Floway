@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { serializeOpenAIImagesEditsRequest } from '../src/images.ts';
+import { serializeOpenAIImagesEditsHttpBody, serializeOpenAIImagesEditsRequest } from '../src/images.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const parseJsonBody = async (body: Awaited<ReturnType<typeof serializeOpenAIImagesEditsRequest>>): Promise<unknown> => {
@@ -51,4 +51,28 @@ test('serializeOpenAIImagesEditsRequest uses the singular field for one upload a
   assertEquals(multipleForm.getAll('image[]'), [first, second]);
   assertEquals(multipleForm.get('image'), null);
   assertEquals(multipleForm.get('model'), 'gpt-image');
+});
+
+test('serializeOpenAIImagesEditsHttpBody pairs multipart bytes with the matching boundary', async () => {
+  const file = new File([Uint8Array.of(0xff, 0x00)], 'sample.png', { type: 'image/png' });
+  const { body, contentType } = await serializeOpenAIImagesEditsHttpBody({
+    images: [{ type: 'upload', file }], parameters: { prompt: 'edit' },
+  }, 'gpt-image');
+  const form = await new Response(body, { headers: { 'content-type': contentType } }).formData();
+  const image = form.get('image');
+  if (!(image instanceof File)) throw new TypeError('expected a multipart image file');
+
+  assertEquals(image.name, 'sample.png');
+  assertEquals(new Uint8Array(await image.arrayBuffer()), Uint8Array.of(0xff, 0x00));
+  assertEquals(form.get('model'), 'gpt-image');
+});
+
+test('serializeOpenAIImagesEditsHttpBody retains JSON image references', async () => {
+  const reference = { file_id: 'image-file' };
+  const { body, contentType } = await serializeOpenAIImagesEditsHttpBody({
+    images: [{ type: 'reference', reference }], parameters: { prompt: 'edit' },
+  }, 'gpt-image');
+
+  assertEquals(contentType, 'application/json');
+  assertEquals(await new Response(body).json(), { images: [reference], model: 'gpt-image', prompt: 'edit' });
 });

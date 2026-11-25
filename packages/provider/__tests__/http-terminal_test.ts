@@ -104,6 +104,33 @@ it('interrupts a pending read and yields abort separately from EOF and read fail
   await exchange.done;
 });
 
+it('preserves a transport failure from cancellation itself', async () => {
+  const pulled = Promise.withResolvers<void>();
+  const cause = new Error('socket close failed');
+  const readable = new ReadableStream<Uint8Array>({
+    pull() { pulled.resolve(); },
+    async cancel() { throw cause; },
+  }, { highWaterMark: 0 });
+  const controller = new AbortController();
+  const exchange = run(pipeline, { 'request.http': request, 'provider.upstream': upstream }, {
+    signal: controller.signal,
+    services: { fetcher: () => async () => ({ ok: true, value: new Response(readable) }) },
+  });
+
+  const result = (await exchange.result)['response.transport'];
+  assert(result.ok && isHttpBodyStream(result.value.body));
+  const reading = Array.fromAsync(result.value.body);
+  await pulled.promise;
+  controller.abort(new Error('client disconnected'));
+
+  const [failure] = await reading;
+  assert(failure && !failure.ok);
+  expect(failure.error.kind).toBe('transport');
+  expect(failure.error.cause).toBe(cause);
+  expect(readable.locked).toBe(false);
+  await exchange.done;
+});
+
 it('drains a failed upload to native done before returning without dispatch', async () => {
   const error: HttpStreamError = { kind: 'abort', cause: new Error('upload interrupted') };
   const drained = vi.fn();

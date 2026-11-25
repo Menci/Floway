@@ -15,9 +15,15 @@ export interface GeminiGenerateContentPayload {
   store?: boolean;
 }
 export interface GeminiGenerateContentRequest extends GeminiGenerateContentPayload { model: string }
-export interface GeminiCountTokensPayload {
+export interface GeminiGenerateContentCountTokensPayload {
   contents?: GeminiGenerateContentContent[];
   generateContentRequest?: GeminiGenerateContentRequest;
+}
+export interface GeminiGenerateContentCountTokensResult {
+  totalTokens: number;
+  cachedContentTokenCount?: number;
+  promptTokensDetails?: GeminiGenerateContentModalityTokenCount[];
+  cacheTokensDetails?: GeminiGenerateContentModalityTokenCount[];
 }
 export interface GeminiGenerateContentContent { role?: 'user' | 'model' | (string & {}); parts?: GeminiGenerateContentPart[] }
 export interface GeminiGenerateContentPartMetadata {

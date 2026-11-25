@@ -6,7 +6,7 @@ import { inferEndpointsFromModelId } from './infer-endpoints.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
-import { parseGeminiGenerateContentStream, type GeminiCountTokensPayload } from '@floway-dev/protocols/gemini-generate-content';
+import { parseGeminiGenerateContentStream, type GeminiGenerateContentCountTokensPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
@@ -269,7 +269,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       // and rejects generate fields at its top level. The envelope counts the
       // system instruction, tools, and config too, and requires the model name.
       // https://ai.google.dev/api/tokens#method:-models.counttokens
-      const request: GeminiCountTokensPayload = { generateContentRequest: { ...body, model: `models/${modelId}` } };
+      const request: GeminiGenerateContentCountTokensPayload = { generateContentRequest: { ...body, model: `models/${modelId}` } };
       const response = await customFetchGeminiGenerateContentCountTokens(
         config,
         modelId,

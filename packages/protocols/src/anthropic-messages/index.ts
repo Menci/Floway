@@ -35,6 +35,16 @@ export interface AnthropicMessagesPayload extends Omit<Native.MessageCreateParam
   speed?: OpenWire<Beta.MessageCreateParamsBase['speed']>;
 }
 
+// https://platform.claude.com/docs/en/api/messages-count-tokens#body-parameters
+export type AnthropicMessagesCountTokensPayload = Pick<AnthropicMessagesPayload,
+  'messages' | 'model' | 'cache_control' | 'output_config' | 'speed' | 'system' | 'thinking' | 'tool_choice' | 'tools'
+>;
+
+// https://platform.claude.com/docs/en/api/messages-count-tokens#returns
+export interface AnthropicMessagesCountTokensResult {
+  input_tokens: number;
+}
+
 // Request citation parameters and output citations differ in nullable file metadata.
 export type AnthropicMessagesSearchResultLocationCitation = OpenWire<Native.CitationsSearchResultLocation>;
 export type AnthropicMessagesWebSearchResultLocation = OpenWire<Native.CitationsWebSearchResultLocation>;

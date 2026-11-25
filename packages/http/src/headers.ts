@@ -42,6 +42,7 @@ export const deleteHeader = (headers: readonly HeaderEntry[], name: string): Htt
 export const materializeHeaders = (headers: readonly HeaderEntry[]): [string, string][] =>
   headers.map(([key, value]) => [key, typeof value === 'string' ? value : value.reveal()]);
 
+// Headers combines repeated fields, so retain the original socket field lines by response identity.
 const responseHeaderLines = new WeakMap<Response, HttpHeaderLines>();
 
 export const preserveResponseHeaderLines = (response: Response, lines: HttpHeaderLines): Response => {

@@ -65,15 +65,16 @@ export type {
 } from './provider.ts';
 export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
 export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
-export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
+export { serializeOpenAIImagesEditsHttpBody, serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
 export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
-export type { GatewayFacts, ProtocolError, ProtocolOutcome, ProtocolStreamError, ProviderModelFact, ProviderOperation, ProviderPipelines, ProviderServices, ProviderUpstream } from './pipelines.ts';
+export type { GatewayFacts, ProtocolError, ProtocolOutcome, ProtocolStreamError, ProviderModelFact, ProviderOperation, ProviderOperationFacts, ProviderPipelines, ProviderServices, ProviderUpstream } from './pipelines.ts';
 export { toProviderModelFact } from './pipelines.ts';
 export { stripHeaders } from './headers.ts';
 export { httpTerminal, type ProviderTransportFacts } from './http-terminal.ts';
+export { parseErrorBody, parseJsonBody, parseResultBody, parseSseBody, type FormatProviderError, type ProviderSseEof } from './parse-response.ts';
 
 export { formatUpstreamMetricIdentity, groupUpstreamMetricSamples, quotaPercentDisplay, recordUpstreamMetric, recordUpstreamMetrics, resolveUpstreamMetricDisplaySeries, upstreamMetricAxisPriority } from './upstream-metrics.ts';
 export type { GroupedUpstreamMetricSamples, UpstreamMetrics, UpstreamMetricDisplay, UpstreamMetricDisplayOptions, UpstreamMetricDisplaySeries, UpstreamMetricLabelKey, UpstreamMetricObservation, UpstreamMetricSample, UpstreamMetricUnit } from './upstream-metrics.ts';

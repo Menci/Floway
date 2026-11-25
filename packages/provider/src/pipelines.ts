@@ -4,10 +4,10 @@ import type { OpenAIImagesEditsRequest } from './images.ts';
 import type { ProviderModel, UpstreamProviderKind } from './model.ts';
 import type { FetchInit, HttpRequestFact, HttpResponseFact, HttpStreamError } from '@floway-dev/http';
 import type { ManagedStream, Pipeline, Result } from '@floway-dev/pipeline';
-import type { AnthropicMessagesPayload, AnthropicMessagesResult, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesCountTokensPayload, AnthropicMessagesCountTokensResult, AnthropicMessagesPayload, AnthropicMessagesResult, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { JsonObject } from '@floway-dev/protocols/common';
 import type { CanonicalDecisionRequest, CanonicalDecisionResponse } from '@floway-dev/protocols/decision';
-import type { GeminiCountTokensPayload, GeminiGenerateContentPayload, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentCountTokensPayload, GeminiGenerateContentCountTokensResult, GeminiGenerateContentPayload, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIAudioTranscriptionStreamEvent } from '@floway-dev/protocols/openai-audio';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsResultEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload, OpenAICompletionsResult, OpenAICompletionsStreamEvent } from '@floway-dev/protocols/openai-completions';
@@ -48,37 +48,43 @@ export interface ProviderServices {
   readonly fetcher: (upstreamId: string) => (url: string, init: FetchInit) => Promise<Result<Response, HttpStreamError>>;
 }
 
-type Protocol<Request, Event, Output> = {
+type Operation<Name extends string, Request, Event, Output> = {
+  readonly protocol: Name;
   readonly request: Request;
   readonly outcome: ProtocolOutcome<Event, Output>;
 };
 
-interface Protocols {
-  readonly alphaSearch: Protocol<JsonObject, never, JsonObject>;
-  readonly anthropicMessages: Protocol<AnthropicMessagesPayload | Omit<AnthropicMessagesPayload, 'max_tokens'>, AnthropicMessagesStreamEventEx, AnthropicMessagesResult | JsonObject>;
-  readonly decision: Protocol<CanonicalDecisionRequest, never, CanonicalDecisionResponse>;
-  readonly geminiGenerateContent: Protocol<GeminiGenerateContentPayload | GeminiCountTokensPayload, GeminiGenerateContentStreamEvent, GeminiGenerateContentResult | JsonObject>;
-  readonly openaiAudioTranscriptions: Protocol<OpenAIAudioTranscriptionRequest, OpenAIAudioTranscriptionStreamEvent, Uint8Array>;
-  readonly openaiChatCompletions: Protocol<OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResultEx>;
-  readonly openaiCompletions: Protocol<OpenAICompletionsPayload, OpenAICompletionsStreamEvent, OpenAICompletionsResult>;
-  readonly openaiEmbeddings: Protocol<OpenAIEmbeddingsPayload, never, JsonObject>;
-  readonly openaiImagesEdits: Protocol<OpenAIImagesEditsRequest, never, JsonObject>;
-  readonly openaiImagesGenerations: Protocol<OpenAIImagesGenerationsPayload, never, JsonObject>;
-  readonly openaiResponses: Protocol<CanonicalOpenAIResponsesPayload | CanonicalOpenAIResponsesCompactPayload, OpenAIResponsesStreamEventEx, OpenAIResponsesResultEx | OpenAIResponsesCompactionResultEx>;
-  readonly rerank: Protocol<CanonicalRerankRequest, never, CanonicalRerankResponse>;
+interface Operations {
+  readonly alphaSearch: Operation<'alphaSearch', JsonObject, never, JsonObject>;
+  readonly anthropicMessages: Operation<'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, never>;
+  readonly anthropicMessagesCountTokens: Operation<'anthropicMessages', AnthropicMessagesCountTokensPayload, never, AnthropicMessagesCountTokensResult>;
+  readonly decision: Operation<'decision', CanonicalDecisionRequest, never, CanonicalDecisionResponse>;
+  readonly geminiGenerateContent: Operation<'geminiGenerateContent', GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent, never>;
+  readonly geminiGenerateContentCountTokens: Operation<'geminiGenerateContent', GeminiGenerateContentCountTokensPayload, never, GeminiGenerateContentCountTokensResult>;
+  readonly openaiAudioTranscriptions: Operation<'openaiAudioTranscriptions', OpenAIAudioTranscriptionRequest, OpenAIAudioTranscriptionStreamEvent, Uint8Array>;
+  readonly openaiChatCompletions: Operation<'openaiChatCompletions', OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, never>;
+  readonly openaiCompletions: Operation<'openaiCompletions', OpenAICompletionsPayload, OpenAICompletionsStreamEvent, OpenAICompletionsResult>;
+  readonly openaiEmbeddings: Operation<'openaiEmbeddings', OpenAIEmbeddingsPayload, never, JsonObject>;
+  readonly openaiImagesEdits: Operation<'openaiImagesEdits', OpenAIImagesEditsRequest, never, JsonObject>;
+  readonly openaiImagesGenerations: Operation<'openaiImagesGenerations', OpenAIImagesGenerationsPayload, never, JsonObject>;
+  readonly openaiResponses: Operation<'openaiResponses', CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx, never>;
+  readonly openaiResponsesCompact: Operation<'openaiResponses', CanonicalOpenAIResponsesCompactPayload, never, OpenAIResponsesCompactionResultEx>;
+  readonly rerank: Operation<'rerank', CanonicalRerankRequest, never, CanonicalRerankResponse>;
 }
 
-type ProviderProtocol = keyof Protocols;
-
-interface OperationProtocols {
-  readonly anthropicMessagesCountTokens: 'anthropicMessages';
-  readonly geminiGenerateContentCountTokens: 'geminiGenerateContent';
-  readonly openaiResponsesCompact: 'openaiResponses';
+interface CollectedChatResults {
+  readonly anthropicMessages: AnthropicMessagesResult;
+  readonly geminiGenerateContent: GeminiGenerateContentResult;
+  readonly openaiChatCompletions: OpenAIChatCompletionsResultEx;
+  readonly openaiResponses: OpenAIResponsesResultEx;
 }
 
-export type ProviderOperation = ProviderProtocol | keyof OperationProtocols;
-
-type ProtocolFor<Operation extends ProviderOperation> = Operation extends keyof OperationProtocols ? OperationProtocols[Operation] : Extract<Operation, ProviderProtocol>;
+export type ProviderOperation = keyof Operations;
+type ProviderProtocol = Operations[ProviderOperation]['protocol'];
+type OperationsFor<Name extends ProviderProtocol> = Extract<Operations[ProviderOperation], { readonly protocol: Name }>;
+type CollectedOutcome<Name extends ProviderProtocol> = Name extends keyof CollectedChatResults
+  ? { readonly kind: 'result'; readonly result: CollectedChatResults[Name] }
+  : never;
 
 export type GatewayFacts = {
   readonly 'request.http': HttpRequestFact;
@@ -86,15 +92,18 @@ export type GatewayFacts = {
   readonly 'provider.upstream': ProviderUpstream;
   readonly 'provider.model': ProviderModelFact;
 } & {
-  readonly [Name in ProviderProtocol as `request.${Name}`]: Protocols[Name]['request'];
+  readonly [Name in ProviderProtocol as `request.${Name}`]: OperationsFor<Name>['request'];
 } & {
-  readonly [Name in ProviderProtocol as `response.${Name}`]: Protocols[Name]['outcome'];
+  readonly [Name in ProviderProtocol as `response.${Name}`]: OperationsFor<Name>['outcome'] | CollectedOutcome<Name>;
 };
 
+type ProviderRequestFacts<Op extends ProviderOperation> = Pick<GatewayFacts, 'request.http' | 'provider.upstream' | 'provider.model'> &
+  Readonly<Record<`request.${Operations[Op]['protocol']}`, Operations[Op]['request']>>;
+type ProviderResponseFacts<Op extends ProviderOperation> = Pick<GatewayFacts, 'response.http'> &
+  Readonly<Record<`response.${Operations[Op]['protocol']}`, Operations[Op]['outcome']>>;
+
+export type ProviderOperationFacts<Op extends ProviderOperation> = GatewayFacts & ProviderRequestFacts<Op> & ProviderResponseFacts<Op>;
+
 export type ProviderPipelines<S = ProviderServices> = {
-  readonly [Operation in ProviderOperation]?: Pipeline<
-    Pick<GatewayFacts, 'request.http' | 'provider.upstream' | 'provider.model' | `request.${ProtocolFor<Operation>}`>,
-    Pick<GatewayFacts, 'response.http' | `response.${ProtocolFor<Operation>}`>,
-    S
-  >;
+  readonly [Op in ProviderOperation]?: Pipeline<ProviderRequestFacts<Op>, ProviderResponseFacts<Op>, S>;
 };

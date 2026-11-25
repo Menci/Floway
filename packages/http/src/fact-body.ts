@@ -13,16 +13,19 @@ export const readHttpBody = async (body: HttpBody): Promise<Result<Uint8Array, H
 
   const chunks: Uint8Array[] = [];
   let length = 0;
-  let failure: Result<never, HttpStreamError> | undefined;
-  for await (const item of body) {
-    if (!item.ok) {
-      failure = item;
-      continue;
+  const cursor = body[Symbol.asyncIterator]();
+  for (;;) {
+    const { done, value } = await cursor.next();
+    if (done) break;
+    if (!value.ok) {
+      while (!(await cursor.next()).done) {
+        // The managed stream permits only native completion after Err.
+      }
+      return value;
     }
-    chunks.push(item.value);
-    length += item.value.byteLength;
+    chunks.push(value.value);
+    length += value.value.byteLength;
   }
-  if (failure) return failure;
 
   const bytes = new Uint8Array(length);
   let offset = 0;
@@ -61,11 +64,10 @@ export const readHttpResponseBody = async function* (
     }
 
     const failure = await cancellation;
-    const reason: unknown = signal.reason;
-    const cause = failure && failure.cause !== reason
-      ? new AggregateError([reason, failure.cause], 'HTTP response body cancellation failed')
-      : reason;
-    yield { ok: false, error: { kind: 'abort', cause } };
+    yield {
+      ok: false,
+      error: failure ? { kind: 'transport', cause: failure.cause } : { kind: 'abort', cause: signal.reason },
+    };
   } finally {
     signal.removeEventListener('abort', cancel);
     reader.releaseLock();
