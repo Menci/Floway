@@ -33,8 +33,13 @@ const rateLimited = (model: string, resetAt: string, now: number) => localError(
   [['retry-after', String(Math.max(0, Math.ceil((Date.parse(resetAt) - now) / 1000)))]],
 );
 
-const localError = (model: string, status: number, error: { type: string; message: string; retry_at?: string }, headers: HttpHeaders) => ({
-  'response.http': move<HttpResponseFact>({ status, statusText: '', headers: [['content-type', 'application/json'], ...headers], body: null }),
+const localError = (model: string, status: 429 | 503, error: { type: string; message: string; retry_at?: string }, headers: HttpHeaders) => ({
+  'response.http': move<HttpResponseFact>({
+    status,
+    statusText: status === 429 ? 'Too Many Requests' : 'Service Unavailable',
+    headers: [['content-type', 'application/json'], ...headers],
+    body: null,
+  }),
   'response.modelKey': model,
   'response.anthropicMessages': move({ kind: 'error', source: 'local', error: { error } } as const),
 });

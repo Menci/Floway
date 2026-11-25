@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
+import { addMetadataUserId } from '../../../src/pipelines/anthropic-messages/synthesize-metadata-user-id.ts';
 import { claudeCodePipelines } from '../../../src/pipelines/index.ts';
 import { parseClaudeCodeQuotaHeaders } from '../../../src/quota.ts';
 import { createClaudeCodeService } from '../../../src/service.ts';
@@ -125,6 +126,7 @@ describe('Claude Code Anthropic Messages pipeline', () => {
       metadata: { user_id: expect.any(String) },
     });
     expect(answer['response.http']).toMatchObject({ status: 200, body: null });
+    expect(body.metadata).toEqual(addMetadataUserId(unshaped, upstreamId).metadata);
     expect(answer['response.modelKey']).toBe(modelId);
     expect(items).toEqual([{ ok: true, value: { type: 'message_stop' } }]);
   });
@@ -165,13 +167,14 @@ describe('Claude Code Anthropic Messages pipeline', () => {
   test('uses the live account health to return a local 503 before OAuth', async () => {
     const h = createHarness({ ...activeAccount, state: 'refresh_failed', stateMessage: 'account disabled' });
     const { answer, outcome } = await finish(h.start());
-    expect(answer['response.http']).toMatchObject({ status: 503, body: null });
+    expect(answer['response.http']).toMatchObject({ status: 503, statusText: 'Service Unavailable', body: null });
     expect(answer['response.modelKey']).toBe(modelId);
     expect(outcome).toEqual({
       kind: 'error', source: 'local',
       error: { error: { type: 'claude_code_upstream_unavailable', message: 'Claude Code account is refresh_failed: account disabled' } },
     });
     expect(h.send).not.toHaveBeenCalled();
+    expect(h.events.some(event => event.type === 'stage.entered' && event.name === 'claude-code.serialize')).toBe(false);
   });
 
   test('uses the shared quota reset to return a local 429 without refreshing OAuth', async () => {
@@ -186,7 +189,7 @@ describe('Claude Code Anthropic Messages pipeline', () => {
       quotaSnapshot: { data: snapshot, fetchedAt: Date.now(), modelId },
     });
     const { answer, outcome } = await finish(h.start());
-    expect(answer['response.http']).toMatchObject({ status: 429, body: null });
+    expect(answer['response.http']).toMatchObject({ status: 429, statusText: 'Too Many Requests', body: null });
     expect(Number(getHeader(answer['response.http']!.headers, 'retry-after'))).toBeGreaterThan(0);
     expect(answer['response.modelKey']).toBe(modelId);
     expect(outcome).toMatchObject({ kind: 'error', source: 'local', error: { error: { retry_at: new Date(reset * 1000).toISOString() } } });
@@ -205,7 +208,11 @@ describe('Claude Code Anthropic Messages pipeline', () => {
     });
     h.send
       .mockResolvedValueOnce(reply(new Response(body, { status: 401 })))
-      .mockResolvedValueOnce(reply(oauthToken()))
+      .mockImplementationOnce(async (_url, init) => {
+        expect(h.events.some(event => event.type === 'stream.end')).toBe(true);
+        expect(Object.hasOwn(init, 'signal')).toBe(false);
+        return reply(oauthToken());
+      })
       .mockResolvedValueOnce(reply(sse()));
     const call = h.start();
     await cancelled.promise;
@@ -234,17 +241,60 @@ describe('Claude Code Anthropic Messages pipeline', () => {
     expect(h.send).toHaveBeenCalledTimes(retry ? 3 : 2);
   });
 
-  test('returns a local 503 when refresh after a rejected cached bearer reveals a terminal session', async () => {
+  test('preserves the token endpoint rejection after a rejected cached bearer and flips the account terminal', async () => {
     const h = createHarness();
+    const error = { error: 'invalid_grant', error_description: 'Revoked refresh token' };
     h.send
       .mockResolvedValueOnce(reply(new Response('expired', { status: 401 })))
-      .mockResolvedValueOnce(reply(Response.json({ error: 'invalid_grant', error_description: 'Revoked refresh token' }, { status: 400 })));
+      .mockResolvedValueOnce(reply(Response.json(error, { status: 400, headers: { 'request-id': 'token-endpoint-rejection' } })));
     const { answer, outcome } = await finish(h.start());
-    expect(answer['response.http']).toMatchObject({ status: 503 });
+    expect(answer['response.http']).toMatchObject({ status: 400, body: null });
+    expect(getHeader(answer['response.http']!.headers, 'request-id')).toBe('token-endpoint-rejection');
     expect(answer['response.modelKey']).toBe(modelId);
-    expect(outcome).toMatchObject({ kind: 'error', source: 'local', error: { error: { message: 'Claude Code refresh failed: Revoked refresh token' } } });
+    expect(outcome).toMatchObject({ kind: 'error', source: 'upstream', error, cause: { code: 'invalid_grant' } });
     expect(h.account()).toMatchObject({ state: 'refresh_failed', accessToken: null });
     expect(h.send).toHaveBeenCalledTimes(2);
+  });
+
+  test('reports an OAuth transport failure before headers with the original cause and completes the run', async () => {
+    const h = createHarness({ ...activeAccount, accessToken: null });
+    const cause = new Error('token endpoint unreachable');
+    h.send.mockResolvedValueOnce({ ok: false, error: { kind: 'transport', cause } });
+    const { answer, outcome } = await finish(h.start());
+    expect(answer['response.http']).toBeNull();
+    expect(answer['response.modelKey']).toBe(modelId);
+    expect(outcome).toMatchObject({
+      kind: 'error', source: 'upstream',
+      error: { type: 'error', error: { message: cause.message } },
+      cause: { kind: 'transport', cause },
+    });
+    expect(h.account().state).toBe('active');
+  });
+
+  test('preserves a non-JSON OAuth rejection in the Anthropic error envelope', async () => {
+    const h = createHarness({ ...activeAccount, accessToken: null });
+    h.send.mockResolvedValueOnce(reply(new Response('upstream maintenance', {
+      status: 503, statusText: 'Temporarily Unavailable', headers: { 'retry-after': '5' },
+    })));
+    const { answer, outcome } = await finish(h.start());
+    expect(answer['response.http']).toMatchObject({ status: 503, statusText: 'Temporarily Unavailable', body: null });
+    expect(getHeader(answer['response.http']!.headers, 'retry-after')).toBe('5');
+    expect(outcome).toMatchObject({
+      kind: 'error', source: 'upstream', error: { type: 'error', error: { message: 'upstream maintenance' } },
+    });
+    expect(h.account().state).toBe('active');
+  });
+
+  test('returns a local 503 for an expired setup token without contacting OAuth', async () => {
+    const h = createHarness({
+      ...activeAccount, tokenKind: 'setup-token', refreshToken: null,
+      accessToken: { ...activeAccount.accessToken, expiresAt: Date.now() - 1 },
+    });
+    const { answer, outcome } = await finish(h.start());
+    expect(answer['response.http']).toMatchObject({ status: 503, statusText: 'Service Unavailable', body: null });
+    expect(outcome).toMatchObject({ kind: 'error', source: 'local' });
+    expect(h.account()).toMatchObject({ state: 'refresh_failed', accessToken: null });
+    expect(h.send).not.toHaveBeenCalled();
   });
 
   test.each([
@@ -279,6 +329,21 @@ describe('Claude Code Anthropic Messages pipeline', () => {
     });
     expect(h.account().state).toBe('active');
     expect(h.saveState).not.toHaveBeenCalled();
+  });
+
+  test('limits sentinel observation and forwards an oversized JSON error intact', async () => {
+    const h = createHarness();
+    const error = {
+      error: { type: 'invalid_request_error', message: 'Organization has been disabled.' },
+      detail: 'x'.repeat(64 * 1024),
+    };
+    h.send.mockResolvedValueOnce(reply(Response.json(error, { status: 400 })));
+    const { answer, outcome } = await finish(h.start());
+    expect(answer['response.http']).toMatchObject({ status: 400 });
+    expect(outcome).toEqual({ kind: 'error', source: 'upstream', error });
+    expect(h.account().state).toBe('active');
+    expect(h.saveState).not.toHaveBeenCalled();
+    expect(JSON.stringify(h.events.filter(event => event.type === 'log'))).toContain('claude_code_terminal_sentinel_body_too_large');
   });
 
   test('propagates a failed sentinel read with its cause and leaves the account active', async () => {

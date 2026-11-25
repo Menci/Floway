@@ -1,6 +1,10 @@
 import {
   ClaudeCodeOAuthSessionTerminatedError,
+  controlOAuthFetcher,
   refreshClaudeCodeAccessToken,
+  unwrapOAuthResult,
+  type ClaudeCodeOAuthFailure,
+  type ClaudeCodeOAuthFetcher,
 } from './auth/oauth.ts';
 import { logInfo, logWarn } from './log.ts';
 import {
@@ -9,6 +13,7 @@ import {
   type ClaudeCodeAccessTokenEntry,
   type ClaudeCodeAccountCredential,
 } from './state.ts';
+import type { Result } from '@floway-dev/pipeline';
 import type { Fetcher, UpstreamsRepoSlim } from '@floway-dev/provider';
 
 export type { ClaudeCodeAccessTokenEntry };
@@ -52,6 +57,9 @@ export interface EnsureClaudeCodeAccessTokenArgs {
   force?: boolean;
 }
 
+type EnsureAccessTokenArgs = Omit<EnsureClaudeCodeAccessTokenArgs, 'fetcher'> & { fetcher: ClaudeCodeOAuthFetcher };
+type AccessTokenResult = Result<EnsuredAccessToken, ClaudeCodeOAuthFailure>;
+
 // Process-local coalescing of concurrent ensure calls. On a cold start N
 // requests on the same isolate would all see `accessToken === null` and
 // each fire a `/v1/oauth/token` POST; the upstream rotates on every call so
@@ -69,8 +77,8 @@ export interface EnsureClaudeCodeAccessTokenArgs {
 // state at the cost of cross-isolate-only round-trip duplication, which is
 // the rare case.
 const createAccessTokenService = (repo: UpstreamsRepoSlim) => {
-  const inFlightEnsures = new Map<string, Promise<EnsuredAccessToken>>();
-  return async (args: Omit<EnsureClaudeCodeAccessTokenArgs, 'repo'>): Promise<EnsuredAccessToken> => {
+  const inFlightEnsures = new Map<string, Promise<AccessTokenResult>>();
+  return async (args: Omit<EnsureAccessTokenArgs, 'repo'>): Promise<AccessTokenResult> => {
     const key = `${args.upstreamId}:${args.force ? 'force' : 'lazy'}`;
     const existing = inFlightEnsures.get(key);
     if (existing) return await existing;
@@ -94,8 +102,13 @@ export const getClaudeCodeAccessTokenService = (repo: UpstreamsRepoSlim) => {
   return ensure;
 };
 
-export const ensureClaudeCodeAccessToken = async ({ repo, ...args }: EnsureClaudeCodeAccessTokenArgs): Promise<EnsuredAccessToken> =>
-  await getClaudeCodeAccessTokenService(repo)(args);
+export const ensureClaudeCodeAccessToken = async ({ repo, fetcher, ...args }: EnsureClaudeCodeAccessTokenArgs): Promise<EnsuredAccessToken> =>
+  unwrapOAuthResult(await getClaudeCodeAccessTokenService(repo)({ ...args, fetcher: controlOAuthFetcher(fetcher) }));
+
+const terminalAccess = (code: string, message: string): AccessTokenResult => ({
+  ok: false,
+  error: { cause: new ClaudeCodeOAuthSessionTerminatedError({ code, message }), http: null, body: null },
+});
 
 // Reads, refreshes, and persists. The rotated refresh token and the new
 // cached access token are committed together in a single state write; the
@@ -116,20 +129,17 @@ export const ensureClaudeCodeAccessToken = async ({ repo, ...args }: EnsureClaud
 // `access_denied`) signal credential death under any race scenario and
 // flip to terminal without a recovery attempt.
 const ensureClaudeCodeAccessTokenInner = async (
-  args: EnsureClaudeCodeAccessTokenArgs,
+  args: EnsureAccessTokenArgs,
   recoveryAllowed: boolean,
-): Promise<EnsuredAccessToken> => {
+): Promise<AccessTokenResult> => {
   const fresh = await args.repo.getById(args.upstreamId);
   if (!fresh) throw new Error(`Claude Code upstream ${args.upstreamId} not found`);
   const state = readClaudeCodeUpstreamState(fresh.state);
 
   const account = state.accounts[0];
   if (account.state !== 'active') {
-    // Surface the stored health state as the `code` so a caller distinguishing
-    // by code (e.g. metrics) reflects the persisted reason, not a synthetic
-    // OAuth code. Never reaches the refresh-race recovery branch — that only
-    // fires inside the catch around the live /v1/oauth/token call below.
-    throw new ClaudeCodeOAuthSessionTerminatedError({ code: account.state, message: account.stateMessage });
+    // Keep the persisted health state as the diagnosis for callers that inspect the code.
+    return terminalAccess(account.state, account.stateMessage);
   }
 
   // Setup-token: the cached access token IS the credential — there is no
@@ -139,7 +149,7 @@ const ensureClaudeCodeAccessTokenInner = async (
   // 1-year validity makes the expiry path rare in practice.
   if (account.tokenKind === 'setup-token') {
     if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
-      return { entry: account.accessToken, freshlyMinted: false };
+      return { ok: true, value: { entry: account.accessToken, freshlyMinted: false } };
     }
     const message = 'Setup token expired or absent; re-import to recover';
     await persistTerminalState(args.repo, args.upstreamId, account, {
@@ -147,17 +157,16 @@ const ensureClaudeCodeAccessTokenInner = async (
       message,
       oauthCode: null,
     });
-    throw new ClaudeCodeOAuthSessionTerminatedError({ code: 'setup_token_expired', message });
+    return terminalAccess('setup_token_expired', message);
   }
 
   if (account.accessToken && isAccessTokenFresh(account.accessToken) && !args.force) {
-    return { entry: account.accessToken, freshlyMinted: false };
+    return { ok: true, value: { entry: account.accessToken, freshlyMinted: false } };
   }
 
-  let refreshed;
-  try {
-    refreshed = await refreshClaudeCodeAccessToken(account.refreshToken, args.fetcher);
-  } catch (error) {
+  const result = await refreshClaudeCodeAccessToken(account.refreshToken, args.fetcher);
+  if (!result.ok) {
+    const error = result.error.cause;
     if (error instanceof ClaudeCodeOAuthSessionTerminatedError) {
       if (error.code === 'invalid_grant' && recoveryAllowed) {
         const recovered = await recoverFromRefreshRace(args, account.refreshToken);
@@ -169,9 +178,10 @@ const ensureClaudeCodeAccessTokenInner = async (
         oauthCode: error.code,
       });
     }
-    throw error;
+    return result;
   }
 
+  const refreshed = result.value;
   const now = new Date().toISOString();
   const newAccessTokenEntry: ClaudeCodeAccessTokenEntry = {
     token: refreshed.access_token,
@@ -192,9 +202,6 @@ const ensureClaudeCodeAccessTokenInner = async (
   // the meantime leaves nothing to rotate — the account is returned untouched,
   // which the repo reads as "nothing to do".
   const rotatedRefreshToken = refreshed.refresh_token;
-  if (typeof rotatedRefreshToken !== 'string' || rotatedRefreshToken === '') {
-    throw new Error('Claude Code refresh response missing refresh_token');
-  }
   await args.repo.saveState(args.upstreamId, current =>
     replaceSoleAccount(readClaudeCodeUpstreamState(current), stored => (
       stored.tokenKind === 'oauth'
@@ -207,7 +214,7 @@ const ensureClaudeCodeAccessTokenInner = async (
     expires_in_seconds: refreshed.expires_in,
     refreshed_at: now,
   });
-  return { entry: newAccessTokenEntry, freshlyMinted: true };
+  return { ok: true, value: { entry: newAccessTokenEntry, freshlyMinted: true } };
 };
 
 // Terminal flip from the oauth-error path. Distinct from fetch.ts's
@@ -260,9 +267,9 @@ const persistTerminalState = async (
 // `null` when the original error should be re-raised as a real session
 // termination.
 const recoverFromRefreshRace = async (
-  args: EnsureClaudeCodeAccessTokenArgs,
+  args: EnsureAccessTokenArgs,
   usedRefreshToken: string,
-): Promise<EnsuredAccessToken | null> => {
+): Promise<AccessTokenResult | null> => {
   const reread = await args.repo.getById(args.upstreamId);
   if (!reread) return null;
   const rereadState = readClaudeCodeUpstreamState(reread.state);
@@ -281,7 +288,7 @@ const recoverFromRefreshRace = async (
     rotated_refresh_token_prefix: rereadAccount.refreshToken.slice(0, 6),
   });
   if (rereadAccount.accessToken && isAccessTokenFresh(rereadAccount.accessToken)) {
-    return { entry: rereadAccount.accessToken, freshlyMinted: false };
+    return { ok: true, value: { entry: rereadAccount.accessToken, freshlyMinted: false } };
   }
   // Sibling rotated the refresh token but no usable access token sits in
   // state — most likely an `invalidateClaudeCodeAccessToken` ran between

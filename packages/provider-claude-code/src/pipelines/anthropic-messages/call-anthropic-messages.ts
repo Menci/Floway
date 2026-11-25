@@ -1,7 +1,7 @@
 import { defineStage } from './facts.ts';
 import { unavailable } from './gate-account.ts';
-import { ClaudeCodeOAuthSessionTerminatedError } from '../../auth/oauth.ts';
-import { getHeader, isHttpBodyStream, setHeader, type Fetcher } from '@floway-dev/http';
+import { ClaudeCodeOAuthSessionTerminatedError, type ClaudeCodeOAuthFailure } from '../../auth/oauth.ts';
+import { getHeader, isHttpBodyStream, setHeader } from '@floway-dev/http';
 import { move, type Secret } from '@floway-dev/pipeline';
 import { formatAnthropicMessagesError, parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import type { SseFrame } from '@floway-dev/protocols/common';
@@ -26,41 +26,29 @@ export const callAnthropicMessages = defineStage({
     const request = facts['request.http'];
     const id = facts['provider.upstream'].id;
     const { upstreamModelId: model } = facts['provider.model'];
-    const send = scope.services.fetcher(id);
-    // A mint is shared by callers and must finish saving the rotated token
-    // even if one of those calls is cancelled.
-    const fetcher: Fetcher = async (url, init) => {
-      const result = await send(url, init);
-      if (!result.ok) throw result.error.cause;
-      return result.value;
-    };
+    const fetcher = scope.services.fetcher(id);
     const dispatch = (bearer: Secret<string>) => scope.next({
       ...facts,
       'request.http': move({ ...request, headers: setHeader(request.headers, 'authorization', bearer) }),
     });
 
-    let back;
-    try {
-      const { bearer, freshlyMinted } = await scope.services.claudeCode.authorization(id, fetcher);
-      const first = dispatch(bearer);
-      back = await first;
-      const transport = back['response.transport'];
-      if (transport.ok && transport.value.status === 401 && !freshlyMinted) {
-        scope.abort(first);
-        const { body } = transport.value;
-        if (isHttpBodyStream(body)) {
-          for await (const _item of body) {
-            // The discarded response owns its I/O through native completion.
-          }
+    const authorized = await scope.services.claudeCode.authorization(id, fetcher);
+    if (!authorized.ok) return oauthError(model, authorized.error);
+    const { bearer, freshlyMinted } = authorized.value;
+    const first = dispatch(bearer);
+    let back = await first;
+    const transport = back['response.transport'];
+    if (transport.ok && transport.value.status === 401 && !freshlyMinted) {
+      scope.abort(first);
+      const { body } = transport.value;
+      if (isHttpBodyStream(body)) {
+        for await (const _item of body) {
+          // The discarded response owns its I/O through native completion.
         }
-        const renewed = await scope.services.claudeCode.reauthorize(id, bearer, fetcher);
-        back = await dispatch(renewed.bearer);
       }
-    } catch (error) {
-      if (error instanceof ClaudeCodeOAuthSessionTerminatedError) {
-        return unavailable(model, `Claude Code refresh failed: ${error.upstreamMessage}`);
-      }
-      throw error;
+      const renewed = await scope.services.claudeCode.reauthorize(id, bearer, fetcher);
+      if (!renewed.ok) return oauthError(model, renewed.error);
+      back = await dispatch(renewed.value.bearer);
     }
 
     let rawFrameCount = 0;
@@ -125,6 +113,24 @@ export const callAnthropicMessages = defineStage({
     };
   },
 });
+
+const oauthError = (model: string, { http, body, cause }: ClaudeCodeOAuthFailure) => {
+  if (http === null && cause instanceof ClaudeCodeOAuthSessionTerminatedError) {
+    return unavailable(model, `Claude Code refresh failed: ${cause.upstreamMessage}`);
+  }
+  const reason = cause instanceof Error ? cause : cause.cause;
+  const message = body?.kind === 'text' ? body.text : reason instanceof Error ? reason.message : String(reason);
+  return {
+    'response.http': move(http),
+    'response.modelKey': model,
+    'response.anthropicMessages': move({
+      kind: 'error',
+      source: 'upstream',
+      error: body?.kind === 'json' ? body.value : formatAnthropicMessagesError(http?.status ?? null, message),
+      cause,
+    } as const),
+  };
+};
 
 const oneLineError = (error: unknown): string => {
   const message = (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim();

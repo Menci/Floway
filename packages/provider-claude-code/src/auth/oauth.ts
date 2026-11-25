@@ -8,7 +8,9 @@ import {
   CLAUDE_CODE_REDIRECT_URI,
   CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS,
 } from '../constants.ts';
-import { type Fetcher } from '@floway-dev/provider';
+import { responseHeaderEntries, type FetchInit, type Fetcher, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
+import type { Result } from '@floway-dev/pipeline';
+import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
 // Discriminates the two PKCE flows. `oauth` is the full Claude Code CLI
 // sign-in: three-scope grant that mints a short-lived access token + rotating
@@ -68,12 +70,43 @@ const REFRESH_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
   'access_denied',
 ]);
 
+// Coalesced refreshes outlive any single Anthropic Messages caller.
+export type ClaudeCodeOAuthFetcher = (url: string, init: Omit<FetchInit, 'signal'>) => Promise<Result<Response, HttpStreamError>>;
+
+type OAuthErrorBody = { readonly kind: 'json'; readonly value: unknown } | { readonly kind: 'text'; readonly text: string };
+
+export interface ClaudeCodeOAuthFailure {
+  readonly http: HttpResponseFact | null;
+  readonly cause: Error | HttpStreamError;
+  readonly body: OAuthErrorBody | null;
+}
+
+const failed = (
+  http: HttpResponseFact | null,
+  cause: ClaudeCodeOAuthFailure['cause'],
+  body: OAuthErrorBody | null = null,
+): Result<never, ClaudeCodeOAuthFailure> => ({ ok: false, error: { http, cause, body } });
+
+export const controlOAuthFetcher = (fetcher: Fetcher): ClaudeCodeOAuthFetcher => async (url, init) => {
+  try {
+    return { ok: true, value: await fetcher(url, init) };
+  } catch (cause) {
+    return { ok: false, error: { kind: 'transport', cause } };
+  }
+};
+
+export const unwrapOAuthResult = <T>(result: Result<T, ClaudeCodeOAuthFailure>): T => {
+  if (result.ok) return result.value;
+  const { cause } = result.error;
+  throw cause instanceof Error ? cause : cause.cause;
+};
+
 const claudeCodeTokenRequest = async (
   body: Record<string, string | number>,
   terminalCodes: ReadonlySet<string>,
-  fetcher: Fetcher,
-): Promise<ClaudeCodeOAuthTokenResponse> => {
-  const response = await fetcher(CLAUDE_CODE_OAUTH_TOKEN_URL, {
+  fetcher: ClaudeCodeOAuthFetcher,
+): Promise<Result<{ token: ClaudeCodeOAuthTokenResponse; http: HttpResponseFact }, ClaudeCodeOAuthFailure>> => {
+  const fetched = await fetcher(CLAUDE_CODE_OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -82,16 +115,24 @@ const claudeCodeTokenRequest = async (
     },
     body: JSON.stringify(body),
   });
+  if (!fetched.ok) return failed(null, fetched.error);
+  const response = fetched.value;
+  const { status, statusText } = response;
+  const http: HttpResponseFact = { status, statusText, headers: responseHeaderEntries(response), body: null };
 
-  const rawText = await response.text();
+  let rawText: string;
+  try {
+    rawText = await response.text();
+  } catch (cause) {
+    return failed(http, { kind: 'transport', cause });
+  }
   let parsed: unknown;
   try {
-    parsed = rawText.length > 0 ? JSON.parse(rawText) : {};
+    parsed = rawText.length === 0 ? {} : response.ok ? JSON.parse(rawText) : parseJSONWithRawNumbers(rawText);
   } catch (cause) {
-    throw new Error(
-      `Claude Code OAuth /token returned ${response.status} with non-JSON body: ${rawText.slice(0, 256)}`,
-      { cause },
-    );
+    if (!(cause instanceof SyntaxError)) throw cause;
+    const error = new Error(`Claude Code OAuth /token returned ${status} with a non-JSON body`, { cause });
+    return failed(http, error, response.ok ? null : { kind: 'text', text: rawText });
   }
 
   const root = (typeof parsed === 'object' && parsed !== null) ? (parsed as Record<string, unknown>) : null;
@@ -116,30 +157,36 @@ const claudeCodeTokenRequest = async (
       ?? nestedMessage
       ?? code
       ?? rawText.slice(0, 256);
-    if (code && terminalCodes.has(code)) {
-      throw new ClaudeCodeOAuthSessionTerminatedError({ code, message });
-    }
-    throw new Error(`Claude Code OAuth /token returned ${response.status}: ${message}`);
+    const error = code && terminalCodes.has(code)
+      ? new ClaudeCodeOAuthSessionTerminatedError({ code, message })
+      : new Error(`Claude Code OAuth /token returned ${status}: ${message}`);
+    return failed(http, error, rawText.length === 0 ? { kind: 'text', text: rawText } : { kind: 'json', value: parsed });
   }
 
-  if (root === null) throw new Error('Claude Code OAuth /token response is not an object');
+  if (root === null) return failed(http, new Error('Claude Code OAuth /token response is not an object'));
   if (typeof root.access_token !== 'string' || root.access_token === '') {
-    throw new Error('Claude Code OAuth /token response missing access_token');
+    return failed(http, new Error('Claude Code OAuth /token response missing access_token'));
   }
   if (typeof root.expires_in !== 'number' || !Number.isFinite(root.expires_in)) {
-    throw new Error('Claude Code OAuth /token response missing expires_in');
+    return failed(http, new Error('Claude Code OAuth /token response missing expires_in'));
   }
   if (root.refresh_token !== undefined && (typeof root.refresh_token !== 'string' || root.refresh_token === '')) {
-    throw new Error('Claude Code OAuth /token response carries non-string refresh_token');
+    return failed(http, new Error('Claude Code OAuth /token response carries non-string refresh_token'));
   }
   if (typeof root.scope !== 'string') {
-    throw new Error('Claude Code OAuth /token response missing scope');
+    return failed(http, new Error('Claude Code OAuth /token response missing scope'));
   }
   return {
-    access_token: root.access_token,
-    expires_in: root.expires_in,
-    ...(typeof root.refresh_token === 'string' ? { refresh_token: root.refresh_token } : {}),
-    scope: root.scope,
+    ok: true,
+    value: {
+      http,
+      token: {
+        access_token: root.access_token,
+        expires_in: root.expires_in,
+        ...(typeof root.refresh_token === 'string' ? { refresh_token: root.refresh_token } : {}),
+        scope: root.scope,
+      },
+    },
   };
 };
 
@@ -176,7 +223,7 @@ export const exchangeClaudeCodeAuthorizationCode = async (opts: {
   if (opts.kind === 'setup-token') {
     body.expires_in = CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS;
   }
-  return await claudeCodeTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, opts.fetcher);
+  return unwrapOAuthResult(await claudeCodeTokenRequest(body, EXCHANGE_TERMINAL_OAUTH_CODES, controlOAuthFetcher(opts.fetcher))).token;
 };
 
 // `fetcher` is required because the refresh has an associated upstream
@@ -184,14 +231,18 @@ export const exchangeClaudeCodeAuthorizationCode = async (opts: {
 // than direct egress.
 export const refreshClaudeCodeAccessToken = async (
   refreshToken: string,
-  fetcher: Fetcher,
-): Promise<ClaudeCodeOAuthTokenResponse> => {
+  fetcher: ClaudeCodeOAuthFetcher,
+): Promise<Result<ClaudeCodeOAuthTokenResponse & { refresh_token: string }, ClaudeCodeOAuthFailure>> => {
   const body = {
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
     client_id: CLAUDE_CODE_CLIENT_ID,
   };
-  return await claudeCodeTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
+  const result = await claudeCodeTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
+  if (!result.ok) return result;
+  const { http, token } = result.value;
+  if (token.refresh_token === undefined) return failed(http, new Error('Claude Code refresh response missing refresh_token'));
+  return { ok: true, value: { ...token, refresh_token: token.refresh_token } };
 };
 
 // The literal `code=true` query param matches what the real Claude Code CLI

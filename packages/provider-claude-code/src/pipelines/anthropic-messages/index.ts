@@ -19,6 +19,7 @@ export const anthropicMessages = compose('claude-code.anthropicMessages', {
   exit: ['response.http', 'response.modelKey', 'response.anthropicMessages'],
   stages: [
     stripClaudeCodeHeaders,
+    gateAccount,
     detectClaudeCodeShape,
     backfillRequiredFields,
     synthesizeMetadataUserId,
@@ -27,7 +28,6 @@ export const anthropicMessages = compose('claude-code.anthropicMessages', {
     injectIdentityBlock,
     injectDefaultTemplate,
     serialize,
-    gateAccount,
     callAnthropicMessages,
     observeQuota,
     observeSentinel,

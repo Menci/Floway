@@ -1,14 +1,14 @@
 import { getClaudeCodeAccessTokenService, invalidateClaudeCodeAccessToken, type EnsuredAccessToken } from './access-token.ts';
+import type { ClaudeCodeOAuthFailure, ClaudeCodeOAuthFetcher } from './auth/oauth.ts';
 import { logInfo, logWarn } from './log.ts';
 import { claudeCodeRateLimitedUntil, type ClaudeCodeQuotaSnapshot } from './quota.ts';
 import { readClaudeCodeUpstreamState, replaceSoleAccount, type ClaudeCodeAccountCredential } from './state.ts';
 import { claudeCodeProbeMetrics, claudeCodeQuotaMetrics } from './upstream-metrics.ts';
 import { mergeClaudeCodeUsageProbe, type ClaudeCodeUsageProbeResult } from './usage-probe.ts';
-import { Secret } from '@floway-dev/pipeline';
+import { Secret, type Result } from '@floway-dev/pipeline';
 import {
   getProviderRepo,
   normalizeUpstreamMetricIdentity,
-  type Fetcher,
   type ProviderRepo,
   type ProviderServices,
   type UpstreamMetrics,
@@ -23,14 +23,16 @@ interface Authorization {
   readonly freshlyMinted: boolean;
 }
 
+type AuthorizationResult = Result<Authorization, ClaudeCodeOAuthFailure>;
+
 export type ClaudeCodePersistenceResult =
   | { readonly persisted: true }
   | { readonly persisted: false; readonly error: unknown };
 
 export interface ClaudeCodeService {
   readonly requestBlock: (upstreamId: string, modelId: string, now: number) => Promise<RequestBlock | null>;
-  readonly authorization: (upstreamId: string, fetcher: Fetcher) => Promise<Authorization>;
-  readonly reauthorize: (upstreamId: string, rejectedBearer: Secret<string>, fetcher: Fetcher) => Promise<Authorization>;
+  readonly authorization: (upstreamId: string, fetcher: ClaudeCodeOAuthFetcher) => Promise<AuthorizationResult>;
+  readonly reauthorize: (upstreamId: string, rejectedBearer: Secret<string>, fetcher: ClaudeCodeOAuthFetcher) => Promise<AuthorizationResult>;
   readonly persistQuota: (upstreamId: string, modelId: string, snapshot: ClaudeCodeQuotaSnapshot) => Promise<ClaudeCodePersistenceResult>;
   readonly persistTerminal: (upstreamId: string, status: 400 | 403, message: string) => Promise<ClaudeCodePersistenceResult>;
   readonly ensureAccessToken: ReturnType<typeof getClaudeCodeAccessTokenService>;
@@ -43,8 +45,10 @@ export interface ClaudeCodeServices extends ProviderServices {
 
 export const createClaudeCodeService = (repo: ProviderRepo): ClaudeCodeService => {
   const ensureAccessToken = getClaudeCodeAccessTokenService(repo.upstreams);
-  const authorization: ClaudeCodeService['authorization'] = async (upstreamId, fetcher) =>
-    toAuthorization(await ensureAccessToken({ upstreamId, fetcher }));
+  const authorization: ClaudeCodeService['authorization'] = async (upstreamId, fetcher) => {
+    const result = await ensureAccessToken({ upstreamId, fetcher });
+    return result.ok ? { ok: true, value: toAuthorization(result.value) } : result;
+  };
 
   return {
     async requestBlock(upstreamId, modelId, now) {
