@@ -147,9 +147,9 @@ test('a cursor resumes one hour before the previous read and splits only the bou
   expect((await read(delta.cursor)).start).toBe('2026-05-02T08');
 });
 
-test('an empty historical overview does not evaluate out-of-window bucket labels', async () => {
+test('an empty historical overview advances the cursor through the requested range', async () => {
   const { adminSession } = await setupAppTest();
-  const response = await requestApp('/api/token-usage/overview?format=fixed-buckets&start=0000-01-01T00&end=0000-01-02T00&bucket=2d&timezone_offset_minutes=60', {
+  const response = await requestApp('/api/token-usage/overview?format=fixed-buckets&start=0000-01-01T00&end=0000-01-02T00&bucket=2d', {
     headers: { 'x-floway-session': adminSession },
   });
   expect(response.status).toBe(200);

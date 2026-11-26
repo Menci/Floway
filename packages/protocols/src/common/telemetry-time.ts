@@ -32,7 +32,7 @@ export const telemetryBucketStart = (hourMs: number, originMs: number, widthHour
   return originMs + Math.floor((hourMs - originMs) / widthMs) * widthMs;
 };
 
-// UTC ordinals index civil dates; actual bucket boundaries retain local DST.
+// Calendar buckets index civil dates in UTC and choose boundaries in local time.
 export const telemetryDayOrdinal = (date: string): number => Date.parse(`${date}T00:00:00Z`) / TELEMETRY_DAY_MS;
 
 export const parseTelemetryHour = (hour: string): number => {

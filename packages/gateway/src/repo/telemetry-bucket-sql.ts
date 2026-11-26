@@ -4,10 +4,10 @@ export type OverviewBucket = 'all'
   | { origin: string; hours: number }
   | { calendar: 'month' | 'year'; timezoneOffsetMinutes: number };
 
-// The query and its boundary hours are constrained to the requested grid's
-// origin or later, so SQLite's integer division gives the floor.
-// https://sqlite.org/lang_expr.html#binaryops
-export const fixedTelemetryBucketSql = (hour: string, originSeconds: string, widthSeconds: string): string =>
+// Selected hours are at or after the grid origin, so truncating the quotient
+// gives its floor.
+// https://sqlite.org/lang_expr.html#castexpr
+const fixedTelemetryBucketSql = (hour: string, originSeconds: string, widthSeconds: string): string =>
   `strftime('%Y-%m-%dT%H', ${originSeconds} + CAST((unixepoch(${hour} || ':00:00Z') - ${originSeconds}) / ${widthSeconds} AS INTEGER) * ${widthSeconds}, 'unixepoch')`;
 
 export const overviewBucketKey = (bucket: OverviewBucket, hour: string): string => {

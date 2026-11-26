@@ -141,7 +141,7 @@ export { captureExtras } from './common/reassemble-extras.ts';
 
 export { sseFrame, sseCommentFrame, eventFrame, doneFrame } from './common/sse.ts';
 
-export { createTelemetryBucket, isTelemetryHourlyBucket, parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryBucketHours, telemetryBucketStart, telemetryDayOrdinal, telemetryHourBucketSizes, telemetryHourKey } from './common/telemetry-time.ts';
+export { createTelemetryBucket, isTelemetryHourlyBucket, parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryBucketHours, telemetryDayOrdinal, telemetryHourBucketSizes, telemetryHourKey } from './common/telemetry-time.ts';
 
 export {
   usageUpstreamDimensionPrefix,

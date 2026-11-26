@@ -71,7 +71,7 @@ test.each([
 ] as const)('D1 statistics compile and retain exact results for $groupBy (admin: $isAdmin)', async ({ groupBy, isAdmin }) => {
   const options = {
     actorUserId: 1, isAdmin, visibleUserIds: [1], visibleUpstreams: ['statistics-upstream'],
-    start: '2026-11-01T00', end: '2026-11-01T01', bucketForHour: (hour: string) => hour,
+    start: '2026-11-01T00', end: '2026-11-01T01',
   };
   const filters = { models: [], upstreams: [], userIds: [], keyIds: [] };
   const usageOptions = { ...options, ownedKeysOnly: groupBy === 'keyId', bucket: { origin: options.start, hours: 1 }, hourlyBuckets: [] };
@@ -86,7 +86,7 @@ test.each([
     filters: { models: ['statistics-model'], upstreams: usage!.dimensionValues.upstreams, userIds: [1], keyIds: ['statistics-key'] },
   })).toEqual([usage]);
 
-  const performanceOptions = { ...options, groupBy };
+  const performanceOptions = { ...options, groupBy, bucketForHour: (hour: string) => hour };
   const performance = await repo.performance.queryOverview({ ...performanceOptions, filters: { ...filters, operations: [], runtimeLocations: [] } });
   expect(performance.axes.none[0]).toMatchObject({
     bucket: 'all', group: 'all', requests: 3, errors: 1, ttftSamples: 2, tpotSamples: 2,

@@ -84,9 +84,9 @@ export const tokenUsageOverview = async (c: Ctx) => {
     ? { calendar: bucket, timezoneOffsetMinutes }
     : { origin: start, hours: telemetryBucketHours(bucket) };
   const hourlyBoundaries = resume ? [resumeFromHour, nowHour, scanStart] : [resumeFromHour, nowHour];
-  const hourlyBuckets = [...new Set(hourlyBoundaries
+  const hourlyBuckets = hourlyBoundaries
     .filter(hour => hour >= scanStart && hour < windowEnd)
-    .map(hour => overviewBucketKey(queryBucket, hour)))];
+    .map(hour => overviewBucketKey(queryBucket, hour));
   const buckets = scanStart >= windowEnd ? [] : (await repo.usage.queryOverview({
     actorUserId: identity.actor.id,
     isAdmin: identity.actor.isAdmin,
