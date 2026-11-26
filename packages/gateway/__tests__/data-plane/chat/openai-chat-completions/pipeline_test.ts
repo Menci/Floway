@@ -51,7 +51,7 @@ const serve = async (
   });
   const pipeline = compose('openai-chat-completions-test', {
     entry: ['request.http', 'provider.model', 'provider.upstream'],
-    exit: ['response.http'],
+    exit: ['response.http', 'response.outcome'],
     stages: [
       parseOpenAIChatCompletions, encodeOpenAIChatCompletions,
       collectChat('openaiChatCompletions', collectOpenAIChatCompletions, collectOpenAIChatCompletionsStreamError),
@@ -71,7 +71,9 @@ const serve = async (
       body: new TextEncoder().encode(JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hi' }], ...request })),
     },
   }, { services: {} as GatewayServices, signal: new AbortController().signal, waitUntil: () => {} });
-  const response = (await running.result)['response.http']!;
+  const answer = await running.result;
+  const response = answer['response.http']!;
+  const completed = running.read(answer['response.outcome']);
   const decoder = new TextDecoder();
   let body = '';
   if (response.body instanceof Uint8Array) body = decoder.decode(response.body);
@@ -83,7 +85,7 @@ const serve = async (
     body += decoder.decode();
   }
   await running.done;
-  return { response, body, upstreamRequest, delivery };
+  return { response, body, upstreamRequest, delivery, outcome: await completed };
 };
 
 test.each([false, true])('normal EOF succeeds with a partial choice and an upstream usage chunk (includeUsage=%s)', async includeUsage => {
@@ -106,10 +108,11 @@ test('non-streaming reassembly retains usage regardless of SSE preference', asyn
 test('a stream error emits a single upstream error and omits the success trailer', async () => {
   const event = { error: { type: 'overloaded', message: 'busy' } };
   const error = { kind: 'protocol', cause: new Error('busy'), event } as const;
-  const { body } = await serve({ stream: true }, [{ ok: true, value: chunk }, { ok: false, error }]);
+  const { body, outcome } = await serve({ stream: true }, [{ ok: true, value: chunk }, { ok: false, error }]);
   expect(body).toContain('hello');
   expect(body.match(/"overloaded"/g)).toHaveLength(1);
   expect(body).not.toContain('[DONE]');
+  expect(outcome).toBe('upstream');
 });
 
 test('a transport read failure retains the original error chain when collecting JSON', async () => {
@@ -126,10 +129,11 @@ test('a transport read failure retains the original error chain when collecting 
 });
 
 test('a null user is rejected before the upstream stage', async () => {
-  const { body, response, upstreamRequest } = await serve({ user: null });
+  const { body, response, upstreamRequest, outcome } = await serve({ user: null });
   expect(response.status).toBe(400);
   expect(JSON.parse(body)).toMatchObject({ error: { param: 'user', code: null, type: 'invalid_request_error' } });
   expect(upstreamRequest).toBeUndefined();
+  expect(outcome).toBe('local');
 });
 
 test('ordered shaping preserves stream options, disables reasoning, and applies role and cache-key flags', async () => {

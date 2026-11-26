@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
+import { stubChatCandidate } from './helpers.ts';
 import {
   type AffinityRequestAnalysis,
   type AffinityIdentity,
@@ -8,44 +9,31 @@ import {
   defineAffinityRequest,
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
-  selectAffinityCandidates,
+  selectAffinityTargets,
 } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import type { Candidate } from '../../../../../src/data-plane/pipeline/facts.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
-import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
 
-const candidate = (upstreamId: string, model: string, rules?: AliasRules) => {
-  const base = stubModelCandidate();
-  const value = stubModelCandidate({
-    provider: { ...base.provider, upstreamId },
-    model: { id: model },
-  });
-  return rules === undefined ? value : { ...value, rules };
-};
+const candidate = (upstreamId: string, model: string, rules?: AliasRules) => stubChatCandidate({
+  upstream: { id: upstreamId },
+  model: { id: model, upstreamModelId: model },
+  rules,
+});
 
 const candidateWithScope = (
   upstreamId: string,
   model: string,
   scope: { bindToUpstream: boolean; key?: string },
-) => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    provider: { ...base.provider, upstreamId },
-    model: {
-      id: model,
-      opaqueBlobCompatibilityScope: scope,
-      providerModels: {
-        [upstreamId]: stubProviderModel({ id: model, upstreamModelId: model, opaqueBlobCompatibilityScope: scope }),
-      },
-    },
-  });
-};
+) => stubChatCandidate({
+  upstream: { id: upstreamId },
+  model: { id: model, upstreamModelId: model, opaqueBlobCompatibilityScope: scope },
+});
 
 const targetFor = (value: ReturnType<typeof candidate>): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
+  upstreamId: value.upstream.id,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
+  opaqueBlobCompatibilityIdentity: { upstreamId: value.upstream.id, key: value.model.id },
 });
 
 const ownedBlob = (
@@ -64,7 +52,7 @@ const ownedBlob = (
 
 const affinity = (
   requiredTargets: readonly AffinityIdentity[] = [],
-  degrading: readonly ModelCandidate[] = [],
+  degrading: readonly Candidate[] = [],
 ): AffinityRequestAnalysis<undefined> => defineAffinityRequest(requiredTargets, candidate => {
   const unsatisfiedTargets = requiredTargets.filter(target => !candidateSatisfiesAffinityIdentity(candidate, target));
   return unsatisfiedTargets.length > 0
@@ -73,16 +61,16 @@ const affinity = (
 });
 
 const selectedCandidates = (
-  candidates: readonly ModelCandidate[],
+  candidates: readonly Candidate[],
   analysis: AffinityRequestAnalysis<undefined>,
-): readonly ModelCandidate[] => {
-  const selection = selectAffinityCandidates(candidates, analysis);
-  if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
-  return selection.candidates;
+): readonly Candidate[] => {
+  const selection = selectAffinityTargets(candidates, analysis);
+  if (selection.kind !== 'selected') throw new Error(`Expected affinity selection, received ${selection.kind}`);
+  return selection.targets.map(target => target.candidate);
 };
 
 describe('client-carried affinity candidate selection', () => {
-  test('evaluates requirement eligibility and degradation before materializing selected payloads', () => {
+  test('materializes the projected payload while building each eligible attempt target', () => {
     const required = candidate('up-a', 'model');
     const sameTargetAlias = candidate('up-a', 'model', { reasoning: { effort: 'low' } });
     const rejected = candidate('up-b', 'model');
@@ -101,14 +89,15 @@ describe('client-carried affinity candidate selection', () => {
       };
     });
 
-    const selection = selectAffinityCandidates([required, sameTargetAlias, rejected], analysis);
-    if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
-    expect(selection.candidates).toEqual([sameTargetAlias, required]);
-    expect(materializations).toBe(0);
-    expect(selection.payloadFor(sameTargetAlias)).toBe('model');
-    expect(selection.payloadFor(sameTargetAlias)).toBe('model');
-    expect(materializations).toBe(1);
-    expect(() => selection.payloadFor(rejected)).toThrow();
+    const selection = selectAffinityTargets([required, sameTargetAlias, rejected], analysis);
+    expect(selection).toEqual({
+      kind: 'selected',
+      targets: [
+        { candidate: sameTargetAlias, payload: 'model' },
+        { candidate: required, payload: 'model' },
+      ],
+    });
+    expect(materializations).toBe(2);
   });
 
   test('required state matches upstream and model while degradation orders rule variants', () => {
@@ -130,8 +119,8 @@ describe('client-carried affinity candidate selection', () => {
     const first = candidate('up-a', 'model');
     const second = candidate('up-b', 'model');
 
-    expect(selectAffinityCandidates([first], affinity([targetFor(second)]))).toMatchObject({ kind: 'routing-unavailable' });
-    expect(selectAffinityCandidates(
+    expect(selectAffinityTargets([first], affinity([targetFor(second)]))).toMatchObject({ kind: 'routing-unavailable' });
+    expect(selectAffinityTargets(
       [first, second],
       affinity([targetFor(first), targetFor(second)]),
     )).toMatchObject({ kind: 'routing-unavailable' });

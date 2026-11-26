@@ -45,7 +45,7 @@ const serve = async (action: string, upstream: UpstreamAnswer, request: Record<s
   });
   const pipeline = compose('gemini-test', {
     entry: ['request.http', 'provider.model'],
-    exit: ['response.http'],
+    exit: ['response.http', 'response.outcome'],
     stages: [
       parseGeminiGenerateContent, encodeGeminiGenerateContent,
       collectChat('geminiGenerateContent', collectGeminiGenerateContent, collectGeminiGenerateContentStreamError),
@@ -62,7 +62,9 @@ const serve = async (action: string, upstream: UpstreamAnswer, request: Record<s
       body: new TextEncoder().encode(JSON.stringify(request)),
     },
   }, { services: {} as GatewayServices, signal: new AbortController().signal, waitUntil: () => {} });
-  const response = (await running.result)['response.http']!;
+  const answer = await running.result;
+  const response = answer['response.http']!;
+  const completed = running.read(answer['response.outcome']);
   const decoder = new TextDecoder();
   let body = '';
   if (response.body instanceof Uint8Array) body = decoder.decode(response.body);
@@ -74,7 +76,7 @@ const serve = async (action: string, upstream: UpstreamAnswer, request: Record<s
     body += decoder.decode();
   }
   await running.done;
-  return { response, body, model, delivery, upstreamRequest };
+  return { response, body, model, delivery, upstreamRequest, outcome: await completed };
 };
 
 test('the URL action supplies model and delivery for incremental JSON collection', async () => {

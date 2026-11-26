@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { expect, test } from 'vitest';
 
-import { chatTargetPicker } from '../../src/data-plane/chat/shared/target-picker.ts';
+import { pickChatTarget } from '../../src/data-plane/chat/shared/translate.ts';
 import { decodeUpstreamConfig } from '../../src/repo/upstream-codecs.ts';
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -88,7 +88,5 @@ test('the canonical endpoint-key migration keeps every configured endpoint routa
     'wire-g': ['rerank'],
   });
 
-  const picker = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions']);
-  expect(picker.canServe({ openaiResponses: {} })).toBe(true);
-  expect(picker.pick({ openaiResponses: {} })).toBe('openaiResponses');
+  expect(pickChatTarget('openaiResponses', { openaiResponses: {} })).toBe('openaiResponses');
 });

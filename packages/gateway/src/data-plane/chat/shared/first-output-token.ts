@@ -1,9 +1,9 @@
+import type { ChatOperation } from './pipeline.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPart, GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsReasoningItemEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
-import type { ChatTargetApi } from '@floway-dev/provider';
 
 type FirstOutputTokenSignal =
   | { type: 'decode' }
@@ -11,7 +11,7 @@ type FirstOutputTokenSignal =
 
 const decodeSignal = (hasOutput: boolean): FirstOutputTokenSignal | null => hasOutput ? { type: 'decode' } : null;
 
-export const firstOutputTokenSignal = <T>(frame: ProtocolFrame<T>, targetApi: ChatTargetApi): FirstOutputTokenSignal | null => {
+export const firstOutputTokenSignal = <T>(frame: ProtocolFrame<T>, targetApi: ChatOperation): FirstOutputTokenSignal | null => {
   if (frame.type === 'done') return null;
 
   const event = frame.event as Record<string, unknown>;

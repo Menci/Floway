@@ -31,15 +31,19 @@ export const parseAnthropicMessages = defineStage({
     request: { needs: ['request.http'], provides: ['request.anthropicMessages', 'request.delivery'], consumes: [] },
     response: { needs: [], provides: [], consumes: [] },
   },
-  return: { provides: ['response.http'] },
+  return: { provides: ['response.http', 'response.outcome'] },
   async execute(facts, scope) {
+    const reject = (status: number, body: unknown) => ({
+      'response.http': jsonResponse(localResponseHead(status), body),
+      'response.outcome': scope.createDeferred(async () => 'local' as const),
+    });
     const parsed = parseJsonBody(facts['request.http'].body ?? new Uint8Array());
     if (!parsed.ok || !isJsonObject(parsed.value)) {
       const error = parsed.ok ? new TypeError('Expected an Anthropic Messages request object') : parsed.error;
-      return { 'response.http': jsonResponse(localResponseHead(502), anthropicMessagesInternalErrorPayload(toInternalDebugError(error))) };
+      return reject(502, anthropicMessagesInternalErrorPayload(toInternalDebugError(error)));
     }
     const betaError = anthropicBodyBetaError(parsed.value);
-    if (betaError !== undefined) return { 'response.http': jsonResponse(localResponseHead(400), betaError) };
+    if (betaError !== undefined) return reject(400, betaError);
     const payload = parsed.value as unknown as AnthropicMessagesPayload;
     return await scope.next({
       ...facts,

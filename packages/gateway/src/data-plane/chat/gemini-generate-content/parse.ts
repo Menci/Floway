@@ -1,3 +1,5 @@
+import { tryDecodeURIComponent } from 'hono/utils/url';
+
 import { geminiGenerateContentInternalErrorPayload, geminiGenerateContentRpcErrorPayload } from './errors.ts';
 import { jsonResponse, localResponseHead } from '../../pipeline/encode.ts';
 import type { GatewayPipelineFacts } from '../../pipeline/facts.ts';
@@ -16,7 +18,7 @@ const { defineStage } = factSpace<GatewayPipelineFacts & { 'request.delivery': G
 export const geminiModelAction = (url: string): string | undefined => {
   const path = new URL(url).pathname;
   const match = /^\/v1(?:beta)?\/models\/(.+)$/.exec(path);
-  return match ? decodeURIComponent(match[1]!) : undefined;
+  return match ? tryDecodeURIComponent(match[1]!) : undefined;
 };
 
 export const parseGeminiModelAction = (url: string): { model: string; action: string } | null => {
@@ -33,19 +35,23 @@ export const parseGeminiGenerateContent = defineStage({
     request: { needs: ['request.http'], provides: ['request.geminiGenerateContent', 'request.delivery', 'request.model'], consumes: [] },
     response: { needs: [], provides: [], consumes: [] },
   },
-  return: { provides: ['response.http'] },
+  return: { provides: ['response.http', 'response.outcome'] },
   async execute(facts, scope) {
+    const reject = (status: number, body: unknown) => ({
+      'response.http': jsonResponse(localResponseHead(status), body),
+      'response.outcome': scope.createDeferred(async () => 'local' as const),
+    });
     const { url, body } = facts['request.http'];
     const target = parseGeminiModelAction(url);
     if (target?.action !== 'generateContent' && target?.action !== 'streamGenerateContent') {
       const modelAction = target?.action ?? geminiModelAction(url);
       const message = modelAction === undefined ? 'Missing Gemini model action.' : `Unknown Gemini model action: ${modelAction}`;
-      return { 'response.http': jsonResponse(localResponseHead(404), geminiGenerateContentRpcErrorPayload(404, message)) };
+      return reject(404, geminiGenerateContentRpcErrorPayload(404, message));
     }
     const parsed = parseJsonBody(body ?? new Uint8Array());
     if (!parsed.ok || !isJsonObject(parsed.value)) {
       const error = parsed.ok ? new TypeError('Expected a Gemini generateContent request object') : parsed.error;
-      return { 'response.http': jsonResponse(localResponseHead(500), geminiGenerateContentInternalErrorPayload(500, toInternalDebugError(error))) };
+      return reject(500, geminiGenerateContentInternalErrorPayload(500, toInternalDebugError(error)));
     }
     return await scope.next({
       ...facts,

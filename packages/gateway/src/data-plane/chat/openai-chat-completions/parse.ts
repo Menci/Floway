@@ -21,26 +21,28 @@ export const parseOpenAIChatCompletions = defineStage({
     request: { needs: ['request.http'], provides: ['request.openaiChatCompletions', 'request.delivery'], consumes: [] },
     response: { needs: [], provides: [], consumes: [] },
   },
-  return: { provides: ['response.http'] },
+  return: { provides: ['response.http', 'response.outcome'] },
   async execute(facts, scope) {
+    const reject = (status: number, body: unknown) => ({
+      'response.http': jsonResponse(localResponseHead(status), body),
+      'response.outcome': scope.createDeferred(async () => 'local' as const),
+    });
     const parsed = parseJsonBody(facts['request.http'].body ?? new Uint8Array());
     if (!parsed.ok || !isJsonObject(parsed.value)) {
       const error = parsed.ok ? new TypeError('Expected an OpenAI Chat Completions request object') : parsed.error;
-      return { 'response.http': jsonResponse(localResponseHead(502), openaiInternalErrorPayload(toInternalDebugError(error))) };
+      return reject(502, openaiInternalErrorPayload(toInternalDebugError(error)));
     }
     const payload = parsed.value as unknown as OpenAIChatCompletionsPayloadEx;
     const nullableField = payload.prompt_cache_options === null ? 'prompt_cache_options' : payload.user === null ? 'user' : undefined;
     if (nullableField !== undefined) {
-      return {
-        'response.http': jsonResponse(localResponseHead(400), {
-          error: {
-            message: `Invalid '${nullableField}': expected ${nullableField === 'user' ? 'a string' : 'an object'} when present.`,
-            type: 'invalid_request_error',
-            param: nullableField,
-            code: null,
-          },
-        }),
-      };
+      return reject(400, {
+        error: {
+          message: `Invalid '${nullableField}': expected ${nullableField === 'user' ? 'a string' : 'an object'} when present.`,
+          type: 'invalid_request_error',
+          param: nullableField,
+          code: null,
+        },
+      });
     }
     return await scope.next({
       ...facts,

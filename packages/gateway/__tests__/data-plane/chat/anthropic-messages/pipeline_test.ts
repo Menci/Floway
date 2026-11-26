@@ -40,7 +40,7 @@ const serve = async (input: Record<string, unknown>, headers: Request['headers']
   });
   const pipeline = compose('anthropic-test', {
     entry: ['request.http', 'provider.model'],
-    exit: ['response.http'],
+    exit: ['response.http', 'response.outcome'],
     stages: [
       parseAnthropicMessages, encodeAnthropicMessages,
       collectChat('anthropicMessages', collectAnthropicMessages, collectAnthropicMessagesStreamError),
@@ -59,17 +59,20 @@ const serve = async (input: Record<string, unknown>, headers: Request['headers']
       })),
     },
   }, { services: {} as GatewayServices, signal: new AbortController().signal, waitUntil: () => {} });
-  const response = (await running.result)['response.http']!;
+  const answer = await running.result;
+  const response = answer['response.http']!;
+  const outcome = await running.read(answer['response.outcome']);
   if (!(response.body instanceof Uint8Array)) throw new Error('Expected collected JSON bytes');
   await running.done;
-  return { response, body: JSON.parse(new TextDecoder().decode(response.body)) as unknown, upstream, upstreamHeaders };
+  return { response, body: JSON.parse(new TextDecoder().decode(response.body)) as unknown, upstream, upstreamHeaders, outcome };
 };
 
 test.each(['anthropic_beta', 'betas'])('rejects request body %s before routing', async field => {
-  const { response, body, upstream } = await serve({ [field]: ['some-beta'] });
+  const { response, body, upstream, outcome } = await serve({ [field]: ['some-beta'] });
   expect(response.status).toBe(400);
   expect(body).toMatchObject({ error: { type: 'invalid_request_error', param: field } });
   expect(upstream).toBeUndefined();
+  expect(outcome).toBe('local');
 });
 
 test('answers the Claude Code model probe locally with a complete zero-usage result', async () => {
@@ -181,6 +184,7 @@ test.each([
   }
   if (answer['response.usage']) await running.read(answer['response.usage']);
   if (answer['response.performance']) await running.read(answer['response.performance']);
+  await expect(running.read(answer['response.outcome'])).resolves.toBe(readFailure ? 'upstream' : 'success');
   await running.done;
   const textBlocks = encoded.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6)));
   expect(textBlocks.filter(event => event.delta?.type === 'text_delta').map(event => event.delta.text)).toEqual(serialize ? ['first', 'second'] : ['second', 'first']);

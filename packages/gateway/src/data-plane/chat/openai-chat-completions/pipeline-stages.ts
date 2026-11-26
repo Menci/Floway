@@ -35,11 +35,13 @@ const applyAliasRules = defineStage({
 export const openAIChatCompletionsChat: ChatProtocolStages<'openaiChatCompletions', OpenAIChatCompletionsDelivery> = {
   parse: parseOpenAIChatCompletions,
   encode: encodeOpenAIChatCompletions,
-  body: [includeUsageStreamOptions, disableReasoningOnForcedToolChoice, normalizeEmptyToolsToolChoice, stripPromptCacheKey],
-  egress: [applyRoleCompatibility, applyAliasRules, normalizeUsage, normalizeExclusiveCachedTokens],
+  body: [includeUsageStreamOptions, disableReasoningOnForcedToolChoice, normalizeEmptyToolsToolChoice, stripPromptCacheKey, normalizeUsage],
+  egress: [applyRoleCompatibility, applyAliasRules, normalizeExclusiveCachedTokens],
   collect: collectOpenAIChatCompletions,
   streamError: collectOpenAIChatCompletionsStreamError,
-  usage: chatTokenUsage(() => billableUsageFromOpenAIChatCompletionsEvent),
+  // The usage-only tail carries the complete request totals before [DONE].
+  // https://github.com/openai/openai-node/blob/b579bcb3e586d22269ffe6fe504653a0e05acbe8/src/resources/chat/completions/completions.ts#L2155-L2162
+  usage: chatTokenUsage(() => billableUsageFromOpenAIChatCompletionsEvent, event => event.usage != null && event.choices.length === 0),
   model: payload => payload.model,
   unavailable({ model, exists, failedUpstreams }) {
     const message = exists

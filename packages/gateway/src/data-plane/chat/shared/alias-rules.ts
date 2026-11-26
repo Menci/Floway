@@ -1,12 +1,5 @@
-// Post-translate rule overlay. The alias resolver tags each alias-origin
-// candidate with `.rules`; each terminal wire call reads them off the
-// dispatching candidate and writes onto the target IR's NATIVE slot before
-// dispatching. Rules that a target protocol cannot express are silently
-// dropped — the wire has nowhere to put them.
-//
-// Structuring the overlay this way keeps every translate pair pure
-// native↔native and eliminates the fan-out of Floway-extension fields onto
-// each source IR.
+// Egress applies alias rules to the native provider protocol payload. Rules
+// with no representation in that protocol leave the payload unchanged.
 
 import type { AnthropicMessagesPayload, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
 import { FAST_SERVICE_TIER, isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
@@ -48,7 +41,10 @@ export const applyRulesToUpstreamOpenAIResponses = (body: OpenAIResponsesPayload
   if (rules.serviceTier !== undefined) body.service_tier = rules.serviceTier;
 };
 
-export const applyRulesToUpstreamAnthropicMessages = (body: AnthropicMessagesPayload, rules: AliasRules): void => {
+export const applyRulesToUpstreamAnthropicMessages = (
+  body: Pick<AnthropicMessagesPayload, 'thinking' | 'output_config' | 'speed' | 'service_tier'>,
+  rules: AliasRules,
+): void => {
   if (hasReasoning(rules)) {
     const { effort, budget_tokens, adaptive, summary } = rules.reasoning;
     // Anthropic stores explicit effort in `output_config.effort`; budget /
