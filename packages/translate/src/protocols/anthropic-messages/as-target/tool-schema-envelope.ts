@@ -2,22 +2,28 @@ import type { RestoredAssistantTurn } from '../../../composition/reading.ts';
 import type { IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
 import type { IRInputRequestHeader, IRInputTool } from '../../../ir/input/types.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
-import { parseJSONObject } from '../../../shared/json/object.ts';
+import { isPlainJSONObject, parseJSONObject } from '../../../shared/json/object.ts';
 import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
 const ENVELOPE_KEY = 'arguments';
-const ENVELOPE_POINTER = '#/properties/arguments';
+const ENVELOPE_POINTER = `#/properties/${ENVELOPE_KEY}`;
 const ROOT_COMBINATORS = ['oneOf', 'anyOf', 'allOf'] as const;
 const DYNAMIC_RECURSION_KEYS = new Set(['$recursiveRef', '$recursiveAnchor', '$dynamicRef', '$dynamicAnchor']);
 
+// Subschema positions from draft 2020-12 and draft-07.
+// https://json-schema.org/draft/2020-12/schema
+// https://json-schema.org/draft-07/schema
+const SCHEMA_MAP_KEYWORDS = new Set(['$defs', 'definitions', 'dependencies', 'dependentSchemas', 'patternProperties', 'properties']);
+const SCHEMA_ARRAY_KEYWORDS = new Set([...ROOT_COMBINATORS, 'items', 'prefixItems']);
+const SCHEMA_VALUE_KEYWORDS = new Set([
+  'additionalItems', 'additionalProperties', 'contains', 'contentSchema', 'else', 'if', 'items', 'not',
+  'propertyNames', 'then', 'unevaluatedItems', 'unevaluatedProperties',
+]);
+
+export type ToolArgumentsEnvelope<Value> = { readonly [ENVELOPE_KEY]: Value };
+
 export const hasRootToolSchemaCombinator = (schema: Record<string, unknown>): boolean =>
   ROOT_COMBINATORS.some(key => Array.isArray(schema[key]));
-
-const hasDynamicRecursion = (value: unknown): boolean => {
-  if (Array.isArray(value)) return value.some(hasDynamicRecursion);
-  if (typeof value !== 'object' || value === null) return false;
-  return Object.entries(value).some(([key, child]) => DYNAMIC_RECURSION_KEYS.has(key) || hasDynamicRecursion(child));
-};
 
 const rewriteLocalReference = (reference: string): string => {
   if (reference === '#') return ENVELOPE_POINTER;
@@ -25,20 +31,22 @@ const rewriteLocalReference = (reference: string): string => {
   return reference;
 };
 
-const rewriteLocalReferences = (value: unknown, rewriteEnabled: boolean): unknown => {
-  if (Array.isArray(value)) return value.map(item => rewriteLocalReferences(item, rewriteEnabled));
-  if (typeof value !== 'object' || value === null) return value;
-
-  const source = value as Record<string, unknown>;
-  // A nested `$id` starts a schema resource. Fragment references below it are
-  // relative to that resource and retain their spelling when the resource moves.
-  const rewriteChildren = rewriteEnabled && typeof source.$id !== 'string';
-  return Object.fromEntries(Object.entries(source).map(([key, child]) => [
-    key,
-    key === '$ref' && rewriteChildren && typeof child === 'string'
-      ? rewriteLocalReference(child)
-      : rewriteLocalReferences(child, rewriteChildren),
-  ]));
+const relocateSchema = (schema: Record<string, unknown>, rebaseReferences: boolean): Record<string, unknown> => {
+  // Fragment references in a schema resource with its own $id resolve against that resource.
+  const rebase = rebaseReferences && typeof schema.$id !== 'string';
+  const relocateChild = (value: unknown): unknown => isPlainJSONObject(value) ? relocateSchema(value, rebase) : value;
+  return Object.fromEntries(Object.entries(schema).map(([keyword, value]) => {
+    if (DYNAMIC_RECURSION_KEYS.has(keyword)) {
+      throw new TranslateInputException('Cannot translate an Anthropic tool schema with a root combinator and dynamic recursive references.');
+    }
+    if (keyword === '$ref' && rebase && typeof value === 'string') return [keyword, rewriteLocalReference(value)];
+    if (SCHEMA_MAP_KEYWORDS.has(keyword) && isPlainJSONObject(value)) {
+      return [keyword, Object.fromEntries(Object.entries(value).map(([name, child]) => [name, relocateChild(child)]))];
+    }
+    if (SCHEMA_ARRAY_KEYWORDS.has(keyword) && Array.isArray(value)) return [keyword, value.map(relocateChild)];
+    if (SCHEMA_VALUE_KEYWORDS.has(keyword)) return [keyword, relocateChild(value)];
+    return [keyword, value];
+  }));
 };
 
 // Anthropic accepts JSON Schema combinators below input_schema but rejects them
@@ -46,17 +54,12 @@ const rewriteLocalReferences = (value: unknown, rewriteEnabled: boolean): unknow
 // without changing their resource traversal, so reject those schemas instead of
 // silently changing validation semantics.
 // https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#specifying-client-tools
-export const envelopeRootToolSchema = (schema: Record<string, unknown>): Record<string, unknown> => {
-  if (hasDynamicRecursion(schema)) {
-    throw new TranslateInputException('Cannot translate an Anthropic tool schema with a root combinator and dynamic recursive references.');
-  }
-  return {
-    type: 'object',
-    properties: { [ENVELOPE_KEY]: rewriteLocalReferences(structuredClone(schema), true) },
-    required: [ENVELOPE_KEY],
-    additionalProperties: false,
-  };
-};
+export const envelopeRootToolSchema = (schema: Record<string, unknown>): Record<string, unknown> => ({
+  type: 'object',
+  properties: { [ENVELOPE_KEY]: relocateSchema(schema, true) },
+  required: [ENVELOPE_KEY],
+  additionalProperties: false,
+});
 
 const envelopeToolArgumentsJSON = (input: string | undefined): string => {
   if (input === undefined) return JSON.stringify({ [ENVELOPE_KEY]: {} });
@@ -67,14 +70,18 @@ const envelopeToolArgumentsJSON = (input: string | undefined): string => {
   }
 };
 
-export const unwrapToolArguments = (wrapped: string): string => {
+export const unwrapToolArguments = (wrapped: string): { json: string; objectArgument: boolean } => {
+  let parsed: unknown;
   try {
-    const parsed = parseJSONWithRawNumbers(wrapped);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed) || !(ENVELOPE_KEY in parsed)) return wrapped;
-    return JSON.stringify((parsed as Record<string, unknown>)[ENVELOPE_KEY]) ?? wrapped;
-  } catch {
-    return wrapped;
+    parsed = parseJSONWithRawNumbers(wrapped);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return { json: wrapped, objectArgument: false };
   }
+  const argument = isPlainJSONObject(parsed) ? parsed[ENVELOPE_KEY] : undefined;
+  return argument === undefined
+    ? { json: wrapped, objectArgument: false }
+    : { json: JSON.stringify(argument), objectArgument: isPlainJSONObject(argument) };
 };
 
 export interface EnvelopedAnthropicMessagesTools<Restored> {

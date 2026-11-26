@@ -36,8 +36,36 @@ test('preserves anchors, external references, and nested schema resources', () =
   });
 });
 
-test.each(['$recursiveRef', '$recursiveAnchor', '$dynamicRef', '$dynamicAnchor'])('rejects root-union schemas containing %s', key => {
-  expect(() => envelopeRootToolSchema({ type: 'object', oneOf: [{ type: 'object' }], [key]: key.endsWith('Anchor') ? true : '#' })).toThrow(TranslateInputException);
+test('rewrites references in subschemas while preserving literal values and property names', () => {
+  const literal = { $ref: '#/$defs/value' };
+  const schema = {
+    oneOf: [{
+      properties: { $dynamicRef: { $ref: '#/$defs/value' }, $id: { type: 'string' } },
+      additionalProperties: { $ref: '#/$defs/value' },
+      const: literal,
+      enum: [literal],
+      default: literal,
+      examples: [{ $dynamicRef: '#sample', ...literal }],
+    }],
+    $defs: { value: { type: 'string' } },
+  };
+  expect(envelopeRootToolSchema(schema).properties).toEqual({
+    arguments: {
+      ...schema,
+      oneOf: [{
+        ...schema.oneOf[0],
+        properties: { $dynamicRef: { $ref: '#/properties/arguments/$defs/value' }, $id: { type: 'string' } },
+        additionalProperties: { $ref: '#/properties/arguments/$defs/value' },
+      }],
+    },
+  });
+});
+
+test.each(['$recursiveRef', '$recursiveAnchor', '$dynamicRef', '$dynamicAnchor'])('rejects %s in a subschema', key => {
+  expect(() => envelopeRootToolSchema({
+    type: 'object',
+    oneOf: [{ properties: { value: { [key]: key.endsWith('Anchor') ? true : '#' } } }],
+  })).toThrow(TranslateInputException);
 });
 
 test('does not identify a nested combinator as an unsupported root combinator', () => {
@@ -56,11 +84,14 @@ test.each([
   const turn = result.turns[0];
   if (turn?.kind !== 'assistant' || turn.items[0]?.type !== 'function_call') throw new Error('expected function call');
   expect(turn.items[0].arguments).toBe(wrapped);
-  expect(unwrapToolArguments(wrapped)).toBe(argumentsJson === 'not json' ? '{"raw_arguments":"not json"}' : argumentsJson ?? '{}');
+  expect(unwrapToolArguments(wrapped)).toEqual({
+    json: argumentsJson === 'not json' ? '{"raw_arguments":"not json"}' : argumentsJson ?? '{}',
+    objectArgument: true,
+  });
 });
 
-test.each(['not json', '{}', '{"arguments":null}', '{"arguments":true}'])('keeps malformed or scalar envelopes usable: %s', wrapped => {
-  const result = unwrapToolArguments(wrapped);
-  expect(typeof result).toBe('string');
-  if (wrapped === 'not json' || wrapped === '{}') expect(result).toBe(wrapped);
+test.each([
+  ['not json', 'not json'], ['{}', '{}'], ['{"arguments":null}', 'null'], ['{"arguments":true}', 'true'],
+])('keeps malformed or scalar envelopes usable: %s', (wrapped, json) => {
+  expect(unwrapToolArguments(wrapped)).toEqual({ json, objectArgument: false });
 });
