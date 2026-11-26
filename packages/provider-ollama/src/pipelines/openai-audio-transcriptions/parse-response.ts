@@ -1,7 +1,7 @@
 import { formatOpenAIError } from '../errors.ts';
 import { getHeader } from '@floway-dev/http';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
-import { decodeOpenAIAudioTranscriptionsStream } from '@floway-dev/protocols/openai-audio';
+import { decodeOpenAIAudioTranscriptionsResult, decodeOpenAIAudioTranscriptionsStream } from '@floway-dev/protocols/openai-audio';
 import { parseHttpResponse } from '@floway-dev/provider';
 
 export const parseResponse = parseHttpResponse('openaiAudioTranscriptions', {
@@ -10,6 +10,9 @@ export const parseResponse = parseHttpResponse('openaiAudioTranscriptions', {
     return typeof type === 'string' && isEventStreamMediaType(type) ? 'stream' : 'result';
   },
   stream: decodeOpenAIAudioTranscriptionsStream,
-  result: body => ({ ok: true, value: body }),
+  result(bytes, http) {
+    const type = getHeader(http.headers, 'content-type');
+    return decodeOpenAIAudioTranscriptionsResult(bytes, typeof type === 'string' ? type : undefined);
+  },
   format: formatOpenAIError,
 });

@@ -123,7 +123,10 @@ test('preserves rate-limit metadata and records a later detached probe failure o
   }
 });
 
-test('rebuilds multipart with the upstream model ID and returns the original non-stream response bytes', async () => {
+test.each([
+  { mediaType: 'application/json', transcription: '{ "text": "hello" }' },
+  { mediaType: 'text/plain; charset=utf-8', transcription: ' hello \r\nworld\n' },
+])('rebuilds multipart with the upstream model ID and retains $mediaType response bytes', async ({ mediaType, transcription }) => {
   const rawAudio = new Uint8Array([17, 0, 252]);
   const fetch = vi.fn<ProviderFetcher>(async (_url, init) => {
     const body = await new Response(init.body as Uint8Array<ArrayBuffer>, { headers: new Headers(init.headers) }).formData();
@@ -134,7 +137,7 @@ test('rebuilds multipart with the upstream model ID and returns the original non
     expect(file.name).toBe('sample.wav');
     expect(file.type).toBe('audio/wav');
     expect(await file.bytes()).toEqual(rawAudio);
-    return { response: new Response('{ "text": "hello" }', { headers: { 'content-type': 'application/json' } }) };
+    return { response: new Response(transcription, { headers: { 'content-type': mediaType } }) };
   });
   await withRun(ollamaPipelines.openaiAudioTranscriptions, {
     ...entry,
@@ -148,9 +151,40 @@ test('rebuilds multipart with the upstream model ID and returns the original non
     },
   }, fetch, async running => {
     const answer = await running.result;
-    expect(answer['response.openaiAudioTranscriptions']).toEqual({ kind: 'result', result: new TextEncoder().encode('{ "text": "hello" }') });
+    expect(answer['response.openaiAudioTranscriptions']).toEqual({ kind: 'result', result: new TextEncoder().encode(transcription) });
     expect(answer['response.usageModelKey']).toBe('native-model');
     expect(fetch).toHaveBeenCalledExactlyOnceWith('https://ollama.example/v1/audio/transcriptions', expect.anything());
+  });
+});
+
+test('reports malformed transcription JSON as an upstream error and preserves the HTTP head', async () => {
+  const headers = { 'content-type': 'application/json; charset=utf-8', 'x-upstream': 'ollama' };
+  const fetch = vi.fn<ProviderFetcher>(async () => ({
+    response: new Response('{"text":', { status: 201, statusText: 'Ollama response', headers }),
+  }));
+  await withRun(ollamaPipelines.openaiAudioTranscriptions, {
+    ...entry,
+    'request.openaiAudioTranscriptions': {
+      entries: [
+        { name: 'file', value: { name: 'sample.wav', mediaType: 'audio/wav', bytes: new Uint8Array([17, 0, 252]) } },
+        { name: 'model', value: 'public-model' },
+      ],
+    },
+  }, fetch, async running => {
+    const answer = await running.result;
+    expect(answer['response.http']).toMatchObject({
+      status: 201,
+      statusText: 'Ollama response',
+      headers: Object.entries(headers),
+      body: null,
+    });
+    expect(answer['response.openaiAudioTranscriptions']).toMatchObject({
+      kind: 'error',
+      source: 'upstream',
+      error: { error: { message: expect.any(String) } },
+    });
+    expect(answer['response.usageModelKey']).toBe('native-model');
+    expect(fetch).toHaveBeenCalledOnce();
   });
 });
 
