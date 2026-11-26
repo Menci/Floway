@@ -4,7 +4,7 @@ import type { MouseEvent, ReactNode } from 'react';
 import { useRouteAddress } from './route-link';
 import { fluentComponents } from '../../fluent';
 
-const { Button, makeStyles } = fluentComponents;
+const { Button, makeStyles, mergeClasses } = fluentComponents;
 
 // NavigationBackButtonNormalStyle has SubtleButtonStyle's state table, which the
 // layer restyles `subtle` onto; `transparent` carries no fill in any state.
@@ -46,7 +46,9 @@ function AddressedBackButton({ children, to }: { children: ReactNode; to: string
 
 function BackButton({ children, href, onClick }: { children: ReactNode; href?: string | undefined; onClick?: ((event: MouseEvent<HTMLElement>) => void) | undefined }) {
   const styles = useStyles();
-  const shared = { appearance: 'subtle', className: styles.root, icon: <ArrowLeftRegular />, onClick } as const;
+  // A narrow row shrinks its neighbours rather than this: a label folded onto a
+  // second line beside a tab strip reads as two buttons.
+  const shared = { appearance: 'subtle', className: mergeClasses(styles.root, 'shrink-0 whitespace-nowrap'), icon: <ArrowLeftRegular />, onClick } as const;
   return href === undefined
     ? <Button {...shared}>{children}</Button>
     : <Button {...shared} as="a" href={href}>{children}</Button>;

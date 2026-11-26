@@ -352,6 +352,7 @@ const en = {
         },
         tabs: {
           label: 'Upstream sections',
+          config: 'Configuration',
           models: 'Models',
           flags: 'Upstream feature flags',
         },
@@ -1547,6 +1548,8 @@ const en = {
       exportRecord: 'Export record',
       search: 'Search ID, model, path, upstream, status or error',
       failuresOnly: 'Failures only',
+      tools: 'Filters',
+      toolsActive: 'Filters ({{active}})',
       applyFilters: 'Search history',
       selectExport: 'Select for export',
       exportCombined: 'Combined JSON',

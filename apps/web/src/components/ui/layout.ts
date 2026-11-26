@@ -33,6 +33,13 @@ export const TWO_COLUMN_FORM_CLASS = 'grid grid-cols-2 max-[680px]:grid-cols-1';
 // comes with the token and a shell needs no breakpoint of its own.
 export const PANE_GAP_CLASS = 'gap-[var(--floway-page-inset)]';
 
+// A band pinned over scrolling content inside a card, or a card pinned over the
+// page, paints what a card at rest already shows: the card's translucent fill
+// over the solid base the page stands on. The card fill alone would let the
+// rows scrolling beneath read through. `!` because the filled card's fill is
+// set from a doubled class in ../../winui/controls/card.css.ts.
+export const PINNED_CARD_FILL_CLASS = '![background:linear-gradient(var(--winui-card-background-fill-default),var(--winui-card-background-fill-default)),var(--winui-solid-background-fill-base)]';
+
 // A box that fills its scrollport and carries the inset of what it holds.
 // `height: 100%` alone is enough only while the content fits: anything with a
 // floor of its own -- a pane that stops shrinking, a control that cannot get

@@ -82,10 +82,13 @@ export const switchCss = `
 
 /* The indicator paints nothing and animates nothing: the two capsules below
    carry the fill and stroke, and the knob paints its own. It lays nothing out
-   either -- every part it holds is positioned against it. */
+   either -- every part it holds is positioned against it. Isolating it keeps
+   the knob's z-index inside the track rather than leaking into an enclosing
+   stacking context where it would paint over sticky bars. */
 .fui-Switch__indicator.fui-Switch__indicator {
   align-self: center;
   display: block;
+  isolation: isolate;
   /* Fluent's own eight-pixel inline ring is dropped for the twelve the
      template's gap column states, declared on the root because that is the only
      form which survives the label moving to either side; WinUI's 40px block
