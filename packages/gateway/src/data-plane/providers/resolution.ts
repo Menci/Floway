@@ -1,7 +1,7 @@
 import { isEqual, uniqWith } from 'es-toolkit';
 
 import { createProvider } from './registry.ts';
-import { checkMany } from '../../access-control/check.ts';
+import { createAccessResolver } from '../../access-control/resolution.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord, ResolvedUpstreamModelMatch, StoredUpstreamRecord, User } from '../../repo/types.ts';
@@ -64,20 +64,11 @@ const buildTargetCandidates = (
   return { candidates: orderedGroups.flat(), sawModel };
 };
 
-// Per-request model resolution. Two-branch chain:
-//
-//   1. Look the inbound id up in the alias repo. When the id names an alias,
-//      batch-resolve every target id against `upstream_models` in one query,
-//      check `Model.Use`, tag each candidate with that target's rule overlay,
-//      flatten across targets in `selection`-mode order, and dedup by
-//      (modelId, upstreamId, rules).
-//   2. Otherwise resolve the inbound id directly against `upstream_models`.
-//
-// Resolution queries `upstream_models` directly by inbound id (unprefixed via
-// `idx_upstream_models_model_id`; prefixed via `idx_upstreams_model_prefix` ->
-// PK lookup on `upstream_models`) and joins only the matched `upstreams` rows.
-// Only permitted, matched upstreams are instantiated as `Provider`s and have
-// their referenced proxies loaded.
+// Per-request model resolution. Speculatively issues alias lookup, direct
+// `upstream_models` resolution, and (for non-admin callers) group membership in
+// one parallel RTT so direct hits pay at most 1 RTT for admins and 2 RTTs for
+// non-admins. Only permitted, matched upstreams are instantiated as `Provider`s
+// and have their referenced proxies loaded.
 export const enumerateModelCandidates = async ({
   subject, upstreamIds, randomizeUpstreams, model, kind, runtimeLocation,
 }: {
@@ -99,38 +90,61 @@ export const enumerateModelCandidates = async ({
     return { candidates: [], sawModel: false };
   }
   const repo = getRepo();
-  const alias = await repo.modelAliases.getByName(model);
-  const orderedTargets = alias === null ? null : orderAliasTargets(alias);
-  const queryModelIds = orderedTargets === null
-    ? [model]
-    : [...new Set(orderedTargets.map(target => target.target_model_id))];
+  const [alias, directMatches, subjectGroupIds] = await Promise.all([
+    repo.modelAliases.getByName(model),
+    repo.upstreamModels.resolve({ modelIds: [model], upstreamIds }),
+    subject.isAdmin ? Promise.resolve(null) : repo.groups.listIdsByUserId(subject.id),
+  ]);
 
-  const rawMatches = await repo.upstreamModels.resolve({ modelIds: queryModelIds, upstreamIds });
+  const orderedTargets = alias === null ? null : orderAliasTargets(alias);
+  if (orderedTargets === null && directMatches.length === 0) {
+    return { candidates: [], sawModel: false };
+  }
+
+  const targetModelIds = orderedTargets === null
+    ? null
+    : [...new Set(orderedTargets.map(target => target.target_model_id))];
+  if (targetModelIds !== null && targetModelIds.length === 0) {
+    return { candidates: [], sawModel: false };
+  }
+
+  const [rawMatches, accessRecords] = await Promise.all([
+    targetModelIds === null
+      ? Promise.resolve(directMatches)
+      : repo.upstreamModels.resolve({ modelIds: targetModelIds, upstreamIds }),
+    subjectGroupIds === null
+      ? Promise.resolve(null)
+      : repo.accessRecords.listByPrincipals([
+          { kind: 'user' as const, id: subject.id },
+          ...subjectGroupIds.map(id => ({ kind: 'group' as const, id })),
+        ]),
+  ]);
   if (rawMatches.length === 0) {
     return { candidates: [], sawModel: false };
   }
 
-  // Deduplicate permission checks on (upstreamId, matchedInputId).
-  const checkKeyToIndex = new Map<string, number>();
-  const checks: {
-    target: { kind: 'upstreamModel'; upstreamId: string; model: { kind: 'exact'; value: string } };
-    requirement: { permission: 'Model.Use' };
-  }[] = [];
-  for (const match of rawMatches) {
-    const key = `${match.upstream.id}\0${match.matchedInputId}`;
-    if (checkKeyToIndex.has(key)) continue;
-    checkKeyToIndex.set(key, checks.length);
-    checks.push({
-      target: { kind: 'upstreamModel', upstreamId: match.upstream.id, model: { kind: 'exact', value: match.matchedInputId } },
-      requirement: { permission: 'Model.Use' },
+  let permittedMatches: readonly ResolvedUpstreamModelMatch[];
+  if (accessRecords === null) {
+    permittedMatches = rawMatches;
+  } else {
+    const resolver = createAccessResolver(accessRecords);
+    const evaluation = { targetGroups: new Set<number>(), subjectUserId: subject.id };
+    const requirement = { permission: 'Model.Use' as const };
+    const allowedByKey = new Map<string, boolean>();
+    permittedMatches = rawMatches.filter(match => {
+      const key = `${match.upstream.id}\0${match.matchedInputId}`;
+      let allowed = allowedByKey.get(key);
+      if (allowed === undefined) {
+        allowed = resolver.satisfies(
+          { kind: 'upstreamModel', upstreamId: match.upstream.id, model: { kind: 'exact', value: match.matchedInputId } },
+          requirement,
+          evaluation,
+        );
+        allowedByKey.set(key, allowed);
+      }
+      return allowed;
     });
   }
-  const allowed = await checkMany(subject, checks);
-
-  const permittedMatches = rawMatches.filter(match => {
-    const idx = checkKeyToIndex.get(`${match.upstream.id}\0${match.matchedInputId}`)!;
-    return allowed[idx] === true;
-  });
   if (permittedMatches.length === 0) {
     return { candidates: [], sawModel: false };
   }

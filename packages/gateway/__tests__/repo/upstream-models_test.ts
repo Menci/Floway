@@ -7,6 +7,7 @@ import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts'
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo } from '../../src/repo/types.ts';
 import { requestApp, setupAppTest } from '../test-utils/app.ts';
+import type { SqlDatabase } from '@floway-dev/platform';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -301,6 +302,238 @@ test('SQLite resolve queries use indexes without scanning upstream_models', asyn
      SELECT id FROM upstreams WHERE model_prefix IS NOT NULL AND model_prefix = ?`,
   ).bind('or/').all<{ detail: string }>();
   expect(planPrefixLookup.results.some(row => row.detail.includes('idx_upstreams_model_prefix'))).toBe(true);
+
+  const planCountListed = await db.prepare(
+    `EXPLAIN QUERY PLAN
+     SELECT COUNT(DISTINCT m.model_id)
+     FROM upstream_models m
+     WHERE m.upstream_id = ?
+       AND m.disabled = 0`,
+  ).bind('up_0').all<{ detail: string }>();
+  expect(planCountListed.results.some(row => row.detail.includes('COVERING INDEX idx_upstream_models_upstream_active'))).toBe(true);
+
+  const planAddressableIds = await db.prepare(
+    `EXPLAIN QUERY PLAN
+     SELECT DISTINCT
+       m.upstream_id,
+       m.model_id,
+       u.model_prefix,
+       u.model_prefix_addressable
+     FROM upstream_models m
+     JOIN upstreams u ON u.id = m.upstream_id
+     WHERE u.enabled = 1
+       AND m.disabled = 0
+       AND u.id IN (SELECT CAST(value AS TEXT) FROM json_each(?))`,
+  ).bind(JSON.stringify(['up_0', 'up_1'])).all<{ detail: string }>();
+  expect(planAddressableIds.results.some(row => row.detail.includes('COVERING INDEX idx_upstream_models_upstream_active'))).toBe(true);
+});
+
+test('SQLite publishModelsRefresh writes zero upstream_models changes when unchanged and only diffs on mutation', async () => {
+  const db = await createSqliteTestDb();
+  const batchChanges: number[][] = [];
+  const spiedDb: SqlDatabase = {
+    prepare: sql => db.prepare(sql),
+    exec: sql => db.exec(sql),
+    batch: async statements => {
+      const results = await db.batch!(statements);
+      batchChanges.push(results.map(r => r.meta.changes ?? 0));
+      return results;
+    },
+  };
+  const repo = new SqlRepo(spiedDb);
+  await saveUpstreamForTest(repo.upstreams, baseUpstream({ id: 'up_diff', kind: 'custom' }));
+  const initial = (await repo.upstreams.getById('up_diff'))!;
+
+  const m1 = stubProviderModel({ id: 'm1', display_name: 'Model 1', enabledFlags: new Set(['vendor-kimi', 'vendor-deepseek'] as const) });
+  const m2 = stubProviderModel({ id: 'm2', display_name: 'Model 2', limits: { max_output_tokens: 4096, max_context_window_tokens: 64000 } });
+  const m3 = stubProviderModel({ id: 'm3', display_name: 'Model 3' });
+  const m4 = stubProviderModel({ id: 'm4', display_name: 'Model 4' });
+
+  batchChanges.length = 0;
+  const v1 = await repo.upstreams.publishModelsRefresh({
+    id: 'up_diff',
+    version: initial.version,
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_000,
+    models: [m1, m2, m3, m4].map(model => ({ source: 'auto', model })),
+  });
+  expect(v1).not.toBeNull();
+  // [update upstreams=1, delete=0, upsert=4]
+  expect(batchChanges).toEqual([[1, 0, 4]]);
+
+  // Re-publish logically identical models with reversed key / Set insertion order.
+  const m1Reordered = stubProviderModel({ id: 'm1', display_name: 'Model 1', enabledFlags: new Set(['vendor-deepseek', 'vendor-kimi'] as const) });
+  const m2Reordered = stubProviderModel({ id: 'm2', display_name: 'Model 2', limits: { max_context_window_tokens: 64000, max_output_tokens: 4096 } });
+  batchChanges.length = 0;
+  const v2 = await repo.upstreams.publishModelsRefresh({
+    id: 'up_diff',
+    version: v1!,
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 2_000,
+    models: [m1Reordered, m2Reordered, m3, m4].map(model => ({ source: 'auto', model })),
+  });
+  expect(v2).not.toBeNull();
+  // Zero upstream_models row modifications; only the upstreams fetched_at row updates.
+  expect(batchChanges).toEqual([[1, 0, 0]]);
+
+  // Incremental diff: remove m1, keep m2 & m4 unchanged, modify m3, add m5.
+  const m3Updated = stubProviderModel({ id: 'm3', display_name: 'Model 3 v2' });
+  const m5 = stubProviderModel({ id: 'm5', display_name: 'Model 5' });
+  batchChanges.length = 0;
+  const v3 = await repo.upstreams.publishModelsRefresh({
+    id: 'up_diff',
+    version: v2!,
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 3_000,
+    models: [m2, m3Updated, m4, m5].map(model => ({ source: 'auto', model })),
+  });
+  expect(v3).not.toBeNull();
+  // [update upstreams=1, delete=1 (m1), upsert=2 (m3 updated + m5 inserted)]
+  expect(batchChanges).toEqual([[1, 1, 2]]);
+  expect((await repo.upstreamModels.listByUpstream('up_diff')).map(e => [e.model.id, e.model.display_name])).toEqual([
+    ['m2', 'Model 2'],
+    ['m3', 'Model 3 v2'],
+    ['m4', 'Model 4'],
+    ['m5', 'Model 5'],
+  ]);
+
+  // Empty publish deletes all 4 remaining rows.
+  batchChanges.length = 0;
+  const v4 = await repo.upstreams.publishModelsRefresh({
+    id: 'up_diff',
+    version: v3!,
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 4_000,
+    models: [],
+  });
+  expect(v4).not.toBeNull();
+  expect(batchChanges).toEqual([[1, 4]]);
+  expect(await repo.upstreamModels.listByUpstream('up_diff')).toEqual([]);
+});
+
+test('scoped non-admin /v1/models pre-prunes upstreams, honors model rules, preserves gateway-wide alias metadata, and short-circuits upstream-options', async () => {
+  const { repo, apiKey: scopedKey } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+  await repo.upstreams.deleteAll();
+
+  for (const [id, sortOrder, models] of [
+    ['up_a', 0, [
+      stubProviderModel({ id: 'gpt-5', limits: { max_context_window_tokens: 128_000, max_output_tokens: 16_000 }, endpoints: { openaiChatCompletions: {} } }),
+      stubProviderModel({ id: 'claude-sonnet', limits: { max_context_window_tokens: 200_000 }, endpoints: { openaiChatCompletions: {} } }),
+    ]],
+    ['up_b', 1, [
+      stubProviderModel({ id: 'gpt-5', limits: { max_context_window_tokens: 64_000, max_output_tokens: 8_000 }, endpoints: { openaiChatCompletions: {}, openaiResponses: {} } }),
+      stubProviderModel({ id: 'gemini-pro', limits: { max_context_window_tokens: 1_000_000 }, endpoints: { openaiChatCompletions: {} } }),
+    ]],
+    ['up_c', 2, [
+      stubProviderModel({ id: 'secret-alpha', limits: { max_context_window_tokens: 32_000 }, endpoints: { openaiChatCompletions: {} } }),
+      stubProviderModel({ id: 'other-model', limits: { max_context_window_tokens: 32_000 }, endpoints: { openaiChatCompletions: {} } }),
+    ]],
+  ] as const) {
+    await saveUpstreamForTest(repo.upstreams, baseUpstream({ id, kind: 'custom', sortOrder }));
+    const stored = (await repo.upstreams.getById(id))!;
+    await repo.upstreams.publishModelsRefresh({
+      id,
+      version: stored.version,
+      revision: MODEL_CATALOG_REVISION,
+      fetchedAt: 1_800_000_000_000,
+      models: models.map(model => ({ source: 'auto', model })),
+    });
+  }
+
+  await repo.modelAliases.insert({
+    id: 'alias_smart',
+    name: 'smart',
+    displayName: 'Smart Alias',
+    kind: 'chat',
+    selection: 'first-available',
+    targets: [{ target_model_id: 'gpt-5', rules: {} }],
+    announcedMetadata: null,
+    visibleInModelsList: true,
+    sortOrder: 0,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+  });
+
+  await repo.apiKeys.save({
+    id: 'admin-key-test',
+    userId: 1,
+    name: 'Admin Key',
+    key: 'sk-admin-key-test',
+    serverSecret: '00'.repeat(32),
+    createdAt: '2026-09-01T00:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+    dumpRetentionSeconds: null,
+    openaiResponsesRetentionSeconds: 0,
+    randomizeUpstreams: false,
+  });
+
+  const scopedSession = await repo.sessions.create(scopedKey.userId);
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: scopedKey.userId });
+
+  // Grant: whole up_a except claude-sonnet; regex ^secret- on up_c; nothing on up_b.
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: scopedKey.userId },
+    scope: { kind: 'upstream', upstreamId: 'up_a' },
+    sortOrder: 0,
+    values: { 'Model.Use': true },
+  });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: scopedKey.userId },
+    scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'claude-sonnet' } },
+    sortOrder: 0,
+    values: { 'Model.Use': false },
+  });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: scopedKey.userId },
+    scope: { kind: 'upstreamModel', upstreamId: 'up_c', model: { kind: 'regex', value: '^secret-' } },
+    sortOrder: 0,
+    values: { 'Model.Use': true },
+  });
+
+  const [adminResp, scopedResp, optionsResp] = await Promise.all([
+    requestApp('/v1/models', { headers: { 'x-api-key': 'sk-admin-key-test' } }),
+    requestApp('/v1/models', { headers: { 'x-api-key': scopedKey.key } }),
+    requestApp('/api/upstream-options?view=key', { headers: { 'x-floway-session': scopedSession.id } }),
+  ]);
+  expect(adminResp.status).toBe(200);
+  expect(scopedResp.status).toBe(200);
+  expect(optionsResp.status).toBe(200);
+
+  const adminModels = ((await adminResp.json()) as { data: Array<{ id: string; limits: unknown; endpoints: unknown }> }).data;
+  const scopedModels = ((await scopedResp.json()) as { data: Array<{ id: string; limits: unknown; endpoints: unknown }> }).data;
+  expect(scopedModels.map(m => m.id)).toEqual(['gpt-5', 'secret-alpha', 'smart']);
+
+  // Alias `smart` must announce the exact same gateway-wide metadata (including up_b's openaiResponses endpoint)
+  // to scopedUser as it does to admin.
+  const adminSmart = adminModels.find(m => m.id === 'smart')!;
+  const scopedSmart = scopedModels.find(m => m.id === 'smart')!;
+  expect(scopedSmart.limits).toEqual(adminSmart.limits);
+  expect(scopedSmart.endpoints).toEqual(adminSmart.endpoints);
+
+  // `upstream-options?view=key` surfaces up_a (upstream grant) and up_c (regex model grant), never up_b.
+  const options = await optionsResp.json() as Array<{ id: string }>;
+  expect(options.map(o => o.id)).toEqual(['up_a', 'up_c']);
+
+  // Now also verify global grant + upstream-level deny pruning.
+  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: scopedKey.userId });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: scopedKey.userId },
+    scope: { kind: 'upstreams' },
+    sortOrder: 0,
+    values: { 'Model.Use': true },
+  });
+  await repo.accessRecords.save({
+    principal: { kind: 'user', id: scopedKey.userId },
+    scope: { kind: 'upstream', upstreamId: 'up_b' },
+    sortOrder: 0,
+    values: { 'Model.Use': false },
+  });
+  const globalDeniedResp = await requestApp('/v1/models', { headers: { 'x-api-key': scopedKey.key } });
+  expect(globalDeniedResp.status).toBe(200);
+  const globalDeniedIds = ((await globalDeniedResp.json()) as { data: Array<{ id: string }> }).data.map(m => m.id);
+  expect(globalDeniedIds).toEqual(['claude-sonnet', 'gpt-5', 'other-model', 'secret-alpha', 'smart']);
 });
 
 test('saving manual models materializes immediately with zero 404 window and restores shadowed custom auto models on removal', async () => {

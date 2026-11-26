@@ -4,7 +4,7 @@ import { loadCachedModelsForDashboard, modelsCacheStatus } from './models-cache-
 import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
 import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { FullSerializedUpstreamRecord, ModelsCacheStatus, RedactedSerializedUpstreamRecord } from './types.ts';
-import { checkMany } from '../../access-control/check.ts';
+import { checkMany, loadSubjectAccessResolver } from '../../access-control/check.ts';
 import { type UpstreamAccess, resolveUpstreamAccesses, resolveUpstreamEditLevel } from '../../access-control/upstream-edit.ts';
 import { type AuthedContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
@@ -103,29 +103,43 @@ const modelUseForUpstreams = async (
   items: readonly Pick<StoredUpstreamMeta, 'id'>[],
 ): Promise<boolean[] | null> => {
   if (subject.isAdmin) return null;
-  const grants = await checkMany(subject, items.map(item => ({
-    target: { kind: 'upstream' as const, upstreamId: item.id },
-    requirement: { permission: 'Model.Use' as const },
-  })));
+  if (items.length === 0) return [];
+
+  const resolver = await loadSubjectAccessResolver(subject);
+  const evaluation = { targetGroups: new Set<number>(), subjectUserId: subject.id };
+  const requirement = { permission: 'Model.Use' as const };
+  const grants = items.map(item => resolver.satisfies(
+    { kind: 'upstream', upstreamId: item.id },
+    requirement,
+    evaluation,
+  ));
   if (grants.every(Boolean)) return grants;
 
+  const plan = resolver.planModelUse(evaluation);
   const effectiveScope = effectiveUpstreamIdsFromContext(c);
   const scopeSet = effectiveScope === null ? null : new Set(effectiveScope);
   const pendingIds = items
-    .filter((item, index) => !grants[index] && (scopeSet === null || scopeSet.has(item.id)))
+    .filter((item, index) =>
+      !grants[index]
+      && plan.upstreamsWithModelGrants.has(item.id)
+      && (scopeSet === null || scopeSet.has(item.id)))
     .map(item => item.id);
   if (pendingIds.length === 0) return grants;
 
   const addressable = await getRepo().upstreamModels.listAddressableIdsForUpstreams(pendingIds);
   if (addressable.length === 0) return grants;
 
-  const allowed = await checkMany(subject, addressable.map(entry => ({
-    target: { kind: 'upstreamModel' as const, upstreamId: entry.upstreamId, model: { kind: 'exact' as const, value: entry.addressableId } },
-    requirement: { permission: 'Model.Use' as const },
-  })));
   const covered = new Set<string>();
-  for (let index = 0; index < addressable.length; index++) {
-    if (allowed[index]) covered.add(addressable[index]!.upstreamId);
+  for (const entry of addressable) {
+    if (covered.has(entry.upstreamId)) continue;
+    if (resolver.satisfies(
+      { kind: 'upstreamModel', upstreamId: entry.upstreamId, model: { kind: 'exact', value: entry.addressableId } },
+      requirement,
+      evaluation,
+    )) {
+      covered.add(entry.upstreamId);
+      if (covered.size === pendingIds.length) break;
+    }
   }
   return items.map((item, index) => grants[index]! || covered.has(item.id));
 };

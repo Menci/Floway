@@ -13,6 +13,7 @@ import type {
   ResolvedUpstreamModelMatch,
   StoredUpstreamMeta,
   StoredUpstreamRecord,
+  UpstreamCatalogFilter,
   UpstreamModelEntry,
   UpstreamModelsCacheAction,
   UpstreamModelsCacheState,
@@ -262,14 +263,35 @@ const buildModelsReplacementStatements = (
   version: number,
   models: readonly UpstreamModelEntry[],
 ): SqlPreparedStatement[] => {
-  const stmts: SqlPreparedStatement[] = [
+  const deduped = dedupeModelsForStorage(models);
+  const stmts: SqlPreparedStatement[] = [];
+
+  if (deduped.length === 0) {
+    stmts.push(
+      db.prepare(
+        `DELETE FROM upstream_models
+         WHERE upstream_id = ?
+           AND EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND version = ?)`,
+      ).bind(upstreamId, upstreamId, version),
+    );
+    return stmts;
+  }
+
+  const incomingKeysJson = JSON.stringify(deduped.map(({ model }) => ({ m: model.id, k: model.kind })));
+  stmts.push(
     db.prepare(
       `DELETE FROM upstream_models
        WHERE upstream_id = ?
-         AND EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND version = ?)`,
-    ).bind(upstreamId, upstreamId, version),
-  ];
-  const deduped = dedupeModelsForStorage(models);
+         AND EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND version = ?)
+         AND (model_id, kind) NOT IN (
+           SELECT
+             CAST(json_extract(j.value, '$.m') AS TEXT),
+             CAST(json_extract(j.value, '$.k') AS TEXT)
+           FROM json_each(?) j
+         )`,
+    ).bind(upstreamId, upstreamId, version, incomingKeysJson),
+  );
+
   for (const group of chunk(deduped, JSON_INSERT_CHUNK_SIZE)) {
     const payload = JSON.stringify(group.map(({ source, model }) => ({
       modelId: model.id,
@@ -297,7 +319,16 @@ const buildModelsReplacementStatements = (
            CAST(json_extract(j.value, '$.modelJson') AS TEXT)
          FROM upstreams u
          JOIN json_each(?) j
-         WHERE u.id = ? AND u.version = ?`,
+         WHERE u.id = ? AND u.version = ?
+         ON CONFLICT (upstream_id, model_id, kind) DO UPDATE SET
+           upstream_model_id = excluded.upstream_model_id,
+           source = excluded.source,
+           disabled = excluded.disabled,
+           model_json = excluded.model_json
+         WHERE upstream_models.upstream_model_id != excluded.upstream_model_id
+            OR upstream_models.source != excluded.source
+            OR upstream_models.disabled != excluded.disabled
+            OR upstream_models.model_json != excluded.model_json`,
       ).bind(payload, upstreamId, version),
     );
   }
@@ -357,8 +388,14 @@ const buildSyncDisabledStatement = (
        ELSE 0
      END
      WHERE upstream_id = ?
-       AND EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND version = ?)`,
-  ).bind(disabledPublicModelIdsJson, upstreamId, upstreamId, version);
+       AND EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND version = ?)
+       AND disabled != (
+         CASE
+           WHEN model_id IN (SELECT CAST(value AS TEXT) FROM json_each(?)) THEN 1
+           ELSE 0
+         END
+       )`,
+  ).bind(disabledPublicModelIdsJson, upstreamId, upstreamId, version, disabledPublicModelIdsJson);
 
 const cacheSetClause = (action: UpstreamModelsCacheAction): { sql: string; binds: SqlBindValue[] } => {
   switch (action.kind) {
@@ -825,6 +862,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
     const unprefixedArm = `
       SELECT
         0 AS form_order,
+        m.kind AS matched_kind,
         m.model_id AS matched_input_id,
         m.model_json AS matched_model_json,
         ${UPSTREAM_COLUMNS_ALIASED}
@@ -844,6 +882,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
       const prefixedArm = `
         SELECT
           1 AS form_order,
+          m.kind AS matched_kind,
           p.input_id AS matched_input_id,
           m.model_json AS matched_model_json,
           ${UPSTREAM_COLUMNS_ALIASED}
@@ -871,7 +910,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
           UNION ALL
           ${prefixedArm}
         )
-        ORDER BY sort_order, created_at, id, form_order`;
+        ORDER BY sort_order, created_at, id, matched_kind, form_order`;
     }
 
     const { results } = await this.db.prepare(query).bind(...binds).all<ResolvedRow>();
@@ -902,17 +941,26 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
     return matches;
   }
 
-  async listCatalog(upstreamIds: readonly string[] | null): Promise<{
+  async listCatalog(filter: UpstreamCatalogFilter | null): Promise<{
     readonly upstreams: CatalogUpstreamRow[];
     readonly models: CatalogModelEntry[];
   }> {
-    if (upstreamIds !== null && upstreamIds.length === 0) {
+    const include = filter?.include;
+    const exclude = filter?.exclude;
+    if (include?.length === 0) {
       return { upstreams: [], models: [] };
     }
-    const filterSql = upstreamIds !== null
-      ? ' AND u.id IN (SELECT CAST(value AS TEXT) FROM json_each(?))'
-      : '';
-    const filterBinds: SqlBindValue[] = upstreamIds !== null ? [JSON.stringify(upstreamIds)] : [];
+    const filterClauses: string[] = [];
+    const filterBinds: SqlBindValue[] = [];
+    if (include !== undefined) {
+      filterClauses.push(' AND u.id IN (SELECT CAST(value AS TEXT) FROM json_each(?))');
+      filterBinds.push(JSON.stringify(include));
+    }
+    if (exclude !== undefined && exclude.length > 0) {
+      filterClauses.push(' AND u.id NOT IN (SELECT CAST(value AS TEXT) FROM json_each(?))');
+      filterBinds.push(JSON.stringify(exclude));
+    }
+    const filterSql = filterClauses.join('');
 
     const [upstreamsRes, modelsRes] = await Promise.all([
       this.db
@@ -957,8 +1005,8 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
       modelPrefix: parseModelPrefixColumns(row.id, row.model_prefix, row.model_prefix_addressable, row.model_prefix_listed),
     }));
 
-    if (upstreamIds !== null) {
-      const rank = new Map(upstreamIds.map((id, index) => [id, index] as const));
+    if (include !== undefined && filter?.preserveIncludeOrder === true) {
+      const rank = new Map(include.map((id, index) => [id, index] as const));
       upstreams.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
     }
 

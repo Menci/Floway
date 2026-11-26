@@ -24,6 +24,7 @@ const migratedConfigs = (): Record<string, unknown> => {
       `).run();
     }
     db.exec(sql);
+    if (filename === MIGRATION) break;
   }
   const rows = db.prepare('SELECT id, config_json AS config, config_version AS version FROM upstreams').all() as { id: string; config: string; version: number }[];
   db.close();

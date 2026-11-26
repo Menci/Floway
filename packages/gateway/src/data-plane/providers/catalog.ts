@@ -117,6 +117,38 @@ export const distinctUpstreamsFromContributions = (
   return out;
 };
 
+const PREFIX_RE = /^[a-zA-Z]+/;
+const STANDALONE_DIGIT_RE = /(?<!\d)\d(?!\d)/g;
+
+interface ModelIdSortKey {
+  readonly id: string;
+  readonly hasSlash: number;
+  readonly prefix: string;
+  readonly digits: number[];
+  readonly lower: string;
+}
+
+const modelIdSortKey = (id: string): ModelIdSortKey => ({
+  id,
+  hasSlash: id.includes('/') ? 1 : 0,
+  prefix: PREFIX_RE.exec(id)?.[0].toLowerCase() ?? '',
+  digits: [...id.matchAll(STANDALONE_DIGIT_RE)].map(m => +m[0]),
+  lower: id.toLowerCase(),
+});
+
+const compareSortKeys = (a: ModelIdSortKey, b: ModelIdSortKey): number => {
+  if (a.hasSlash !== b.hasSlash) return a.hasSlash - b.hasSlash;
+  if (a.prefix !== b.prefix) return a.prefix < b.prefix ? -1 : 1;
+  const minLen = Math.min(a.digits.length, b.digits.length);
+  for (let i = 0; i < minLen; i++) {
+    const diff = b.digits[i]! - a.digits[i]!;
+    if (diff !== 0) return diff;
+  }
+  if (a.digits.length !== b.digits.length) return b.digits.length - a.digits.length;
+  if (a.lower !== b.lower) return a.lower < b.lower ? 1 : -1;
+  return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+};
+
 // Public-facing model-id ordering, applied to the real-model slice of the
 // lists that cross a gateway boundary (the data-plane model listing on
 // /v1/models, /models, and /v1beta/models, plus the control-plane /api/models
@@ -124,14 +156,11 @@ export const distinctUpstreamsFromContributions = (
 // aliases are appended afterwards in alias `sortOrder`, and
 // `/api/models?include_unlisted=true` appends the unlisted rows after the
 // listed ones.
-export const compareModelIds = (a: string, b: string): number => {
-  const cmp = <T>(x: T, y: T, dir = 1) => (x < y ? -dir : x > y ? dir : 0);
-  const prefix = (s: string) => /^[a-zA-Z]+/.exec(s)?.[0].toLowerCase() ?? '';
-  const digits = (s: string) => [...s.matchAll(/(?<!\d)\d(?!\d)/g)].map(m => +m[0]);
-  const [da, db] = [digits(a), digits(b)];
-  return cmp(+a.includes('/'), +b.includes('/'))
-    || cmp(prefix(a), prefix(b))
-    || (da.slice(0, Math.min(da.length, db.length)).map((v, i) => db[i] - v).find(d => d !== 0) ?? db.length - da.length)
-    || cmp(a.toLowerCase(), b.toLowerCase(), -1)
-    || cmp(a, b, -1);
-};
+export const compareModelIds = (a: string, b: string): number =>
+  compareSortKeys(modelIdSortKey(a), modelIdSortKey(b));
+
+export const sortByModelId = <T>(items: readonly T[], idOf: (item: T) => string): T[] =>
+  items
+    .map(item => ({ item, key: modelIdSortKey(idOf(item)) }))
+    .sort((left, right) => compareSortKeys(left.key, right.key))
+    .map(entry => entry.item);

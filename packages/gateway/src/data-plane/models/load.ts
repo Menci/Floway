@@ -52,10 +52,11 @@ export const loadModelListingCatalog = async (
   upstreamFilter: readonly string[] | null,
   aliasRepo: ModelAliasesRepo,
 ): Promise<ModelListingCatalog> => {
-  const [{ callerAddressable, gatewayAddressable }, aliases] = await Promise.all([
-    loadAddressableSurfaces(subject, upstreamFilter),
+  const { callerAddressable, gatewayAddressable, aliases } = await loadAddressableSurfaces(
+    subject,
+    upstreamFilter,
     aliasRepo.list(),
-  ]);
+  );
   return {
     callerAddressable,
     gatewayAddressable,

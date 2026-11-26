@@ -82,6 +82,7 @@ import type {
   StoredOpenAIResponsesSnapshot,
   StoredUpstreamMeta,
   StoredUpstreamRecord,
+  UpstreamCatalogFilter,
   UpstreamModelEntry,
   UpstreamModelsCacheAction,
   UpstreamModelsCacheState,
@@ -1415,12 +1416,24 @@ class MemoryUpstreamModelsRepo implements UpstreamModelsRepo {
     return Promise.resolve(matches);
   }
 
-  listCatalog(upstreamIds: readonly string[] | null): Promise<{
+  listCatalog(filter: UpstreamCatalogFilter | null): Promise<{
     readonly upstreams: CatalogUpstreamRow[];
     readonly models: CatalogModelEntry[];
   }> {
-    if (upstreamIds !== null && upstreamIds.length === 0) return Promise.resolve({ upstreams: [], models: [] });
-    const orderedUpstreams = this.sortedUpstreams(upstreamIds);
+    const include = filter?.include;
+    const exclude = filter?.exclude;
+    if (include?.length === 0) return Promise.resolve({ upstreams: [], models: [] });
+    let orderedUpstreams = include !== undefined && filter?.preserveIncludeOrder === true
+      ? this.sortedUpstreams(include)
+      : this.sortedUpstreams(null);
+    if (include !== undefined && filter?.preserveIncludeOrder !== true) {
+      const includeSet = new Set(include);
+      orderedUpstreams = orderedUpstreams.filter(u => includeSet.has(u.id));
+    }
+    if (exclude !== undefined && exclude.length > 0) {
+      const excludeSet = new Set(exclude);
+      orderedUpstreams = orderedUpstreams.filter(u => !excludeSet.has(u.id));
+    }
     const upstreams: CatalogUpstreamRow[] = orderedUpstreams.map(u => ({
       id: u.id,
       kind: u.kind,

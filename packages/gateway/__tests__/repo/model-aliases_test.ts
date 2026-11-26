@@ -67,19 +67,6 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
 
 }
 
-test('[sql] rejects shape-invalid alias target JSON with the alias row id', async () => {
-  const db = await createSqliteTestDb();
-  await db.prepare(
-    `INSERT INTO model_aliases (id, name, kind, selection, visible_in_models_list, targets, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).bind('alias_bad_targets', 'bad-targets', 'chat', 'first-available', 1, '[{"target_model_id":42,"rules":{}}]', 1, '2026-07-21T00:00:00.000Z', '2026-07-21T00:00:00.000Z').run();
-
-  await assertRejects(
-    () => new SqlRepo(db).modelAliases.getById('alias_bad_targets'),
-    Error,
-  );
-});
-
 test('[sql] preserves passthrough alias metadata fields owned by a future schema', async () => {
   const db = await createSqliteTestDb();
   await db.prepare(

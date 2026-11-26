@@ -211,6 +211,7 @@ CREATE TABLE upstream_models (
 );
 
 CREATE INDEX idx_upstream_models_model_id ON upstream_models (model_id, disabled, kind);
+CREATE INDEX idx_upstream_models_upstream_active ON upstream_models (upstream_id, disabled, model_id);
 
 CREATE TABLE upstream_manual_models (
   upstream_id       TEXT NOT NULL REFERENCES upstreams(id) ON DELETE CASCADE,

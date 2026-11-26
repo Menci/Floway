@@ -38,7 +38,10 @@ test('listCatalog returns enabled upstreams in sort order and silently drops del
 
   // Deleting an upstream does not prune the caps that reference it, so a
   // dangling id narrows the cap instead of failing the principal's requests.
-  const filtered = await repo.upstreamModels.listCatalog(['up_ghost', 'up_copilot', 'up_custom']);
+  const filtered = await repo.upstreamModels.listCatalog({
+    include: ['up_ghost', 'up_copilot', 'up_custom'],
+    preserveIncludeOrder: true,
+  });
   assertEquals(filtered.upstreams.map(upstream => upstream.id), ['up_copilot', 'up_custom']);
 });
 

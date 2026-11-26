@@ -88,9 +88,18 @@ const resolveBuckets = (
   return { values, records: applicable.map(({ record }) => record), decisions: [...decisions].map(([recordId, permissions]) => ({ recordId, permissions })) };
 };
 
+export interface ModelUsePlan {
+  readonly globalAllowed: boolean;
+  readonly candidateUpstreamIds: ReadonlySet<string>;
+  readonly deniedUpstreamIds: ReadonlySet<string>;
+  readonly upstreamsWithModelRules: ReadonlySet<string>;
+  readonly upstreamsWithModelGrants: ReadonlySet<string>;
+}
+
 export interface AccessResolver {
   resolve(scope: ResolveScope, evaluation: AccessEvaluation): AccessResolution;
   satisfies(scope: ResolveScope, requirement: AccessRequirement, evaluation: AccessEvaluation): boolean;
+  planModelUse(evaluation: AccessEvaluation): ModelUsePlan;
 }
 
 export const createAccessResolver = (records: readonly AccessRecord[]): AccessResolver => {
@@ -178,13 +187,62 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
   };
   const candidatesFor = (scope: ResolveScope, evaluation: AccessEvaluation): AccessBucket[] =>
     candidates(scope, evaluation.targetGroups, isSelfUserScope(scope, evaluation.subjectUserId));
+  const satisfies = (scope: ResolveScope, requirement: AccessRequirement, evaluation: AccessEvaluation): boolean => {
+    const selection = winningSelection(candidatesFor(scope, evaluation), scope, requirement.permission, evaluation.targetGroups);
+    return selection !== null && accessValueSatisfied(selection.representative.value, requirement);
+  };
   return {
     resolve(scope, evaluation) {
       return resolveBuckets(prepared, candidatesFor(scope, evaluation), scope, evaluation.targetGroups);
     },
-    satisfies(scope, requirement, evaluation) {
-      const selection = winningSelection(candidatesFor(scope, evaluation), scope, requirement.permission, evaluation.targetGroups);
-      return selection !== null && accessValueSatisfied(selection.representative.value, requirement);
+    satisfies,
+    planModelUse(evaluation) {
+      const requirement: AccessRequirement = { permission: 'Model.Use' };
+      const globalAllowed = satisfies({ kind: 'upstreams' }, requirement, evaluation);
+      const upstreamsWithModelRules = new Set<string>();
+      const upstreamsWithModelGrants = new Set<string>();
+      for (const [upstreamId, buckets] of modelBuckets) {
+        let hasRule = false;
+        let hasGrant = false;
+        for (const bucket of buckets) {
+          for (const { record } of bucket.rows) {
+            const value = record.values['Model.Use'];
+            if (value !== undefined) {
+              hasRule = true;
+              if (value === true) hasGrant = true;
+            }
+          }
+        }
+        if (hasRule) upstreamsWithModelRules.add(upstreamId);
+        if (hasGrant) upstreamsWithModelGrants.add(upstreamId);
+      }
+
+      const candidateUpstreamIds = new Set<string>();
+      const deniedUpstreamIds = new Set<string>();
+      if (!globalAllowed) {
+        for (const upstreamId of upstreamBuckets.keys()) {
+          if (satisfies({ kind: 'upstream', upstreamId }, requirement, evaluation)) {
+            candidateUpstreamIds.add(upstreamId);
+          }
+        }
+        for (const upstreamId of upstreamsWithModelGrants) {
+          candidateUpstreamIds.add(upstreamId);
+        }
+      } else {
+        for (const upstreamId of upstreamBuckets.keys()) {
+          if (!satisfies({ kind: 'upstream', upstreamId }, requirement, evaluation) && !upstreamsWithModelGrants.has(upstreamId)) {
+            deniedUpstreamIds.add(upstreamId);
+          }
+        }
+      }
+
+      return {
+        globalAllowed,
+        candidateUpstreamIds,
+        deniedUpstreamIds,
+        upstreamsWithModelRules,
+        upstreamsWithModelGrants,
+      };
     },
   };
 };

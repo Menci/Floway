@@ -571,12 +571,18 @@ export interface CatalogModelEntry {
   readonly model: ProviderModel;
 }
 
+export interface UpstreamCatalogFilter {
+  readonly include?: readonly string[];
+  readonly exclude?: readonly string[];
+  readonly preserveIncludeOrder?: boolean;
+}
+
 export interface UpstreamModelsRepo {
   resolve(input: {
     readonly modelIds: readonly string[];
     readonly upstreamIds: readonly string[] | null;
   }): Promise<ResolvedUpstreamModelMatch[]>;
-  listCatalog(upstreamIds: readonly string[] | null): Promise<{
+  listCatalog(filter: UpstreamCatalogFilter | null): Promise<{
     readonly upstreams: CatalogUpstreamRow[];
     readonly models: CatalogModelEntry[];
   }>;

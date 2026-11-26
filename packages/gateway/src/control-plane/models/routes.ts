@@ -45,10 +45,11 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     const subject = userFromContext(c);
     const isAdmin = subject.isAdmin;
     const upstreamScope = isAdmin ? null : effectiveUpstreamIdsFromContext(c);
-    const [{ callerAddressable, gatewayAddressable }, aliases] = await Promise.all([
-      loadAddressableSurfaces(subject, upstreamScope),
+    const { callerAddressable, gatewayAddressable, aliases } = await loadAddressableSurfaces(
+      subject,
+      upstreamScope,
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
-    ]);
+    );
     const upstreamsByListedId = new Map(callerAddressable.map(entry => [entry.id, entry.upstreams] as const));
     const realModels = listedRealModels(callerAddressable);
     const merged = includeAliases
