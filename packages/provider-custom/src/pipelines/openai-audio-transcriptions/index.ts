@@ -1,6 +1,7 @@
 import { customOperationPath } from '../../endpoint.ts';
 import { customOperation, formBody, openAIError, selectEventStream } from '../dial.ts';
-import { decodeOpenAIAudioTranscriptionsStream } from '@floway-dev/protocols/openai-audio';
+import { getHeader } from '@floway-dev/http';
+import { decodeOpenAIAudioTranscriptionsResult, decodeOpenAIAudioTranscriptionsStream } from '@floway-dev/protocols/openai-audio';
 import { parseHttpResponse, type OpenAIAudioTranscriptionPayload } from '@floway-dev/provider';
 
 const transcriptionForm = ({ entries }: OpenAIAudioTranscriptionPayload, model: string): FormData => {
@@ -22,7 +23,10 @@ export const openaiAudioTranscriptions = customOperation('openaiAudioTranscripti
   parse: parseHttpResponse('openaiAudioTranscriptions', {
     select: (_payload, head) => selectEventStream(head),
     stream: decodeOpenAIAudioTranscriptionsStream,
-    result: bytes => ({ ok: true, value: bytes }),
+    result(bytes, http) {
+      const contentType = getHeader(http.headers, 'content-type');
+      return decodeOpenAIAudioTranscriptionsResult(bytes, typeof contentType === 'string' ? contentType : undefined);
+    },
     format: openAIError,
   }),
   prepare: async (payload, modelId, config) => ({

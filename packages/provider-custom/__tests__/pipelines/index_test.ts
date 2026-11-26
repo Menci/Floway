@@ -287,6 +287,34 @@ test('Audio Transcriptions keeps repeated multipart values and replaces the mode
   await running.done;
 });
 
+test.each([
+  { mediaType: 'application/vnd.example.transcription+json; charset=UTF-8', body: '{broken', valid: false },
+  { mediaType: 'application/json', body: '{ "text": "hello", "duration": 1.00 }\n', valid: true },
+  { mediaType: 'text/plain', body: 'hello\n', valid: true },
+  { mediaType: 'application/x-subrip', body: '1\r\n00:00:00,000 --> 00:00:01,000\r\nhello\r\n', valid: true },
+])('audio transcription validates $mediaType and keeps the response head', async ({ mediaType, body, valid }) => {
+  const bytes = new TextEncoder().encode(body);
+  const fetcher: Fetcher = () => Promise.resolve(new Response(bytes, {
+    status: 200, statusText: 'Transcription', headers: { 'content-type': mediaType, 'x-upstream-trace': 'trace' },
+  }));
+  using running = invoke(customPipelines.openaiAudioTranscriptions, input('openaiAudioTranscriptions', {
+    entries: [
+      { name: 'model', value: 'public-model' },
+      { name: 'file', value: { name: 'clip.wav', mediaType: 'audio/wav', bytes: new Uint8Array([1]) } },
+    ],
+  }), fetcher);
+  const facts = await running.result;
+  expect(facts['response.http']).toMatchObject({
+    status: 200, statusText: 'Transcription', headers: [['content-type', mediaType], ['x-upstream-trace', 'trace']], body: null,
+  });
+  if (valid) {
+    expect(facts['response.openaiAudioTranscriptions']).toEqual({ kind: 'result', result: bytes });
+  } else {
+    expect(facts['response.openaiAudioTranscriptions']).toMatchObject({ kind: 'error', source: 'upstream' });
+  }
+  await running.done;
+});
+
 test('Images Edits JSON fallback encodes byte uploads alongside file references', async () => {
   const fetcher = vi.fn<Fetcher>(async (url, init) => {
     expect(url).toBe('https://custom.example.com/v1/images/edits');
