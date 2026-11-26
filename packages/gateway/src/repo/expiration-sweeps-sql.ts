@@ -19,16 +19,7 @@ interface BackfillRow {
 
 interface DumpBackfillRow extends BackfillRow {
   id: string;
-  request_body_descriptor: string | null;
   response_body_descriptor: string | null;
-  response_upstream_body_descriptor: string | null;
-}
-
-interface DumpFileOwner {
-  fileKey: string;
-  ownerKind: 'dump-request' | 'dump-response' | 'dump-response-upstream';
-  keyId: string;
-  recordId: string;
 }
 
 const CLEANUP_BACKFILL_SOURCES = {
@@ -62,7 +53,7 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
   private async backfillCleanupSource(source: CleanupBackfillSource, cursor: number, limit: number): Promise<number> {
     const config = CLEANUP_BACKFILL_SOURCES[source];
     const descriptorColumns = source === 'dump_records'
-      ? ', id, request_body_descriptor, response_body_descriptor, response_upstream_body_descriptor'
+      ? ', id, response_body_descriptor'
       : '';
     const { results } = await this.db
       .prepare(
@@ -102,42 +93,20 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
   }
 
   private async registerDumpFiles(rows: readonly DumpBackfillRow[]): Promise<void> {
-    const files: DumpFileOwner[] = rows.flatMap(row => [
-      ...(row.request_body_descriptor === null ? [] : [{
-        fileKey: decodeDumpBodyDescriptor(
-          row.request_body_descriptor,
-          `dump record ${row.key_id}/${row.id} request body descriptor during expiration backfill`,
-        ).key,
-        ownerKind: 'dump-request' as const,
-        keyId: row.key_id,
-        recordId: row.id,
-      }]),
-      ...(row.response_body_descriptor === null ? [] : [{
-        fileKey: decodeDumpBodyDescriptor(
-          row.response_body_descriptor,
-          `dump record ${row.key_id}/${row.id} response body descriptor during expiration backfill`,
-        ).key,
-        ownerKind: 'dump-response' as const,
-        keyId: row.key_id,
-        recordId: row.id,
-      }]),
-      ...(row.response_upstream_body_descriptor === null ? [] : [{
-        fileKey: decodeDumpBodyDescriptor(
-          row.response_upstream_body_descriptor,
-          `dump record ${row.key_id}/${row.id} upstream response body descriptor during expiration backfill`,
-        ).key,
-        ownerKind: 'dump-response-upstream' as const,
-        keyId: row.key_id,
-        recordId: row.id,
-      }]),
-    ]);
-    if (files.length === 0) return;
+    const files = rows.map(row => ({
+      fileKey: decodeDumpBodyDescriptor(
+        row.response_body_descriptor,
+        `dump record ${row.key_id}/${row.id} archive descriptor during expiration backfill`,
+      ).key,
+      keyId: row.key_id,
+      recordId: row.id,
+    }));
     await this.db
       .prepare(
         `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
          SELECT
            json_extract(value, '$.fileKey'),
-           json_extract(value, '$.ownerKind'),
+           'dump-response',
            json_array(records.key_id, records.id),
            'owned',
            NULL
@@ -145,16 +114,7 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
          JOIN dump_records AS records
            ON records.key_id = json_extract(incoming.value, '$.keyId')
           AND records.id = json_extract(incoming.value, '$.recordId')
-         WHERE (
-           json_extract(incoming.value, '$.ownerKind') = 'dump-request'
-           AND json_extract(records.request_body_descriptor, '$.key') = json_extract(incoming.value, '$.fileKey')
-         ) OR (
-           json_extract(incoming.value, '$.ownerKind') = 'dump-response'
-           AND json_extract(records.response_body_descriptor, '$.key') = json_extract(incoming.value, '$.fileKey')
-         ) OR (
-           json_extract(incoming.value, '$.ownerKind') = 'dump-response-upstream'
-           AND json_extract(records.response_upstream_body_descriptor, '$.key') = json_extract(incoming.value, '$.fileKey')
-         )
+         WHERE json_extract(records.response_body_descriptor, '$.key') = json_extract(incoming.value, '$.fileKey')
          ON CONFLICT (file_key) DO NOTHING`,
       )
       .bind(JSON.stringify(files))

@@ -2,16 +2,13 @@ import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
 import type { DumpStore } from '../../src/dump/store-contract.ts';
-import type { DumpMetadata, StoredDumpRecord } from '../../src/dump/types.ts';
-import { fakeMeta as baseFakeMeta, fakeRecord as baseFakeRecord, installDumpStubs } from '../dump/test-fixtures.ts';
+import type { DumpMetadata } from '../../src/dump/types.ts';
+import { fakeMeta as baseFakeMeta, installDumpStubs } from '../dump/test-fixtures.ts';
 import { requestApp, setupAppTest } from '../test-utils/app.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const fakeMeta = (id: string, completedAt: number): DumpMetadata =>
   baseFakeMeta({ id, completedAt, startedAt: completedAt - 1 });
-
-const fakeRecord = (id: string, completedAt: number): StoredDumpRecord =>
-  baseFakeRecord({ id, completedAt, startedAt: completedAt - 1 });
 
 test('GET /api/dump/keys/:keyId/records 404s when the key has no retention', async () => {
   const { apiKey } = await setupAppTest();
@@ -139,7 +136,7 @@ test('GET /api/dump/keys/:keyId/stream delivers a frame appended between snapsho
       return iter;
     },
   });
-  stubs.seed(apiKey.id, fakeRecord('01HZZ0000000000000000000A1', 1000));
+  stubs.seed(apiKey.id, fakeMeta('01HZZ0000000000000000000A1', 1000));
 
   const responsePromise = requestApp(`/api/dump/keys/${apiKey.id}/stream`, {
     headers: { 'x-api-key': apiKey.key },

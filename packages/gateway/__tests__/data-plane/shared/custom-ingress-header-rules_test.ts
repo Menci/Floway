@@ -2,14 +2,11 @@ import { test } from 'vitest';
 
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest, sseOpenAIChatCompletionsResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-// One instance, one rule set, one route per attempt path that hands inbound
-// headers to the provider (the passthrough endpoints share one attempt, so
-// embeddings stands for all of them). `x-route` is passed through and
-// extended, `x-configured` is supplied entirely by the operator, and
-// `x-dropped` carries no rule at all.
+// One upstream applies the same policy across native and translated requests.
+// Each field witnesses a different rule: pass through and append, configure
+// without forwarding the client value, or discard.
 const INGRESS_HEADERS_RULES = [
   { key: 'x-route', value: null },
   { key: 'x-route', value: 'appended' },
@@ -19,7 +16,6 @@ const INGRESS_HEADERS_RULES = [
 
 const registerUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_rules',
     config: {

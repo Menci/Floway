@@ -28,16 +28,11 @@ const createPreIntegrityDatabase = async (): Promise<{ raw: Awaited<ReturnType<t
   }
 };
 
-// Run every migration at and after `fromMigration` so a DB seeded before that
-// migration reaches the present schema. The backfill SQL selects columns
-// introduced by later migrations (e.g. the upstream body descriptor from
-// 0089), so a DB frozen at an earlier migration would fail on a missing
-// column instead of the behavior under test.
-const runMigrationsFrom = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>, fromMigration: string): void => {
+const runRemainingMigrations = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>): void => {
   let started = false;
   for (const [filename, sql] of migrationSqlByFilename) {
     if (!started) {
-      if (filename === fromMigration) started = true;
+      if (filename === '0082_expiration_sweep_integrity.sql') started = true;
       else continue;
     }
     raw.run(sql);
@@ -59,13 +54,13 @@ const insertApiKey = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>, id: 
   );
 };
 
-const insertDump = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>, keyId: string, id: string): void => {
+const insertDump = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>, keyId: string, id: string, descriptor: string | null = null): void => {
   raw.run(
     `INSERT INTO dump_records
      (key_id, id, created_at, upstream_id, meta_json, request_headers_json,
       response_headers_json, request_body_descriptor, response_body_descriptor)
-     VALUES (?, ?, 1, NULL, '{}', '[]', NULL, NULL, NULL)`,
-    [keyId, id],
+     VALUES (?, ?, 1, NULL, '{}', '[]', NULL, NULL, ?)`,
+    [keyId, id, descriptor],
   );
 };
 
@@ -217,13 +212,16 @@ test('repaired inactive dump queues drain in bounded ticks', async () => {
     insertApiKey(raw, 'disabled');
     insertApiKey(raw, 'deleted');
     for (let index = 0; index < 75; index += 1) {
-      insertDump(raw, 'disabled', `disabled-${index}`);
-      insertDump(raw, 'deleted', `deleted-${index}`);
+      for (const keyId of ['disabled', 'deleted']) {
+        const id = `${keyId}-${index}`;
+        const descriptor = JSON.stringify({ key: `dumps/v1/${keyId}/1970010100/${id}.resp.gz`, type: 'archive' });
+        insertDump(raw, keyId, id, descriptor);
+      }
     }
     raw.run("UPDATE api_keys SET dump_retention_seconds = NULL WHERE id = 'disabled'");
     raw.run("UPDATE api_keys SET deleted_at = '2026-01-02T00:00:00Z' WHERE id = 'deleted'");
     raw.run("DELETE FROM expiration_sweeps WHERE domain = 'dumps'");
-    runMigrationsFrom(raw, '0082_expiration_sweep_integrity.sql');
+    runRemainingMigrations(raw);
 
     const repo = new SqlRepo(db);
     initRepo(repo);

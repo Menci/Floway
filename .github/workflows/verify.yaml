@@ -42,12 +42,8 @@ jobs:
   # convention rather than a correctness requirement. That is what makes the
   # split safe: any subset type-checks on its own.
   #
-  # Two jobs, not four. `apps/web` is the heaviest single project (20 s alone
-  # against 42 s for everything else), so it gets its own job and the other 19
-  # packages share the second. Splitting further was measured at four groups on
-  # one machine and came to 60 s against 68 s serial, because tsc is single
-  # threaded and the groups only competed; on separate runners the extra jobs buy
-  # little beyond this split.
+  # `apps/web` gets its own job as the heaviest single project. The other 21
+  # workspace projects share the package job.
   #
   # The cost is duplicated work: `apps/web` and `packages/gateway` re-resolve the
   # same sources the package job already checked. Total CPU goes up slightly while
@@ -77,16 +73,8 @@ jobs:
       - name: ${{ matrix.name }}
         run: ${{ matrix.run }}
 
-  # Lint is type-aware: every file is parsed against its TypeScript project, so
-  # its cost scales with the file count and one runner spent 124 s on it. It runs
-  # as three jobs split by measured cost rather than file count: `apps` alone took
-  # 92 s of that run, and `packages/gateway` is the largest type-checked tree
-  # after it, so each gets its own job and the remaining packages share the third.
-  # The target sets are complementary by construction, so no file is linted twice,
-  # and the root config files sit in the last set to keep them covered.
-  #
-  # The split exists because a two-way split left `packages` — gateway included —
-  # on the critical path at 130 s against 47 s for `apps`.
+  # Type-aware lint runs in three jobs. The apps and gateway are separate
+  # targets, and the remaining packages share the third job with root config.
   lint:
     permissions:
       contents: read
@@ -100,7 +88,7 @@ jobs:
           - name: lint (gateway)
             targets: packages/gateway
           - name: lint (other packages)
-            targets: eslint.config.ts vitest.config.ts packages/agent-setup packages/dump packages/http packages/interceptor packages/pipeline packages/platform packages/protocols packages/provider packages/provider-azure packages/provider-chatgpt packages/provider-claude-code packages/provider-copilot packages/provider-custom packages/provider-kimi-code packages/provider-ollama packages/proxy packages/test-utils packages/translate scripts tools
+            targets: eslint.config.ts vitest.config.ts packages/agent-setup packages/dump packages/http packages/pipeline packages/platform packages/protocols packages/provider packages/provider-azure packages/provider-chatgpt packages/provider-claude-code packages/provider-copilot packages/provider-custom packages/provider-kimi-code packages/provider-ollama packages/proxy packages/test-utils packages/translate scripts tools
     name: ${{ matrix.name }}
     steps:
       - name: Checkout
@@ -112,27 +100,8 @@ jobs:
       - name: ${{ matrix.name }}
         run: pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=12288" eslint --cache ${{ matrix.targets }}
 
-  # The suite splits into two shapes that cannot share one runner budget: the
-  # installer integration project runs one file at a time (each case spawns a
-  # real shell, and `fileParallelism` is off for it), and it is worth about a
-  # third of the whole run on its own. Both halves then spread over `--shard`,
-  # so one job no longer carries every file of either kind.
-  #
-  # These jobs run on separate runners, which is the parallelism a single
-  # machine cannot have: two workers on one host lose Microsoft PowerShell
-  # cases to CPU contention, while two runners do not.
-  #
-  # The installer project has one shard per heavy file. Its files take 53/43/40/
-  # 36/35/6 s on a runner plus the trap at 0 s, and any shard count below six
-  # leaves at least one job carrying two of the heavy ones: at two shards the
-  # slowest job is 129 s, at three 96 s, and at six the slowest is codex at
-  # 43 s. The extra runners cost a minute of setup each and nothing else.
-  #
-  # Six is the useful ceiling rather than seven: the seventh shard would hold
-  # only the trap, which finishes in milliseconds. Adding a real test file to
-  # the project needs this count revisited; Vitest refuses a shard count above
-  # the resolved file count rather than passing with an empty job, so a mismatch
-  # fails the workflow instead of silently skipping a file.
+  # The installer integration project runs one file at a time because each case
+  # spawns a real shell. Six shards give its six files separate runners.
   test-installers:
     permissions:
       contents: read
@@ -152,12 +121,7 @@ jobs:
       - name: test-installers (${{ matrix.shard }}/6)
         run: CODEX_TEST_BIN="$GITHUB_WORKSPACE/data/codex-ci/node_modules/.bin/codex" pnpm exec cross-env NODE_OPTIONS="--max-old-space-size=8192" vitest run --project agent-setup-installers --shard=${{ matrix.shard }}/6
 
-  # Eight shards for the 771 non-installer files, about 96 files each. At five the
-  # slowest shard sat at 124 s of test time; at eight the slowest carries about
-  # 100 s, and on top of the ~30 s runner setup that still finishes inside
-  # `typecheck`'s 138 s, which sets the floor for the workflow. Ten shards were
-  # measured too: they bought about 11 s of the slowest shard, which the floor
-  # swallows, so the two extra runners were doing nothing.
+  # The remaining test projects run in eight shards.
   test:
     permissions:
       contents: read

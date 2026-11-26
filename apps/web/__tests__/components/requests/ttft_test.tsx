@@ -41,7 +41,6 @@ const makeRecordMeta = (id: string, ttftMs: number | null): DumpMetadata => ({
   durationMs: 2000,
   ttftMs,
   error: null,
-  targetApi: 'openaiChatCompletions',
   upstream: null,
 });
 

@@ -1,6 +1,6 @@
 import type { DumpBroker } from '../../src/dump/broker.ts';
 import type { DumpStore } from '../../src/dump/store-contract.ts';
-import type { DumpMetadata, StoredDumpRecord } from '../../src/dump/types.ts';
+import type { DumpMetadata } from '../../src/dump/types.ts';
 
 export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata => ({
   id: 'test-id',
@@ -20,14 +20,14 @@ export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata =>
   ...overrides,
 });
 
-export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): StoredDumpRecord => ({
-  meta: fakeMeta(overrides),
-  request: { method: 'POST', path: '/v1/x', headers: [], body: new Uint8Array() },
-  response: { status: 200, headers: [], body: { type: 'none' } },
-});
+export const fakeArchive = new TextEncoder().encode([
+  '{"type":"object","fromObjectId":1,"nodes":[{}]}',
+  '{"type":"stage.entered","stageId":1,"name":"parse","facts":{"$":1}}',
+  '{"type":"stage.leaved","stageId":1,"facts":{"$":1}}',
+  '',
+].join('\n'));
 
 type DumpStubFailMethod =
-  | 'put'
   | 'list'
   | 'publish'
   | 'closeChannel';
@@ -35,10 +35,9 @@ type DumpStubFailMethod =
 export interface DumpStubHandle {
   store: DumpStore;
   broker: DumpBroker;
-  stored: ReadonlyArray<{ keyId: string; record: StoredDumpRecord }>;
   published: ReadonlyArray<{ keyId: string; meta: DumpMetadata }>;
   closedChannels: ReadonlyArray<{ keyId: string; reason: string }>;
-  seed: (keyId: string, record: StoredDumpRecord) => void;
+  seed: (keyId: string, meta: DumpMetadata) => void;
   failOn: (method: DumpStubFailMethod, err: Error) => void;
 }
 
@@ -46,36 +45,20 @@ export const installDumpStubs = (
   initStore: (store: DumpStore) => void,
   initBroker: (broker: DumpBroker) => void,
 ): DumpStubHandle => {
-  const records = new Map<string, StoredDumpRecord[]>();
+  const records = new Map<string, DumpMetadata[]>();
   const archives = new Map<string, Map<string, Uint8Array>>();
   const subscribers = new Map<string, Array<(meta: DumpMetadata | null) => void>>();
-  const stored: Array<{ keyId: string; record: StoredDumpRecord }> = [];
   const published: Array<{ keyId: string; meta: DumpMetadata }> = [];
   const closedChannels: Array<{ keyId: string; reason: string }> = [];
   const throws: Partial<Record<DumpStubFailMethod, Error>> = {};
 
   const store: DumpStore = {
-    async prepareRequestBody(body) {
-      return { encoding: 'identity', bytes: body, decodedByteLength: body.byteLength };
-    },
-    async put(keyId, record) {
-      if (throws.put) throw throws.put;
-      if (record.request.body.encoding !== 'identity') throw new Error('dump test stub expected identity request body');
-      const storedRecord: StoredDumpRecord = {
-        ...record,
-        request: { ...record.request, body: record.request.body.bytes },
-      };
-      stored.push({ keyId, record: storedRecord });
-      const list = records.get(keyId) ?? [];
-      list.unshift(storedRecord);
-      records.set(keyId, list);
-    },
     async putArchive(keyId, meta, bytes) {
       const byId = archives.get(keyId) ?? new Map<string, Uint8Array>();
       byId.set(meta.id, bytes);
       archives.set(keyId, byId);
       const list = records.get(keyId) ?? [];
-      list.unshift(fakeRecord(meta));
+      list.unshift(meta);
       records.set(keyId, list);
     },
     async getArchive(keyId, id) {
@@ -87,10 +70,10 @@ export const installDumpStubs = (
       const list = records.get(keyId) ?? [];
       let start = 0;
       if (opts.before) {
-        const idx = list.findIndex(r => r.meta.id === opts.before);
+        const idx = list.findIndex(meta => meta.id === opts.before);
         start = idx >= 0 ? idx + 1 : list.length;
       }
-      return list.slice(start, start + opts.limit).map(r => r.meta);
+      return list.slice(start, start + opts.limit);
     },
     async deleteExpiredBatch() { return 0; },
     async findOldestCreatedAt() { return null; },
@@ -152,7 +135,6 @@ export const installDumpStubs = (
   return {
     store,
     broker,
-    stored,
     published,
     closedChannels,
     seed: (keyId, record) => {

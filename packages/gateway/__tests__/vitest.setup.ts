@@ -34,8 +34,6 @@ initExecutionCellNamespace(new InProcessExecutionCellNamespace(request => handle
 // independent of that subsystem. Dump-specific tests install real or recording
 // implementations.
 const noopStore: DumpStore = {
-  async prepareRequestBody(body) { return { encoding: 'identity', bytes: body, decodedByteLength: body.byteLength }; },
-  async put(): Promise<void> { /* noop */ },
   async putArchive(): Promise<void> { /* noop */ },
   async getArchive(): Promise<null> { return null; },
   async list(): Promise<DumpMetadata[]> { return []; },

@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
@@ -251,4 +251,22 @@ test('Embeddings indexes the requested model on a local routing refusal', async 
   expect(dumps.published).toMatchObject([
     { meta: { model: 'missing-vectors', upstream: null, error: { kind: 'gateway' } } },
   ]);
+});
+
+test('Embeddings returns the accepted model response even when the usage write fails', async () => {
+  const { apiKey, repo } = await setupEmbeddingUpstreams();
+  const record = vi.spyOn(repo.usage, 'record').mockRejectedValue(new Error('usage store failed'));
+  const payload = { object: 'list', data: [], usage: { prompt_tokens: 3 } };
+  await withMockedFetch(() => Response.json(payload), async () => {
+    const response = await requestApp('/v1/embeddings', {
+      method: 'POST',
+      body: JSON.stringify({ model: 'vectors', input: 'hello' }),
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(payload);
+    await flushBackground();
+  });
+  expect(record).toHaveBeenCalledOnce();
+  expect(await repo.performance.listAll()).toMatchObject([{ upstream: 'first', requests: 1, neutral: 1 }]);
 });
