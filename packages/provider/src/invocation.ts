@@ -9,23 +9,12 @@ import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/open
 
 export type ChatTargetApi = 'anthropicMessages' | 'geminiGenerateContent' | 'openaiResponses' | 'openaiChatCompletions';
 
-// One (provider, model) pair the resolver produced for an inbound id,
-// plus the per-request `Fetcher` minted for the provider's upstream. The
-// pair is the smallest unit the dispatch layer needs to make a wire call:
-// `provider.instance.callXxx(candidate.model, body, ...)` — upstream id /
-// upstream name / provider kind / allowlist come off `provider.*`, and both
-// public metadata (id, endpoints, limits, pricing, chat) and provider-specific
-// invocation fields (upstreamModelId, providerData, enabledFlags) live directly
-// on `candidate.model`.
+// One resolved (provider, model) dispatch unit plus the per-request `Fetcher`
+// minted for that upstream. Resolution narrows by `model.kind` only; choosing
+// the target protocol from `model.endpoints` belongs to the attempt layer.
 //
-// Resolution narrows by `model.kind` only — choosing the inbound target
-// protocol from `model.endpoints` is the attempt layer's job, not part of
-// the candidate.
-//
-// `rules` is set only for candidates minted by the alias walk — it carries
-// the picked target's rule overlay so the attempt's terminal wire call can
-// apply it against the target IR. Absent (undefined) for direct-resolution
-// candidates and present (possibly `{}`) for alias-origin candidates.
+// `rules` is set only for alias-origin candidates (present, possibly `{}`),
+// carrying the picked target's rule overlay for the terminal wire call.
 export interface ModelCandidate {
   readonly provider: Provider;
   readonly model: ProviderModel;

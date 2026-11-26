@@ -166,9 +166,6 @@ const compareSortKeys = (a: ModelIdSortKey, b: ModelIdSortKey): number => {
 // aliases are appended afterwards in alias `sortOrder`, and
 // `/api/models?include_unlisted=true` appends the unlisted rows after the
 // listed ones.
-export const compareModelIds = (a: string, b: string): number =>
-  compareSortKeys(modelIdSortKey(a), modelIdSortKey(b));
-
 export const sortByModelId = <T>(items: readonly T[], idOf: (item: T) => string): T[] =>
   items
     .map(item => ({ item, key: modelIdSortKey(idOf(item)) }))

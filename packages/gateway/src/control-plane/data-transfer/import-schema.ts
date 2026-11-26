@@ -13,18 +13,20 @@ import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
+import { supportsManualModels } from '../../upstreams/models-refresh.ts';
 import { USERNAME_PATTERN } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
+import { validateManualModels } from '../shared/manual-models.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, parseUserPreferences, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamHue, normalizeUpstreamMetricIdentity, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamModelConfig, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
-import { assertAzureUpstreamRecord, validateAzureManualModels } from '@floway-dev/provider-azure';
+import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/provider-chatgpt';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { parseCopilotUpstreamConfig } from '@floway-dev/provider-copilot';
-import { assertCustomUpstreamRecord, validateCustomManualModels } from '@floway-dev/provider-custom';
+import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { assertKimiCodeUpstreamRecord } from '@floway-dev/provider-kimi-code';
-import { assertOllamaUpstreamRecord, validateOllamaManualModels } from '@floway-dev/provider-ollama';
+import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 import { parseProxyUri } from '@floway-dev/proxy';
 
 export interface SerializedProxy {
@@ -165,14 +167,9 @@ const upstreamWireSchema = parsedBy((value): ImportedUpstream => {
     throw new Error('id must use a raw upstream id, not a legacy provider-prefixed identity');
   }
 
-  let manualModels: UpstreamModelConfig[] | undefined;
-  if (kind === 'custom' || kind === 'azure' || kind === 'ollama') {
-    manualModels = kind === 'azure'
-      ? validateAzureManualModels(wire.manual_models)
-      : kind === 'custom'
-        ? validateCustomManualModels(wire.manual_models)
-        : validateOllamaManualModels(wire.manual_models);
-  }
+  const manualModels = supportsManualModels(kind)
+    ? validateManualModels(kind, wire.manual_models)
+    : undefined;
 
   const record: UpstreamRecord = {
     id,

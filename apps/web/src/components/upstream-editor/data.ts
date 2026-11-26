@@ -134,8 +134,7 @@ export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEdi
 // ownership on the other) and the two drifted apart.
 export const modelsEditable = (editLevel: UpstreamEditLevel): boolean => editLevel !== 'off';
 
-// Manual entries exist only for the kinds that support operator-defined
-// models. For the rest the catalog is the provider's, and the editor can only
+// For other kinds the catalog is the provider's, and the editor can only
 // enable and disable what it lists.
 export const manualModelsSupported = (record: UpstreamRecord): record is Extract<UpstreamRecord, { kind: 'custom' | 'azure' | 'ollama' }> =>
   record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama';

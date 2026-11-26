@@ -489,10 +489,15 @@ export interface UpstreamModelsWritePayload {
 
 export interface DueModelsRefreshCandidate {
   readonly id: string;
-  readonly kind: UpstreamProviderKind;
   readonly version: number;
   readonly proxyFallbackList: ProxyFallbackEntry[];
   readonly requiresNetwork: boolean;
+}
+
+export interface UpstreamInsertInput {
+  readonly upstream: UpstreamRecord;
+  readonly manualModels?: readonly UpstreamModelConfig[];
+  readonly modelsWrite?: UpstreamModelsWritePayload;
 }
 
 export interface UpstreamRepo {
@@ -506,16 +511,8 @@ export interface UpstreamRepo {
     expectedIds: readonly string[],
     assignments: readonly { id: string; sortOrder: number }[],
   ): Promise<StoredUpstreamMeta[] | null>;
-  insertAtEnd(input: {
-    readonly upstream: UpstreamRecord;
-    readonly manualModels?: readonly UpstreamModelConfig[];
-    readonly modelsWrite?: UpstreamModelsWritePayload;
-  }): Promise<StoredUpstreamRecord | null>;
-  insert(input: {
-    readonly upstream: UpstreamRecord;
-    readonly manualModels?: readonly UpstreamModelConfig[];
-    readonly modelsWrite?: UpstreamModelsWritePayload;
-  }): Promise<StoredUpstreamRecord | null>;
+  insertAtEnd(input: UpstreamInsertInput): Promise<StoredUpstreamRecord | null>;
+  insert(input: UpstreamInsertInput): Promise<StoredUpstreamRecord | null>;
   replace(input: {
     readonly previous: StoredUpstreamRecord;
     readonly upstream: UpstreamRecord;
@@ -562,7 +559,6 @@ export interface CatalogUpstreamRow {
   readonly kind: UpstreamProviderKind;
   readonly name: string;
   readonly hue: number;
-  readonly sortOrder: number;
   readonly modelPrefix: ModelPrefixConfig | null;
 }
 

@@ -61,7 +61,7 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { SqlUpstreamMetricsRepo } from './upstream-metrics-sql.ts';
-import { SqlUpstreamModelsRepo, SqlUpstreamRepo, UPSTREAM_STATE_WRITE_ATTEMPTS } from './upstream-models-sql.ts';
+import { SqlUpstreamModelsRepo, SqlUpstreamRepo } from './upstream-models-sql.ts';
 import { usageMetricRows } from './usage-metrics.ts';
 import { querySqlUsageOverview } from './usage-overview-sql.ts';
 import {
@@ -85,8 +85,6 @@ import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, defaultUserPreferences, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, parseStoredUserPreferences, serializeUserPreferences, type AliasSelection, type AnnouncedMetadata, type UserPreferences } from '@floway-dev/protocols/common';
 import { parsePerformanceOperation } from '@floway-dev/provider';
-
-export { UPSTREAM_STATE_WRITE_ATTEMPTS };
 
 interface ApiKeyRow {
   id: string;

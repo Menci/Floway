@@ -1,5 +1,5 @@
 import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
-import type { UpstreamModelEntry, UpstreamRepo } from '../../src/repo/types.ts';
+import type { UpstreamRepo } from '../../src/repo/types.ts';
 import type { ProviderModel } from '@floway-dev/provider';
 
 export const seedModelsCache = async (
@@ -9,26 +9,15 @@ export const seedModelsCache = async (
     readonly version: number;
     readonly revision?: number;
     readonly fetchedAt: number;
-    readonly models: readonly (ProviderModel | UpstreamModelEntry)[];
+    readonly models: readonly ProviderModel[];
   },
 ): Promise<boolean> => {
-  const entries: UpstreamModelEntry[] = input.models.map(item =>
-    'model' in item ? item : { source: 'auto', model: item });
   const committedVersion = await repo.publishModelsRefresh({
     id,
     version: input.version,
     revision: input.revision ?? MODEL_CATALOG_REVISION,
     fetchedAt: input.fetchedAt,
-    models: entries,
+    models: input.models.map(model => ({ source: 'auto', model })),
   });
   return committedVersion !== null;
-};
-
-export const seedModelsCacheError = async (
-  repo: UpstreamRepo,
-  id: string,
-  version: number,
-  error: { readonly message: string; readonly at: number },
-): Promise<boolean> => {
-  return await repo.recordModelsRefreshFailure({ id, version, error });
 };

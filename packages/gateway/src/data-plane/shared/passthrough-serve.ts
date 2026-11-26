@@ -58,7 +58,6 @@ interface PassthroughServeContext {
   // to `model.kind === kind`; `sawModel=true && candidates=[]` becomes
   // the "model exists but doesn't support this endpoint" 400.
   readonly kind: ModelKind;
-  // Endpoint-availability gate against a resolved candidate's `ProviderModel`.
   readonly modelServesEndpoint: (model: ProviderModel) => boolean;
   // Any throw here is preserved and becomes a 502 with the internal-debug
   // envelope. `model` is the emitting upstream's `ProviderModel`.

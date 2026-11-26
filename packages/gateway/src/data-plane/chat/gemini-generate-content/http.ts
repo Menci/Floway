@@ -46,13 +46,12 @@ const parseGeminiGenerateContentBodyBytes = <T>(requestBody: RequestBody, projec
   }
 };
 
-// Surfaces a pre-stream throw as a Gemini-generateContent-RPC envelope, routing through
-// `respondGeminiGenerateContent` so the dump records the failure exactly as the sibling
-// HTTP handlers do, collapsing to an `internal-error` result rendered as the
-// Gemini generateContent internal-error envelope (status, code, message, stack,
-// cause, target_api). The throwing-candidate telemetry stamped in serve.ts
-// survives onto the error row via `ctx.attempt.telemetry` so a mid-attempt
-// throw still lands in performance_summary against the throwing upstream.
+// Surfaces a pre-stream throw as a Gemini generateContent internal-error RPC
+// envelope (status, code, message, stack, cause, target_api) through
+// `respondGeminiGenerateContent` so dumps record the failure the same way
+// sibling HTTP handlers do. The throwing-candidate telemetry stamped by
+// `iterateCandidates` survives onto the error row via `ctx.attempt.telemetry`
+// so a mid-attempt throw still lands in performance_summary against that upstream.
 const respondWithGeminiGenerateContentError = async (
   c: AuthedContext,
   error: unknown,

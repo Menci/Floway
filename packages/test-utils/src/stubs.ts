@@ -35,14 +35,14 @@ export const stubProviderModel = (overrides: Partial<ProviderModel> = {}): Provi
   ...overrides,
 });
 
-// Listing-side shape: an aggregated public catalog row with no upstream map.
+// Listing-side shape: an aggregated public catalog row.
 export const stubInternalModel = (
   overrides: Partial<InternalModel> = {},
 ): InternalModel => ({
-  id: overrides.id ?? 'test-model',
-  limits: overrides.limits ?? {},
-  kind: overrides.kind ?? 'chat',
-  endpoints: overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
+  id: 'test-model',
+  limits: {},
+  kind: 'chat',
+  endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
   ...overrides,
 });
 
@@ -101,11 +101,8 @@ export const stubModelCandidate = (overrides: {
   const model = stubProviderModel({
     id,
     upstreamModelId: modelOverrides.upstreamModelId ?? id,
-    limits: modelOverrides.limits ?? {},
-    kind: modelOverrides.kind ?? 'chat',
-    endpoints: modelOverrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
-    enabledFlags: overrides.enabledFlags ?? modelOverrides.enabledFlags ?? new Set<FlagId>(),
     ...modelOverrides,
+    ...(overrides.enabledFlags !== undefined ? { enabledFlags: overrides.enabledFlags } : {}),
     ...(overrides.providerData !== undefined ? { providerData: overrides.providerData } : {}),
   });
   return {

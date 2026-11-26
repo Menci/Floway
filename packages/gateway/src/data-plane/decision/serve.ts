@@ -92,12 +92,10 @@ export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context)
       return finalizeGatewayResponse(ctx, apiError(c, message, sawModel ? 400 : 404));
     }
 
-    const routable = candidates.flatMap(candidate => {
-      const providerModel = candidate.model;
-      return candidate.model.endpoints.decision === undefined || providerModel.decisionTarget === undefined
+    const routable = candidates.flatMap(candidate =>
+      candidate.model.endpoints.decision === undefined || candidate.model.decisionTarget === undefined
         ? []
-        : [{ candidate, target: providerModel.decisionTarget }];
-    });
+        : [{ candidate, target: candidate.model.decisionTarget }]);
     if (routable.length === 0) {
       ctx.dump?.error('gateway');
       return finalizeGatewayResponse(ctx, apiError(c, unsupportedMessage(model), 400));

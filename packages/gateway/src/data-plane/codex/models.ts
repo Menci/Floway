@@ -70,25 +70,24 @@ export const assembleCodexCatalog = (
       if ((model.input_modalities?.length ?? 0) > 0) models.push(model);
       continue;
     }
-    const chatProviderModels: typeof entry.contributions[number]['model'][] = [];
+    const chatContributions: typeof entry.contributions[number][] = [];
     let hasChatGPT = false;
     for (const contribution of entry.contributions) {
       if (contribution.model.kind !== 'chat') continue;
-      chatProviderModels.push(contribution.model);
+      chatContributions.push(contribution);
       if (contribution.upstream.kind === 'chatgpt') hasChatGPT = true;
     }
+    const chatProviderModels = chatContributions.map(contribution => contribution.model);
     let metadata: ReturnType<typeof chatgptCodexModelMetadata> | undefined;
     let serviceTiers: CodexServiceTier[] | undefined;
     if (hasChatGPT) {
-      const candidates = entry.contributions
-        .filter(contribution => contribution.model.kind === 'chat')
-        .map(({ upstream, model: providerModel }) => ({
-          providerModel,
-          metadata: upstream.kind === 'chatgpt' ? chatgptCodexModelMetadata(providerModel) : undefined,
-        }));
+      const candidates = chatContributions.map(({ upstream, model: providerModel }) => ({
+        providerModel,
+        metadata: upstream.kind === 'chatgpt' ? chatgptCodexModelMetadata(providerModel) : undefined,
+      }));
       // A ChatGPT rate is not an entitlement. Only advertise tiers usable on every fallback.
       const chatgpt = candidates.find(candidate => candidate.metadata !== undefined)?.metadata;
-      metadata = candidates[0]?.metadata;
+      metadata = candidates[0]!.metadata;
       serviceTiers = chatgpt === undefined ? undefined : (chatgpt.service_tiers ?? []).filter(tier => candidates.every(({ providerModel, metadata: candidateMeta }) => {
         if (candidateMeta !== undefined) return candidateMeta.service_tiers?.some(other => other.id === tier.id);
         return providerModel.endpoints.openaiResponses !== undefined && providerModel.pricing?.entries.some(rate => rate.selector?.serviceTier === tier.id);

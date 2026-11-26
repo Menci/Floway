@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { beforeEach, expect, test, vi } from 'vitest';
@@ -97,10 +98,16 @@ beforeEach(() => {
   apiMocks.listModels.mockResolvedValue({ data: { kind: 'copilot', data: discovered, modelsCache: populatedCache }, error: null });
 });
 
-test('auto-fetches on edit mount when the upstream has never fetched models and has no error', async () => {
+test('auto-fetches on edit mount under React StrictMode when the upstream has never fetched models', async () => {
   const coldRecord = { ...record, modelsCache: { fetchedAt: null, lastError: null, modelCount: null } };
-  renderPage(coldRecord, null);
-  await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
+  const router = createMemoryRouter([{
+    path: '/editor',
+    element: <StrictMode><OutcomeToastProvider><UpstreamEditorPage data={{
+      mode: 'edit', audit: true, editLevel: 'full', record: coldRecord, discovered: null,
+      proxies: [], runtime: { kind: 'node', runtimeLocation: 'TEST' },
+    }} /></OutcomeToastProvider></StrictMode>,
+  }], { initialEntries: ['/editor'] });
+  renderInApp(<RouterProvider router={router} />);
   await waitFor(() => expect(screen.getByTestId('discovered').textContent).toBe('new-model'));
   expect(screen.getByTestId('catalog-available').textContent).toBe('true');
 });
@@ -149,10 +156,26 @@ test('editing Ollama manual models prompts to save before fetching the catalog',
   await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
 });
 
+test('editing custom manual models with modelsFetch enabled prompts to save before fetching the catalog', async () => {
+  const customWithManual = {
+    ...customRecord,
+    manual_models: [{ upstreamModelId: 'old-manual', publicModelId: 'old-manual', kind: 'chat' as const, endpoints: { openaiChatCompletions: {} } }],
+  };
+  apiMocks.patch.mockResolvedValue({ data: { ...customWithManual, manual_models: [] }, error: null });
+  renderPage(customWithManual);
+  fireEvent.click(screen.getByRole('button', { name: 'Remove manual model' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
+  expect(await screen.findByText(i18n.t('upstreams.editor.fetchDirty.title'))).toBeTruthy();
+  expect(apiMocks.listModels).not.toHaveBeenCalled();
+  fireEvent.click(await screen.findByRole('button', { name: i18n.t('upstreams.editor.fetchDirty.saveAndFetch') }));
+  await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
+});
+
 test('saving a pending YAML edit discards an older explicit Fetch result', async () => {
   apiMocks.patch.mockResolvedValue({ data: customRecord, error: null });
-  let finishFetch: ((value: unknown) => void) | undefined;
-  apiMocks.listModels.mockImplementation(() => new Promise(resolve => { finishFetch = resolve; }));
+  const finishFetches: Array<(value: unknown) => void> = [];
+  apiMocks.listModels.mockImplementation(() => new Promise(resolve => { finishFetches.push(resolve); }));
   renderPage(customRecord, null);
   fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
   await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
@@ -161,7 +184,7 @@ test('saving a pending YAML edit discards an older explicit Fetch result', async
   fireEvent.click(screen.getByRole('button', { name: i18n.t('upstreams.editor.actions.save') }));
   await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
   await act(async () => {
-    finishFetch!({ data: { kind: 'custom', data: discovered, modelsCache: customRecord.modelsCache }, error: null });
+    finishFetches[0]!({ data: { kind: 'custom', data: discovered, modelsCache: customRecord.modelsCache }, error: null });
   });
   expect(screen.getByTestId('discovered').textContent).toBe('');
   expect(screen.getByTestId('catalog-available').textContent).toBe('false');

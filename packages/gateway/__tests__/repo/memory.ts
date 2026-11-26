@@ -83,6 +83,7 @@ import type {
   StoredUpstreamMeta,
   StoredUpstreamRecord,
   UpstreamCatalogFilter,
+  UpstreamInsertInput,
   UpstreamModelEntry,
   UpstreamModelsCacheAction,
   UpstreamModelsCacheState,
@@ -1209,7 +1210,6 @@ class MemoryUpstreamRepo implements UpstreamRepo {
       if (record.modelsCache.lastError !== null && modelsRefreshRetryAt(record.modelsCache.lastError) > nowMs) continue;
       due.push({
         id: record.id,
-        kind: record.kind,
         version: record.version,
         proxyFallbackList: normalizeProxyFallbackList(record.proxyFallbackList),
         requiresNetwork,
@@ -1249,20 +1249,12 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     }
   }
 
-  insertAtEnd(input: {
-    readonly upstream: UpstreamRecord;
-    readonly manualModels?: readonly UpstreamModelConfig[];
-    readonly modelsWrite?: UpstreamModelsWritePayload;
-  }): Promise<StoredUpstreamRecord | null> {
+  insertAtEnd(input: UpstreamInsertInput): Promise<StoredUpstreamRecord | null> {
     const sortOrder = Math.max(-1, ...[...this.shared.upstreams.values()].map(record => record.sortOrder)) + 1;
     return this.insert({ ...input, upstream: { ...input.upstream, sortOrder } });
   }
 
-  insert(input: {
-    readonly upstream: UpstreamRecord;
-    readonly manualModels?: readonly UpstreamModelConfig[];
-    readonly modelsWrite?: UpstreamModelsWritePayload;
-  }): Promise<StoredUpstreamRecord | null> {
+  insert(input: UpstreamInsertInput): Promise<StoredUpstreamRecord | null> {
     const { upstream, manualModels, modelsWrite } = input;
     if (this.shared.upstreams.has(upstream.id)) return Promise.resolve(null);
     const cacheAction = modelsWrite?.cacheAction ?? { kind: 'preserve' as const };
@@ -1439,7 +1431,6 @@ class MemoryUpstreamModelsRepo implements UpstreamModelsRepo {
       kind: u.kind,
       name: u.name,
       hue: u.hue,
-      sortOrder: u.sortOrder,
       modelPrefix: structuredClone(u.modelPrefix),
     }));
     const models: CatalogModelEntry[] = [];

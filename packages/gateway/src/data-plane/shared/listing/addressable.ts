@@ -22,10 +22,11 @@ import {
   distinctUpstreamsFromContributions,
   mergeIntoCatalog,
   sortByModelId,
+  type CatalogAccumulator,
   type CatalogUpstreamMeta,
   type ModelContribution,
 } from '../../providers/catalog.ts';
-import type { InternalModel, ProviderModel } from '@floway-dev/provider';
+import type { AddressableForm, InternalModel, ProviderModel } from '@floway-dev/provider';
 
 export interface AddressableIdEntry {
   // The inbound model id the data plane will accept verbatim.
@@ -49,12 +50,39 @@ export interface AddressableIdEntry {
 export const listedRealModels = (entries: readonly AddressableIdEntry[]): readonly InternalModel[] =>
   entries.filter(entry => entry.unlisted === undefined).map(entry => entry.model);
 
-const toUpstreamMeta = (row: CatalogUpstreamRow): CatalogUpstreamMeta => ({
+const toUpstreamMeta = (row: Pick<CatalogUpstreamRow, 'id' | 'kind' | 'name' | 'hue'>): CatalogUpstreamMeta => ({
   id: row.id,
   kind: row.kind,
   name: row.name,
   hue: row.hue,
 });
+
+const surfaceProviderModel = (
+  model: ProviderModel,
+  upstreamName: string,
+  form: AddressableForm,
+  publicId: string,
+): ProviderModel => form === 'prefixed'
+  ? { ...model, id: publicId, display_name: `${upstreamName}: ${model.display_name ?? model.id}` }
+  : model;
+
+const finalizeCatalogEntries = (
+  acc: CatalogAccumulator,
+  listedIds: ReadonlySet<string>,
+): AddressableIdEntry[] => {
+  const entries: AddressableIdEntry[] = [];
+  for (const [id, model] of acc.byId) {
+    const contributions = acc.contributionsById.get(id)!;
+    entries.push({
+      id,
+      unlisted: listedIds.has(id) ? undefined : true,
+      model,
+      upstreams: distinctUpstreamsFromContributions(contributions),
+      contributions,
+    });
+  }
+  return sortByModelId(entries, entry => entry.id);
+};
 
 interface ModelUseAuthContext {
   readonly resolver: AccessResolver;
@@ -64,13 +92,8 @@ interface ModelUseAuthContext {
 
 const catalogFilterForModelUse = (
   upstreamFilter: readonly string[] | null,
-  plan: ModelUsePlan | null,
+  plan: ModelUsePlan,
 ): UpstreamCatalogFilter | null => {
-  if (plan === null) {
-    return upstreamFilter === null
-      ? null
-      : { include: upstreamFilter, preserveIncludeOrder: true };
-  }
   if (!plan.globalAllowed) {
     if (upstreamFilter === null) {
       return { include: [...plan.candidateUpstreamIds] };
@@ -111,22 +134,12 @@ const assembleAddressableEntries = (
 
   for (const upstream of upstreams) {
     const hasModelRules = auth?.plan.upstreamsWithModelRules.has(upstream.id) ?? false;
-    if (auth !== null && !hasModelRules) {
-      const upstreamAllowed = auth.resolver.satisfies(
-        { kind: 'upstream', upstreamId: upstream.id },
-        requirement,
-        auth.evaluation,
-      );
-      if (!upstreamAllowed) continue;
-    }
-
     const meta = toUpstreamMeta(upstream);
     const cfg = upstream.modelPrefix;
     const forms = cfg === null ? (['unprefixed'] as const) : cfg.addressable;
     const allowedPublicIds = hasModelRules ? new Map<string, boolean>() : null;
 
     for (const providerModel of modelsByUpstream.get(upstream.id) ?? []) {
-      if (!providerModel.id) continue;
       for (const form of forms) {
         const publicId = form === 'prefixed' ? `${cfg!.prefix}${providerModel.id}` : providerModel.id;
         if (allowedPublicIds !== null) {
@@ -142,26 +155,12 @@ const assembleAddressableEntries = (
           if (!allowed) continue;
         }
         if (cfg === null || cfg.listed.includes(form)) listedIds.add(publicId);
-        const surfacedModel: ProviderModel = form === 'prefixed'
-          ? { ...providerModel, id: publicId, display_name: `${upstream.name}: ${providerModel.display_name ?? providerModel.id}` }
-          : providerModel;
-        mergeIntoCatalog(acc, meta, surfacedModel, publicId);
+        mergeIntoCatalog(acc, meta, surfaceProviderModel(providerModel, upstream.name, form, publicId), publicId);
       }
     }
   }
 
-  const entries: AddressableIdEntry[] = [];
-  for (const [id, model] of acc.byId) {
-    const contributions = acc.contributionsById.get(id)!;
-    entries.push({
-      id,
-      unlisted: listedIds.has(id) ? undefined : true,
-      model,
-      upstreams: distinctUpstreamsFromContributions(contributions),
-      contributions,
-    });
-  }
-  return sortByModelId(entries, entry => entry.id);
+  return finalizeCatalogEntries(acc, listedIds);
 };
 
 const assembleResolvedMatches = (
@@ -171,34 +170,19 @@ const assembleResolvedMatches = (
   const acc = createCatalogAccumulator();
   const listedIds = new Set<string>();
   for (const match of matches) {
-    const meta: CatalogUpstreamMeta = {
-      id: match.upstream.id,
-      kind: match.upstream.kind,
-      name: match.upstream.name,
-      hue: match.upstream.hue,
-    };
     const publicId = match.matchedInputId;
     const cfg = match.upstream.modelPrefix;
     if (cfg === null || cfg.listed.includes(match.matchedForm)) {
       listedIds.add(publicId);
     }
-    const surfacedModel: ProviderModel = match.matchedForm === 'prefixed'
-      ? { ...match.model, id: publicId, display_name: `${match.upstream.name}: ${match.model.display_name ?? match.model.id}` }
-      : match.model;
-    mergeIntoCatalog(acc, meta, surfacedModel, publicId);
+    mergeIntoCatalog(
+      acc,
+      toUpstreamMeta(match.upstream),
+      surfaceProviderModel(match.model, match.upstream.name, match.matchedForm, publicId),
+      publicId,
+    );
   }
-  const entries: AddressableIdEntry[] = [];
-  for (const [id, model] of acc.byId) {
-    const contributions = acc.contributionsById.get(id)!;
-    entries.push({
-      id,
-      unlisted: listedIds.has(id) ? undefined : true,
-      model,
-      upstreams: distinctUpstreamsFromContributions(contributions),
-      contributions,
-    });
-  }
-  return sortByModelId(entries, entry => entry.id);
+  return finalizeCatalogEntries(acc, listedIds);
 };
 
 const collectVisibleAliasTargetIds = (aliases: readonly ModelAliasRecord[]): string[] => {
@@ -245,17 +229,18 @@ export const loadAddressableSurfaces = async (
   }
 
   if (subject.isAdmin) {
-    const catalogPromise = repo.upstreamModels.listCatalog({
-      include: upstreamFilter!,
-      preserveIncludeOrder: true,
-    });
-    const aliases = await aliasesPromise;
-    const aliasTargetIds = collectVisibleAliasTargetIds(aliases);
-    const [{ upstreams, models }, resolvedAliasTargets] = await Promise.all([
-      catalogPromise,
-      aliasTargetIds.length > 0
-        ? repo.upstreamModels.resolve({ modelIds: aliasTargetIds, upstreamIds: null })
-        : Promise.resolve([]),
+    const [{ upstreams, models }, { aliases, resolvedAliasTargets }] = await Promise.all([
+      repo.upstreamModels.listCatalog({
+        include: upstreamFilter!,
+        preserveIncludeOrder: true,
+      }),
+      aliasesPromise.then(async aliases => {
+        const aliasTargetIds = collectVisibleAliasTargetIds(aliases);
+        const resolvedAliasTargets = aliasTargetIds.length > 0
+          ? await repo.upstreamModels.resolve({ modelIds: aliasTargetIds, upstreamIds: null })
+          : [];
+        return { aliases, resolvedAliasTargets };
+      }),
     ]);
     return {
       callerAddressable: assembleAddressableEntries(upstreams, models, null),
@@ -288,26 +273,4 @@ export const loadAddressableSurfaces = async (
     gatewayAddressable: assembleResolvedMatches(resolvedAliasTargets),
     aliases,
   };
-};
-
-export const enumerateAddressableModelIds = async (
-  subject: User,
-  upstreamFilter: readonly string[] | null,
-): Promise<readonly AddressableIdEntry[]> => {
-  if (upstreamFilter !== null && upstreamFilter.length === 0) return [];
-  const repo = getRepo();
-  if (subject.isAdmin) {
-    const filter = upstreamFilter === null ? null : { include: upstreamFilter, preserveIncludeOrder: true };
-    const { upstreams, models } = await repo.upstreamModels.listCatalog(filter);
-    return assembleAddressableEntries(upstreams, models, null);
-  }
-
-  const resolver = await loadSubjectAccessResolver(subject);
-  const evaluation: AccessEvaluation = { targetGroups: new Set<number>(), subjectUserId: subject.id };
-  const plan = resolver.planModelUse(evaluation);
-  const filter = catalogFilterForModelUse(upstreamFilter, plan);
-  if (filter?.include?.length === 0) return [];
-
-  const { upstreams, models } = await repo.upstreamModels.listCatalog(filter);
-  return assembleAddressableEntries(upstreams, models, { resolver, plan, evaluation });
 };

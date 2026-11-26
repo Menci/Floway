@@ -57,10 +57,12 @@ const BASELINE = {
 // the rest of the client catalog. Custom ids remain usable through the final
 // id-as-name fallback.
 // https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/tui/src/chatwidget/service_tiers.rs#L76-L104
+const EMPTY_SERVICE_TIERS: ReadonlyMap<string, CodexServiceTier> = new Map();
+
 const deriveServiceTiers = (
   model: InternalModel,
   modelTiers: readonly CodexServiceTier[],
-  catalogTiers: readonly CodexServiceTier[] | ReadonlyMap<string, CodexServiceTier>,
+  catalogTierById: ReadonlyMap<string, CodexServiceTier>,
 ): CodexServiceTier[] => {
   const entries = model.pricing?.entries;
   if (entries === undefined || entries.length === 0) return [];
@@ -72,16 +74,6 @@ const deriveServiceTiers = (
   if (ids.size === 0) return [];
   const modelTierById = new Map<string, CodexServiceTier>();
   for (const tier of modelTiers) modelTierById.set(tier.id, tier);
-  let catalogTierById: ReadonlyMap<string, CodexServiceTier>;
-  if (Array.isArray(catalogTiers)) {
-    const map = new Map<string, CodexServiceTier>();
-    for (const tier of catalogTiers) {
-      if (!map.has(tier.id)) map.set(tier.id, tier);
-    }
-    catalogTierById = map;
-  } else {
-    catalogTierById = catalogTiers as ReadonlyMap<string, CodexServiceTier>;
-  }
   return [...ids].map(id => modelTierById.get(id) ?? catalogTierById.get(id) ?? { id, name: id, description: '' });
 };
 
@@ -89,7 +81,7 @@ export const synthesizeCatalogEntry = (
   model: InternalModel,
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
-  catalogServiceTiers: readonly CodexServiceTier[] | ReadonlyMap<string, CodexServiceTier> = [],
+  catalogServiceTiers: ReadonlyMap<string, CodexServiceTier> = EMPTY_SERVICE_TIERS,
   { metadata: codexMetadata, serviceTiers, chatProviderModels }: {
     metadata?: ChatGPTCodexModelMetadata | undefined;
     serviceTiers?: CodexServiceTier[] | undefined;

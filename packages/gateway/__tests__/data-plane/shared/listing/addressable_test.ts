@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'vitest';
 
-import { enumerateAddressableModelIds as enumerateAddressableModelIdsRaw } from '../../../../src/data-plane/shared/listing/addressable.ts';
+import { loadAddressableSurfaces } from '../../../../src/data-plane/shared/listing/addressable.ts';
 import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest, testAdminUser, warmModelsForTest } from '../../../test-utils/app.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-const enumerateAddressableModelIds = (
+const enumerateAddressableModelIds = async (
   upstreamFilter: readonly string[] | null,
-) => enumerateAddressableModelIdsRaw(testAdminUser, upstreamFilter);
+) => (await loadAddressableSurfaces(testAdminUser, upstreamFilter)).callerAddressable;
 
 describe('enumerateAddressableModelIds', () => {
   test('emits the addressable-only prefix form whenever modelPrefix.addressable ⊋ modelPrefix.listed', async () => {

@@ -66,9 +66,10 @@ const buildTargetCandidates = (
 
 // Per-request model resolution. Speculatively issues alias lookup, direct
 // `upstream_models` resolution, and (for non-admin callers) group membership in
-// one parallel RTT so direct hits pay at most 1 RTT for admins and 2 RTTs for
-// non-admins. Only permitted, matched upstreams are instantiated as `Provider`s
-// and have their referenced proxies loaded.
+// one parallel RTT so direct hits pay 1 metadata RTT for admins and 2 for
+// non-admins, plus an optional proxy-load RTT only when matched upstreams
+// reference configured proxies. Only permitted, matched upstreams are
+// instantiated as `Provider`s.
 export const enumerateModelCandidates = async ({
   subject, upstreamIds, randomizeUpstreams, model, kind, runtimeLocation,
 }: {
@@ -104,9 +105,6 @@ export const enumerateModelCandidates = async ({
   const targetModelIds = orderedTargets === null
     ? null
     : [...new Set(orderedTargets.map(target => target.target_model_id))];
-  if (targetModelIds !== null && targetModelIds.length === 0) {
-    return { candidates: [], sawModel: false };
-  }
 
   const [rawMatches, accessRecords] = await Promise.all([
     targetModelIds === null

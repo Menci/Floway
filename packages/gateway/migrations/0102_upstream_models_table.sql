@@ -28,7 +28,7 @@ CREATE TABLE upstreams_new (
   updated_at TEXT NOT NULL,
   config_json TEXT NOT NULL,
   state_json TEXT NULL,
-  flag_overrides TEXT NOT NULL DEFAULT '[]',
+  flag_overrides TEXT NOT NULL DEFAULT '{}',
   disabled_public_model_ids TEXT NOT NULL DEFAULT '[]',
   proxy_fallback_list_json TEXT NOT NULL DEFAULT '[]',
   model_prefix TEXT NULL,
@@ -138,7 +138,7 @@ SELECT
     WHEN models_cache_json IS NOT NULL
       AND json_valid(models_cache_json)
       AND json_type(models_cache_json, '$.fetchedAt') IN ('integer', 'real')
-      AND json_extract(models_cache_json, '$.fetchedAt') > 0
+      AND json_extract(models_cache_json, '$.fetchedAt') >= 1
       THEN CAST(json_extract(models_cache_json, '$.fetchedAt') AS INTEGER)
     ELSE NULL
   END,
@@ -269,7 +269,7 @@ FROM _migration_0102_upstream_sources s,
 WHERE s.models_cache_json IS NOT NULL
   AND json_valid(s.models_cache_json)
   AND json_type(s.models_cache_json, '$.fetchedAt') IN ('integer', 'real')
-  AND json_extract(s.models_cache_json, '$.fetchedAt') > 0
+  AND json_extract(s.models_cache_json, '$.fetchedAt') >= 1
   AND json_type(s.models_cache_json, '$.models') = 'array'
   AND json_type(m.value, '$.id') = 'text'
   AND json_extract(m.value, '$.id') != ''
@@ -277,7 +277,6 @@ WHERE s.models_cache_json IS NOT NULL
   AND json_type(m.value, '$.kind') = 'text'
 ORDER BY s.id, CAST(m.key AS INTEGER);
 
--- Extract operator-authored manual models out of config_json.
 INSERT INTO upstream_manual_models (
   upstream_id,
   position,

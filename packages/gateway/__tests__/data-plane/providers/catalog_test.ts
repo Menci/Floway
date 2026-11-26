@@ -1,16 +1,16 @@
 import { describe, test } from 'vitest';
 
 import { toPublicModel } from '../../../src/data-plane/models/load.ts';
-import { compareModelIds } from '../../../src/data-plane/providers/catalog.ts';
+import { sortByModelId } from '../../../src/data-plane/providers/catalog.ts';
 import { enumerateModelCandidates as enumerateModelCandidatesRaw } from '../../../src/data-plane/providers/resolution.ts';
-import { enumerateAddressableModelIds } from '../../../src/data-plane/shared/listing/addressable.ts';
+import { loadAddressableSurfaces } from '../../../src/data-plane/shared/listing/addressable.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest, testAdminUser, warmModelsForTest } from '../../test-utils/app.ts';
 import type { UpstreamModelConfig } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
 
 const listCatalogModels = async (upstreamFilter: readonly string[] | null) => {
-  const entries = (await enumerateAddressableModelIds(testAdminUser, upstreamFilter)).filter(entry => !entry.unlisted);
+  const entries = (await loadAddressableSurfaces(testAdminUser, upstreamFilter)).callerAddressable.filter(entry => !entry.unlisted);
   return {
     entries,
     models: entries.map(entry => entry.model),
@@ -26,13 +26,13 @@ const withMockedFetch = <T>(
   return await fn();
 });
 
-const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareModelIds);
+const sortedIds = (ids: readonly string[]): string[] => sortByModelId(ids, id => id);
 
 const enumerateModelCandidates = (
   input: Omit<Parameters<typeof enumerateModelCandidatesRaw>[0], 'subject'>,
 ) => enumerateModelCandidatesRaw({ subject: testAdminUser, ...input });
 
-test('compareModelIds orders isolated single digits descending element by element', () => {
+test('sortByModelId orders isolated single digits descending element by element', () => {
   // Digit arrays: claude-opus-4-7 [4,7], claude-sonnet-4-6 [4,6],
   // claude-opus-4-5 / claude-haiku-4-5 [4,5]. Within the [4,5] tie, lex
   // descending picks 'claude-opus-4-5' over 'claude-haiku-4-5'.

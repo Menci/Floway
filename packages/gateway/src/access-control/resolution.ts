@@ -160,8 +160,8 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
       return out;
     }
     case 'upstreamModel': {
-      // `modelBuckets` rows are pre-sorted by `(order, id)` at depth 2, followed
-      // by depth-1 `upstream` and depth-0 `upstreams`, so no per-check sort is needed.
+      // `modelBuckets` rows are pre-sorted by `(order, id)` and outrank the
+      // `upstream` and `upstreams` scopes per `accessScopeDepth`, so no per-check sort is needed.
       const out: AccessBucket[] = [];
       const rows = modelBuckets.get(scope.upstreamId);
       if (rows !== undefined) {

@@ -8,7 +8,7 @@
 // credential-bearing proxy URIs. The endpoint is admin-only; handle the file
 // with the same care as a DB backup.
 
-import { parseImportData, type SerializedProxy } from './import-schema.ts';
+import { parseImportData, type ImportedUpstream, type SerializedProxy } from './import-schema.ts';
 import type { AccessRecordInput } from '../../access-control/types.ts';
 import { parseWebSearchConfigDefault, parseWebSearchConfigStrict } from '../../data-plane/tools/web-search/config.ts';
 import type { WebSearchConfig } from '../../data-plane/tools/web-search/types.ts';
@@ -18,10 +18,13 @@ import { groupNameKey } from '../../repo/group-names.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, Group, SiteSettings, UpstreamMetricRecord, PerformanceTelemetryRecord, UsageRecord, User, UserPreferencesRepo, WebSearchUsageRecord } from '../../repo/types.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
+import { supportsManualModels } from '../../upstreams/models-refresh.ts';
 import { type exportQuery, type importBody } from '../schemas.ts';
 import { saveUpstreams } from '../shared/save-upstreams.ts';
 import { type FullSerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
-import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamRecord } from '@floway-dev/provider';
 
 interface ExportPayload {
   version: 26;
@@ -103,7 +106,7 @@ const validateProxyFallbackReferences = (
   return null;
 };
 
-const normalizeUpstreamOrder = (upstreams: readonly { readonly record: UpstreamRecord; readonly manualModels?: readonly UpstreamModelConfig[] }[]): { readonly record: UpstreamRecord; readonly manualModels?: readonly UpstreamModelConfig[] }[] => upstreams
+const normalizeUpstreamOrder = (upstreams: readonly ImportedUpstream[]): ImportedUpstream[] => upstreams
   .toSorted((left, right) => left.record.sortOrder - right.record.sortOrder || left.record.createdAt.localeCompare(right.record.createdAt) || left.record.id.localeCompare(right.record.id))
   .map((entry, sortOrder) => ({ ...entry, record: { ...entry.record, sortOrder } }));
 
@@ -129,7 +132,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   ]);
 
   const manualModelsByUpstream = await repo.upstreamModels.listManualModelsByUpstreams(
-    upstreams.filter(u => u.kind === 'custom' || u.kind === 'azure' || u.kind === 'ollama').map(u => u.id),
+    upstreams.filter(u => supportsManualModels(u.kind)).map(u => u.id),
   );
 
   const payload: ExportPayload = {
@@ -239,10 +242,15 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.webSearchUsage.set(record);
   for (const record of upstreamMetrics) await repo.upstreamMetrics.set(record);
+  const refreshContext = {
+    runtimeLocation: getRuntimeLocation(c.req.raw),
+    scheduler: backgroundSchedulerFromContext(c),
+  };
   await saveUpstreams(await Promise.all(normalizedUpstreams.map(async entry => ({
     previous: await repo.upstreams.getById(entry.record.id),
     next: entry.record,
     ...(entry.manualModels !== undefined ? { manualModels: entry.manualModels } : {}),
+    refreshContext,
   }))));
   for (const record of performance) await repo.performance.set(record);
   await repo.siteSettings.save(siteSettings);

@@ -89,12 +89,10 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       return finalizeGatewayResponse(ctx, apiError(c, message, sawModel ? 400 : 404));
     }
 
-    const routable = candidates.flatMap(candidate => {
-      const providerModel = candidate.model;
-      return candidate.model.endpoints.rerank === undefined || providerModel.rerankTarget === undefined
+    const routable = candidates.flatMap(candidate =>
+      candidate.model.endpoints.rerank === undefined || candidate.model.rerankTarget === undefined
         ? []
-        : [{ candidate, target: providerModel.rerankTarget }];
-    });
+        : [{ candidate, target: candidate.model.rerankTarget }]);
     if (routable.length === 0) {
       ctx.dump?.error('gateway');
       return finalizeGatewayResponse(ctx, apiError(c, unsupportedMessage(model), 400));

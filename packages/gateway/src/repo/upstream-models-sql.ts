@@ -14,6 +14,7 @@ import type {
   StoredUpstreamMeta,
   StoredUpstreamRecord,
   UpstreamCatalogFilter,
+  UpstreamInsertInput,
   UpstreamModelEntry,
   UpstreamModelsCacheAction,
   UpstreamModelsCacheState,
@@ -37,7 +38,7 @@ import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import type { AddressableForm, ModelPrefixConfig, ProviderModel, UpstreamModelConfig, UpstreamModelSource, UpstreamRecord } from '@floway-dev/provider';
-import { normalizeModelPrefix, publicModelId, UpstreamGoneError } from '@floway-dev/provider';
+import { MODEL_PREFIX_MAX_LENGTH, normalizeModelPrefix, publicModelId, UpstreamGoneError } from '@floway-dev/provider';
 
 // Losing once is ordinary on a row this contended, losing four times in a row
 // is not — and the attempts run back-to-back with no delay, so they observe
@@ -50,6 +51,11 @@ const JSON_INSERT_CHUNK_SIZE = 100;
 
 const sqliteBoolean = (value: boolean): 0 | 1 => value ? 1 : 0;
 
+const requireChanges = (result: { readonly meta: { readonly changes?: number } } | undefined, label: string): number => {
+  if (result?.meta.changes === undefined) throw new Error(`SQLite driver omitted meta.changes for ${label}`);
+  return result.meta.changes;
+};
+
 type StoredAddressableMode = 'unprefixed' | 'prefixed' | 'both';
 type StoredListedMode = 'none' | 'unprefixed' | 'prefixed' | 'both';
 
@@ -58,7 +64,6 @@ const encodeModelPrefixColumns = (prefix: ModelPrefixConfig | null): {
   readonly addressable: StoredAddressableMode | null;
   readonly listed: StoredListedMode | null;
 } => {
-  if (prefix === null) return { prefix: null, addressable: null, listed: null };
   const normalized = normalizeModelPrefix(prefix);
   if (normalized === null) return { prefix: null, addressable: null, listed: null };
   const hasUnprefixedAddr = normalized.addressable.includes('unprefixed');
@@ -508,7 +513,6 @@ export class SqlUpstreamRepo implements UpstreamRepo {
       .prepare(
         `SELECT
            id,
-           provider,
            version,
            proxy_fallback_list_json,
            CASE
@@ -536,14 +540,12 @@ export class SqlUpstreamRepo implements UpstreamRepo {
       .bind(revision, staleBefore, nowMs)
       .all<{
       id: string;
-      provider: string;
       version: number;
       proxy_fallback_list_json: string;
       requires_network: number;
     }>();
     return results.map(row => ({
       id: row.id,
-      kind: parseUpstreamKind(row.id, row.provider),
       version: row.version,
       proxyFallbackList: normalizeProxyFallbackList(decodeProxyFallbackList(row.proxy_fallback_list_json, row.id)),
       requiresNetwork: row.requires_network !== 0,
@@ -581,11 +583,7 @@ export class SqlUpstreamRepo implements UpstreamRepo {
 
   private async insertInternal(
     mode: 'explicit' | 'end',
-    input: {
-      readonly upstream: UpstreamRecord;
-      readonly manualModels?: readonly UpstreamModelConfig[];
-      readonly modelsWrite?: UpstreamModelsWritePayload;
-    },
+    input: UpstreamInsertInput,
   ): Promise<StoredUpstreamRecord | null> {
     const { upstream, manualModels, modelsWrite } = input;
     const version = nextRowVersion();
@@ -647,23 +645,15 @@ export class SqlUpstreamRepo implements UpstreamRepo {
       ...appendChildWriteStatements(this.db, upstream.id, version, manualModels, modelsWrite),
     ];
     const results = await runStatements(this.db, stmts);
-    if ((results[0]?.meta.changes ?? 0) === 0) return null;
+    if (requireChanges(results[0], `upstreams.insert(${upstream.id})`) === 0) return null;
     return await this.getById(upstream.id);
   }
 
-  async insertAtEnd(input: {
-    readonly upstream: UpstreamRecord;
-    readonly manualModels?: readonly UpstreamModelConfig[];
-    readonly modelsWrite?: UpstreamModelsWritePayload;
-  }): Promise<StoredUpstreamRecord | null> {
+  async insertAtEnd(input: UpstreamInsertInput): Promise<StoredUpstreamRecord | null> {
     return await this.insertInternal('end', input);
   }
 
-  async insert(input: {
-    readonly upstream: UpstreamRecord;
-    readonly manualModels?: readonly UpstreamModelConfig[];
-    readonly modelsWrite?: UpstreamModelsWritePayload;
-  }): Promise<StoredUpstreamRecord | null> {
+  async insert(input: UpstreamInsertInput): Promise<StoredUpstreamRecord | null> {
     return await this.insertInternal('explicit', input);
   }
 
@@ -733,13 +723,13 @@ export class SqlUpstreamRepo implements UpstreamRepo {
       ...appendChildWriteStatements(this.db, upstream.id, nextVersion, manualModels, modelsWrite, syncDisabledJson),
     ];
     const results = await runStatements(this.db, stmts);
-    if ((results[0]?.meta.changes ?? 0) === 0) return null;
+    if (requireChanges(results[0], `upstreams.replace(${upstream.id})`) === 0) return null;
     return await this.getById(upstream.id);
   }
 
   async delete(id: string): Promise<boolean> {
     const result = await this.db.prepare('DELETE FROM upstreams WHERE id = ?').bind(id).run();
-    return (result.meta.changes ?? 0) > 0;
+    return requireChanges(result, `upstreams.delete(${id})`) > 0;
   }
 
   async deleteAll(): Promise<void> {
@@ -765,7 +755,7 @@ export class SqlUpstreamRepo implements UpstreamRepo {
       ...buildModelsReplacementStatements(this.db, id, nextVersion, models),
     ];
     const results = await runStatements(this.db, stmts);
-    return (results[0]?.meta.changes ?? 0) > 0 ? nextVersion : null;
+    return requireChanges(results[0], `upstreams.publishModelsRefresh(${id})`) > 0 ? nextVersion : null;
   }
 
   async recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
@@ -780,7 +770,7 @@ export class SqlUpstreamRepo implements UpstreamRepo {
       )
       .bind(storedModelErrorMessage(error.message), error.at, id, version)
       .run();
-    return (result.meta.changes ?? 0) > 0;
+    return requireChanges(result, `upstreams.recordModelsRefreshFailure(${id})`) > 0;
   }
 
   // Read-modify-write under optimistic concurrency, retried against the winner
@@ -803,7 +793,7 @@ export class SqlUpstreamRepo implements UpstreamRepo {
         .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ? AND version = ?')
         .bind(next, id, row.state_json, row.version)
         .run();
-      if ((result.meta.changes ?? 0) > 0) return;
+      if (requireChanges(result, `upstreams.saveState(${id})`) > 0) return;
     }
     throw new Error(`Upstream ${id} state write lost ${UPSTREAM_STATE_WRITE_ATTEMPTS} consecutive races`);
   }
@@ -818,7 +808,7 @@ interface PrefixLookupPair {
 const extractPrefixPairs = (modelIds: readonly string[]): PrefixLookupPair[] => {
   const pairs: PrefixLookupPair[] = [];
   for (const inputId of modelIds) {
-    for (let idx = inputId.indexOf('/'); idx !== -1; idx = inputId.indexOf('/', idx + 1)) {
+    for (let idx = inputId.indexOf('/'); idx !== -1 && idx + 1 <= MODEL_PREFIX_MAX_LENGTH; idx = inputId.indexOf('/', idx + 1)) {
       const prefix = inputId.slice(0, idx + 1);
       const rest = inputId.slice(idx + 1);
       if (rest.length > 0) pairs.push({ inputId, prefix, rest });
@@ -851,8 +841,8 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
     const binds: SqlBindValue[] = [];
     const unprefixedPredicate = modelIds.length === 1
       ? 'm.model_id = ?'
-      : `m.model_id IN (${modelIds.map(() => '?').join(', ')})`;
-    binds.push(...modelIds);
+      : 'm.model_id IN (SELECT CAST(value AS TEXT) FROM json_each(?))';
+    binds.push(modelIds.length === 1 ? modelIds[0]! : JSON.stringify(modelIds));
 
     const upstreamFilterSql = hasUpstreamFilter
       ? ' AND u.id IN (SELECT CAST(value AS TEXT) FROM json_each(?))'
@@ -915,8 +905,6 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
 
     const { results } = await this.db.prepare(query).bind(...binds).all<ResolvedRow>();
 
-    // Deduplicate decoded StoredUpstreamRecord instances per upstream id within
-    // this single query result so multi-target or dual-form hits reuse the same object.
     const upstreamsById = new Map<string, StoredUpstreamRecord>();
     const matches: ResolvedUpstreamModelMatch[] = results.map(row => {
       let upstream = upstreamsById.get(row.id);
@@ -966,7 +954,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
       this.db
         .prepare(
           `SELECT
-             u.id, u.provider, u.name, u.hue, u.sort_order,
+             u.id, u.provider, u.name, u.hue,
              u.model_prefix, u.model_prefix_addressable, u.model_prefix_listed
            FROM upstreams u
            WHERE u.enabled = 1${filterSql}
@@ -978,7 +966,6 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
         provider: string;
         name: string;
         hue: number;
-        sort_order: number;
         model_prefix: string | null;
         model_prefix_addressable: string | null;
         model_prefix_listed: string | null;
@@ -1000,7 +987,6 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
       kind: parseUpstreamKind(row.id, row.provider),
       name: row.name,
       hue: parseUpstreamHue(row.id, row.hue),
-      sortOrder: row.sort_order,
       modelPrefix: parseModelPrefixColumns(row.id, row.model_prefix, row.model_prefix_addressable, row.model_prefix_listed),
     }));
 
@@ -1009,10 +995,48 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
       upstreams.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
     }
 
-    const models: CatalogModelEntry[] = modelsRes.results.map(row => ({
-      upstreamId: row.upstream_id,
-      model: decodeUpstreamModel(row.model_json, row.upstream_id),
-    }));
+    // Keep the SQL query free of an ORDER BY temp B-tree while guaranteeing
+    // deterministic `kind` precedence whenever one upstream exposes multiple
+    // kinds under the same `model_id`.
+    const models: CatalogModelEntry[] = [];
+    const firstIndexByUpstream = new Map<string, Map<string, number>>();
+    let collisionGroups: Map<string, number[]> | undefined;
+    for (const row of modelsRes.results) {
+      const entry: CatalogModelEntry = {
+        upstreamId: row.upstream_id,
+        model: decodeUpstreamModel(row.model_json, row.upstream_id),
+      };
+      const index = models.length;
+      models.push(entry);
+      let seen = firstIndexByUpstream.get(row.upstream_id);
+      if (seen === undefined) {
+        seen = new Map();
+        firstIndexByUpstream.set(row.upstream_id, seen);
+      }
+      const firstIndex = seen.get(entry.model.id);
+      if (firstIndex === undefined) {
+        seen.set(entry.model.id, index);
+      } else {
+        collisionGroups ??= new Map();
+        const collisionKey = `${row.upstream_id}\0${entry.model.id}`;
+        let indices = collisionGroups.get(collisionKey);
+        if (indices === undefined) {
+          indices = [firstIndex];
+          collisionGroups.set(collisionKey, indices);
+        }
+        indices.push(index);
+      }
+    }
+    if (collisionGroups !== undefined) {
+      for (const indices of collisionGroups.values()) {
+        const sorted = indices
+          .map(idx => models[idx]!)
+          .sort((a, b) => (a.model.kind < b.model.kind ? -1 : a.model.kind > b.model.kind ? 1 : 0));
+        for (let i = 0; i < indices.length; i++) {
+          models[indices[i]!] = sorted[i]!;
+        }
+      }
+    }
 
     return { upstreams, models };
   }

@@ -20,8 +20,8 @@ export const supportsManualModels = (kind: UpstreamRecord['kind']): kind is 'cus
 export const upstreamRequiresNetworkForModels = (record: Pick<UpstreamRecord, 'kind' | 'config'>): boolean => {
   if (record.kind === 'azure') return false;
   if (record.kind === 'custom') {
-    const cfg = record.config as { modelsFetch?: { enabled?: boolean } };
-    return cfg.modelsFetch?.enabled !== false;
+    const cfg = record.config as { modelsFetch?: { enabled?: boolean } } | null | undefined;
+    return cfg?.modelsFetch?.enabled !== false;
   }
   return true;
 };
@@ -147,16 +147,9 @@ const discoverModels = async (
   record: UpstreamRecord,
   manualModels: readonly UpstreamModelConfig[],
   fetcher: Fetcher,
-  fetchCustomLive: boolean,
 ): Promise<ProviderModel[]> => await withRedactedCredentialEcho(fetcher, async trackedFetcher => {
-  if (record.kind === 'azure') {
-    return projectAzureModels(record, manualModels);
-  }
   if (record.kind === 'custom') {
     const custom = assertCustomUpstreamRecord(record);
-    if (!fetchCustomLive && !custom.config.modelsFetch.enabled) {
-      return projectCustomModels(record, manualModels);
-    }
     const response = await fetchCustomModels(custom.config, trackedFetcher);
     return projectCustomModels(record, manualModels, response);
   }
@@ -188,14 +181,14 @@ const runSavedRefresh = async (input: {
 
   let models: ProviderModel[];
   try {
-    if (!requiresNetwork && input.mode === 'automatic') {
+    if (!requiresNetwork) {
       models = record.kind === 'azure'
         ? projectAzureModels(record, manualModels)
         : projectCustomModels(record, manualModels);
     } else {
       const createFetcher = input.mode === 'explicit' ? createValidatedPerRequestFetcher : createPerRequestFetcher;
       const fetcher = (await createFetcher(input.runtimeLocation, [record]))(record.id);
-      models = await discoverModels(record, manualModels, fetcher, input.mode === 'explicit');
+      models = await discoverModels(record, manualModels, fetcher);
     }
   } catch (error) {
     if (input.mode === 'explicit' && isModelsRefreshConfigurationError(error)) throw error;

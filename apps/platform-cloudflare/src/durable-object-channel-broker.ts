@@ -5,21 +5,21 @@ export interface ExecutionDurableObjectNamespace {
   get(id: unknown): { fetch(request: Request): Promise<Response> };
 }
 
-const fetchBroadcastCell = (
+const fetchBroadcastStub = (
   namespace: ExecutionDurableObjectNamespace,
   channelId: string,
   request: Request,
 ): Promise<Response> =>
   namespace.get(namespace.idFromName(JSON.stringify(['broadcast', channelId]))).fetch(request);
 
-export class ExecutionCellChannelBroker<T> implements ChannelBroker<T> {
+export class DurableObjectChannelBroker<T> implements ChannelBroker<T> {
   constructor(
     private readonly namespace: ExecutionDurableObjectNamespace,
     private readonly codec: ChannelCodec<T>,
   ) {}
 
   async publish(channelId: string, payload: T): Promise<void> {
-    const response = await fetchBroadcastCell(this.namespace, channelId, new Request('https://execution.do/broadcast', {
+    const response = await fetchBroadcastStub(this.namespace, channelId, new Request('https://execution.do/broadcast', {
       method: 'POST',
       body: this.codec.encode(payload),
     }));
@@ -27,7 +27,7 @@ export class ExecutionCellChannelBroker<T> implements ChannelBroker<T> {
   }
 
   async closeChannel(channelId: string, reason: string): Promise<void> {
-    const response = await fetchBroadcastCell(this.namespace, channelId, new Request('https://execution.do/broadcast/close', {
+    const response = await fetchBroadcastStub(this.namespace, channelId, new Request('https://execution.do/broadcast/close', {
       method: 'POST',
       body: reason,
     }));
@@ -113,7 +113,7 @@ const iterateFromExecutionSocket = <T>(
       pull = flushError;
 
       const openPromise = (async (): Promise<void> => {
-        const response = await fetchBroadcastCell(namespace, channelId, new Request('https://execution.do/broadcast', {
+        const response = await fetchBroadcastStub(namespace, channelId, new Request('https://execution.do/broadcast', {
           headers: { Upgrade: 'websocket' },
         }));
         if (response.status !== 101) {

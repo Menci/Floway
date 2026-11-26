@@ -17,6 +17,7 @@ import { shortId } from '../../shared/short-id.ts';
 import { supportsManualModels } from '../../upstreams/models-refresh.ts';
 import type { createUpstreamBody, reorderUpstreamsBody, updateUpstreamBody, upstreamOptionsQuery } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
+import { type ManualModelsProviderKind, validateManualModels } from '../shared/manual-models.ts';
 import { appendUpstream, saveUpstream } from '../shared/save-upstreams.ts';
 import {
   normalizeModelPrefix,
@@ -27,13 +28,13 @@ import {
   type UpstreamProviderKind,
   type UpstreamRecord,
 } from '@floway-dev/provider';
-import { assertAzureUpstreamRecord, validateAzureManualModels } from '@floway-dev/provider-azure';
+import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { type ChatGPTQuotaSnapshotMap, type ChatGPTUpstreamConfig, assertChatGPTUpstreamRecord, assertChatGPTUpstreamState, getChatGPTQuota, patchChatGPTIdentityMetadata } from '@floway-dev/provider-chatgpt';
 import { assertClaudeCodeUpstreamRecord, readClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { parseCopilotUpstreamConfig, readCopilotUpstreamState } from '@floway-dev/provider-copilot';
-import { assertCustomUpstreamRecord, validateCustomManualModels } from '@floway-dev/provider-custom';
+import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { assertKimiCodeUpstreamRecord, kimiCodeStateSurvivesConfigChange, type KimiCodeUpstreamConfig } from '@floway-dev/provider-kimi-code';
-import { assertOllamaUpstreamRecord, validateOllamaManualModels } from '@floway-dev/provider-ollama';
+import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 
 type ChatGPTQuotaProjection = { chatgpt_quota?: ChatGPTQuotaSnapshotMap | null };
 
@@ -147,16 +148,11 @@ const modelUseForUpstreams = async (
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const validateManualModelsForKind = (
-  kind: UpstreamProviderKind,
+  kind: ManualModelsProviderKind,
   rawManualModels: unknown,
 ): ValidationResult<UpstreamModelConfig[]> => {
   try {
-    const manualModels = kind === 'azure'
-      ? validateAzureManualModels(rawManualModels)
-      : kind === 'custom'
-        ? validateCustomManualModels(rawManualModels)
-        : validateOllamaManualModels(rawManualModels);
-    return { ok: true, value: manualModels };
+    return { ok: true, value: validateManualModels(kind, rawManualModels) };
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }
@@ -354,6 +350,10 @@ export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   });
 };
 
+const hasManualModelsField = <T extends { kind: UpstreamProviderKind }>(
+  body: T,
+): body is Extract<T, { kind: ManualModelsProviderKind }> => supportsManualModels(body.kind);
+
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {
   const body = c.req.valid('json');
 
@@ -367,7 +367,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   const modelPrefix = modelPrefixResult.value;
 
   let manualModels: UpstreamModelConfig[] | undefined;
-  if (body.kind === 'custom' || body.kind === 'azure' || body.kind === 'ollama') {
+  if (hasManualModelsField(body)) {
     const validated = validateManualModelsForKind(body.kind, body.manual_models);
     if (!validated.ok) return c.json({ error: validated.error }, 400);
     manualModels = validated.value;
@@ -500,7 +500,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   if (body.hue !== undefined) next = { ...next, hue: body.hue };
 
   let nextManualModels: UpstreamModelConfig[] | undefined;
-  if (body.manual_models !== undefined) {
+  if (body.manual_models !== undefined && supportsManualModels(existing.kind)) {
     const validated = validateManualModelsForKind(existing.kind, body.manual_models);
     if (!validated.ok) return c.json({ error: validated.error }, 400);
     nextManualModels = validated.value;

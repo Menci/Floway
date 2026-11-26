@@ -2,12 +2,12 @@ import { HTTPException } from 'hono/http-exception';
 
 import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
 import { getRepo } from '../../repo/index.ts';
-import { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
+import { isModelsCacheDue, MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
 import type { StoredUpstreamRecord, UpstreamModelEntry, UpstreamModelsWritePayload } from '../../repo/types.ts';
 import { serializeStoredConfig, serializeStoredState } from '../../repo/upstream-json.ts';
 import { scheduleUpstreamModelsRefresh, supportsManualModels, upstreamRequiresNetworkForModels } from '../../upstreams/models-refresh.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { resolveEffectiveFlags, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
+import { resolveEffectiveFlags, type ProviderModel, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import { projectAzureModels } from '@floway-dev/provider-azure';
 import { assertCustomUpstreamRecord, projectCustomManualModels } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord, projectOllamaManualModels } from '@floway-dev/provider-ollama';
@@ -21,7 +21,7 @@ export interface UpstreamChange {
   readonly previous: StoredUpstreamRecord | null;
   readonly next: UpstreamRecord;
   readonly manualModels?: readonly UpstreamModelConfig[];
-  readonly refreshContext?: SaveRefreshContext;
+  readonly refreshContext: SaveRefreshContext;
 }
 
 const sameRemoteConnection = (previous: UpstreamRecord, next: UpstreamRecord): boolean => {
@@ -45,12 +45,13 @@ const sameRemoteConnection = (previous: UpstreamRecord, next: UpstreamRecord): b
 const projectManualEntries = (
   record: UpstreamRecord,
   manualModels: readonly UpstreamModelConfig[],
+  inheritedCustomPricing?: ReadonlyMap<string, NonNullable<ProviderModel['pricing']>>,
 ): UpstreamModelEntry[] => {
   if (record.kind === 'azure') {
     return projectAzureModels(record, manualModels).map(model => ({ source: 'manual', model }));
   }
   if (record.kind === 'custom') {
-    return projectCustomManualModels(record, manualModels).map(model => ({ source: 'manual', model }));
+    return projectCustomManualModels(record, manualModels, inheritedCustomPricing).map(model => ({ source: 'manual', model }));
   }
   if (record.kind === 'ollama') {
     return projectOllamaManualModels(record, manualModels).map(model => ({ source: 'manual', model }));
@@ -65,7 +66,7 @@ const planInsertModelsWrite = (
   readonly modelsWrite?: UpstreamModelsWritePayload;
   readonly needsBackgroundRefresh: boolean;
 } => {
-  const effectiveManual = supportsManualModels(next.kind) ? (manualModels ?? []) : [];
+  const effectiveManual = manualModels ?? [];
   if (!upstreamRequiresNetworkForModels(next)) {
     return {
       modelsWrite: {
@@ -114,15 +115,30 @@ const planReplaceModelsWrite = async (
   const effectiveManual = nextManualModels ?? previousManualModels;
 
   const modelInputsChanged = kindChanged || configChanged || flagsChanged || manualModelsChanged;
+  const hadError = previous.modelsCache.lastError !== null;
   if (!modelInputsChanged && !transportChanged) {
+    if (!previous.enabled && next.enabled) {
+      const requiresNetwork = upstreamRequiresNetworkForModels(next);
+      if (isModelsCacheDue(previous.modelsCache, Date.now(), requiresNetwork)) {
+        if (!requiresNetwork) {
+          return {
+            modelsWrite: {
+              models: projectManualEntries(next, effectiveManual),
+              cacheAction: { kind: 'set-fresh', revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() },
+            },
+            needsBackgroundRefresh: false,
+          };
+        }
+        return { needsBackgroundRefresh: true };
+      }
+    }
     return { needsBackgroundRefresh: false };
   }
 
   if (!modelInputsChanged && transportChanged) {
-    const hadError = previous.modelsCache.lastError !== null;
     return {
       modelsWrite: { cacheAction: { kind: hadError ? 'mark-stale' : 'preserve' } },
-      needsBackgroundRefresh: hadError,
+      needsBackgroundRefresh: hadError || previous.modelsCache.fetchedAt === null,
     };
   }
 
@@ -144,9 +160,37 @@ const planReplaceModelsWrite = async (
   // background refresh to restore any shadowed auto model.
   if (next.kind === 'custom' || next.kind === 'ollama') {
     if (sameRemoteConnection(previous, next)) {
-      const existingAuto = await repo.upstreamModels.listByUpstream(next.id, { source: 'auto' });
       const overriddenIds = new Set(effectiveManual.map(model => model.upstreamModelId));
       const upstreamFlags = resolveEffectiveFlags([flagDefaultsForKind(next.kind), next.flagOverrides]);
+      let existingAuto: UpstreamModelEntry[];
+      let inheritedCustomPricing: Map<string, NonNullable<ProviderModel['pricing']>> | undefined;
+      let clearedExplicitPricing = false;
+      if (next.kind === 'custom') {
+        const existingRows = await repo.upstreamModels.listByUpstream(next.id);
+        existingAuto = [];
+        inheritedCustomPricing = new Map();
+        const previousManualById = new Map(previousManualModels.map(model => [model.upstreamModelId, model] as const));
+        for (const entry of existingRows) {
+          if (entry.source === 'auto') {
+            existingAuto.push(entry);
+            if (entry.model.pricing !== undefined) {
+              inheritedCustomPricing.set(entry.model.upstreamModelId, entry.model.pricing);
+            }
+          } else if (
+            entry.model.pricing !== undefined
+            && previousManualById.get(entry.model.upstreamModelId)?.pricing === undefined
+          ) {
+            inheritedCustomPricing.set(entry.model.upstreamModelId, entry.model.pricing);
+          }
+        }
+        clearedExplicitPricing = effectiveManual.some(
+          model => model.pricing === undefined
+            && previousManualById.get(model.upstreamModelId)?.pricing !== undefined
+            && !inheritedCustomPricing!.has(model.upstreamModelId),
+        );
+      } else {
+        existingAuto = await repo.upstreamModels.listByUpstream(next.id, { source: 'auto' });
+      }
       const keptAuto: UpstreamModelEntry[] = existingAuto
         .filter(({ model }) => !overriddenIds.has(model.upstreamModelId))
         .map(({ model }) => ({
@@ -154,12 +198,14 @@ const planReplaceModelsWrite = async (
           model: flagsChanged ? { ...model, enabledFlags: upstreamFlags } : model,
         }));
       const manualRemoved = previousManualModels.some(prev => !overriddenIds.has(prev.upstreamModelId));
+      const clearErrorForTransport = transportChanged && hadError;
+      const shouldMarkStale = manualRemoved || clearedExplicitPricing || clearErrorForTransport;
       return {
         modelsWrite: {
-          models: [...projectManualEntries(next, effectiveManual), ...keptAuto],
-          cacheAction: manualRemoved ? { kind: 'mark-stale' } : { kind: 'preserve' },
+          models: [...projectManualEntries(next, effectiveManual, inheritedCustomPricing), ...keptAuto],
+          cacheAction: shouldMarkStale ? { kind: 'mark-stale' } : { kind: 'preserve' },
         },
-        needsBackgroundRefresh: manualRemoved || previous.modelsCache.fetchedAt === null,
+        needsBackgroundRefresh: shouldMarkStale || previous.modelsCache.fetchedAt === null,
       };
     }
     return {
@@ -189,33 +235,45 @@ const planReplaceModelsWrite = async (
   };
 };
 
-export const saveUpstream = async ({ previous, next, manualModels, refreshContext }: UpstreamChange): Promise<StoredUpstreamRecord> => {
+const insertUpstream = async (
+  mode: 'explicit' | 'end',
+  next: UpstreamRecord,
+  manualModels: readonly UpstreamModelConfig[] | undefined,
+  refreshContext: SaveRefreshContext,
+): Promise<StoredUpstreamRecord> => {
   const upstreams = getRepo().upstreams;
+  const plan = planInsertModelsWrite(next, manualModels);
+  const input = {
+    upstream: next,
+    ...(manualModels !== undefined ? { manualModels } : {}),
+    ...(plan.modelsWrite !== undefined ? { modelsWrite: plan.modelsWrite } : {}),
+  };
+  const saved = mode === 'end' ? await upstreams.insertAtEnd(input) : await upstreams.insert(input);
+  if (saved === null) throw new HTTPException(409, { message: `Upstream ${next.id} changed concurrently` });
+  if (plan.needsBackgroundRefresh) {
+    scheduleUpstreamModelsRefresh(saved, refreshContext.runtimeLocation, refreshContext.scheduler);
+  }
+  return saved;
+};
+
+export const saveUpstream = async ({ previous, next, manualModels, refreshContext }: UpstreamChange): Promise<StoredUpstreamRecord> => {
   if (previous === null) {
-    const plan = planInsertModelsWrite(next, manualModels);
-    const saved = await upstreams.insert({
-      upstream: next,
-      ...(supportsManualModels(next.kind) ? { manualModels: manualModels ?? [] } : {}),
-      ...(plan.modelsWrite !== undefined ? { modelsWrite: plan.modelsWrite } : {}),
-    });
-    if (saved === null) throw new HTTPException(409, { message: `Upstream ${next.id} changed concurrently` });
-    if (plan.needsBackgroundRefresh && refreshContext !== undefined) {
-      scheduleUpstreamModelsRefresh(saved, refreshContext.runtimeLocation, refreshContext.scheduler);
-    }
-    return saved;
+    return await insertUpstream('explicit', next, manualModels, refreshContext);
   }
 
   const plan = await planReplaceModelsWrite(previous, next, manualModels);
   const replaceState = serializeStoredState(previous.state) !== serializeStoredState(next.state);
-  const saved = await upstreams.replace({
+  const effectiveManualWrite = manualModels
+    ?? (supportsManualModels(previous.kind) && !supportsManualModels(next.kind) ? [] : undefined);
+  const saved = await getRepo().upstreams.replace({
     previous,
     upstream: next,
     replaceState,
-    ...(manualModels !== undefined ? { manualModels } : {}),
+    ...(effectiveManualWrite !== undefined ? { manualModels: effectiveManualWrite } : {}),
     ...(plan.modelsWrite !== undefined ? { modelsWrite: plan.modelsWrite } : {}),
   });
   if (saved === null) throw new HTTPException(409, { message: `Upstream ${next.id} changed concurrently` });
-  if (plan.needsBackgroundRefresh && refreshContext !== undefined) {
+  if (plan.needsBackgroundRefresh) {
     scheduleUpstreamModelsRefresh(saved, refreshContext.runtimeLocation, refreshContext.scheduler);
   }
   return saved;
@@ -223,20 +281,9 @@ export const saveUpstream = async ({ previous, next, manualModels, refreshContex
 
 export const appendUpstream = async (
   next: UpstreamRecord,
-  options?: { readonly manualModels?: readonly UpstreamModelConfig[]; readonly refreshContext?: SaveRefreshContext },
-): Promise<StoredUpstreamRecord> => {
-  const plan = planInsertModelsWrite(next, options?.manualModels);
-  const saved = await getRepo().upstreams.insertAtEnd({
-    upstream: next,
-    ...(supportsManualModels(next.kind) ? { manualModels: options?.manualModels ?? [] } : {}),
-    ...(plan.modelsWrite !== undefined ? { modelsWrite: plan.modelsWrite } : {}),
-  });
-  if (saved === null) throw new HTTPException(409, { message: `Upstream ${next.id} changed concurrently` });
-  if (plan.needsBackgroundRefresh && options?.refreshContext !== undefined) {
-    scheduleUpstreamModelsRefresh(saved, options.refreshContext.runtimeLocation, options.refreshContext.scheduler);
-  }
-  return saved;
-};
+  options: { readonly manualModels?: readonly UpstreamModelConfig[]; readonly refreshContext: SaveRefreshContext },
+): Promise<StoredUpstreamRecord> =>
+  await insertUpstream('end', next, options.manualModels, options.refreshContext);
 
 export const saveUpstreams = async (changes: readonly UpstreamChange[]): Promise<void> => {
   for (const change of changes) await saveUpstream(change);
