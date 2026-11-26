@@ -1,14 +1,14 @@
+import { dial } from './dial.ts';
+import { selectModel } from './select-model.ts';
 import { copilotOperation } from '../facts.ts';
 import { authorize } from '../shared/authorize.ts';
-import { dial } from '../shared/dial.ts';
 import { formatOpenAIError } from '../shared/format-errors.ts';
 import { observeQuota } from '../shared/observe-quota.ts';
 import { readJsonObject } from '../shared/read-json-object.ts';
-import { selectModel } from '../shared/select-model.ts';
 import { setIdentityHeaders } from '../shared/set-identity-headers.ts';
 import { stripClientHeaders } from '../shared/strip-client-headers.ts';
 import { decodeOpenAIImagesEditsStream } from '@floway-dev/protocols/openai-images';
-import { httpTerminal, parseHttpResponse, serializeOpenAIImagesEditsBody } from '@floway-dev/provider';
+import { httpTerminal, parseHttpResponse } from '@floway-dev/provider';
 
 const operation = 'openaiImagesEdits';
 
@@ -27,16 +27,11 @@ export const openaiImagesEdits = copilotOperation<typeof operation>().compose('c
   exit: ['response.http', 'response.openaiImagesEdits', 'response.usageModelKey?'],
   stages: [
     stripClientHeaders,
-    selectModel.openaiImagesEdits,
+    selectModel,
     setIdentityHeaders,
     parse,
     authorize(operation, formatOpenAIError),
-    dial.openaiImagesEdits(async payload => {
-      const model = payload.parameters.model;
-      if (typeof model !== 'string') throw new TypeError('Copilot image edits requires a selected model');
-      const { model: _model, ...parameters } = payload.parameters;
-      return { path: '/v1/images/edits', modelId: model, ...await serializeOpenAIImagesEditsBody({ ...payload, parameters }, model) };
-    }, formatOpenAIError),
+    dial,
     observeQuota,
   ],
   ending: httpTerminal,

@@ -1,4 +1,4 @@
-import { rewritePayload } from '../shared/rewrite-request.ts';
+import { rewritePayload } from '../shared/rewrite-payload.ts';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
   AnthropicMessagesTextBlockParam,
@@ -35,7 +35,7 @@ type CacheableBlock = Extract<
 const isCacheableBlock = (block: AnthropicMessagesUserContentBlock | AnthropicMessagesAssistantInputContentBlock): block is CacheableBlock =>
   block.type === 'text' || block.type === 'image' || block.type === 'tool_use' || block.type === 'tool_result';
 
-export const applyTopLevelCacheControl = rewritePayload.anthropicMessages('applyTopLevelCacheControl', current => {
+export const applyTopLevelCacheControl = rewritePayload('anthropicMessages', 'applyTopLevelCacheControl', current => {
   const payload = current as typeof current & { cache_control?: { type: 'ephemeral' } };
   if (payload.cache_control === undefined) return current;
 

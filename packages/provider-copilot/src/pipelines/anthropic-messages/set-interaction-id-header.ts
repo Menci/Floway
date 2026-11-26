@@ -1,7 +1,7 @@
 import { v4 } from 'uuid';
 
 import { parseUserIdMetadata } from './detect-claude-code-metadata.ts';
-import { rewriteHeaders } from '../shared/rewrite-request.ts';
+import { rewriteHeaders } from '../shared/rewrite-headers.ts';
 import { setHeader } from '@floway-dev/http';
 
 /**
@@ -25,7 +25,7 @@ const sessionUuid = async (input: string): Promise<string> => {
   return v4({ random: new Uint8Array(await crypto.subtle.digest('SHA-256', data)) });
 };
 
-export const setInteractionIdHeader = rewriteHeaders.anthropicMessages('setInteractionIdHeader', async (payload, headers) => {
+export const setInteractionIdHeader = rewriteHeaders('anthropicMessages', 'setInteractionIdHeader', async (payload, headers) => {
   const { sessionId } = parseUserIdMetadata(payload.metadata?.user_id ?? undefined);
   return sessionId ? setHeader(headers, 'x-interaction-id', await sessionUuid(sessionId)) : headers;
 });

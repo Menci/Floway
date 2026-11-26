@@ -1,6 +1,6 @@
 import type { OpenAIResponsesOperation } from './operations.ts';
 import { mapChanged } from '../shared/map-changed.ts';
-import { rewritePayload } from '../shared/rewrite-request.ts';
+import { rewritePayload } from '../shared/rewrite-payload.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 
 /**
@@ -30,4 +30,4 @@ const fillDescriptions = <Payload extends { input: CanonicalOpenAIResponsesInput
   return tools === payload.tools ? withInput : { ...withInput, tools };
 };
 
-export const fillEmptyNamespaceDescriptions = (operation: OpenAIResponsesOperation) => rewritePayload[operation]('fillEmptyNamespaceDescriptions', fillDescriptions);
+export const fillEmptyNamespaceDescriptions = (operation: OpenAIResponsesOperation) => rewritePayload(operation, 'fillEmptyNamespaceDescriptions', fillDescriptions);

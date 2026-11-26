@@ -1,4 +1,4 @@
-import { rewriteHeaders } from '../shared/rewrite-request.ts';
+import { rewriteHeaders } from '../shared/rewrite-headers.ts';
 import { setHeader } from '@floway-dev/http';
 
 /**
@@ -34,7 +34,7 @@ import { setHeader } from '@floway-dev/http';
  * - https://github.com/microsoft/vscode/blob/fb5e582d1c8edb9ad0a69e50fe6f508a8c095466/extensions/copilot/src/extension/prompt/node/chatMLFetcher.ts#L1453-L1474
  */
 
-export const setInitiatorHeader = rewriteHeaders.openaiChatCompletions('setInitiatorHeader', (payload, headers) => {
+export const setInitiatorHeader = rewriteHeaders('openaiChatCompletions', 'setInitiatorHeader', (payload, headers) => {
   const role = payload.messages.at(-1)?.role;
   return setHeader(headers, 'x-initiator', role === 'assistant' || role === 'tool' ? 'agent' : 'user');
 });

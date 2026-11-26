@@ -1,6 +1,6 @@
 import type { OpenAIResponsesOperation } from './operations.ts';
 import { mapChanged } from '../shared/map-changed.ts';
-import { rewritePayload } from '../shared/rewrite-request.ts';
+import { rewritePayload } from '../shared/rewrite-payload.ts';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 
 // Copilot filters public image generation out of Responses tool declarations
@@ -50,4 +50,4 @@ export const stripImageGenerationFromPayload = <Payload extends ToolPayload>(pay
   return updated as Payload;
 };
 
-export const stripImageGeneration = (operation: OpenAIResponsesOperation) => rewritePayload[operation]('stripImageGeneration', stripImageGenerationFromPayload);
+export const stripImageGeneration = (operation: OpenAIResponsesOperation) => rewritePayload(operation, 'stripImageGeneration', stripImageGenerationFromPayload);

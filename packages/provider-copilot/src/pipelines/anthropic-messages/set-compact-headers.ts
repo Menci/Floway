@@ -1,4 +1,4 @@
-import { rewriteHeaders } from '../shared/rewrite-request.ts';
+import { rewriteHeaders } from '../shared/rewrite-headers.ts';
 import { setHeader } from '@floway-dev/http';
 import type { AnthropicMessagesMessage, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 
@@ -106,7 +106,7 @@ const classifyCompact = (payload: { messages: AnthropicMessagesMessage[]; system
   return null;
 };
 
-export const setCompactHeaders = rewriteHeaders.anthropicMessages('setCompactHeaders', (payload, headers) => {
+export const setCompactHeaders = rewriteHeaders('anthropicMessages', 'setCompactHeaders', (payload, headers) => {
   const kind = classifyCompact(payload);
   if (kind === 'compact-request') return setHeader(setHeader(headers, 'x-initiator', 'agent'), 'x-interaction-type', 'conversation-compaction');
   return kind === 'auto-continue' ? setHeader(headers, 'x-initiator', 'agent') : headers;

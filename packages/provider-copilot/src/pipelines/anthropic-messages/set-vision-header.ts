@@ -1,5 +1,5 @@
 import type { AnthropicMessagesOperation } from './operations.ts';
-import { rewriteHeaders } from '../shared/rewrite-request.ts';
+import { rewriteHeaders } from '../shared/rewrite-headers.ts';
 import { setHeader } from '@floway-dev/http';
 import type { AnthropicMessagesAssistantMessage, AnthropicMessagesUserMessage } from '@floway-dev/protocols/anthropic-messages';
 
@@ -24,5 +24,5 @@ const contentHasImage = (content: AnthropicMessagesUserMessage['content'] | Anth
   });
 };
 
-export const setVisionHeader = (operation: AnthropicMessagesOperation) => rewriteHeaders[operation]('setVisionHeader', (payload, headers) =>
+export const setVisionHeader = (operation: AnthropicMessagesOperation) => rewriteHeaders(operation, 'setVisionHeader', (payload, headers) =>
   payload.messages.some(message => contentHasImage(message.content)) ? setHeader(headers, 'copilot-vision-request', 'true') : headers);

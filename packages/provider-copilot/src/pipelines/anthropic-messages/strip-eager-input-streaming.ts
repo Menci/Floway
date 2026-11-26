@@ -1,5 +1,5 @@
 import { mapChanged } from '../shared/map-changed.ts';
-import { rewritePayload } from '../shared/rewrite-request.ts';
+import { rewritePayload } from '../shared/rewrite-payload.ts';
 
 /**
  * `eager_input_streaming` is a per-tool property in the Anthropic Messages API
@@ -13,7 +13,7 @@ import { rewritePayload } from '../shared/rewrite-request.ts';
  * - https://github.com/anthropics/anthropic-sdk-typescript/blob/a53f60d59ca904f3e79296586642aac3ce68ae02/src/resources/messages/messages.ts#L1761
  */
 
-export const stripEagerInputStreaming = rewritePayload.anthropicMessages('stripEagerInputStreaming', payload => {
+export const stripEagerInputStreaming = rewritePayload('anthropicMessages', 'stripEagerInputStreaming', payload => {
   if (payload.tools === undefined) return payload;
   const tools = mapChanged(payload.tools, tool => {
     if (!('eager_input_streaming' in tool)) return tool;

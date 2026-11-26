@@ -1,6 +1,6 @@
 import { parseUserIdMetadata } from './detect-claude-code-metadata.ts';
 import { CLAUDE_AGENT_USER_AGENT } from '../../auth.ts';
-import { rewriteHeaders } from '../shared/rewrite-request.ts';
+import { rewriteHeaders } from '../shared/rewrite-headers.ts';
 import { deleteHeader, setHeader } from '@floway-dev/http';
 
 /**
@@ -38,7 +38,7 @@ import { deleteHeader, setHeader } from '@floway-dev/http';
  */
 const UPSTREAM_REJECTS_CLAUDE_AGENT_IDENTITY = new Set(['claude-opus-4-8']);
 
-export const setClaudeAgentHeaders = rewriteHeaders.anthropicMessages('setClaudeAgentHeaders', (payload, headers, model) => {
+export const setClaudeAgentHeaders = rewriteHeaders('anthropicMessages', 'setClaudeAgentHeaders', (payload, headers, model) => {
   if (UPSTREAM_REJECTS_CLAUDE_AGENT_IDENTITY.has(model.id)) return headers;
   const { safetyIdentifier, sessionId } = parseUserIdMetadata(payload.metadata?.user_id ?? undefined);
   if (!safetyIdentifier || !sessionId) return headers;

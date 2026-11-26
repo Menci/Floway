@@ -1,9 +1,11 @@
 import { applyTopLevelCacheControl } from './apply-top-level-cache-control.ts';
 import { compressImages } from './compress-images.ts';
+import { dial } from './dial.ts';
 import { handleSpeedFast } from './handle-speed-fast.ts';
 import { normalizeAnthropicBeta } from './normalize-anthropic-beta.ts';
 import { promoteThinkingDisplay } from './promote-thinking-display.ts';
 import { rewriteContextWindowError } from './rewrite-context-window-error.ts';
+import { selectModel } from './select-model.ts';
 import { setClaudeAgentHeaders } from './set-claude-agent-headers.ts';
 import { setCompactHeaders } from './set-compact-headers.ts';
 import { setInitiatorHeader } from './set-initiator-header.ts';
@@ -13,10 +15,8 @@ import { stripCacheControlExtensions } from './strip-cache-control-extensions.ts
 import { stripEagerInputStreaming } from './strip-eager-input-streaming.ts';
 import { copilotOperation } from '../facts.ts';
 import { authorize } from '../shared/authorize.ts';
-import { dial, jsonRequest } from '../shared/dial.ts';
 import { formatAnthropicMessagesError } from '../shared/format-errors.ts';
 import { observeQuota } from '../shared/observe-quota.ts';
-import { selectModel } from '../shared/select-model.ts';
 import { setIdentityHeaders } from '../shared/set-identity-headers.ts';
 import { stripAnthropicMessagesClientHeaders } from '../shared/strip-client-headers.ts';
 import { decodeAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
@@ -29,7 +29,7 @@ export const anthropicMessages = copilotOperation<typeof operation>().compose('c
   exit: ['response.http', 'response.anthropicMessages', 'response.usageModelKey?'],
   stages: [
     stripAnthropicMessagesClientHeaders,
-    selectModel.anthropicMessages,
+    selectModel,
     setIdentityHeaders,
     rewriteContextWindowError,
     setCompactHeaders,
@@ -46,7 +46,7 @@ export const anthropicMessages = copilotOperation<typeof operation>().compose('c
     normalizeAnthropicBeta(operation),
     parseSseResponse(operation, decodeAnthropicMessagesStream, formatAnthropicMessagesError),
     authorize(operation, formatAnthropicMessagesError),
-    dial.anthropicMessages(payload => jsonRequest('/v1/messages', { ...payload, stream: true }), formatAnthropicMessagesError),
+    dial,
     observeQuota,
   ],
   ending: httpTerminal,

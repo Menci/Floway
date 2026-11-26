@@ -1,5 +1,5 @@
 import type { AnthropicMessagesOperation } from './operations.ts';
-import { rewriteHeaders } from '../shared/rewrite-request.ts';
+import { rewriteHeaders } from '../shared/rewrite-headers.ts';
 import { setHeader } from '@floway-dev/http';
 
 /**
@@ -19,7 +19,7 @@ import { setHeader } from '@floway-dev/http';
  * - https://github.com/caozhiyuan/copilot-api/blob/master/src/services/copilot/create-chat-completions.ts
  */
 
-export const setInitiatorHeader = (operation: AnthropicMessagesOperation) => rewriteHeaders[operation]('setInitiatorHeader', (payload, headers) => {
+export const setInitiatorHeader = (operation: AnthropicMessagesOperation) => rewriteHeaders(operation, 'setInitiatorHeader', (payload, headers) => {
   const last = payload.messages.at(-1);
   const user = last?.role === 'user' && (!Array.isArray(last.content) || last.content.some(block => block.type !== 'tool_result'));
   return setHeader(headers, 'x-initiator', user ? 'user' : 'agent');

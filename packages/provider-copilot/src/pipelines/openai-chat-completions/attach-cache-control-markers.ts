@@ -1,4 +1,4 @@
-import { rewritePayload } from '../shared/rewrite-request.ts';
+import { rewritePayload } from '../shared/rewrite-payload.ts';
 import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 
 /**
@@ -61,7 +61,7 @@ const selectCacheMarkerIndexes = (messages: readonly OpenAIChatCompletionsMessag
   return [...new Set([...systemIndexes, ...nonSystemIndexes])].sort((a, b) => a - b);
 };
 
-export const attachCacheControlMarkers = rewritePayload.openaiChatCompletions('attachCacheControlMarkers', payload => {
+export const attachCacheControlMarkers = rewritePayload('openaiChatCompletions', 'attachCacheControlMarkers', payload => {
   const indexes = new Set(selectCacheMarkerIndexes(payload.messages));
   if (indexes.size === 0) return payload;
   return {

@@ -1,5 +1,5 @@
 import type { OpenAIResponsesOperation } from './operations.ts';
-import { rewriteHeaders } from '../shared/rewrite-request.ts';
+import { rewriteHeaders } from '../shared/rewrite-headers.ts';
 import { setHeader } from '@floway-dev/http';
 
 /**
@@ -24,7 +24,7 @@ import { setHeader } from '@floway-dev/http';
  *   (`hasAgentInitiator`)
  */
 
-export const setInitiatorHeader = (operation: OpenAIResponsesOperation) => rewriteHeaders[operation]('setInitiatorHeader', (payload, headers) => {
+export const setInitiatorHeader = (operation: OpenAIResponsesOperation) => rewriteHeaders(operation, 'setInitiatorHeader', (payload, headers) => {
   const last = payload.input.at(-1);
   const role = (last as { role?: unknown } | undefined)?.role;
   const agent = last !== undefined && (role === undefined || role === null || role === '' || role === 'assistant');

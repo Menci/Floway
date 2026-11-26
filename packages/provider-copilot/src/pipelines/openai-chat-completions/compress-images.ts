@@ -1,7 +1,7 @@
 import { compressDataUrlImages } from '../shared/image-compression.ts';
 import { targetSizeForOpenAIResponsesChat } from '../shared/image-size.ts';
 import { mapChanged } from '../shared/map-changed.ts';
-import { rewritePayload } from '../shared/rewrite-request.ts';
+import { rewritePayload } from '../shared/rewrite-payload.ts';
 import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 
 const imageUrls = function* (messages: OpenAIChatCompletionsMessage[]): Generator<string> {
@@ -13,7 +13,7 @@ const imageUrls = function* (messages: OpenAIChatCompletionsMessage[]): Generato
   }
 };
 
-export const compressImages = rewritePayload.openaiChatCompletions('compressImages', async (payload, _model, { copilot }) => {
+export const compressImages = rewritePayload('openaiChatCompletions', 'compressImages', async (payload, _model, { copilot }) => {
   const compressed = await compressDataUrlImages(imageUrls(payload.messages), targetSizeForOpenAIResponsesChat(payload.model), copilot.compressImage);
   if (compressed.size === 0) return payload;
   const messages = mapChanged(payload.messages, message => {

@@ -1,7 +1,9 @@
 import { compressImages } from './compress-images.ts';
+import { dial } from './dial.ts';
 import { fillEmptyNamespaceDescriptions } from './fill-empty-namespace-descriptions.ts';
 import { guardToolArgumentWhitespace } from './guard-tool-argument-whitespace.ts';
 import { itemIdMembrane } from './item-id-membrane.ts';
+import { selectModel } from './select-model.ts';
 import { setInitiatorHeader } from './set-initiator-header.ts';
 import { setVisionHeader } from './set-vision-header.ts';
 import { stripImageGeneration } from './strip-image-generation.ts';
@@ -10,10 +12,8 @@ import { normalizeDeepSeek } from './vendor-deepseek-normalize.ts';
 import { normalizeQwen } from './vendor-qwen-normalize.ts';
 import { copilotOperation } from '../facts.ts';
 import { authorize } from '../shared/authorize.ts';
-import { dial, jsonRequest } from '../shared/dial.ts';
 import { formatOpenAIError } from '../shared/format-errors.ts';
 import { observeQuota } from '../shared/observe-quota.ts';
-import { selectModel } from '../shared/select-model.ts';
 import { setIdentityHeaders } from '../shared/set-identity-headers.ts';
 import { stripClientHeaders } from '../shared/strip-client-headers.ts';
 import { decodeOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
@@ -26,7 +26,7 @@ export const openaiResponses = copilotOperation<typeof operation>().compose('cop
   exit: ['response.http', 'response.openaiResponses', 'response.usageModelKey?'],
   stages: [
     stripClientHeaders,
-    selectModel.openaiResponses,
+    selectModel,
     setIdentityHeaders,
     normalizeDeepSeek,
     normalizeQwen,
@@ -40,7 +40,7 @@ export const openaiResponses = copilotOperation<typeof operation>().compose('cop
     setInitiatorHeader(operation),
     parseSseResponse(operation, decodeOpenAIResponsesStream, formatOpenAIError),
     authorize(operation, formatOpenAIError),
-    dial.openaiResponses(payload => jsonRequest('/responses', { ...payload, stream: true }), formatOpenAIError),
+    dial,
     observeQuota,
   ],
   ending: httpTerminal,

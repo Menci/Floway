@@ -1,5 +1,5 @@
 import { mapChanged } from '../shared/map-changed.ts';
-import { rewritePayload } from '../shared/rewrite-request.ts';
+import { rewritePayload } from '../shared/rewrite-payload.ts';
 
 /**
  * Two `cache_control` sub-fields are beta extensions to the base
@@ -42,7 +42,7 @@ const stripExtensions = <T extends object>(block: T): T => {
   return (Object.keys(marker).length === 0 ? rest : { ...rest, cache_control: marker }) as T;
 };
 
-export const stripCacheControlExtensions = rewritePayload.anthropicMessages('stripCacheControlExtensions', payload => {
+export const stripCacheControlExtensions = rewritePayload('anthropicMessages', 'stripCacheControlExtensions', payload => {
   const system = Array.isArray(payload.system) ? mapChanged(payload.system, stripExtensions) : payload.system;
   const tools = payload.tools === undefined ? undefined : mapChanged(payload.tools, stripExtensions);
   const messages = mapChanged(payload.messages, message => {

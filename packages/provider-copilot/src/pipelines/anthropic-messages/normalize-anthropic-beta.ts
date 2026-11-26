@@ -1,5 +1,5 @@
 import type { AnthropicMessagesOperation } from './operations.ts';
-import { rewriteHeaders } from '../shared/rewrite-request.ts';
+import { rewriteHeaders } from '../shared/rewrite-headers.ts';
 import { deleteHeader, getHeaders, setHeader, type HttpHeaders } from '@floway-dev/http';
 import { parseAnthropicBetaHeader } from '@floway-dev/protocols/anthropic-messages';
 
@@ -23,7 +23,7 @@ export const callerAnthropicBetas = (headers: HttpHeaders): readonly string[] =>
   return parseAnthropicBetaHeader(value);
 });
 
-export const normalizeAnthropicBeta = (operation: AnthropicMessagesOperation) => rewriteHeaders[operation]('normalizeAnthropicBeta', (payload, headers) => {
+export const normalizeAnthropicBeta = (operation: AnthropicMessagesOperation) => rewriteHeaders(operation, 'normalizeAnthropicBeta', (payload, headers) => {
   const supplied = callerAnthropicBetas(headers);
   const betas = new Set(supplied.filter(beta => ALLOWED_ANTHROPIC_BETAS.has(beta)));
   if (supplied.length === 0 && payload.thinking?.type === 'enabled' && payload.thinking.budget_tokens) {

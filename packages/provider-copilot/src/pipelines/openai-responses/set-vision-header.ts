@@ -1,5 +1,5 @@
 import type { OpenAIResponsesOperation } from './operations.ts';
-import { rewriteHeaders } from '../shared/rewrite-request.ts';
+import { rewriteHeaders } from '../shared/rewrite-headers.ts';
 import { setHeader } from '@floway-dev/http';
 import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
@@ -21,5 +21,5 @@ const itemHasImage = (item: CanonicalOpenAIResponsesInputItem): boolean => {
   return Array.isArray(content) && content.some(part => part.type === 'input_image');
 };
 
-export const setVisionHeader = (operation: OpenAIResponsesOperation) => rewriteHeaders[operation]('setVisionHeader', (payload, headers) =>
+export const setVisionHeader = (operation: OpenAIResponsesOperation) => rewriteHeaders(operation, 'setVisionHeader', (payload, headers) =>
   payload.input.some(itemHasImage) ? setHeader(headers, 'copilot-vision-request', 'true') : headers);

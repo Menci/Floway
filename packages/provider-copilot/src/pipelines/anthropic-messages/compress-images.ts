@@ -2,7 +2,7 @@ import type { AnthropicMessagesOperation } from './operations.ts';
 import type { CopilotServices } from '../../service.ts';
 import { compressBase64Images } from '../shared/image-compression.ts';
 import { mapChanged } from '../shared/map-changed.ts';
-import { rewritePayload } from '../shared/rewrite-request.ts';
+import { rewritePayload } from '../shared/rewrite-payload.ts';
 import { type SizeCaps, fitWithin } from '@floway-dev/platform';
 import type { AnthropicMessagesImageBlock, AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
 
@@ -75,4 +75,4 @@ const compressInlineImages = async <Payload extends { model: string; messages: A
   return { ...payload, messages };
 };
 
-export const compressImages = (operation: AnthropicMessagesOperation) => rewritePayload[operation]('compressImages', compressInlineImages);
+export const compressImages = (operation: AnthropicMessagesOperation) => rewritePayload(operation, 'compressImages', compressInlineImages);

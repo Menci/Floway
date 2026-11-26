@@ -1,10 +1,10 @@
+import { dial } from './dial.ts';
+import { selectModel } from './select-model.ts';
 import { copilotOperation } from '../facts.ts';
 import { authorize } from '../shared/authorize.ts';
-import { dial, jsonRequest } from '../shared/dial.ts';
 import { formatOpenAIError } from '../shared/format-errors.ts';
 import { observeQuota } from '../shared/observe-quota.ts';
 import { readJsonObject } from '../shared/read-json-object.ts';
-import { selectModel } from '../shared/select-model.ts';
 import { setIdentityHeaders } from '../shared/set-identity-headers.ts';
 import { stripClientHeaders } from '../shared/strip-client-headers.ts';
 import { decodeOpenAIImagesGenerationsStream } from '@floway-dev/protocols/openai-images';
@@ -24,11 +24,11 @@ export const openaiImagesGenerations = copilotOperation<typeof operation>().comp
   exit: ['response.http', 'response.openaiImagesGenerations', 'response.usageModelKey?'],
   stages: [
     stripClientHeaders,
-    selectModel.openaiImagesGenerations,
+    selectModel,
     setIdentityHeaders,
     parse,
     authorize(operation, formatOpenAIError),
-    dial.openaiImagesGenerations(payload => jsonRequest('/v1/images/generations', payload), formatOpenAIError),
+    dial,
     observeQuota,
   ],
   ending: httpTerminal,

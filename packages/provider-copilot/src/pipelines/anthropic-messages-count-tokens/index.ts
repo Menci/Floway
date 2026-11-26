@@ -1,13 +1,13 @@
+import { dial } from './dial.ts';
+import { selectModel } from './select-model.ts';
 import { compressImages } from '../anthropic-messages/compress-images.ts';
 import { normalizeAnthropicBeta } from '../anthropic-messages/normalize-anthropic-beta.ts';
 import { setInitiatorHeader } from '../anthropic-messages/set-initiator-header.ts';
 import { setVisionHeader } from '../anthropic-messages/set-vision-header.ts';
 import { copilotOperation } from '../facts.ts';
 import { authorize } from '../shared/authorize.ts';
-import { dial, jsonRequest } from '../shared/dial.ts';
 import { formatAnthropicMessagesError } from '../shared/format-errors.ts';
 import { observeQuota } from '../shared/observe-quota.ts';
-import { selectModel } from '../shared/select-model.ts';
 import { setIdentityHeaders } from '../shared/set-identity-headers.ts';
 import { stripAnthropicMessagesClientHeaders } from '../shared/strip-client-headers.ts';
 import { decodeAnthropicMessagesCountTokensResult } from '@floway-dev/protocols/anthropic-messages';
@@ -41,7 +41,7 @@ export const anthropicMessagesCountTokens = copilotOperation<typeof operation>()
   exit: ['response.http', 'response.anthropicMessagesCountTokens', 'response.usageModelKey?'],
   stages: [
     stripAnthropicMessagesClientHeaders,
-    selectModel.anthropicMessagesCountTokens,
+    selectModel,
     setIdentityHeaders,
     compressImages(operation),
     setVisionHeader(operation),
@@ -49,7 +49,7 @@ export const anthropicMessagesCountTokens = copilotOperation<typeof operation>()
     normalizeAnthropicBeta(operation),
     parse,
     authorize(operation, formatAnthropicMessagesError),
-    dial.anthropicMessagesCountTokens(payload => jsonRequest('/v1/messages/count_tokens', payload), formatAnthropicMessagesError),
+    dial,
     observeQuota,
   ],
   ending: httpTerminal,

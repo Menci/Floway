@@ -3,7 +3,7 @@ import type { CopilotServices } from '../../service.ts';
 import { compressDataUrlImages } from '../shared/image-compression.ts';
 import { targetSizeForOpenAIResponsesChat } from '../shared/image-size.ts';
 import { mapChanged } from '../shared/map-changed.ts';
-import { rewritePayload } from '../shared/rewrite-request.ts';
+import { rewritePayload } from '../shared/rewrite-payload.ts';
 import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
 const imageUrls = function* (input: CanonicalOpenAIResponsesInputItem[]): Generator<string> {
@@ -46,4 +46,4 @@ const compressInlineImages = async <Payload extends { model: string; input: Cano
   return { ...payload, input };
 };
 
-export const compressImages = (operation: OpenAIResponsesOperation) => rewritePayload[operation]('compressImages', compressInlineImages);
+export const compressImages = (operation: OpenAIResponsesOperation) => rewritePayload(operation, 'compressImages', compressInlineImages);
