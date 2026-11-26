@@ -386,19 +386,21 @@ export class FileDumpStore implements DumpStore {
       .all<{ rowid: number }>();
     const activeDeleted = active.results.length;
     if (activeDeleted >= limit) return activeDeleted;
+    // A null lookup key skips the dump index when retention is active.
     const inactive = await this.db
       .prepare(
         `DELETE FROM dump_records WHERE rowid IN (
            SELECT records.rowid FROM dump_records AS records
-           WHERE records.key_id = ?
-             AND NOT EXISTS (
+           WHERE records.key_id = (
+             SELECT ?1 WHERE NOT EXISTS (
                SELECT 1 FROM api_keys
-               WHERE api_keys.id = records.key_id
+               WHERE api_keys.id = ?1
                  AND api_keys.deleted_at IS NULL
                  AND api_keys.dump_retention_seconds IS NOT NULL
              )
+           )
            ORDER BY records.created_at, records.rowid
-           LIMIT ?
+           LIMIT ?2
          )
          RETURNING rowid`,
       )
