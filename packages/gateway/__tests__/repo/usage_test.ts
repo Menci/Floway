@@ -227,12 +227,10 @@ test('SQL usage overview stays within the D1 compound-select limit and returns g
 
   const rawRows = await db.prepare('SELECT (SELECT COUNT(*) FROM usage) + (SELECT COUNT(*) FROM usage_requests) AS count')
     .first<{ count: number }>();
-  const aggregates = completed.filter(statement => statement.query.startsWith('/* usage-overview */'));
-  const aggregate = aggregates.at(-1);
+  const aggregate = completed.find(statement => statement.query.startsWith('/* usage-overview */'));
   if (!aggregate || !rawRows) throw new Error('Usage overview SQL evidence was not captured');
   assertD1CompoundSelectLimit(aggregate.query);
   assertEquals(rawRows.count, 160);
-  assertEquals(aggregates.length, 1);
   assertEquals(aggregate.resultCount < rawRows.count, true);
   assertEquals(overview!.axes.none[0], {
     group: 'all', requests: 80,

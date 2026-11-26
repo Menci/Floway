@@ -1,7 +1,8 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { dashboardBucketFrames, dashboardBucketMapper, dashboardFixedBucketFrames, dashboardFixedRangeQuery, dashboardGranularity, dashboardInterval } from '../../../src/components/charts/dashboard-time';
+import { dashboardBucketFrames, dashboardFixedBucketFrames, dashboardFixedRangeQuery, dashboardGranularity, dashboardInterval, dashboardRangeQuery } from '../../../src/components/charts/dashboard-time';
 import { calendarDate } from '../../../src/lib/calendar-date';
+import { createTelemetryBucket } from '@floway-dev/protocols/browser';
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -65,7 +66,8 @@ test.each([
   const range = { start, end };
   const interval = dashboardInterval(range, 0);
   const frames = dashboardBucketFrames(range, 0);
-  const mapper = dashboardBucketMapper(range, 0);
+  const query = dashboardRangeQuery(range, 0);
+  const mapper = createTelemetryBucket({ bucket: query.bucket, start: query.start, timeZone: query.timezone, timezoneOffsetMinutes: Number(query.timezone_offset_minutes) });
   expect(frames.length).toBeLessThanOrEqual(48);
   expect(frames[0]?.start).toBe(interval.start);
   expect(frames.at(-1)?.end).toBe(interval.end);

@@ -175,11 +175,6 @@ export const dashboardFixedBucketFrames = (range: DashboardRange, nowMs: number)
   return frames;
 };
 
-export const dashboardBucketMapper = (range: DashboardRange, nowMs: number) => {
-  const query = dashboardRangeQuery(range, nowMs);
-  return createTelemetryBucket({ bucket: query.bucket, start: query.start, timeZone: query.timezone, timezoneOffsetMinutes: Number(query.timezone_offset_minutes) });
-};
-
 export const parseDashboardRange = (search: URLSearchParams): DashboardRange => {
   if (search.get('r') === 'custom') {
     const range = { start: search.get('start') ?? '', end: search.get('end') ?? '' };
