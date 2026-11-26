@@ -1,12 +1,14 @@
 // HTTP/1.1 response-head parser + body-framing decoders + the
 // wire-faithful → Web Response bridge.
 
+import { isCausedBy } from './abort.ts';
 import { copy } from './bytes.ts';
 import { decodeChunked } from './chunked.ts';
-import { HttpProtocolError } from './errors.ts';
+import { HttpResponseError, HttpTransportError, UnsupportedContentEncodingError } from './errors.ts';
 import { STATUS_LINE, TCHAR, trimFieldValueOws, validateFieldValueBytes } from './grammar.ts';
 import { readHeadSection } from './read-head-section.ts';
-import type { HttpContentDecoders, RawHttpResponse } from './types.ts';
+import { mapReadableFailure, trackReadableFailure } from './readable.ts';
+import type { FetchResponse, HttpContentDecoder, HttpContentDecoders, RawHttpResponse } from './types.ts';
 
 /**
  * Bridge a wire-faithful {@link RawHttpResponse} to a Web `Response`. The
@@ -18,30 +20,43 @@ import type { HttpContentDecoders, RawHttpResponse } from './types.ts';
  * `parseHttpResponse` transparently skips 1xx interim heads, so anything
  * reaching this function should already be a final 2xx..5xx response.
  */
-export const toWebResponse = (raw: RawHttpResponse, contentDecoders?: HttpContentDecoders): Response => {
+export const toWebResponse = (
+  raw: RawHttpResponse,
+  contentDecoders?: HttpContentDecoders,
+): FetchResponse => {
   if (raw.status < 200 || raw.status > 599) {
-    // Web Response only models the 200..599 final-status range. A 1xx
-    // slipped through is a programmer error inside this package, not an
-    // upstream-shaped failure — but the protocol-error class is still the
-    // right surface for the caller.
-    throw new HttpProtocolError(
+    throw new HttpResponseError(
       `status ${raw.status} is outside the Web Response constructible range 200..599`,
       'BAD_STATUS_LINE',
       { rfc: 'WHATWG Fetch §response-class' },
     );
   }
-  // RFC 9110 §15.3.5 + §15.4.5: 204 No Content and 304 Not Modified MUST
-  // NOT carry a body. The Web Response constructor also refuses a non-null
-  // body for these statuses, so we cancel the body stream (in case the
-  // parser fell back to until-EOF framing on a misbehaving upstream) and
-  // construct with `null`.
-  if (raw.status === 204 || raw.status === 304) {
-    raw.body.cancel().catch(() => {});
-    return new Response(null, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
+  const { status } = raw;
+  // The parsed status is final. Fetch requires a null body on 204, 205, and 304.
+  // https://fetch.spec.whatwg.org/#null-body-status
+  if (status === 204 || status === 205 || status === 304) {
+    void raw.body.cancel().catch(() => {});
+    return webResponse(raw, null, raw.headers);
   }
   const headers = new Headers(raw.headers);
-  const body = decodeContentEncoding(raw.body, headers, contentDecoders);
-  return new Response(body, { status: raw.status, statusText: raw.statusText, headers });
+  return webResponse(raw, decodeContentEncoding(raw.body, headers, contentDecoders), headers);
+};
+
+export const toSocketWebResponse = (raw: RawHttpResponse, contentDecoders?: HttpContentDecoders): FetchResponse => {
+  try {
+    return toWebResponse(raw, contentDecoders);
+  } catch (error) {
+    if (!(error instanceof UnsupportedContentEncodingError)) throw error;
+    // The head is already usable. Report the unavailable decoder through the body.
+    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(error); } });
+    return webResponse(raw, body, raw.headers);
+  }
+};
+
+const webResponse = (raw: RawHttpResponse, body: ReadableStream<Uint8Array> | null, headers: Headers): FetchResponse => {
+  const { status, statusText } = raw;
+  const headerLines = raw.headerLines.filter(([name]) => headers.has(name));
+  return Object.assign(new Response(body, { status, statusText, headers }), { headerLines });
 };
 
 // Native fetch transparently decodes gzip/deflate responses, but the socket
@@ -50,10 +65,36 @@ export const toWebResponse = (raw: RawHttpResponse, contentDecoders?: HttpConten
 // the advertised body rather than a content coding.
 // Additional codecs come from the runtime, without importing its APIs here or
 // changing the caller's Accept-Encoding. Each factory owns one decoding stream.
-const portableContentDecoders = new Map([
-  ['gzip', () => new DecompressionStream('gzip')],
-  ['deflate', () => new DecompressionStream('deflate')],
+const nativeDecoder = (encoding: 'gzip' | 'deflate'): HttpContentDecoder => {
+  const { readable, writable } = new DecompressionStream(encoding);
+  return {
+    readable,
+    writable: writable as WritableStream<Uint8Array>,
+    // Both decompression and its final flush reject invalid encoded bytes with TypeError.
+    // https://compression.spec.whatwg.org/#decompress-and-enqueue-a-chunk
+    // https://compression.spec.whatwg.org/#decompress-flush-and-enqueue
+    isDataError: cause => cause instanceof TypeError,
+  };
+};
+
+const portableContentDecoders: HttpContentDecoders = new Map([
+  ['gzip', () => nativeDecoder('gzip')],
+  ['deflate', () => nativeDecoder('deflate')],
 ]);
+
+const decodeBody = (body: ReadableStream<Uint8Array>, codec: HttpContentDecoder): ReadableStream<Uint8Array> => {
+  const { isDataError } = codec;
+  if (isDataError === undefined) return body.pipeThrough(codec);
+
+  // pipeThrough also propagates source failures. Record that error before it
+  // crosses the codec so a source TypeError retains its own provenance.
+  const input = trackReadableFailure(body);
+  return mapReadableFailure(input.body.pipeThrough(codec), cause => {
+    const { failure } = input;
+    if (failure !== undefined && (cause === failure.cause || isCausedBy(cause, failure.cause))) return failure.cause;
+    return isDataError(cause) ? new HttpTransportError(cause) : cause;
+  });
+};
 
 const decodeContentEncoding = (
   body: ReadableStream<Uint8Array>,
@@ -71,14 +112,13 @@ const decodeContentEncoding = (
       const factory = contentDecoders?.get(coding) ?? portableContentDecoders.get(coding);
       if (factory === undefined) {
         const supported = [...new Set([...portableContentDecoders.keys(), ...(contentDecoders?.keys() ?? [])])];
-        throw new HttpProtocolError(
+        throw new UnsupportedContentEncodingError(
           `socket transport cannot decode upstream Content-Encoding ${JSON.stringify(coding)}; supported codings are ${supported.join(', ')}`,
-          'UNSUPPORTED_CONTENT_ENCODING',
         );
       }
       return factory;
     });
-    for (const factory of factories) body = body.pipeThrough(factory() as never);
+    for (const factory of factories) body = decodeBody(body, factory());
   } catch (error) {
     void body.cancel(error).catch(() => {});
     throw error;
@@ -149,11 +189,11 @@ const readResponseHead = async (
   const { statusLine, lines, remainder } = await readHeadSection(reader, preBuffered, {
     maxBytes: HEADER_BUFFER_CAP,
     decodeContext: 'response headers',
-    eofError: receivedBytes => new HttpProtocolError(
+    eofError: receivedBytes => new HttpResponseError(
       `unexpected EOF before headers; got ${receivedBytes} bytes`,
       'EOF',
     ),
-    overflowError: maxBytes => new HttpProtocolError(
+    overflowError: maxBytes => new HttpResponseError(
       `HTTP/1.1 response headers exceeded ${maxBytes} bytes without a terminator`,
       'HEADER_BUFFER_OVERFLOW',
     ),
@@ -169,7 +209,7 @@ const readResponseHead = async (
   //     would silently absorb the extra SP into the reason in lenient
   //     parsers; llhttp's strict mode rejects it.
   if (!statusLine.startsWith('HTTP/')) {
-    throw new HttpProtocolError(
+    throw new HttpResponseError(
       `status line does not begin with HTTP/: ${JSON.stringify(statusLine)}`,
       'BAD_STATUS_LINE',
       { rfc: 'RFC 9112 §4' },
@@ -177,7 +217,7 @@ const readResponseHead = async (
   }
   const m = STATUS_LINE.exec(statusLine);
   if (!m) {
-    throw new HttpProtocolError(
+    throw new HttpResponseError(
       `bad status line: ${JSON.stringify(statusLine)}`,
       'BAD_STATUS_LINE',
       { rfc: 'RFC 9112 §4' },
@@ -210,7 +250,7 @@ const readResponseHead = async (
   // tens of thousands of entries into the Headers map.
   const MAX_HEADER_COUNT = 100;
   if (lines.length > MAX_HEADER_COUNT) {
-    throw new HttpProtocolError(
+    throw new HttpResponseError(
       `HTTP/1.1 response has ${lines.length} header lines (max ${MAX_HEADER_COUNT})`,
       'TOO_MANY_HEADERS',
     );
@@ -220,7 +260,7 @@ const readResponseHead = async (
     // is deprecated and MUST be rejected.
     const first = line.charCodeAt(0);
     if (first === 0x20 || first === 0x09) {
-      throw new HttpProtocolError(
+      throw new HttpResponseError(
         'obs-fold not supported (RFC 9112 §5.2)',
         'OBS_FOLD',
         { rfc: 'RFC 9112 §5.2' },
@@ -228,7 +268,7 @@ const readResponseHead = async (
     }
     const idx = line.indexOf(':');
     if (idx < 0) {
-      throw new HttpProtocolError(
+      throw new HttpResponseError(
         `header line missing colon: ${JSON.stringify(line)}`,
         'BAD_HEADERS',
         { rfc: 'RFC 9112 §5' },
@@ -236,14 +276,14 @@ const readResponseHead = async (
     }
     const name = line.slice(0, idx);
     if (!TCHAR.test(name)) {
-      throw new HttpProtocolError(
+      throw new HttpResponseError(
         `invalid header name: ${JSON.stringify(name)}`,
         'BAD_HEADERS',
         { rfc: 'RFC 9110 §5.1' },
       );
     }
     const value = trimFieldValueOws(line.slice(idx + 1));
-    validateFieldValueBytes(value, hex => new HttpProtocolError(
+    validateFieldValueBytes(value, hex => new HttpResponseError(
       `invalid control byte 0x${hex} in header value for ${JSON.stringify(name)}`,
       'BAD_HEADERS',
       { rfc: 'RFC 9110 §5.5' },
@@ -268,7 +308,7 @@ const finalizeResponse = (
   // Content-Length is an error (the sender is broken or actively
   // smuggling). Reject loud rather than picking one.
   if (rawTransferEncodings.length > 0 && rawContentLengths.length > 0) {
-    throw new HttpProtocolError(
+    throw new HttpResponseError(
       'HTTP/1.1 response has both Transfer-Encoding and Content-Length',
       'CL_AND_TE',
       { rfc: 'RFC 9112 §6.3' },
@@ -277,7 +317,7 @@ const finalizeResponse = (
   // RFC 9112 §6.3: multiple Content-Length values are an error unless
   // every value is the same single token. We forbid duplicates outright.
   if (rawContentLengths.length > 1) {
-    throw new HttpProtocolError(
+    throw new HttpResponseError(
       `HTTP/1.1 response has ${rawContentLengths.length} Content-Length headers`,
       'MULTIPLE_CL',
       { rfc: 'RFC 9112 §6.3' },
@@ -293,14 +333,14 @@ const finalizeResponse = (
     .filter(t => t !== '');
   const teIsChunked = teTokens.length > 0 && teTokens[teTokens.length - 1] === 'chunked';
   if (teTokens.length > 0 && !teIsChunked) {
-    throw new HttpProtocolError(
+    throw new HttpResponseError(
       `HTTP/1.1 response has Transfer-Encoding without chunked: ${teTokens.join(',')}`,
       'TE_NOT_CHUNKED',
       { rfc: 'RFC 9112 §6.1' },
     );
   }
   if (teTokens.filter(t => t === 'chunked').length > 1) {
-    throw new HttpProtocolError(
+    throw new HttpResponseError(
       'HTTP/1.1 response has chunked listed more than once in Transfer-Encoding',
       'TE_DOUBLE_CHUNKED',
       { rfc: 'RFC 9112 §6.1' },
@@ -319,7 +359,7 @@ const finalizeResponse = (
   } else if (contentLength !== null) {
     const total = parseInt(contentLength, 10);
     if (!Number.isFinite(total) || total < 0 || String(total) !== contentLength) {
-      throw new HttpProtocolError(
+      throw new HttpResponseError(
         `HTTP/1.1 response has malformed Content-Length: ${JSON.stringify(contentLength)}`,
         'BAD_CL',
         { rfc: 'RFC 9112 §6.2' },
@@ -346,7 +386,7 @@ const lengthBody = (
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       if (head.byteLength > total) {
-        controller.error(new HttpProtocolError(
+        controller.error(new HttpResponseError(
           `trailing bytes after Content-Length boundary (${head.byteLength - total} extra in head)`,
           'TRAILING_BODY_BYTES',
         ));
@@ -371,7 +411,7 @@ const lengthBody = (
       // would otherwise pin its full size in memory.
       const { value, done } = await reader.read();
       if (done) {
-        controller.error(new HttpProtocolError(
+        controller.error(new HttpResponseError(
           `upstream EOF after ${consumed}/${total} body bytes`,
           'EOF',
         ));
@@ -384,7 +424,7 @@ const lengthBody = (
       } else {
         controller.enqueue(copy(value.subarray(0, remain)));
         consumed += remain;
-        controller.error(new HttpProtocolError(
+        controller.error(new HttpResponseError(
           `trailing bytes after Content-Length boundary (${value.byteLength - remain} extra)`,
           'TRAILING_BODY_BYTES',
         ));

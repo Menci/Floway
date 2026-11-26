@@ -20,8 +20,14 @@
 // the rest of the workspace happens to call — a root export with no in-repo
 // consumer is deliberate public API, not dead surface.
 
-export type { DuplexStream, Fetcher, FetchInit, HttpContentDecoders, HttpHeaderLines, HttpRequest, RawHttpResponse, ReplayableBody } from './types.ts';
+export type { DuplexStream, Fetcher, FetchInit, FetchResponse, HttpContentDecoder, HttpContentDecoders, HttpHeaderLines, HttpRequest, RawHttpResponse, ReplayableBody } from './types.ts';
 export { isReplayableBody, toRequestInit } from './request-body.ts';
+export type { HttpHeader, HttpHeaders, HttpHeaderValue, HttpRequestFact, HttpResponseFact, HttpStreamError } from './facts.ts';
+export { appendHeader, deleteHeader, filterHeaders, getHeader, getHeaders, hasHeader, responseHeaderEntries, setHeader } from './headers.ts';
+export { sendHttpRequest } from './fact-transport.ts';
+export type { HttpResponseSource, SerializedHttpRequest } from './fact-transport.ts';
+export { fetchWithTransportErrors } from './native-fetch.ts';
+export { mapReadableFailure, trackReadableFailure } from './readable.ts';
 
 export { fetchOnStream } from './fetch-on-stream.ts';
 export { parseHttpResponse, toWebResponse } from './parser.ts';
@@ -33,9 +39,9 @@ export type { CheckServerIdentity, PeerCertificateIdentity, UserspaceTlsOptions,
 export { wsUpgradeAndFrame } from './ws-upgrade.ts';
 export type { WsUpgradeOptions } from './ws-upgrade.ts';
 
-export { signalAbortReason } from './abort.ts';
+export { isCausedBy, restoreRematerializedHttpAbort, signalAbortReason } from './abort.ts';
 
-export { HttpProtocolError } from './errors.ts';
+export { HttpProtocolError, HttpTransportError } from './errors.ts';
 export type { HttpProtocolErrorCode } from './errors.ts';
 
 export { STATUS_LINE } from './grammar.ts';

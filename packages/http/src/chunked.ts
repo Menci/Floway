@@ -3,7 +3,7 @@
 // the underlying reader.
 
 import { concat, copy } from './bytes.ts';
-import { HttpProtocolError } from './errors.ts';
+import { HttpResponseError } from './errors.ts';
 import { ASCII_DECODER } from './grammar.ts';
 
 export const decodeChunked = (
@@ -33,7 +33,7 @@ export const decodeChunked = (
           const idx = findCrlfFrom(buf, scanFrom);
           if (idx < 0) {
             if (buf.byteLength > MAX_CHUNK_SIZE_LINE) {
-              controller.error(new HttpProtocolError(
+              controller.error(new HttpResponseError(
                 `chunked: size line exceeded ${MAX_CHUNK_SIZE_LINE} bytes`,
                 'CHUNK_TOO_LONG',
               ));
@@ -42,14 +42,14 @@ export const decodeChunked = (
             scanFrom = Math.max(0, buf.byteLength - 1);
             const more = await reader.read();
             if (more.done) {
-              controller.error(new HttpProtocolError('chunked: EOF in size', 'EOF'));
+              controller.error(new HttpResponseError('chunked: EOF in size', 'EOF'));
               return;
             }
             buf = concat(buf, more.value);
             continue;
           }
           if (idx > MAX_CHUNK_SIZE_LINE) {
-            controller.error(new HttpProtocolError(
+            controller.error(new HttpResponseError(
               `chunked: size line exceeded ${MAX_CHUNK_SIZE_LINE} bytes`,
               'CHUNK_TOO_LONG',
             ));
@@ -63,7 +63,7 @@ export const decodeChunked = (
           // chunk extensions (after the `;`) are dropped by the slice
           // above before we get here.
           if (!/^[0-9a-fA-F]+$/.test(hex)) {
-            controller.error(new HttpProtocolError(
+            controller.error(new HttpResponseError(
               `chunked: bad size line ${JSON.stringify(sizeLine)}`,
               'CHUNK_BAD_SIZE',
             ));
@@ -75,7 +75,7 @@ export const decodeChunked = (
           // An Infinity `need` would let a peer stream upstream bytes
           // unbounded, so cap to a 64-bit-ish chunk size before parsing.
           if (hex.length > 16) {
-            controller.error(new HttpProtocolError(
+            controller.error(new HttpResponseError(
               'chunked: size line exceeds 64-bit chunk size',
               'CHUNK_BAD_SIZE',
             ));
@@ -89,7 +89,7 @@ export const decodeChunked = (
           if (buf.byteLength === 0) {
             const more = await reader.read();
             if (more.done) {
-              controller.error(new HttpProtocolError('chunked: EOF mid-data', 'EOF'));
+              controller.error(new HttpResponseError('chunked: EOF mid-data', 'EOF'));
               return;
             }
             buf = copy(more.value);
@@ -105,7 +105,7 @@ export const decodeChunked = (
           while (buf.byteLength < 2) {
             const more = await reader.read();
             if (more.done) {
-              controller.error(new HttpProtocolError(
+              controller.error(new HttpResponseError(
                 'chunked: EOF before CRLF after data',
                 'EOF',
               ));
@@ -114,7 +114,7 @@ export const decodeChunked = (
             buf = concat(buf, more.value);
           }
           if (buf[0] !== 0x0d || buf[1] !== 0x0a) {
-            controller.error(new HttpProtocolError(
+            controller.error(new HttpResponseError(
               'chunked: missing CRLF after data',
               'CHUNK_BAD_SIZE',
             ));
@@ -131,7 +131,7 @@ export const decodeChunked = (
             // (which double-counts the same bytes on every drip-fed read and
             // collapses the effective cap to O(sqrt(MAX_TRAILERS_BYTES))).
             if (trailerBytesSeen + buf.byteLength > MAX_TRAILERS_BYTES) {
-              controller.error(new HttpProtocolError(
+              controller.error(new HttpResponseError(
                 `chunked: trailers exceeded ${MAX_TRAILERS_BYTES} bytes`,
                 'TRAILERS_TOO_LONG',
               ));
@@ -140,7 +140,7 @@ export const decodeChunked = (
             scanFrom = Math.max(0, buf.byteLength - 1);
             const more = await reader.read();
             if (more.done) {
-              controller.error(new HttpProtocolError('chunked: EOF in trailers', 'EOF'));
+              controller.error(new HttpResponseError('chunked: EOF in trailers', 'EOF'));
               return;
             }
             buf = concat(buf, more.value);
@@ -153,7 +153,7 @@ export const decodeChunked = (
           }
           trailerBytesSeen += idx + 2;
           if (trailerBytesSeen > MAX_TRAILERS_BYTES) {
-            controller.error(new HttpProtocolError(
+            controller.error(new HttpResponseError(
               `chunked: trailers exceeded ${MAX_TRAILERS_BYTES} bytes`,
               'TRAILERS_TOO_LONG',
             ));

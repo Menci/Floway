@@ -1,6 +1,6 @@
 // Shared HTTP/1.1 grammar primitives (RFC 9110 / RFC 9112).
 
-import { HttpProtocolError } from './errors.ts';
+import { HttpResponseError, type HttpProtocolError } from './errors.ts';
 
 // RFC 9110 §5.6.2: token = 1*tchar; tchar = "!" / "#" / "$" / "%" / "&" /
 // "'" / "*" / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
@@ -16,7 +16,7 @@ export const ASCII_DECODER = new TextDecoder();
 export const decodeAsciiHeaderSection = (bytes: Uint8Array, context: string): string => {
   for (let i = 0; i < bytes.byteLength; i++) {
     if (bytes[i]! >= 0x80) {
-      throw new HttpProtocolError(
+      throw new HttpResponseError(
         `non-ASCII byte 0x${bytes[i]!.toString(16).padStart(2, '0')} at offset ${i} in ${context}`,
         'BAD_HEADERS',
         { rfc: 'RFC 9112 §5' },

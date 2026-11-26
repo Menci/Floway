@@ -3,8 +3,8 @@
 import { concat, utf8Bytes } from './bytes.ts';
 import { HttpProtocolError } from './errors.ts';
 import { TCHAR, validateFieldValueBytes, validateRequestTargetBytes } from './grammar.ts';
-import { parseHttpResponse, toWebResponse } from './parser.ts';
-import type { DuplexStream, HttpContentDecoders, HttpRequest, ReplayableBody } from './types.ts';
+import { parseHttpResponse, toSocketWebResponse } from './parser.ts';
+import type { DuplexStream, FetchResponse, HttpContentDecoders, HttpRequest, ReplayableBody } from './types.ts';
 
 // Plaintext chunk size used when streaming the request body to the writer.
 // Each writer.write() maps 1:1 to one record on a record-framed writer, so
@@ -24,15 +24,31 @@ const writeBytes = async (writer: WritableStreamDefaultWriter<Uint8Array>, bytes
   }
 };
 
+const readUploadChunk = (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal | undefined,
+): Promise<ReadableStreamReadResult<Uint8Array>> => {
+  const pending = reader.read();
+  if (signal === undefined) return pending;
+
+  // The socket cannot interrupt a pending read from the separate upload source.
+  const abort = Promise.withResolvers<never>();
+  const onAbort = () => abort.reject(signal.reason);
+  signal.addEventListener('abort', onAbort, { once: true });
+  if (signal.aborted) onAbort();
+  return Promise.race([pending, abort.promise]).finally(() => signal.removeEventListener('abort', onAbort));
+};
+
 const writeStreamBody = async (
   writer: WritableStreamDefaultWriter<Uint8Array>,
   body: ReplayableBody,
+  signal: AbortSignal | undefined,
 ): Promise<void> => {
   const reader = body.open().getReader();
   let written = 0;
   try {
     for (;;) {
-      const { value, done } = await reader.read();
+      const { value, done } = await readUploadChunk(reader, signal);
       if (done) break;
       if (!(value instanceof Uint8Array)) throw new TypeError('HTTP request body stream yielded a non-Uint8Array chunk');
       written += value.byteLength;
@@ -58,7 +74,8 @@ export const fetchOnStream = async (
   request: HttpRequest,
   prefix?: Uint8Array,
   contentDecoders?: HttpContentDecoders,
-): Promise<Response> => {
+  signal?: AbortSignal,
+): Promise<FetchResponse> => {
   // RFC 9110 §6.4.1: a HEAD response carries no body even when
   // Content-Length is set. Detecting that here is a one-line carve-out,
   // but the chunked/length body parsers below would otherwise hang
@@ -153,7 +170,7 @@ export const fetchOnStream = async (
     if (request.body instanceof Uint8Array) {
       await writeBytes(writer, request.body);
     } else if (request.body !== undefined) {
-      await writeStreamBody(writer, request.body);
+      await writeStreamBody(writer, request.body, signal);
     }
   } finally {
     // Release on every exit so a write rejection doesn't pin the lock —
@@ -163,5 +180,5 @@ export const fetchOnStream = async (
     writer.releaseLock();
   }
 
-  return toWebResponse(await parseHttpResponse(stream.readable), contentDecoders);
+  return toSocketWebResponse(await parseHttpResponse(stream.readable), contentDecoders);
 };

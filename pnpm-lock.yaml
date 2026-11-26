@@ -466,6 +466,9 @@ importers:
 
   packages/http:
     dependencies:
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.2.0

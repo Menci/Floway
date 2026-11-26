@@ -39,3 +39,21 @@ export class HttpProtocolError extends Error {
     this.rfc = opts?.rfc;
   }
 }
+
+export class HttpTransportError extends Error {
+  override readonly name = 'HttpTransportError';
+
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+  }
+}
+
+// Request validation also uses HttpProtocolError. Only errors produced while
+// interpreting the peer's bytes belong to the response's failure path.
+export class HttpResponseError extends HttpProtocolError {}
+
+export class UnsupportedContentEncodingError extends HttpResponseError {
+  constructor(message: string) {
+    super(message, 'UNSUPPORTED_CONTENT_ENCODING');
+  }
+}

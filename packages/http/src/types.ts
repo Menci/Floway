@@ -1,5 +1,7 @@
 // Portable runtime-fetch and HTTP/1.1-over-stream request contracts.
 
+import type { HttpStreamError } from './facts.ts';
+
 /**
  * A duplex byte transport. Both halves are owned by the caller; the
  * primitives in this package borrow them through getReader/getWriter and
@@ -23,10 +25,21 @@ export type FetchInit = Omit<RequestInit, 'body' | 'signal'> & {
   signal?: AbortSignal | null | undefined;
 };
 
-export type Fetcher = (url: string, init: FetchInit) => Promise<Response>;
+/** Additional information available from the transport that produced a Fetch response. */
+export type FetchResponse = Response & {
+  readonly headerLines?: HttpHeaderLines;
+  readonly classifyBodyFailure?: (cause: unknown) => HttpStreamError | undefined;
+};
+
+export type Fetcher = (url: string, init: FetchInit) => Promise<FetchResponse>;
+
+/** A codec can identify rejection causes produced by invalid encoded input. */
+export type HttpContentDecoder = ReadableWritablePair<Uint8Array, Uint8Array> & {
+  readonly isDataError?: (cause: unknown) => boolean;
+};
 
 /** Runtime codecs supplementing the portable gzip/deflate response decoders. */
-export type HttpContentDecoders = ReadonlyMap<string, () => ReadableWritablePair<Uint8Array, Uint8Array>>;
+export type HttpContentDecoders = ReadonlyMap<string, () => HttpContentDecoder>;
 
 /**
  * Request header block in wire order. A name may repeat, because a repeated

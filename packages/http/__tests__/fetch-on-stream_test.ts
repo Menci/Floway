@@ -327,3 +327,32 @@ describe('fetchOnStream — writer-lock release on rejected calls', () => {
     }).not.toThrow();
   });
 });
+
+describe('fetchOnStream — replayable upload cancellation', () => {
+  it.each(['abort', 'upload'] as const)('preserves the winning %s rejection and releases the locks', async winner => {
+    const fake = makeFakeDuplex();
+    const caller = new AbortController();
+    const entered = Promise.withResolvers<void>();
+    const cancel = vi.fn();
+    let uploadController: ReadableStreamDefaultController<Uint8Array>;
+    const upload = new ReadableStream<Uint8Array>({
+      start(controller) { uploadController = controller; },
+      pull() { entered.resolve(); },
+      cancel,
+    }, { highWaterMark: 0 });
+    const result = fetchOnStream(fake, {
+      method: 'POST', path: '/', headers: [], body: { contentLength: 10, open: () => upload },
+    }, undefined, undefined, caller.signal);
+    await entered.promise;
+    expect(upload.locked).toBe(true);
+    expect(fake.writable.locked).toBe(true);
+    const programmerError = new Error('upload source failed');
+    const abort = new Error('client aborted');
+    if (winner === 'upload') uploadController!.error(programmerError);
+    caller.abort(abort);
+    await expect(result).rejects.toBe(winner === 'upload' ? programmerError : abort);
+    expect(upload.locked).toBe(false);
+    expect(fake.writable.locked).toBe(false);
+    if (winner === 'abort') expect(cancel).toHaveBeenCalledExactlyOnceWith(abort);
+  });
+});
