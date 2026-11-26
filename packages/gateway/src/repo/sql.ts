@@ -55,6 +55,7 @@ import type {
   Session,
   SessionsRepo,
   UpstreamRepo,
+  UsageMetricRecord,
   UsageRecord,
   UsageOverviewQueryOptions,
   UsageOverviewResult,
@@ -804,13 +805,11 @@ class SqlSessionsRepo implements SessionsRepo {
 class SqlUsageRepo implements UsageRepo {
   constructor(private db: SqlDatabase) {}
 
-  private async addExactMetric(
-    record: UsageRecord,
-    upstream: string | null,
-    selector: string,
-    row: ReturnType<typeof usageMetricRows>[number],
+  private async addMetricWithCompareAndSwap(
+    recordIdentity: readonly SqlBindValue[],
+    row: UsageMetricRecord,
   ): Promise<void> {
-    const identity = [record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.metric];
+    const identity = [...recordIdentity, row.metric];
     for (let attempt = 0; attempt < 100; attempt++) {
       const current = await this.db.prepare(
         "SELECT quantity FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND pricing_selector = ? AND metric = ?",
@@ -851,25 +850,23 @@ class SqlUsageRepo implements UsageRepo {
       throw error;
     }
 
-    // SQLite promotes overflowing integer addition to REAL. A text round trip
-    // also rejects a saturated cast before the headroom check.
-    // https://sqlite.org/lang_expr.html#binaryops
+    // The text round trips reject lossy integer casts. Bounding the sum keeps
+    // SQLite from promoting overflowing integer addition to REAL.
+    // https://sqlite.org/lang_expr.html
     const increments = metrics.map(row => this.db.prepare(
       `INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT DO UPDATE SET quantity = CAST(CAST(usage.quantity AS INTEGER) + CAST(excluded.quantity AS INTEGER) AS TEXT)
        WHERE usage.quantity = CAST(CAST(usage.quantity AS INTEGER) AS TEXT)
          AND excluded.quantity = CAST(CAST(excluded.quantity AS INTEGER) AS TEXT)
-         AND CAST(usage.quantity AS INTEGER) >= 0
-         AND CAST(excluded.quantity AS INTEGER) >= 0
          AND CAST(usage.quantity AS INTEGER) <= 9223372036854775807 - CAST(excluded.quantity AS INTEGER)`,
     ).bind(...identity, row.metric, row.quantity, row.unitPrice));
     const [, ...writes] = await runStatements(this.db, [request, ...increments]);
     const exact = metrics.filter((row, index) => {
-      const changes = writes[index]?.meta.changes;
+      const changes = writes[index].meta.changes;
       if (changes !== 0 && changes !== 1) throw new Error(`Invalid usage metric ${row.metric} change count: ${String(changes)}`);
       return changes === 0;
     });
-    await Promise.all(exact.map(row => this.addExactMetric(record, upstream, selector, row)));
+    await Promise.all(exact.map(row => this.addMetricWithCompareAndSwap(identity, row)));
   }
 
   async query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]> {

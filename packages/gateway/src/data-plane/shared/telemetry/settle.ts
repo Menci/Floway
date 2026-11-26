@@ -29,8 +29,8 @@ export const recordSseOutcome = (ctx: GatewayCtx, outcome: SseOutcome, identity:
 // binds the promise to the request's lifetime — Cloudflare Workers'
 // waitUntil binds it to the fetch handler (or, for the WS transport, to
 // a session-scoped waitUntil opened on 101), and Node keeps the process
-// event loop alive. Every settled request increments its request bucket;
-// detailed metric rows are present only when the upstream meters them.
+// event loop alive. Settlement schedules a usage increment even when the
+// upstream reports no metrics.
 export const settle = (
   ctx: GatewayCtx,
   telemetry: PerformanceTelemetryContext | undefined,
