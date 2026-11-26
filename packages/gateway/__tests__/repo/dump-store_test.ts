@@ -103,7 +103,7 @@ test('FileDumpStore applies retention immediately and retires exact expired file
     assertExists(fallbackSql);
     const { results: fallbackPlan } = await db
       .prepare(`EXPLAIN QUERY PLAN ${fallbackSql}`)
-      .bind('key_x', 99)
+      .bind('key_x', 'key_x', 99)
       .all<{ detail: string }>();
     expect(fallbackPlan.map(row => row.detail)).toEqual(expect.arrayContaining([
       expect.stringMatching(/^SCALAR SUBQUERY\b/),
