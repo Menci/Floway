@@ -20,7 +20,7 @@ export const dial = defineStage({
     },
     response: {
       needs: ['response.http', 'response.http.error?'],
-      provides: ['response.anthropicMessages?', 'response.usageModelKey'],
+      provides: ['response.anthropicMessages?', 'response.usageModelKey?'],
       consumes: ['response.http.error'],
     },
   },
@@ -44,7 +44,7 @@ export const dial = defineStage({
         body: encoder.encode(JSON.stringify(payload)),
       },
     });
-    const answer = { ...result, 'response.usageModelKey': payload.model };
+    const answer = error?.kind === 'abort' ? result : { ...result, 'response.usageModelKey': payload.model };
     return error === undefined
       ? answer
       : { ...answer, 'response.anthropicMessages': httpDialError(error, formatAnthropicError) };

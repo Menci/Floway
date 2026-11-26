@@ -72,8 +72,8 @@ const fixture = (account: ClaudeCodeAccountCredential = activeAccount) => {
     recordUpstreamMetric,
     saveState,
     account: () => state.accounts[0],
-    start(fetch: ProviderFetcher, options: { payload?: AnthropicMessagesPayload; headers?: HttpHeaders; model?: typeof model } = {}) {
-      const controller = new AbortController();
+    start(fetch: ProviderFetcher, options: { payload?: AnthropicMessagesPayload; headers?: HttpHeaders; model?: typeof model; controller?: AbortController } = {}) {
+      const controller = options.controller ?? new AbortController();
       const running = run(claudeCodePipelines.anthropicMessages, {
         'request.http': { method: 'POST', url: 'https://gateway.test/v1/messages', headers: options.headers ?? [], body: new Uint8Array([5]) },
         'request.anthropicMessages': options.payload ?? body,
@@ -416,7 +416,20 @@ describe('Claude Code Anthropic Messages pipeline', () => {
     await running.done;
   });
 
-  test('classifies cancellation while dialing as a local protocol outcome', async () => {
+  test('omits model identity and skips the fetcher when already cancelled before dialing', async () => {
+    const fetch = fetchResponse(() => sse());
+    const controller = new AbortController();
+    controller.abort();
+    const { running } = fixture().start(fetch, { controller });
+    expect(await outcomeOf(running)).toMatchObject({ kind: 'error', source: 'local', error: { error: { message: 'Upstream request cancelled' } } });
+    const answer = await running.result;
+    expect(answer['response.http']).toBeNull();
+    expect(Object.hasOwn(answer, 'response.usageModelKey')).toBe(false);
+    await running.done;
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test('classifies cancellation while dialing as a local protocol outcome without model identity', async () => {
     const dialed = Promise.withResolvers<void>();
     const fetch = vi.fn<ProviderFetcher>(async (_url, init) => {
       const signal = init.signal!;
@@ -428,9 +441,12 @@ describe('Claude Code Anthropic Messages pipeline', () => {
     const { running, controller } = fixture().start(fetch);
     await dialed.promise;
     controller.abort();
-    expect((await running.result)['response.http']).toBeNull();
     expect(await outcomeOf(running)).toMatchObject({ kind: 'error', source: 'local', error: { error: { message: 'Upstream request cancelled' } } });
+    const answer = await running.result;
+    expect(answer['response.http']).toBeNull();
+    expect(Object.hasOwn(answer, 'response.usageModelKey')).toBe(false);
     await running.done;
+    expect(fetch).toHaveBeenCalledOnce();
   });
 
   test('reports incomplete streams with bounded decoded snippets and redacted credentials', async () => {
