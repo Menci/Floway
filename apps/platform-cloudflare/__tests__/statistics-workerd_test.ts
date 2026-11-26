@@ -215,3 +215,25 @@ test('D1 Usage increments integers in a batch and applies only skipped metrics t
     { metric: 'input_audio_seconds', quantity: '1.1', unitPrice: '0.3' },
   ]);
 });
+
+test('D1 rolls back the Usage request count and earlier metrics on a hard batch failure', async () => {
+  await platform!.env.DB.prepare(`
+    CREATE TRIGGER reject_test_usage_metric BEFORE INSERT ON usage
+    WHEN NEW.model = 'rejected-batch' AND NEW.metric = 'output_tokens'
+      AND EXISTS (SELECT 1 FROM usage_requests WHERE model = NEW.model AND requests = 1)
+      AND EXISTS (SELECT 1 FROM usage WHERE model = NEW.model AND metric = 'input_tokens')
+    BEGIN
+      SELECT RAISE(ABORT, 'Usage metric insert rejected');
+    END`).run();
+
+  await expect(repo.usage.record({
+    keyId: 'statistics-key', model: 'rejected-batch', modelKey: 'rejected-batch',
+    upstream: null, hour: '2026-11-01T02', pricingSelector: {},
+    requests: 1,
+    metrics: [
+      { metric: 'input_tokens', quantity: '3', unitPrice: null },
+      { metric: 'output_tokens', quantity: '2', unitPrice: null },
+    ],
+  })).rejects.toThrow('Usage metric insert rejected');
+  expect(await repo.usage.query({ start: '2026-11-01T02', end: '2026-11-01T03' })).toEqual([]);
+});
