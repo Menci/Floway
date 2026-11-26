@@ -1,21 +1,24 @@
+import type { ToolArgumentsEnvelope } from './tool-schema-envelope.ts';
 import type { IRJSONObject } from '../../../ir/common/json.ts';
 import type { ReferenceState, ReferenceStateLeaves, ReferenceableValue, TextRule, JSONRule } from '../../../round-trip/reference/types.ts';
 import type { AnthropicMessagesAssistantContentBlock } from '@floway-dev/protocols/anthropic-messages';
 
-type AnthropicMessagesBlockRule<Block> = Block extends { type: 'text' }
+type AnthropicMessagesTextBlockRule<Block> = Block extends { type: 'text' }
   ? { text: TextRule }
   : Block extends { type: 'thinking' }
     ? { thinking: TextRule }
-    : Block extends { type: 'tool_use' }
-      ? { input: JSONRule }
-      : never;
+    : never;
 
-type AnthropicMessagesReferenceableBlock<Block, Reference> = Block extends unknown
-  ? AnthropicMessagesBlockRule<Block> extends never ? Block : ReferenceableValue<Block, AnthropicMessagesBlockRule<Block>, Reference>
-  : never;
-type AnthropicMessagesBlockState<Block, States extends ReferenceStateLeaves> = Block extends unknown
-  ? AnthropicMessagesBlockRule<Block> extends never ? never : ReferenceState<Block, AnthropicMessagesBlockRule<Block>, States>
-  : never;
+type AnthropicMessagesReferenceableBlock<Block, Reference> = Block extends { type: 'tool_use' }
+  ? {
+      [Key in keyof Block]: Key extends 'input'
+        ? ReferenceableValue<Block[Key], JSONRule, Reference> | ToolArgumentsEnvelope<ReferenceableValue<IRJSONObject, JSONRule, Reference>>
+        : Block[Key];
+    }
+  : AnthropicMessagesTextBlockRule<Block> extends never ? Block : ReferenceableValue<Block, AnthropicMessagesTextBlockRule<Block>, Reference>;
+type AnthropicMessagesBlockState<Block, States extends ReferenceStateLeaves> = Block extends { type: 'tool_use' }
+  ? { input: States['json'] | ToolArgumentsEnvelope<States['json']> }
+  : AnthropicMessagesTextBlockRule<Block> extends never ? never : ReferenceState<Block, AnthropicMessagesTextBlockRule<Block>, States>;
 
 export type AnthropicMessagesReferenceableInputAssistantTurn<Reference> = {
   role: 'assistant';

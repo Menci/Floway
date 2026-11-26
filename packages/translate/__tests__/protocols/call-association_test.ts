@@ -1,6 +1,8 @@
 import { expect, test, vi } from 'vitest';
 
 import { openaiResponsesSourceProtocol } from '../../src/protocols/openai-responses/as-source.ts';
+import { ContentReference } from '../../src/round-trip/reference/types.ts';
+import { decodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { iterate } from '../shared/iterables.ts';
 import { expectTrip } from '../trip.ts';
@@ -26,14 +28,15 @@ const chatFrames = (name: string, arguments_: string, legacy = false): ProtocolF
   doneFrame(),
 ];
 
-const messagesFrames = (name: string, arguments_: string): ProtocolFrame<AnthropicMessagesStreamEventEx>[] => [
+const messagesFrames = (name: string, input: string | string[] | Record<string, unknown>): ProtocolFrame<AnthropicMessagesStreamEventEx>[] => [
   eventFrame({ type: 'message_start', message: { id: 'message', type: 'message', role: 'assistant', model: 'm', content: [], stop_reason: null, stop_sequence: null, stop_details: null, container: null, usage: createAnthropicMessagesUsage(1, 0) } }),
   eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: 'native reasoning', signature: 'native signature' } }),
   eventFrame({ type: 'content_block_stop', index: 0 }),
   eventFrame({ type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'native encrypted blob' } }),
   eventFrame({ type: 'content_block_stop', index: 1 }),
-  eventFrame({ type: 'content_block_start', index: 2, content_block: { type: 'tool_use', id: 'native', name, input: {} } }),
-  eventFrame({ type: 'content_block_delta', index: 2, delta: { type: 'input_json_delta', partial_json: arguments_ } }),
+  eventFrame({ type: 'content_block_start', index: 2, content_block: { type: 'tool_use', id: 'native', name, input: typeof input === 'string' || Array.isArray(input) ? {} : input } }),
+  ...(typeof input === 'string' ? [input] : Array.isArray(input) ? input : []).map(partial_json =>
+    eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_delta', index: 2, delta: { type: 'input_json_delta', partial_json } })),
   eventFrame({ type: 'content_block_stop', index: 2 }),
   eventFrame({ type: 'message_delta', delta: { stop_reason: 'tool_use', stop_sequence: null, container: null, stop_details: null }, usage: toAnthropicMessagesUsageDelta(createAnthropicMessagesUsage(1, 1)) }),
   eventFrame({ type: 'message_stop' }),
@@ -225,4 +228,46 @@ test('Chat source custom identity renames native Messages calls independently fr
   expect(calls.map(call => call.name)).toEqual(['edit', 'edit_2']);
   expect(calls.map(call => call.input)).toEqual([{ input: 'raw' }, { input: 'later' }]);
   expect(replay.target.messages[0].content).toContainEqual({ type: 'thinking', thinking: 'native reasoning', signature: 'native signature' });
+});
+
+test.each(['deltas', 'initial input'])('Responses restores an enveloped Anthropic tool call from a nested reference (%s)', async mode => {
+  const options = { sidecarCodec: createTestSidecarCodec() };
+  const args = { body: '!?'.repeat(16_384) };
+  const tool: OpenAIResponsesTool = {
+    type: 'function', name: 'update', strict: true,
+    parameters: { type: 'object', oneOf: [{ type: 'object', properties: { body: { type: 'string' } }, required: ['body'] }] },
+  };
+  const first = expectTrip(await routeOpenAIResponsesViaAnthropicMessages({
+    model: 'm', stream: true, input: 'start', tools: [tool],
+  }, options));
+  expect(first.target.tools?.[0]).toMatchObject({
+    name: 'update', input_schema: { properties: { arguments: { oneOf: expect.any(Array) } }, required: ['arguments'] },
+  });
+
+  const wrapped = { arguments: args };
+  const argumentsJson = JSON.stringify(args);
+  const frames = messagesFrames('update', mode === 'deltas' ? [' { "arguments" : ', argumentsJson.slice(0, 100), argumentsJson.slice(100), ' }'] : wrapped);
+  const result = await collectOpenAIResponsesProtocolEventsToResult(first.events(iterate(frames)));
+  const call = result.output.find(item => item.type === 'function_call');
+  expect(call).toMatchObject({ type: 'function_call', name: 'update', arguments: argumentsJson });
+  if (call?.type !== 'function_call') throw new Error('expected function call');
+  const carrier = result.output.find(item => item.type === 'reasoning' && typeof item.encrypted_content === 'string');
+  if (carrier?.type !== 'reasoning' || typeof carrier.encrypted_content !== 'string') throw new Error('expected assistant-turn sidecar');
+  const sidecar = await decodeRoundTripSidecar(options.sidecarCodec, 'openaiResponses', carrier.encrypted_content);
+  if (sidecar?.target !== 'anthropicMessages') throw new Error('expected an Anthropic Messages sidecar');
+  expect(sidecar.referencedContentHashes).toHaveLength(1);
+  expect(sidecar.targetTurn.content.find(block => block.type === 'tool_use')?.input).toStrictEqual({
+    arguments: new ContentReference('json', [0]),
+  });
+
+  const replay = expectTrip(await routeOpenAIResponsesViaAnthropicMessages({
+    model: 'm', stream: true, tools: [tool],
+    input: [...toOpenAIResponsesInputItems(result.output), { type: 'function_call_output', call_id: call.call_id, output: 'done' }],
+  }, options));
+  const restored = replay.target.messages.flatMap(message => message.role === 'assistant' && Array.isArray(message.content)
+    ? message.content.flatMap(block => block.type === 'tool_use' ? [block] : [])
+    : []);
+  expect(restored).toHaveLength(1);
+  expect(restored[0]?.input).toEqual(wrapped);
+  expect(replay.target.messages[0]?.content).toContainEqual({ type: 'thinking', thinking: 'native reasoning', signature: 'native signature' });
 });
