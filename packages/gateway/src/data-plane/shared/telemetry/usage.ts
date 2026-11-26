@@ -168,8 +168,7 @@ export const foldsExclusiveCacheTokens = (
 export interface UsageMeasurement {
   readonly quantities: UsageQuantities;
   readonly pricingFacts: PricingRuntimeFacts;
-  // Dump frames only expose token measurements; duration counts would be
-  // mislabeled as tokens in the dump UI.
+  // The request archive index exposes token counts separately from billing quantities.
   readonly dumpTokenUsage: TokenUsage | null;
 }
 

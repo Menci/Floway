@@ -4,7 +4,6 @@ import { listModelProviders } from '../../../src/data-plane/providers/registry.t
 import { enumerateModelCandidates as enumerateModelCandidatesRaw, enumerateRealModelCandidates as enumerateRealModelCandidatesRaw } from '../../../src/data-plane/providers/resolution.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest, testAdminUser, warmModelsForTest } from '../../test-utils/app.ts';
-import { directFetcher } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
 
 const withMockedFetch = <T>(
@@ -67,7 +66,6 @@ test('scheduler registration failures propagate rather than looking like an upst
   }));
   const providers = await listModelProviders(null);
   await expect(enumerateRealModelCandidates('model', 'chat', providers, {
-    fetcherForUpstream: () => directFetcher,
     randomizeUpstreams: false,
     scheduleRefresh: () => { throw new Error('scheduler unavailable'); },
   })).rejects.toThrow('scheduler unavailable');

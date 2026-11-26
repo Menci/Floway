@@ -61,7 +61,7 @@ type FailedJson<TResponse extends Response> = TResponse extends {
     : never
   : never;
 
-const requestResponse = async <TRaw>(
+export const requestResponse = async <TRaw>(
   fn: () => Promise<Response>,
 ): Promise<ApiResult<Response, TRaw>> => {
   let response: Response;

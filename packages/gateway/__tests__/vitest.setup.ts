@@ -2,11 +2,11 @@ import { trackBackground } from './test-utils/background-tracker.ts';
 import type { DumpBroker } from '../src/dump/broker.ts';
 import { initDumpBroker, initDumpStore } from '../src/dump/registry.ts';
 import type { DumpStore } from '../src/dump/store-contract.ts';
-import type { DumpMetadata, StoredDumpRecord, DumpRecordId } from '../src/dump/types.ts';
+import type { DumpMetadata } from '../src/dump/types.ts';
 import { handleExecutionRequest } from '../src/execution/handler.ts';
 import { initBackgroundSchedulerResolver } from '../src/runtime/background.ts';
 import { initExecutionCellNamespace } from '../src/runtime/execution.ts';
-import { isReplayableBody, toRequestInit } from '@floway-dev/http';
+import { isReplayableBody, toRequestInit, type Fetcher } from '@floway-dev/http';
 import { initEnv, initFetch, initRuntimeKind, initTimingSafeEqual, InProcessExecutionCellNamespace } from '@floway-dev/platform';
 
 // Production always initializes the environment getter at boot. Mirror that
@@ -17,17 +17,18 @@ initEnv(() => '');
 // runtime behaviour re-init this with 'cloudflare'.
 initRuntimeKind('node');
 initTimingSafeEqual((a, b) => a.every((byte, index) => byte === b[index]));
-initFetch((url, init) => {
+const testFetch: Fetcher = (url, init) => {
   const body = init.body;
   if (!isReplayableBody(body)) return fetch(url, toRequestInit(init, body));
   const headers = new Headers(init.headers);
   headers.set('content-length', String(body.contentLength));
   const request: RequestInit & { duplex: 'half' } = { ...toRequestInit(init, body.open()), headers, duplex: 'half' };
   return fetch(url, request);
-});
+};
+initFetch(testFetch, new Map(), async (url, init) => ({ response: await testFetch(url, init) }));
 
 initBackgroundSchedulerResolver(_c => trackBackground);
-initExecutionCellNamespace(new InProcessExecutionCellNamespace(handleExecutionRequest));
+initExecutionCellNamespace(new InProcessExecutionCellNamespace(request => handleExecutionRequest(request, trackBackground)));
 
 // Default no-op dump bindings keep tests that do not exercise dump persistence
 // independent of that subsystem. Dump-specific tests install real or recording
@@ -35,8 +36,9 @@ initExecutionCellNamespace(new InProcessExecutionCellNamespace(handleExecutionRe
 const noopStore: DumpStore = {
   async prepareRequestBody(body) { return { encoding: 'identity', bytes: body, decodedByteLength: body.byteLength }; },
   async put(): Promise<void> { /* noop */ },
+  async putArchive(): Promise<void> { /* noop */ },
+  async getArchive(): Promise<null> { return null; },
   async list(): Promise<DumpMetadata[]> { return []; },
-  async get(_keyId: string, _id: DumpRecordId): Promise<StoredDumpRecord | null> { return null; },
   async deleteExpiredBatch(): Promise<number> { return 0; },
   async findOldestCreatedAt(): Promise<number | null> { return null; },
 };

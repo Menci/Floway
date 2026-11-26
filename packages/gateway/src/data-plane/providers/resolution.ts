@@ -4,13 +4,20 @@ import { internalModelFromProviderModel } from './catalog.ts';
 import { readUpstreamModelsSnapshotAndScheduleRefresh } from './models-cache.ts';
 import { listModelProviders, type GatewayProvider } from './registry.ts';
 import { checkMany } from '../../access-control/check.ts';
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { createModelsRefreshScheduler, type ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ModelAliasRecord, User } from '../../repo/types.ts';
+import type { ModelAliasRecord, StoredUpstreamRecord, User } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ModelKind } from '@floway-dev/protocols/common';
-import type { Fetcher, ModelCandidate } from '@floway-dev/provider';
+import type { AliasTarget, ModelKind } from '@floway-dev/protocols/common';
+import type { InternalModel } from '@floway-dev/provider';
+
+type Subject = Pick<User, 'id' | 'isAdmin'>;
+
+export interface CatalogCandidate {
+  provider: GatewayProvider;
+  model: InternalModel;
+  rules?: AliasTarget['rules'];
+}
 
 // Resolve one inbound id against one upstream. The upstream's
 // `modelPrefix.addressable` configuration decides which lookup branches
@@ -30,12 +37,8 @@ const enumerateOneUpstreamCandidates = (
   provider: GatewayProvider,
   modelId: string,
   kind: ModelKind,
-  context: {
-    fetcher: Fetcher;
-    scheduleRefresh: ModelsRefreshScheduler;
-  },
-): { candidates: ModelCandidate[]; sawModel: boolean; modelsError: boolean } => {
-  const { fetcher, scheduleRefresh } = context;
+  scheduleRefresh: ModelsRefreshScheduler,
+): { candidates: CatalogCandidate[]; sawModel: boolean; modelsError: boolean } => {
   const cfg = provider.modelPrefix;
   const lookupIds: string[] = [];
   if (cfg === null) {
@@ -50,14 +53,14 @@ const enumerateOneUpstreamCandidates = (
 
   const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(provider, scheduleRefresh);
   const disabled = new Set(provider.disabledPublicModelIds);
-  const candidates: ModelCandidate[] = [];
+  const candidates: CatalogCandidate[] = [];
   let sawModel = false;
   for (const lookupId of lookupIds) {
     const match = snapshot.models.find(m => m.id === lookupId && !disabled.has(m.id));
     if (!match) continue;
     sawModel = true;
     if (match.kind === kind) {
-      candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId), fetcher });
+      candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstreamId) });
     }
   }
   return { candidates, sawModel, modelsError: snapshot.lastError !== null };
@@ -84,35 +87,31 @@ const shuffled = <T>(items: readonly T[]): T[] => {
 // `sawModel` aggregates only permitted catalogs, regardless of kind. Denied
 // entries do not disclose model existence through this signal.
 export const enumerateRealModelCandidates = async (
-  subject: User,
+  subject: Subject,
   modelId: string,
   kind: ModelKind,
   providers: readonly GatewayProvider[],
   context: {
-    fetcherForUpstream: (upstreamId: string) => Fetcher;
     randomizeUpstreams: boolean;
     scheduleRefresh: ModelsRefreshScheduler;
   },
 ): Promise<{
-  readonly candidates: readonly ModelCandidate[];
+  readonly candidates: readonly CatalogCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const { fetcherForUpstream, randomizeUpstreams, scheduleRefresh } = context;
+  const { randomizeUpstreams, scheduleRefresh } = context;
   const allowed = await checkMany(subject, providers.map(provider => ({
     target: { kind: 'upstreamModel' as const, upstreamId: provider.upstreamId, model: { kind: 'exact' as const, value: modelId } },
     requirement: { permission: 'Model.Use' as const },
   })));
   const failedUpstreams: string[] = [];
-  const candidateGroups: ModelCandidate[][] = [];
+  const candidateGroups: CatalogCandidate[][] = [];
   let sawModel = false;
   for (let index = 0; index < providers.length; index++) {
     if (!allowed[index]) continue;
     const provider = providers[index]!;
-    const result = enumerateOneUpstreamCandidates(provider, modelId, kind, {
-      fetcher: fetcherForUpstream(provider.upstreamId),
-      scheduleRefresh,
-    });
+    const result = enumerateOneUpstreamCandidates(provider, modelId, kind, scheduleRefresh);
     if (result.candidates.length > 0) candidateGroups.push(result.candidates);
     sawModel = sawModel || result.sawModel;
     if (result.modelsError) failedUpstreams.push(provider.name);
@@ -161,34 +160,28 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 export const enumerateModelCandidates = async ({
   subject, upstreamIds, randomizeUpstreams, model, kind, scheduler, runtimeLocation,
 }: {
-  subject: User;
+  subject: Subject;
   // null = unrestricted; empty list = no providers visible.
   upstreamIds: readonly string[] | null;
   randomizeUpstreams: boolean;
   model: string;
   kind: ModelKind;
   scheduler: BackgroundScheduler;
-  // Runtime location tag for this request — see GatewayCtx.runtimeLocation.
-  // Threaded into the per-request fetcher so colo-scoped fallback entries
-  // can be honoured at dial time.
   runtimeLocation: string;
-}): Promise<{
-  readonly candidates: readonly ModelCandidate[];
+}, upstreams?: readonly StoredUpstreamRecord[]): Promise<{
+  readonly candidates: readonly CatalogCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const upstreams = await getRepo().upstreams.list();
-  const [createFetcherForUpstream, listedProviders] = await Promise.all([
-    createPerRequestFetcher(runtimeLocation, upstreams),
+  const [listedProviders, alias] = await Promise.all([
     listModelProviders(upstreamIds, upstreams),
+    getRepo().modelAliases.getByName(model),
   ]);
   const resolutionContext = {
-    fetcherForUpstream: createFetcherForUpstream,
     randomizeUpstreams,
     scheduleRefresh: createModelsRefreshScheduler(runtimeLocation, scheduler),
   };
 
-  const alias = await getRepo().modelAliases.getByName(model);
   if (alias === null) {
     return await enumerateRealModelCandidates(subject, model, kind, listedProviders, resolutionContext);
   }
@@ -200,7 +193,7 @@ export const enumerateModelCandidates = async ({
   // same physical binding under two rule variants.
   const aggregatedFailed = new Set<string>();
   let sawModel = false;
-  const flat: ModelCandidate[] = [];
+  const flat: CatalogCandidate[] = [];
   for (const target of orderAliasTargets(alias)) {
     const result = await enumerateRealModelCandidates(subject, target.target_model_id, kind, listedProviders, resolutionContext);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);

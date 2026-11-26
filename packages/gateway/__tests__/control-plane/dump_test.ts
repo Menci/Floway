@@ -37,6 +37,21 @@ test('GET /api/dump/keys/:keyId/records defaults an absent limit and coerces a s
   assertEquals(list.mock.calls.map(([, options]) => options.limit), [100, 2]);
 });
 
+test('GET /api/dump/keys/:keyId/records/:recordId/archive streams NDJSON to the key owner', async () => {
+  const { repo, apiKey, adminSession } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const { store } = installDumpStubs(initDumpStore, initDumpBroker);
+  const recordId = '01HZZ0000000000000000000ND';
+  const ndjson = '{"type":"object","fromObjectId":1,"nodes":[{}]}\n';
+  await store.putArchive(apiKey.id, fakeMeta(recordId, Date.now()), new TextEncoder().encode(ndjson));
+  const path = `/api/dump/keys/${apiKey.id}/records/${recordId}/archive`;
+  const response = await requestApp(path, { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get('content-type'), 'application/x-ndjson');
+  assertEquals(await response.text(), ndjson);
+  assertEquals((await requestApp(path, { headers: { 'x-floway-session': adminSession } })).status, 404);
+});
+
 // Read N SSE frames (`\n\n` delimited) off the response body. A deterministic
 // barrier — no timeout — that returns as soon as the requested count lands.
 const readFrames = async (response: Response, count: number): Promise<string[]> => {

@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+
 import { expect, test } from 'vitest';
 
 import { createSqliteTestDb, mapRunChangeCount } from './test-sqlite.ts';
@@ -50,31 +52,54 @@ const baseRecord = (id: string, completedAt: number): DumpWriteRecord => ({
   },
 });
 
-test('FileDumpStore prepares request gzip before terminal persistence', async () => {
+test('FileDumpStore streams the completed archive bytes and retires the adopted file when retention expires', async () => {
   const db = await openDb();
+  const repo = new SqlRepo(db);
+  initRepo(repo);
   const files = new MemoryFileStore();
+  initFileStore(files);
   const store = new FileDumpStore(db, files);
-  const raw = utf8(`{"content":"${'repeatable '.repeat(4096)}"}`);
-  const prepared = await store.prepareRequestBody(raw);
-  const base = baseRecord('01HZZ0000000000000000000P1', Date.UTC(2026, 5, 1, 12, 0, 0));
-  const record: DumpWriteRecord = {
-    ...base,
-    meta: { ...base.meta, requestBytes: raw.byteLength },
-    request: {
-      method: 'POST',
-      path: '/v1/x',
-      headers: [['content-type', 'application/json']],
-      body: prepared,
-    },
-  };
+  const now = Date.now();
+  const { meta } = baseRecord('01HZZ0000000000000000000ND', now - 2_000);
+  const ndjson = '{"type":"object","fromObjectId":1,"nodes":[{}]}\n{"type":"stage.entered","stageId":1,"name":"parse","facts":{"$":1}}\n{"type":"stage.leaved","stageId":1,"facts":{"$":1}}\n';
+  await store.putArchive('key_x', meta, utf8(ndjson));
+  const archive = await store.getArchive('key_x', meta.id);
+  assertExists(archive);
+  expect(await new Response(archive).text()).toBe(ndjson);
+  const owned = await db.prepare("SELECT file_key FROM spilled_files WHERE state = 'owned' AND owner_kind = 'dump-response'").first<{ file_key: string }>();
+  assertExists(owned);
+  expect(await files.get(owned.file_key)).not.toBeNull();
+  await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 1 });
+  expect(await store.getArchive('key_x', meta.id)).toBeNull();
+  expect(await store.deleteExpiredBatch('key_x', now, 10)).toBe(1);
+  await collectSpilledFiles(now + 60 * 60 * 1000);
+  expect(await files.get(owned.file_key)).toBeNull();
+});
 
-  assertEquals(prepared.encoding, 'gzip');
-  assertEquals(prepared.decodedByteLength, raw.byteLength);
-  assertEquals(prepared.bytes.byteLength < raw.byteLength, true);
-  await store.put('key_x', record);
-  const fetched = await store.get('key_x', record.meta.id);
-  assertExists(fetched);
-  assertEquals(Array.from(fetched.request.body), Array.from(raw));
+test('the archive migration retires legacy files and preserves files referenced by retained archives', async () => {
+  const db = await openDb();
+  initRepo(new SqlRepo(db));
+  const files = new MemoryFileStore();
+  initFileStore(files);
+  const store = new FileDumpStore(db, files);
+  const now = Date.now();
+  const archive = baseRecord('archive', now);
+  const legacy = baseRecord('legacy', now);
+  const archiveData = utf8('{"type":"object","fromObjectId":1,"nodes":[{}]}\n');
+  await store.putArchive('key_x', archive.meta, archiveData);
+  await store.put('key_x', { ...legacy, response: { status: 200, headers: [], body: { type: 'none' } } });
+  const { results } = await db.prepare('SELECT owner_kind, file_key FROM spilled_files').all<{ owner_kind: string; file_key: string }>();
+  const legacyFile = results.find(item => item.owner_kind === 'dump-request')!.file_key;
+  const archiveFile = results.find(item => item.owner_kind === 'dump-response')!.file_key;
+  await db.prepare("UPDATE dump_records SET response_body_descriptor = json_object('key', ?, 'type', 'bytes') WHERE id = 'legacy'")
+    .bind(archiveFile).run();
+  await db.exec(await readFile(new URL('../../migrations/0102_dump_archives.sql', import.meta.url), 'utf8'));
+  expect((await store.list('key_x', { limit: 10 })).map(meta => meta.id)).toEqual(['archive']);
+  await collectSpilledFiles(now + 1);
+  expect(await files.get(legacyFile)).toBeNull();
+  const retained = await store.getArchive('key_x', archive.meta.id);
+  assertExists(retained);
+  expect(await new Response(retained).text()).toBe(new TextDecoder().decode(archiveData));
 });
 
 test('FileDumpStore applies retention immediately and retires exact expired files', async () => {
@@ -86,8 +111,8 @@ test('FileDumpStore applies retention immediately and retires exact expired file
   const store = new FileDumpStore(db, files);
   const now = Date.UTC(2026, 5, 1, 12, 0, 0);
   // Old bucket 9:xx, current bucket 12:xx.
-  await store.put('key_x', baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)));
-  await store.put('key_x', baseRecord('01HZZ0000000000000000000A2', now));
+  await store.putArchive('key_x', baseRecord('01HZZ0000000000000000000A1', Date.UTC(2026, 5, 1, 9, 0, 0)).meta, utf8('archive A1'));
+  await store.putArchive('key_x', baseRecord('01HZZ0000000000000000000A2', now).meta, utf8('archive A2'));
   await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 2 * 3600 });
   const originalNow = Date.now;
   Date.now = () => now + 1;
@@ -115,8 +140,8 @@ test('FileDumpStore counts returned dump rows instead of trigger-amplified chang
   const repo = new SqlRepo(db);
   const files = new MemoryFileStore();
   const store = new FileDumpStore(db, files);
-  await store.put('key_x', baseRecord('01HZZ0000000000000000000C1', Date.UTC(2026, 5, 1, 9)));
-  await store.put('key_x', baseRecord('01HZZ0000000000000000000C2', Date.UTC(2026, 5, 1, 10)));
+  await store.putArchive('key_x', baseRecord('01HZZ0000000000000000000C1', Date.UTC(2026, 5, 1, 9)).meta, utf8('archive C1'));
+  await store.putArchive('key_x', baseRecord('01HZZ0000000000000000000C2', Date.UTC(2026, 5, 1, 10)).meta, utf8('archive C2'));
   await repo.apiKeys.update('key_x', { dumpRetentionSeconds: null });
 
   const d1LikeStore = new FileDumpStore(mapRunChangeCount(db, changes => changes * 3), files);
@@ -132,36 +157,18 @@ test('a record-ID race leaves only the losing write\'s uniquely keyed files coll
   initFileStore(files);
   const store = new FileDumpStore(db, files);
   const record = baseRecord('01HZZ0000000000000000000A3', Date.now());
-  await store.put('key_x', record);
+  await store.putArchive('key_x', record.meta, utf8('winning archive'));
 
-  await expect(store.put('key_x', record)).rejects.toThrow();
-  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'owned'").first<{ count: number }>())?.count).toBe(2);
-  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'staged'").first<{ count: number }>())?.count).toBe(2);
+  await expect(store.putArchive('key_x', record.meta, utf8('losing archive'))).rejects.toThrow();
+  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'owned'").first<{ count: number }>())?.count).toBe(1);
+  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'staged'").first<{ count: number }>())?.count).toBe(1);
 
   await collectSpilledFiles(Date.now() + 60 * 60 * 1000 + 1);
   expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'staged'").first<{ count: number }>())?.count).toBe(0);
-  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'owned'").first<{ count: number }>())?.count).toBe(2);
-  assertExists(await store.get('key_x', record.meta.id));
-});
-
-test('FileDumpStore round-trips raw exchanges and parsed events in one owned spill', async () => {
-  const db = await openDb();
-  const files = new MemoryFileStore();
-  const store = new FileDumpStore(db, files);
-  const record = baseRecord('raw-exchange', Date.now());
-  record.capture = {
-    exchanges: [{ upstreamId: 'u', request: { url: 'https://u.test', method: 'POST', headers: [], body: { encoding: 'utf8', data: '{"model":"upstream"}' } }, response: { status: 200, headers: [['content-type', 'text/event-stream']], body: { encoding: 'utf8', data: 'data: {broken\n' }, complete: false, error: 'socket reset' }, error: null }],
-    response: { body: { encoding: 'utf8', data: 'downstream' }, complete: true, error: null },
-  };
-  record.response = { ...record.response, upstream: { status: 200, headers: [['x-trace', 'upstream']], body: { type: 'stream', events: [{ ts: 0, frame: { type: 'done' } }] } } };
-  await store.put('key_x', record);
-  const stored = await store.get('key_x', record.meta.id);
-  expect(stored?.capture).toEqual(record.capture);
-  expect(stored?.response.upstream).toEqual(record.response.upstream);
-  const spill = await db.prepare("SELECT file_key, state FROM spilled_files WHERE owner_kind = 'dump-response-upstream'").first<{ file_key: string; state: string }>();
-  expect(spill?.state).toBe('owned');
-  await db.prepare('DELETE FROM dump_records WHERE id = ?').bind(record.meta.id).run();
-  expect((await db.prepare('SELECT state FROM spilled_files WHERE file_key = ?').bind(spill!.file_key).first<{ state: string }>())?.state).toBe('retired');
+  expect((await db.prepare("SELECT COUNT(*) AS count FROM spilled_files WHERE state = 'owned'").first<{ count: number }>())?.count).toBe(1);
+  const surviving = await store.getArchive('key_x', record.meta.id);
+  assertExists(surviving);
+  expect(await new Response(surviving).text()).toBe('winning archive');
 });
 
 test('FileDumpStore filters all retained history before applying the page limit', async () => {
@@ -172,7 +179,7 @@ test('FileDumpStore filters all retained history before applying the page limit'
     const record = baseRecord(`filter-${i}`, now - i);
     record.meta.model = i === 4 ? 'needle-model' : 'other';
     record.meta.error = i === 4 ? { kind: 'failed', reason: 'socket reset' } : null;
-    await store.put('key_x', record);
+    await store.putArchive('key_x', record.meta, utf8('archive'));
   }
   expect((await store.list('key_x', { q: 'needle', limit: 1 })).map(meta => meta.id)).toEqual(['filter-4']);
   expect((await store.list('key_x', { q: 'SOCKET', failures: true, limit: 1 })).map(meta => meta.id)).toEqual(['filter-4']);

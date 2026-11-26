@@ -1,9 +1,14 @@
 import { expect, test } from 'vitest';
 
+import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
+import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
+import { modelsRefreshInputs } from '../../../src/repo/models-refresh-inputs.ts';
+import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
-import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
+import { buildCustomUpstreamRecord, copilotModels, requestApp, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
+import { decodeDump } from '@floway-dev/dump/browser';
+import { jsonResponse, stubProviderModel, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 test('/v1/embeddings wraps scalar string input for Copilot upstream', async () => {
   const { apiKey } = await setupAppTest();
@@ -76,7 +81,6 @@ test('/v1/embeddings wraps scalar string input for Copilot upstream', async () =
 test('/v1/embeddings reports a missing model when /v1/models rejects', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
 
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_embed',
@@ -122,4 +126,129 @@ test('/v1/embeddings reports a missing model when /v1/models rejects', async () 
       expect(await response.json()).toMatchObject({ error: { type: 'api_error' } });
     },
   );
+});
+
+const setupEmbeddingUpstreams = async () => {
+  const app = await setupAppTest();
+  await app.repo.upstreams.deleteAll();
+  for (const [index, id] of ['first', 'second'].entries()) {
+    await saveUpstreamForTest(app.repo.upstreams, buildCustomUpstreamRecord({
+      id,
+      name: id,
+      sortOrder: index,
+      config: {
+        baseUrl: `https://${id}.example.com`,
+        apiKey: `upstream-${id}`,
+        ingressHeadersRules: [{ key: 'x-client-trace', value: null }],
+        endpoints: { openaiEmbeddings: {} },
+      },
+    }));
+    const record = (await app.repo.upstreams.getById(id))!;
+    expect(await app.repo.upstreams.publishModelsRefresh({
+      id,
+      configVersion: record.configVersion,
+      cacheEpoch: 0,
+      refreshInputs: modelsRefreshInputs(record),
+      cache: {
+        revision: MODEL_CATALOG_REVISION,
+        fetchedAt: Date.now(),
+        models: [stubProviderModel({ id: 'vectors', upstreamModelId: 'native-vectors', kind: 'embedding', endpoints: { openaiEmbeddings: {} } })],
+      },
+    })).toBe(true);
+  }
+  return app;
+};
+
+test('Embeddings retries an upstream error and archives the selected response and original request', async () => {
+  const { apiKey, repo } = await setupEmbeddingUpstreams();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const body = '{ "model": "vectors", "input": "hello" }';
+  const attempts: string[] = [];
+
+  await withMockedFetch(async request => {
+    const host = new URL(request.url).hostname;
+    attempts.push(host);
+    expect(await request.json()).toMatchObject({ model: 'native-vectors', input: 'hello' });
+    expect(request.headers.get('x-api-key')).toBeNull();
+    expect(request.headers.get('x-goog-api-key')).toBeNull();
+    expect(request.headers.get('x-client-trace')).toBe('forwarded');
+    expect(request.headers.get('authorization')).toBe(host === 'first.example.com' ? 'Bearer upstream-first' : 'Bearer upstream-second');
+    return host === 'first.example.com'
+      ? new Response('upstream rejected the request', { status: 400 })
+      : Response.json({ object: 'list', data: [], usage: { prompt_tokens: 0 } }, { headers: { 'x-upstream-trace': 'selected' } });
+  }, async () => {
+    const response = await requestApp(`/v1/embeddings?key=${encodeURIComponent(apiKey.key)}&client=test`, {
+      method: 'POST',
+      body,
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': 'unused-floway-header',
+        'x-goog-api-key': 'another-floway-header',
+        'x-client-trace': 'forwarded',
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('x-upstream-trace')).toBe('selected');
+    expect(await response.json()).toMatchObject({ usage: { prompt_tokens: 0 } });
+    await flushBackground();
+  });
+
+  expect(attempts).toEqual(['first.example.com', 'second.example.com']);
+  expect(await repo.usage.listAll()).toMatchObject([{ upstream: 'second', modelKey: 'native-vectors', requests: 1 }]);
+  expect(await repo.performance.listAll()).toEqual(expect.arrayContaining([
+    expect.objectContaining({ upstream: 'first', requests: 1, errorsNoOutput: 1 }),
+    expect.objectContaining({ upstream: 'second', requests: 1, neutral: 1 }),
+  ]));
+  expect(dumps.published).toMatchObject([{ keyId: apiKey.id, meta: { model: 'vectors', upstream: { id: 'second' }, status: 200, inputTokens: 0 } }]);
+  const recordId = dumps.published[0]!.meta.id;
+  const download = await requestApp(`/api/dump/keys/${apiKey.id}/records/${recordId}/archive`, { headers: { 'x-api-key': apiKey.key } });
+  expect(download.status).toBe(200);
+  expect(download.headers.get('content-type')).toBe('application/x-ndjson');
+  const archive = await decodeDump(download.body!);
+  const root = archive.stages.get(archive.rootStageId)!;
+  expect(root.entry.facts['request.http']).toMatchObject({ url: expect.stringMatching(/\/v1\/embeddings\?client=test$/), body: new TextEncoder().encode(body) });
+  expect(root.outcome).toMatchObject({ facts: { 'response.candidate': { upstreamId: 'second', model: 'vectors' } } });
+});
+
+test('Embeddings exposes a panic with its stack and neither retries nor meters it', async () => {
+  const { apiKey, repo } = await setupEmbeddingUpstreams();
+  const attempts: string[] = [];
+  await withMockedFetch(request => {
+    attempts.push(new URL(request.url).hostname);
+    throw new Error('embedding handler defect');
+  }, async () => {
+    const response = await requestApp('/v1/embeddings', {
+      method: 'POST',
+      body: JSON.stringify({ model: 'vectors', input: 'hello' }),
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    });
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      error: {
+        message: 'embedding handler defect',
+        stack: expect.stringContaining('embedding handler defect'),
+      },
+    });
+    await flushBackground();
+  });
+  expect(attempts).toEqual(['first.example.com']);
+  expect(await repo.usage.listAll()).toEqual([]);
+  expect(await repo.performance.listAll()).toEqual([]);
+});
+
+test('Embeddings indexes the requested model on a local routing refusal', async () => {
+  const { apiKey, repo } = await setupEmbeddingUpstreams();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const response = await requestApp('/v1/embeddings', {
+    method: 'POST',
+    body: JSON.stringify({ model: 'missing-vectors', input: 'hello' }),
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+  });
+  expect(response.status).toBe(404);
+  await flushBackground();
+  expect(dumps.published).toMatchObject([
+    { meta: { model: 'missing-vectors', upstream: null, error: { kind: 'gateway' } } },
+  ]);
 });

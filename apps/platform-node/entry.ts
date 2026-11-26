@@ -46,11 +46,11 @@ if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_KEY) {
 
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
-initExecutionCellNamespace(new InProcessExecutionCellNamespace(handleExecutionRequest));
 
 const scheduleBackground = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[scheduled-maintenance background]', err));
 };
+initExecutionCellNamespace(new InProcessExecutionCellNamespace(request => handleExecutionRequest(request, scheduleBackground)));
 startScheduledMaintenance(() => runScheduledMaintenance(scheduledRuntimeLocation, scheduleBackground));
 
 serve({

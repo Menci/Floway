@@ -1,6 +1,7 @@
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
 import { fullUpstreamActionError } from '../../access-control/upstream-edit.ts';
+import { getProviderServices } from '../../data-plane/pipeline/services.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -12,9 +13,6 @@ import {
   buildChatGPTAuthorizeUrl,
   ChatGPTRateLimitResetRequestError,
   assertChatGPTUpstreamRecord,
-  clearChatGPTQuota,
-  consumeChatGPTRateLimitResetCredit,
-  fetchChatGPTRateLimitResetCredits,
   invalidateChatGPTAccessToken,
   type ChatGPTUpstreamConfig,
   type ChatGPTUpstreamState,
@@ -49,6 +47,7 @@ const ensureChatGPTControlPlaneAccessToken = async (opts: {
 
   try {
     const access = await ensureChatGPTAccessToken(
+      getProviderServices().chatgpt,
       opts.upstreamId,
       opts.accountId,
       refreshToken => mintChatGPTAccessToken(refreshToken, opts.fetcher, persistRotation),
@@ -244,7 +243,7 @@ export const chatgptOAuthRefresh = async (c: CtxWithJson<typeof chatgptOAuthRefr
   };
 
   try {
-    await ensureChatGPTAccessToken(record.id, account.chatgptAccountId,
+    await ensureChatGPTAccessToken(getProviderServices().chatgpt, record.id, account.chatgptAccountId,
       refreshToken => mintChatGPTAccessToken(refreshToken, fetcher, persistRefreshTokenRotation),
       true);
   } catch (err) {
@@ -277,7 +276,7 @@ export const chatgptRateLimitResetCredits = async (c: CtxWithJson<typeof chatgpt
     const resetCredits = await withChatGPTResetAccess({
       upstreamId: record.id,
       access,
-      operation: accessToken => fetchChatGPTRateLimitResetCredits({
+      operation: accessToken => getProviderServices().chatgpt.listRateLimitResetCredits({
         accessToken,
         accountId: access.accountId,
         fetcher: access.fetcher,
@@ -308,7 +307,7 @@ export const chatgptRateLimitResetConsume = async (c: CtxWithJson<typeof chatgpt
     outcome = await withChatGPTResetAccess({
       upstreamId: record.id,
       access,
-      operation: accessToken => consumeChatGPTRateLimitResetCredit({
+      operation: accessToken => getProviderServices().chatgpt.consumeRateLimitResetCredit({
         accessToken,
         accountId: access.accountId,
         creditId,
@@ -329,7 +328,7 @@ export const chatgptRateLimitResetConsume = async (c: CtxWithJson<typeof chatgpt
   let resetCredits = null;
   if (outcome.code === 'reset' || outcome.code === 'already_redeemed') {
     try {
-      await clearChatGPTQuota(record.id, access.accountId);
+      await getProviderServices().chatgpt.clearQuota(record.id, access.accountId);
     } catch (error) {
       refreshErrors.push(errorMessage(error));
     }
@@ -338,7 +337,7 @@ export const chatgptRateLimitResetConsume = async (c: CtxWithJson<typeof chatgpt
     resetCredits = await withChatGPTResetAccess({
       upstreamId: record.id,
       access,
-      operation: accessToken => fetchChatGPTRateLimitResetCredits({
+      operation: accessToken => getProviderServices().chatgpt.listRateLimitResetCredits({
         accessToken,
         accountId: access.accountId,
         fetcher: access.fetcher,

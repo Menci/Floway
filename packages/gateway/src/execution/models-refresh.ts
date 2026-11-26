@@ -1,4 +1,4 @@
-import { createPreviewProvider } from '../data-plane/providers/registry.ts';
+import { getProviderServices } from '../data-plane/pipeline/services.ts';
 import { createDetachedFetcher, createPerRequestFetcher, createValidatedPerRequestFetcher, InvalidProxyConfigurationError } from '../dial/per-request.ts';
 import { getRepo } from '../repo/index.ts';
 import { MODEL_CATALOG_REVISION, shouldScheduleModelsRefresh } from '../repo/models-cache-contract.ts';
@@ -9,7 +9,13 @@ import { getExecutionCellNamespace } from '../runtime/execution.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type ProviderModelsFailureResponse, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
+import { projectAzureModels } from '@floway-dev/provider-azure';
+import { getChatGPTProvidedModels } from '@floway-dev/provider-chatgpt';
+import { getClaudeCodeProvidedModels } from '@floway-dev/provider-claude-code';
+import { getCopilotProvidedModels } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomDiscoveredModels, projectCustomModels } from '@floway-dev/provider-custom';
+import { fetchKimiCodeProvidedModels } from '@floway-dev/provider-kimi-code';
+import { fetchOllamaProvidedModels } from '@floway-dev/provider-ollama';
 
 export type ModelsRefreshExecutionInput =
   | { kind: 'saved'; upstreamId: string; configVersion: number; inputHash: string; mode: 'automatic' | 'explicit'; runtimeLocation: string | null }
@@ -142,7 +148,7 @@ export const modelsRefreshErrorMessage = (error: unknown): string => {
 export const isModelsRefreshConfigurationError = (error: unknown): error is InvalidProxyConfigurationError =>
   error instanceof InvalidProxyConfigurationError;
 
-const discoverModels = async (record: UpstreamRecord, fetcher: Fetcher, fetchCustomLive: boolean): Promise<{
+const discoverModels = async (record: UpstreamRecord, fetcher: Fetcher, fetchCustomLive: boolean, waitUntil: BackgroundScheduler): Promise<{
   models: ProviderModel[];
   discovered?: UpstreamModelConfig[];
 }> => await withRedactedCredentialEcho(fetcher, async trackedFetcher => {
@@ -152,15 +158,27 @@ const discoverModels = async (record: UpstreamRecord, fetcher: Fetcher, fetchCus
     const response = await fetchCustomModels(custom.config, trackedFetcher);
     return { models: projectCustomModels(record, response), discovered: projectCustomDiscoveredModels(record, response) };
   }
-  return { models: [...await createPreviewProvider(record).instance.getProvidedModels(trackedFetcher)] };
+  const { chatgpt, claudeCode, copilot } = getProviderServices();
+  switch (record.kind) {
+  case 'azure': return { models: projectAzureModels(record) };
+  case 'chatgpt': return { models: await getChatGPTProvidedModels(record, trackedFetcher, chatgpt) };
+  case 'claude-code': return { models: await getClaudeCodeProvidedModels(record, trackedFetcher, claudeCode) };
+  case 'copilot': return {
+    models: await getCopilotProvidedModels(copilot, record, async (url, init) => ({
+      response: await trackedFetcher(url, init),
+    }), console.warn, waitUntil),
+  };
+  case 'kimi-code': return { models: await fetchKimiCodeProvidedModels(record, trackedFetcher) };
+  case 'ollama': return { models: await fetchOllamaProvidedModels(record, trackedFetcher) };
+  }
 });
 
-export const executeModelsRefresh = async (input: ModelsRefreshExecutionInput): Promise<ModelsRefreshExecutionResult> => {
+export const executeModelsRefresh = async (input: ModelsRefreshExecutionInput, waitUntil: BackgroundScheduler): Promise<ModelsRefreshExecutionResult> => {
   const repo = getRepo().upstreams;
   if (input.kind === 'draft') {
     if (input.record.kind !== 'custom' && input.record.kind !== 'ollama' && input.record.kind !== 'kimi-code') throw new TypeError('Draft model discovery requires custom, ollama or kimi-code');
     const fetcher = await createDetachedFetcher(input.record.proxyFallbackList, input.runtimeLocation);
-    return { kind: 'discovered', ...await discoverModels(input.record, fetcher, true), publication: 'draft' };
+    return { kind: 'discovered', ...await discoverModels(input.record, fetcher, true, waitUntil), publication: 'draft' };
   }
 
   const record = await repo.getById(input.upstreamId);
@@ -175,7 +193,7 @@ export const executeModelsRefresh = async (input: ModelsRefreshExecutionInput): 
   try {
     const createFetcher = input.mode === 'explicit' ? createValidatedPerRequestFetcher : createPerRequestFetcher;
     const fetcher = (await createFetcher(input.runtimeLocation, [record]))(record.id);
-    result = await discoverModels(record, fetcher, input.mode === 'explicit');
+    result = await discoverModels(record, fetcher, input.mode === 'explicit', waitUntil);
   } catch (error) {
     if (input.mode === 'explicit' && isModelsRefreshConfigurationError(error)) throw error;
     try {

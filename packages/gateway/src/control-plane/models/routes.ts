@@ -9,7 +9,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { modelsQuery } from '../schemas.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
-import type { InternalModel, Provider, UpstreamProviderKind } from '@floway-dev/provider';
+import type { InternalModel, UpstreamProviderKind } from '@floway-dev/provider';
 
 // Same DTO as the public /models endpoint, plus one dashboard-only field:
 // `upstreams` lists every upstream that surfaces this model as { kind, id, name, hue }
@@ -38,7 +38,7 @@ const upstreamHue = (hueByUpstream: ReadonlyMap<string, number>, upstreamId: str
 
 const toControlPlaneModel = (
   model: InternalModel,
-  instances: readonly Provider[],
+  instances: AddressableIdEntry['upstreams'],
   hueByUpstream: ReadonlyMap<string, number>,
 ): ControlPlaneModel => ({
   ...toPublicModel(model),

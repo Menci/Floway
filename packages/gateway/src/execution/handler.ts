@@ -1,14 +1,15 @@
 import { encodeModelsRefreshResult, executeModelsRefresh, isModelsRefreshConfigurationError, modelsRefreshErrorMessage, type ModelsRefreshExecutionInput } from './models-refresh.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 import { ProviderModelsUnavailableError, type UpstreamRecord } from '@floway-dev/provider';
 
-export const handleExecutionRequest = async (request: Request): Promise<Response> => {
+export const handleExecutionRequest = async (request: Request, waitUntil: BackgroundScheduler): Promise<Response> => {
   const url = new URL(request.url);
   if (url.pathname !== '/models/refresh' || request.method !== 'POST') {
     return new Response('Execution operation not found', { status: 404 });
   }
   const input = parseModelsRefreshInput(await request.json());
   try {
-    return Response.json(encodeModelsRefreshResult(await executeModelsRefresh(input)));
+    return Response.json(encodeModelsRefreshResult(await executeModelsRefresh(input, waitUntil)));
   } catch (error) {
     if (isModelsRefreshConfigurationError(error)) {
       return Response.json({ kind: 'invalid-configuration', message: error.message }, { status: 400 });

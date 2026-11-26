@@ -3,7 +3,7 @@ import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } 
 import type { GatewayProvider } from './registry.ts';
 import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { kindForEndpoints, type OpaqueBlobCompatibilityScope } from '@floway-dev/protocols/common';
-import type { InternalModel, Provider, ProviderModel, UpstreamChatModelConfig, UpstreamRecord } from '@floway-dev/provider';
+import type { InternalModel, ProviderModel, UpstreamChatModelConfig, UpstreamRecord } from '@floway-dev/provider';
 
 interface ProviderModelsResult {
   models: InternalModel[];
@@ -11,10 +11,12 @@ interface ProviderModelsResult {
   // given public id, in enumeration order. The control-plane catalog
   // endpoint reads this to render `upstreams: [{kind, id, name}]` per row;
   // the alias listing reads it to project per-target upstream chips.
-  upstreamsByPublicId: Map<string, Provider[]>;
+  upstreamsByPublicId: Map<string, CatalogUpstream[]>;
   // Upstreams carrying a persisted catalog-refresh error, in provider order.
   failedUpstreams: string[];
 }
+
+export type CatalogUpstream = Pick<GatewayProvider, 'upstreamId' | 'kind' | 'name'>;
 
 const mergedOpaqueBlobCompatibilityScope = (
   models: readonly ProviderModel[],
@@ -74,8 +76,8 @@ export const internalModelFromProviderModel = (providerModel: ProviderModel, ups
 // chips without re-walking the catalog.
 export const mergeIntoCatalog = (
   byId: Map<string, InternalModel>,
-  upstreamsByPublicId: Map<string, Provider[]>,
-  instance: Provider,
+  upstreamsByPublicId: Map<string, CatalogUpstream[]>,
+  instance: CatalogUpstream,
   surfacedModel: ProviderModel,
   publicId: string,
 ): void => {
@@ -119,7 +121,7 @@ const collectProviderModels = (
   scheduleRefresh: ModelsRefreshScheduler,
 ): ProviderModelsResult => {
   const byId = new Map<string, InternalModel>();
-  const upstreamsByPublicId = new Map<string, Provider[]>();
+  const upstreamsByPublicId = new Map<string, CatalogUpstream[]>();
   const failedUpstreams: string[] = [];
 
   // Catalog reads never await upstream I/O. Each result is the persisted
@@ -231,7 +233,7 @@ export const compareModelIds = (a: string, b: string): number => {
 export const getModelsFromProviders = (
   providers: readonly GatewayProvider[],
   scheduleRefresh: ModelsRefreshScheduler,
-): { models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] } => {
+): { models: InternalModel[]; upstreamsByPublicId: Map<string, CatalogUpstream[]>; failedUpstreams: readonly string[] } => {
   // An empty provider set is a normal state: a fresh gateway, a principal
   // whose upstream cap resolved to nothing, or every upstream disabled. The
   // catalog it yields is empty, and every listing surface reports that as an

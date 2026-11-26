@@ -1,8 +1,3 @@
-// Preflight shared by the JSON passthrough endpoints. Each of them accepts an
-// arbitrary JSON object and forwards it upstream verbatim, so the only field
-// the gateway insists on is a non-empty `model` string — routing depends on
-// it. `requestName` prefixes the 400 messages so each endpoint names itself.
-
 interface JsonModelRequestBody {
   model?: unknown;
   [key: string]: unknown;
@@ -20,7 +15,8 @@ export const prepareJsonModelRequest = (bytes: Uint8Array, requestName: string):
       return { type: 'invalid', message: `${requestName} request body must be an object.` };
     }
     request = parsed as JsonModelRequestBody;
-  } catch {
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
     return { type: 'invalid', message: `${requestName} request body must be valid JSON.` };
   }
   if (typeof request.model !== 'string' || request.model.length === 0) {

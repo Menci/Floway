@@ -5,6 +5,7 @@ const SENSITIVE_HEADERS = new Set([
   'proxy-authorization',
   'set-cookie',
   'x-api-key',
+  'x-floway-session',
   'x-goog-api-key',
 ]);
 

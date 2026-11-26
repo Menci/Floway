@@ -5,7 +5,6 @@ import { z } from 'zod';
 
 import { ownedKeyForUser } from './shared/owned-key.ts';
 import { getDumpBroker, getDumpStore } from '../dump/registry.ts';
-import { dumpRecordToWire } from '../dump/wire.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
 
 const LIST_LIMIT_DEFAULT = 100;
@@ -42,12 +41,14 @@ export const dumpRoutes = new Hono()
     });
     return c.json({ records });
   })
-  .get('/keys/:keyId/records/:recordId', async c => {
+  .get('/keys/:keyId/records/:recordId/archive', async c => {
     const owned = await ownedKey(c);
     if (owned.id === null) return c.json({ error: owned.error }, 404);
-    const record = await getDumpStore().get(owned.id, c.req.param('recordId')!);
-    if (!record) return c.json({ error: 'Record not found' }, 404);
-    return c.json(dumpRecordToWire(record));
+    const archive = await getDumpStore().getArchive(owned.id, c.req.param('recordId'));
+    if (archive === null) return c.json({ error: 'Record not found' }, 404);
+    return new Response(archive, {
+      headers: { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' },
+    });
   })
   .get('/keys/:keyId/stream', zValidator('query', listQuery), async c => {
     const { q, failures } = c.req.valid('query');

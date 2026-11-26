@@ -1,6 +1,7 @@
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
 import { fullUpstreamActionError } from '../../access-control/upstream-edit.ts';
+import { getProviderServices } from '../../data-plane/pipeline/services.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -13,14 +14,12 @@ import {
   type ClaudeCodeUpstreamState,
   ClaudeCodeOAuthSessionTerminatedError,
   buildClaudeCodeAuthorizeUrl,
-  ensureClaudeCodeAccessToken,
   fetchClaudeCodeUsageProbe,
   mergeClaudeCodeUsageProbe,
   persistClaudeCodeUsageProbe,
   importClaudeCodeFromCallback,
   importClaudeCodeFromCredentialsJson,
   importClaudeCodeFromSetupTokenCallback,
-  logInfo,
   readClaudeCodeUpstreamState,
 } from '@floway-dev/provider-claude-code';
 
@@ -175,7 +174,7 @@ export const claudeCodeOAuthRefresh = async (c: CtxWithJson<typeof claudeCodeOAu
     // CAS-write the rotated refresh_token alongside the fresh access
     // token, and flip the row to refresh_failed on a terminal OAuth
     // error. All this handler contributes is the HTTP framing.
-    await ensureClaudeCodeAccessToken({ upstreamId: record.id, repo: getRepo().upstreams, fetcher, force: true });
+    await getProviderServices().claudeCode.ensureAccessToken({ upstreamId: record.id, fetcher, force: true });
   } catch (err) {
     if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
       return c.json({ error: `Claude Code refresh failed: ${err.upstreamMessage}. Re-run OAuth exchange to recover.` }, 400);
@@ -215,9 +214,8 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
   let accessToken: string;
   try {
     if (record.id !== '') {
-      const access = await ensureClaudeCodeAccessToken({
+      const access = await getProviderServices().claudeCode.ensureAccessToken({
         upstreamId: record.id,
-        repo: getRepo().upstreams,
         fetcher,
       });
       accessToken = access.entry.token;
@@ -230,7 +228,7 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
       accessToken = account.accessToken.token;
     }
   } catch (err) {
-    logInfo('claude_code_admin_action', { upstream_id: record.id, action: 'quota_probe', actor, outcome: 'error', error: errorMessage(err) });
+    console.info('Claude Code admin quota probe failed', { upstreamId: record.id, actor, error: errorMessage(err) });
     if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
       return c.json({ error: `Claude Code refresh failed: ${err.upstreamMessage}` }, 503);
     }
@@ -241,14 +239,14 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
   try {
     probe = await fetchClaudeCodeUsageProbe(accessToken, fetcher);
   } catch (err) {
-    logInfo('claude_code_admin_action', { upstream_id: record.id, action: 'quota_probe', actor, outcome: 'error', error: errorMessage(err) });
+    console.info('Claude Code admin quota probe failed', { upstreamId: record.id, actor, error: errorMessage(err) });
     return c.json({ error: errorMessage(err) }, 502);
   }
 
   const merged = mergeClaudeCodeUsageProbe(readClaudeCodeUpstreamState(record.state), probe);
-  if (record.id !== '') await persistClaudeCodeUsageProbe(record.id, probe);
+  if (record.id !== '') await persistClaudeCodeUsageProbe(record.id, probe, getProviderServices().providerRepo);
 
-  logInfo('claude_code_admin_action', { upstream_id: record.id, action: 'quota_probe', actor, outcome: 'ok' });
+  console.info('Claude Code admin quota probe completed', { upstreamId: record.id, actor });
   return c.json({
     fetched_at: probe.fetched_at,
     body: probe.body,

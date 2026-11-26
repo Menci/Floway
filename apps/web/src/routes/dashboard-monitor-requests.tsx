@@ -5,12 +5,11 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-monitor-requests';
 import { requireDashboardSession } from './guards';
-import { api, callApi } from '../api/client';
+import { api, callApi, requestResponse } from '../api/client';
 import type { ApiKey } from '../api/types';
 import { RequestDetailPanel } from '../components/requests/detail';
 import { refreshRequestKeys } from '../components/requests/key-refresh';
 import { RequestListPanel } from '../components/requests/list';
-import { collectKindFromTargetApi, collectStream, detectCollectKind, type CollectedStream } from '../components/requests/stream-render';
 import { useDumpSubscription } from '../components/requests/use-dump-subscription';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyState, EmptyStateLine } from '../components/ui/empty-state';
@@ -23,9 +22,11 @@ import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefresh } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
+import { errorMessage } from '../lib/error-message';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useMediaQuery } from '../lib/use-media-query';
-import type { DumpMetadata, DumpRecord } from '@floway-dev/gateway/browser';
+import { decodeDump, type DumpArchive } from '@floway-dev/dump/browser';
+import type { DumpMetadata } from '@floway-dev/gateway/browser';
 
 export const handle = dashboardWorkspaceHandle;
 
@@ -35,11 +36,9 @@ const { Button, DrawerBody, DrawerHeader, DrawerHeaderTitle, OverlayDrawer } = f
 // no key with dump retention: an empty list sends the operator off to create a
 // key they may already have.
 interface LoaderData {
-  collected: CollectedStream | null;
-  upstreamCollected: CollectedStream | null;
+  archive: DumpArchive | null;
   error: string | null;
   keys: ApiKey[] | null;
-  record: DumpRecord | null;
   recordError: string | null;
   records: DumpMetadata[];
   recordsError: string | null;
@@ -57,31 +56,29 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     : keys.some(key => key.id === requestedKeyId) ? requestedKeyId : keys[0]?.id ?? null;
   const recordId = url.searchParams.get('record');
   if (!selectedKeyId) {
-    return { collected: null, upstreamCollected: null, error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
+    return { archive: null, error: keysResult.error?.message ?? null, keys, recordError: null, records: [], recordsError: null, selectedKeyId };
   }
   const [recordsResult, recordResult] = await Promise.all([
     callApi(() => api.api.dump.keys[':keyId'].records.$get({ param: { keyId: selectedKeyId }, query: { limit: '100', q: url.searchParams.get('q') ?? '', failures: url.searchParams.get('failures') === 'true' ? 'true' : 'false' } })),
     recordId
-      ? callApi(() => api.api.dump.keys[':keyId'].records[':recordId'].$get({ param: { keyId: selectedKeyId, recordId } }))
+      ? requestResponse(() => api.api.dump.keys[':keyId'].records[':recordId'].archive.$get({ param: { keyId: selectedKeyId, recordId } }, { init: { signal: request.signal } }))
       : Promise.resolve(null),
   ]);
-  const record = recordResult?.data ?? null;
-  const collectKind = record ? detectCollectKind(record.meta.path) : null;
-  const streamEvents = record?.response.body.type === 'stream' ? record.response.body.events : [];
-  const collected = collectKind && streamEvents.length ? await collectStream(collectKind, streamEvents) : null;
-  // The pre-translation upstream view: dispatched by `meta.targetApi` (the
-  // target protocol) rather than `meta.path` (the source protocol). Only
-  // translated turns carry an upstream body.
-  const upstreamCollectKind = record?.meta.targetApi ? collectKindFromTargetApi(record.meta.targetApi) : null;
-  const upstreamStreamEvents = record?.response.upstream?.body.type === 'stream' ? record.response.upstream.body.events : [];
-  const upstreamCollected = upstreamCollectKind && upstreamStreamEvents.length ? await collectStream(upstreamCollectKind, upstreamStreamEvents) : null;
+  let archive: DumpArchive | null = null;
+  let recordError = recordResult?.error?.message ?? null;
+  if (recordResult?.data) {
+    try {
+      if (recordResult.data.body === null) throw new Error('Empty request archive');
+      archive = await decodeDump(recordResult.data.body);
+    } catch (error) {
+      recordError = errorMessage(error);
+    }
+  }
   return {
-    collected,
-    upstreamCollected,
+    archive,
     error: keysResult.error?.message ?? null,
     keys,
-    record,
-    recordError: recordResult?.error?.message ?? null,
+    recordError,
     records: recordsResult.data?.records ?? [],
     recordsError: recordsResult.error?.message ?? null,
     selectedKeyId,
@@ -213,14 +210,14 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </DrawerHeader>
           <DrawerBody className="!p-0 min-h-0">
             <div className="h-full min-h-0" inert={selectedRecordId === null}>
-              <RequestDetailPanel collected={loaderData.collected} upstreamCollected={loaderData.upstreamCollected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord />
+              <RequestDetailPanel archive={loaderData.archive} error={loaderData.recordError} recordId={selectedRecordId} retainLastRecord />
             </div>
           </DrawerBody>
         </OverlayDrawer>
       </> : (
         <div className={`h-full min-h-0 min-w-0 grid grid-cols-[minmax(0,1fr)_420px] ${PANE_GAP_CLASS}`}>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
-            <RequestDetailPanel collected={loaderData.collected} upstreamCollected={loaderData.upstreamCollected} error={loaderData.recordError} record={loaderData.record} recordId={selectedRecordId} retainLastRecord={false} />
+            <RequestDetailPanel archive={loaderData.archive} error={loaderData.recordError} recordId={selectedRecordId} retainLastRecord={false} />
           </Panel>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
             <RequestListPanel

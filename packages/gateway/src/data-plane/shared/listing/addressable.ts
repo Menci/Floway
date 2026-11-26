@@ -14,10 +14,10 @@
 import { checkMany } from '../../../access-control/check.ts';
 import type { ModelsRefreshScheduler } from '../../../execution/models-refresh.ts';
 import type { StoredUpstreamRecord, User } from '../../../repo/types.ts';
-import { compareModelIds, getModelsFromProviders, mergeIntoCatalog } from '../../providers/catalog.ts';
+import { compareModelIds, getModelsFromProviders, mergeIntoCatalog, type CatalogUpstream } from '../../providers/catalog.ts';
 import { MODEL_CATALOG_REVISION } from '../../providers/models-cache.ts';
 import { listModelProviders } from '../../providers/registry.ts';
-import type { InternalModel, Provider } from '@floway-dev/provider';
+import type { InternalModel } from '@floway-dev/provider';
 
 export interface AddressableIdEntry {
   // The inbound model id the data plane will accept verbatim.
@@ -38,7 +38,7 @@ export interface AddressableIdEntry {
   // alternates inherit the same list (the prefix-stripped id resolves
   // through the same upstream). Lets the control-plane DTO render per-
   // model upstream chips without re-walking the catalog.
-  readonly upstreams: readonly Provider[];
+  readonly upstreams: readonly CatalogUpstream[];
 }
 
 // Project the listed (real-catalog) `InternalModel`s out of an addressable
@@ -70,7 +70,7 @@ export const enumerateAddressableModelIds = async (
 
   const entries: AddressableIdEntry[] = [];
   const unlistedOnlyModels = new Map<string, InternalModel>();
-  const unlistedOnlyUpstreams = new Map<string, Provider[]>();
+  const unlistedOnlyUpstreams = new Map<string, CatalogUpstream[]>();
   const seen = new Set<string>();
   const push = (entry: AddressableIdEntry): void => {
     if (seen.has(entry.id)) return;
@@ -136,7 +136,7 @@ export const enumerateAddressableModelIds = async (
     },
   })));
   const allowed = await checkMany(subject, checks.map(item => item.check));
-  const allowedByEntry = new Map<AddressableIdEntry, Provider[]>();
+  const allowedByEntry = new Map<AddressableIdEntry, CatalogUpstream[]>();
   for (let index = 0; index < checks.length; index++) {
     if (!allowed[index]) continue;
     const item = checks[index]!;
@@ -150,7 +150,7 @@ export const enumerateAddressableModelIds = async (
     if (!allowedUpstreams?.length) return [];
     if (entry.model.providerModels === undefined) throw new Error(`Addressable real model ${entry.id} has no providerModels`);
     const rebuilt = new Map<string, InternalModel>();
-    const rebuiltUpstreams = new Map<string, Provider[]>();
+    const rebuiltUpstreams = new Map<string, CatalogUpstream[]>();
     for (const upstream of allowedUpstreams) {
       const providerModel = entry.model.providerModels[upstream.upstreamId];
       if (providerModel === undefined) throw new Error(`Addressable model ${entry.id} is missing provider data for ${upstream.upstreamId}`);

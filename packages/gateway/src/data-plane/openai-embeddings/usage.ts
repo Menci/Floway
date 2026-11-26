@@ -1,10 +1,11 @@
-import type { TokenUsage } from '../../repo/types.ts';
-import { tokenUsage } from '../shared/telemetry/usage.ts';
+import { computeUsage } from '../pipeline/compute-usage.ts';
+import { requestOnlyUsageMeasurement, tokenUsageMeasurement } from '../shared/telemetry/usage.ts';
 
-export const tokenUsageFromOpenAIEmbeddingsBody = (body: unknown): TokenUsage | null => {
-  if (!body || typeof body !== 'object') return null;
-  const { usage } = body as { usage?: unknown };
-  if (!usage || typeof usage !== 'object') return null;
-  const promptTokens = (usage as { prompt_tokens?: unknown }).prompt_tokens;
-  return typeof promptTokens === 'number' ? tokenUsage({ input: promptTokens }) : null;
-};
+export const computeOpenAIEmbeddingsUsage = computeUsage('openaiEmbeddings', {
+  result({ usage }) {
+    const promptTokens = typeof usage === 'object' && usage !== null
+      ? (usage as { prompt_tokens?: unknown }).prompt_tokens
+      : undefined;
+    return [typeof promptTokens === 'number' ? tokenUsageMeasurement({ input: promptTokens }) : requestOnlyUsageMeasurement()];
+  },
+});

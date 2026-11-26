@@ -3,8 +3,6 @@ import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
 import { dumpCaptureEnvelopeSchema } from '../dump/schemas.ts';
 import {
   decodeDumpBodyDescriptor,
-  decodeDumpHeaders,
-  decodeDumpStreamEvents,
   decodePersistedDumpMetadata,
   encodeDumpBodyDescriptor,
   encodeDumpHeaders,
@@ -19,16 +17,10 @@ import type {
   DumpUpstreamRef,
   DumpWriteRecord,
   PreparedDumpRequestBody,
-  StoredDumpRecord,
-  StoredDumpRequest,
-  StoredDumpResponse,
-  StoredDumpResponseBody,
-  StoredDumpUpstreamResponse,
 } from '../dump/types.ts';
 import { upstreamResponseToWire } from '../dump/wire.ts';
-import { gunzipBytes, gzipBytes } from '../shared/gzip.ts';
+import { gzipBytes } from '../shared/gzip.ts';
 import type { FileStore, SqlDatabase } from '@floway-dev/platform';
-import { decodeForgivingBase64 } from '@floway-dev/protocols/common';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}-{uniqueSuffix}.{req|resp}.gz`.
 // The hour segment remains useful for operator inspection; lifecycle and
@@ -43,11 +35,7 @@ interface DumpRow {
   upstream_kind: string | null;
   upstream_hue: number | null;
   meta_json: string;
-  request_headers_json: string;
-  response_headers_json: string | null;
-  request_body_descriptor: string | null;
   response_body_descriptor: string | null;
-  response_upstream_body_descriptor: string | null;
 }
 
 // A null `upstream_id` means no upstream was identified at capture time
@@ -101,14 +89,44 @@ const putPreparedBody = async (
   return { key, type: 'bytes' };
 };
 
-const fetchBody = async (files: FileStore, descriptor: DumpBodyDescriptor): Promise<Uint8Array> => {
-  const gz = await files.get(descriptor.key);
-  if (!gz) throw new Error(`dump body missing for key=${descriptor.key}`);
-  return await gunzipBytes(gz);
-};
-
 export class FileDumpStore implements DumpStore {
   constructor(private readonly db: SqlDatabase, private readonly files: FileStore) {}
+
+  async putArchive(keyId: string, meta: DumpMetadata, archive: Uint8Array): Promise<void> {
+    const key = `${DUMP_FILE_PREFIX}${keyId}/${hourBucket(meta.completedAt)}/${meta.id}-${crypto.randomUUID()}.ndjson.gz`;
+    await this.db.prepare(
+      `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
+       VALUES (?, 'dump-response', json_array(?, ?), 'staged', ?)`,
+    ).bind(key, keyId, meta.id, Date.now() + SPILLED_FILE_STAGE_GRACE_MS).run();
+    const descriptor = await putRawBody(this.files, key, archive, 'archive');
+    await this.db.prepare(
+      `INSERT INTO dump_records
+       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_body_descriptor)
+       VALUES (?, ?, ?, ?, ?, '[]', ?)`,
+    ).bind(
+      keyId,
+      meta.id,
+      meta.completedAt,
+      meta.upstream?.id ?? null,
+      encodePersistedDumpMetadata(meta, `dump record ${meta.id} metadata`),
+      encodeDumpBodyDescriptor(descriptor, `dump record ${meta.id} archive descriptor`),
+    ).run();
+  }
+
+  async getArchive(keyId: string, recordId: DumpRecordId): Promise<ReadableStream<Uint8Array> | null> {
+    const row = await this.db.prepare(
+      `SELECT d.response_body_descriptor
+       FROM dump_records d
+       JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL
+       WHERE d.key_id = ? AND d.id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000`,
+    ).bind(keyId, recordId, Date.now()).first<Pick<DumpRow, 'response_body_descriptor'>>();
+    if (!row?.response_body_descriptor) return null;
+    const descriptor = decodeDumpBodyDescriptor(row.response_body_descriptor, `dump record ${recordId} archive descriptor`);
+    if (descriptor.type !== 'archive') return null;
+    const compressed = await this.files.get(descriptor.key);
+    if (!compressed) throw new Error(`dump archive missing for key=${descriptor.key}`);
+    return new Response(compressed as Uint8Array<ArrayBuffer>).body!.pipeThrough(new DecompressionStream('gzip'));
+  }
 
   async prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody> {
     return {
@@ -262,102 +280,6 @@ export class FileDumpStore implements DumpStore {
       ...decodePersistedDumpMetadata(row.meta_json, `dump record ${row.id} metadata`),
       upstream: hydrateUpstream(row),
     }));
-  }
-
-  async get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
-    const row = await this.db.prepare(
-      'SELECT d.id, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue, '
-      + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor, d.response_upstream_body_descriptor '
-      + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
-      + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL '
-      + 'WHERE d.key_id = ? AND d.id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000',
-    ).bind(keyId, recordId, Date.now()).first<DumpRow>();
-    if (!row) return null;
-
-    const meta: DumpMetadata = {
-      ...decodePersistedDumpMetadata(row.meta_json, `dump record ${recordId} metadata`),
-      upstream: hydrateUpstream(row),
-    };
-    const requestHeaders = decodeDumpHeaders(row.request_headers_json, `dump record ${recordId} request headers`);
-    const requestDescriptor = row.request_body_descriptor === null
-      ? null
-      : decodeDumpBodyDescriptor(row.request_body_descriptor, `dump record ${recordId} request body descriptor`);
-    const responseHeaders = row.response_headers_json === null
-      ? null
-      : decodeDumpHeaders(row.response_headers_json, `dump record ${recordId} response headers`);
-    const responseDescriptor = row.response_body_descriptor === null
-      ? null
-      : decodeDumpBodyDescriptor(row.response_body_descriptor, `dump record ${recordId} response body descriptor`);
-    const upstreamDescriptor = row.response_upstream_body_descriptor === null
-      ? null
-      : decodeDumpBodyDescriptor(row.response_upstream_body_descriptor, `dump record ${recordId} upstream response body descriptor`);
-
-    const request: StoredDumpRequest = {
-      method: meta.method,
-      path: meta.path,
-      headers: requestHeaders,
-      body: requestDescriptor ? await fetchBody(this.files, requestDescriptor) : new Uint8Array(),
-    };
-
-    // Headers null iff `type: 'none'`; a null descriptor with headers is a
-    // legitimate empty-body `bytes` response (nothing to gzip), reconstructed
-    // here from a zero-length buffer so the discriminator round-trips.
-    let responseBody: StoredDumpResponseBody;
-    if (responseHeaders === null) {
-      responseBody = { type: 'none' };
-    } else if (responseDescriptor === null) {
-      responseBody = { type: 'bytes', body: new Uint8Array() };
-    } else if (responseDescriptor.type === 'events') {
-      const text = new TextDecoder().decode(await fetchBody(this.files, responseDescriptor));
-      responseBody = {
-        type: 'stream',
-        events: decodeDumpStreamEvents(text, `dump record ${recordId} response events at key=${responseDescriptor.key}`),
-      };
-    } else {
-      responseBody = { type: 'bytes', body: await fetchBody(this.files, responseDescriptor) };
-    }
-
-    // The pre-translation upstream body, when a descriptor was persisted.
-    // Same rehydration rules as the downstream body; absent on native turns
-    // and on records written before the upstream column existed (NULL).
-    let upstream: StoredDumpUpstreamResponse | undefined;
-    let capture: StoredDumpRecord['capture'];
-    if (upstreamDescriptor?.type === 'capture') {
-      const envelope = dumpCaptureEnvelopeSchema.parse(JSON.parse(new TextDecoder().decode(await fetchBody(this.files, upstreamDescriptor))));
-      capture = envelope.capture;
-      const stored = envelope.upstream;
-      if (stored !== undefined) {
-        upstream = {
-          ...stored, body: stored.body.type === 'bytes'
-            ? { type: 'bytes', body: stored.body.body.encoding === 'utf8' ? new TextEncoder().encode(stored.body.body.data) : decodeForgivingBase64(stored.body.body.data) }
-            : stored.body,
-        };
-      }
-    } else if (upstreamDescriptor !== null) {
-      let upstreamBody: StoredDumpResponseBody;
-      if (upstreamDescriptor.type === 'events') {
-        const text = new TextDecoder().decode(await fetchBody(this.files, upstreamDescriptor));
-        upstreamBody = {
-          type: 'stream',
-          events: decodeDumpStreamEvents(text, `dump record ${recordId} upstream response events at key=${upstreamDescriptor.key}`),
-        };
-      } else {
-        upstreamBody = { type: 'bytes', body: await fetchBody(this.files, upstreamDescriptor) };
-      }
-      // Upstream headers/status were not persisted separately (the bytes case
-      // carries an api-error envelope the dashboard renders as a body, not as
-      // a headered response). An empty header set + null status is the honest
-      // representation for what was captured.
-      upstream = { status: null, headers: [], body: upstreamBody };
-    }
-
-    const response: StoredDumpResponse = {
-      status: meta.status,
-      headers: responseHeaders ?? [],
-      body: responseBody,
-      ...(upstream !== undefined ? { upstream } : {}),
-    };
-    return { meta, request, response, ...(capture === undefined ? {} : { capture }) };
   }
 
   async deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number> {

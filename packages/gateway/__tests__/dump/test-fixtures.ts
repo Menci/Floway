@@ -29,7 +29,6 @@ export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): StoredDumpRec
 type DumpStubFailMethod =
   | 'put'
   | 'list'
-  | 'get'
   | 'publish'
   | 'closeChannel';
 
@@ -48,6 +47,7 @@ export const installDumpStubs = (
   initBroker: (broker: DumpBroker) => void,
 ): DumpStubHandle => {
   const records = new Map<string, StoredDumpRecord[]>();
+  const archives = new Map<string, Map<string, Uint8Array>>();
   const subscribers = new Map<string, Array<(meta: DumpMetadata | null) => void>>();
   const stored: Array<{ keyId: string; record: StoredDumpRecord }> = [];
   const published: Array<{ keyId: string; meta: DumpMetadata }> = [];
@@ -70,6 +70,18 @@ export const installDumpStubs = (
       list.unshift(storedRecord);
       records.set(keyId, list);
     },
+    async putArchive(keyId, meta, bytes) {
+      const byId = archives.get(keyId) ?? new Map<string, Uint8Array>();
+      byId.set(meta.id, bytes);
+      archives.set(keyId, byId);
+      const list = records.get(keyId) ?? [];
+      list.unshift(fakeRecord(meta));
+      records.set(keyId, list);
+    },
+    async getArchive(keyId, id) {
+      const bytes = archives.get(keyId)?.get(id);
+      return bytes === undefined ? null : new Response(bytes as Uint8Array<ArrayBuffer>).body;
+    },
     async list(keyId, opts) {
       if (throws.list) throw throws.list;
       const list = records.get(keyId) ?? [];
@@ -79,10 +91,6 @@ export const installDumpStubs = (
         start = idx >= 0 ? idx + 1 : list.length;
       }
       return list.slice(start, start + opts.limit).map(r => r.meta);
-    },
-    async get(keyId, id) {
-      if (throws.get) throw throws.get;
-      return (records.get(keyId) ?? []).find(r => r.meta.id === id) ?? null;
     },
     async deleteExpiredBatch() { return 0; },
     async findOldestCreatedAt() { return null; },

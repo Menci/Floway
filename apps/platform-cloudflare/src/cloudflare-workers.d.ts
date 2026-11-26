@@ -19,6 +19,7 @@ declare module 'cloudflare:workers' {
   }
 
   export abstract class WorkerEntrypoint<Env = unknown> {
+    protected readonly ctx: { waitUntil(task: Promise<unknown>): void };
     protected env: Env;
   }
 }
