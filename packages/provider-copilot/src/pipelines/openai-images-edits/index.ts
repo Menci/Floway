@@ -24,7 +24,7 @@ const parse = parseHttpResponse(operation, {
 
 export const openaiImagesEdits = copilotOperation<typeof operation>().compose('copilot.openaiImagesEdits', {
   entry: ['request.http', 'provider.upstream', 'provider.model', 'request.openaiImagesEdits'],
-  exit: ['response.http', 'response.openaiImagesEdits'],
+  exit: ['response.http', 'response.openaiImagesEdits', 'response.usageModelKey?'],
   stages: [
     stripClientHeaders,
     selectModel.openaiImagesEdits,
@@ -35,7 +35,7 @@ export const openaiImagesEdits = copilotOperation<typeof operation>().compose('c
       const model = payload.parameters.model;
       if (typeof model !== 'string') throw new TypeError('Copilot image edits requires a selected model');
       const { model: _model, ...parameters } = payload.parameters;
-      return { path: '/v1/images/edits', ...await serializeOpenAIImagesEditsBody({ ...payload, parameters }, model) };
+      return { path: '/v1/images/edits', modelId: model, ...await serializeOpenAIImagesEditsBody({ ...payload, parameters }, model) };
     }, formatOpenAIError),
     observeQuota,
   ],

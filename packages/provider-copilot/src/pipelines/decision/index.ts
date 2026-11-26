@@ -31,7 +31,7 @@ const parse = parseResultResponse(operation, {
 
 export const decision = copilotOperation<typeof operation>().compose('copilot.decision', {
   entry: ['request.http', 'provider.upstream', 'provider.model', 'request.decision'],
-  exit: ['response.http', 'response.decision'],
+  exit: ['response.http', 'response.decision', 'response.usageModelKey?'],
   stages: [
     stripClientHeaders,
     selectModel.decision,

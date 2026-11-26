@@ -26,7 +26,7 @@ const operation = 'anthropicMessages';
 
 export const anthropicMessages = copilotOperation<typeof operation>().compose('copilot.anthropicMessages', {
   entry: ['request.http', 'provider.upstream', 'provider.model', 'request.anthropicMessages'],
-  exit: ['response.http', 'response.anthropicMessages'],
+  exit: ['response.http', 'response.anthropicMessages', 'response.usageModelKey?'],
   stages: [
     stripAnthropicMessagesClientHeaders,
     selectModel.anthropicMessages,

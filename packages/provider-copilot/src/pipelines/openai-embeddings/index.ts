@@ -14,7 +14,7 @@ const operation = 'openaiEmbeddings';
 
 export const openaiEmbeddings = copilotOperation<typeof operation>().compose('copilot.openaiEmbeddings', {
   entry: ['request.http', 'provider.upstream', 'provider.model', 'request.openaiEmbeddings'],
-  exit: ['response.http', 'response.openaiEmbeddings'],
+  exit: ['response.http', 'response.openaiEmbeddings', 'response.usageModelKey?'],
   stages: [
     stripClientHeaders,
     selectModel.openaiEmbeddings,

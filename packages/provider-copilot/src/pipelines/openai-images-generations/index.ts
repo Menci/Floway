@@ -21,7 +21,7 @@ const parse = parseHttpResponse(operation, {
 
 export const openaiImagesGenerations = copilotOperation<typeof operation>().compose('copilot.openaiImagesGenerations', {
   entry: ['request.http', 'provider.upstream', 'provider.model', 'request.openaiImagesGenerations'],
-  exit: ['response.http', 'response.openaiImagesGenerations'],
+  exit: ['response.http', 'response.openaiImagesGenerations', 'response.usageModelKey?'],
   stages: [
     stripClientHeaders,
     selectModel.openaiImagesGenerations,

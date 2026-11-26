@@ -23,7 +23,7 @@ const operation = 'openaiResponses';
 
 export const openaiResponses = copilotOperation<typeof operation>().compose('copilot.openaiResponses', {
   entry: ['request.http', 'provider.upstream', 'provider.model', 'request.openaiResponses'],
-  exit: ['response.http', 'response.openaiResponses'],
+  exit: ['response.http', 'response.openaiResponses', 'response.usageModelKey?'],
   stages: [
     stripClientHeaders,
     selectModel.openaiResponses,

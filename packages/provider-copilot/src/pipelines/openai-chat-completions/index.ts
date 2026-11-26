@@ -21,7 +21,7 @@ const operation = 'openaiChatCompletions';
 
 export const openaiChatCompletions = copilotOperation<typeof operation>().compose('copilot.openaiChatCompletions', {
   entry: ['request.http', 'provider.upstream', 'provider.model', 'request.openaiChatCompletions'],
-  exit: ['response.http', 'response.openaiChatCompletions'],
+  exit: ['response.http', 'response.openaiChatCompletions', 'response.usageModelKey?'],
   stages: [
     stripClientHeaders,
     selectModel.openaiChatCompletions,

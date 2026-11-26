@@ -33,7 +33,7 @@ const parse = parseResultResponse(operation, bytes => {
 
 export const anthropicMessagesCountTokens = copilotOperation<typeof operation>().compose('copilot.anthropicMessagesCountTokens', {
   entry: ['request.http', 'provider.upstream', 'provider.model', 'request.anthropicMessagesCountTokens'],
-  exit: ['response.http', 'response.anthropicMessagesCountTokens'],
+  exit: ['response.http', 'response.anthropicMessagesCountTokens', 'response.usageModelKey?'],
   stages: [
     stripAnthropicMessagesClientHeaders,
     selectModel.anthropicMessagesCountTokens,

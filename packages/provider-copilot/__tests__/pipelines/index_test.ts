@@ -116,7 +116,7 @@ const copilotHost = (record: UpstreamRecord, fetcher = providerFetch, copilot = 
           for await (const item of running.read(outcome.stream as ManagedStream<StageEvent<Op>, ProtocolStreamError>)) items.push(item);
         }
         await running.done;
-        return { http: answer['response.http'], outcome, items };
+        return { http: answer['response.http'], outcome, items, answer };
       } finally {
         controller.abort();
       }
@@ -384,6 +384,7 @@ test('Copilot runs the shared OpenAI Responses stages through its independent co
 
       if (result.outcome.kind !== 'result') throw new Error('expected compaction result');
       assertEquals(result.outcome.result.object, 'response.compaction');
+      assertEquals(result.answer['response.usageModelKey'], openaiResponsesBody?.model);
     },
   );
 
@@ -501,11 +502,14 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       const models = await host.models();
       const byId = new Map(models.map(model => [model.id, model]));
 
-      await host.invoke('openaiChatCompletions', byId.get('gpt-chat')!, { messages: [{ role: 'user', content: 'hi' }] });
+      const chat = await host.invoke('openaiChatCompletions', byId.get('gpt-chat')!, { messages: [{ role: 'user', content: 'hi' }] });
       await host.invoke('openaiResponses', byId.get('gpt-resp')!, { input: [] });
       await host.invoke('anthropicMessages', byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
-      await host.invoke('anthropicMessagesCountTokens', byId.get('claude-msg')!, { messages: [{ role: 'user', content: 'hi' }] });
-      await host.invoke('openaiEmbeddings', byId.get('emb-mini')!, { input: 'hi' });
+      const count = await host.invoke('anthropicMessagesCountTokens', byId.get('claude-msg')!, { messages: [{ role: 'user', content: 'hi' }] });
+      const embeddings = await host.invoke('openaiEmbeddings', byId.get('emb-mini')!, { input: 'hi' });
+      assertEquals(chat.answer['response.usageModelKey'], bodies['/chat/completions'].model);
+      assertEquals(count.answer['response.usageModelKey'], bodies['/v1/messages/count_tokens'].model);
+      assertEquals(embeddings.answer['response.usageModelKey'], bodies['/embeddings'].model);
     },
   );
 
@@ -712,6 +716,8 @@ test('Copilot provider routes speed=fast to the -fast raw variant and stamps usa
       const start = result.items.find(item => item.ok && item.value.type === 'message_start');
       if (!start?.ok || start.value.type !== 'message_start') throw new Error('expected message_start');
       assertEquals(start.value.message.usage.speed, 'fast');
+      assertEquals(result.answer['response.usageModelKey'], 'claude-opus-4.6-fast');
+      assertEquals(result.answer['response.usageModelKey'], upstreamBody?.model);
       const delta = result.items.find(item => item.ok && item.value.type === 'message_delta');
       if (!delta?.ok || delta.value.type !== 'message_delta') throw new Error('expected message_delta');
       assertEquals('speed' in delta.value.usage!, false);
@@ -792,6 +798,7 @@ test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hi
 
       if (result.outcome.kind !== 'error' || result.http === null) throw new Error('expected Fast Mode preflight error');
       assertEquals(result.outcome.source, 'local');
+      expect(Object.hasOwn(result.answer, 'response.usageModelKey')).toBe(false);
       assertEquals(result.http?.status, 400);
       const body = result.outcome.error as { type: string; error: { type: string; message: string } };
       // Byte-identical to the wire string Anthropic emits on real api.anthropic.com
@@ -864,6 +871,9 @@ test('Copilot image edits keeps multipart uploads free of a JSON content-type', 
       const file = { bytes: new Uint8Array([0x89, 0x50, 0x4E, 0x47]), name: 'in.png', mediaType: 'image/png' };
       const result = await host.invoke('openaiImagesEdits', model, { images: [{ type: 'upload', file }], parameters: { prompt: 'make it blue' } });
       assertEquals(result.http?.status, 200);
+      const usageModel = result.answer['response.usageModelKey'];
+      expect(usageModel).toBe('gpt-image-2.5-flare');
+      expect(captured?.body).toContain(`name="model"\r\n\r\n${usageModel}`);
     },
   );
 
@@ -1072,6 +1082,7 @@ test('Copilot provider derives decision endpoints and forwards the System One bo
       const result = await host.invoke('decision', decision, parsed.request);
       expect(result.outcome.kind === 'result' && result.outcome.result).toBeInstanceOf(Uint8Array);
       assertEquals(result.http?.status, 200);
+      assertEquals(result.answer['response.usageModelKey'], sent[0].model);
     },
   );
 
@@ -1140,6 +1151,7 @@ test('uses the token exchange HTTP head and upstream JSON error without dialing 
   expect(fetcher).toHaveBeenCalledTimes(1);
   expect(result.http).toMatchObject({ status: 429, body: null, headers: expect.arrayContaining([['retry-after', '5']]) });
   expect(result.outcome).toEqual({ kind: 'error', source: 'upstream', error });
+  expect(Object.hasOwn(result.answer, 'response.usageModelKey')).toBe(false);
 });
 
 const fakeCopilot = () => ({
@@ -1198,6 +1210,7 @@ test.each([false, true])('classifies the dial failure with cancelled=%s and reta
   const result = await host.invoke('openaiChatCompletions', fakeModel(), { messages: [] }, { controller });
   expect(result.http).toBeNull();
   expect(result.outcome).toMatchObject({ kind: 'error', source: cancelled ? 'local' : 'upstream' });
+  expect(result.answer['response.usageModelKey']).toBe('raw-model');
 });
 
 test('finishes the run while a quota snapshot write is still pending', async () => {
@@ -1313,6 +1326,7 @@ test('selects from the catalog publication that advertised an older candidate', 
     const freshIsolate = copilotHost(harness.copilotUpstream);
     const outcome = await freshIsolate.invoke('openaiResponses', published, { input: [], service_tier: 'priority' });
     expect(outcome.items.at(-1)).toMatchObject({ ok: true, value: { type: 'response.completed' } });
+    expect(outcome.answer['response.usageModelKey']).toBe('gpt-test-fast');
   });
   expect(rawModelIds).toEqual(['gpt-test-fast']);
 });
@@ -1359,4 +1373,5 @@ test.each([
     : await host.invoke(operation, fakeModel(), { stream, prompt: 'A green bicycle' });
   expect(result.http?.status).toBe(200);
   expect(result.outcome).toMatchObject({ kind: 'error', source: 'upstream' });
+  expect(result.answer['response.usageModelKey']).toBe('raw-model');
 });
