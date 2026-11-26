@@ -1825,6 +1825,7 @@ const zhHansCN = {
           message: '删除 {{username}}？该用户的会话会被撤销，API 密钥将停止工作。',
         },
         createdDefaultKey: '每个新用户都会自动创建一个 Default API 密钥。',
+        createdWithoutAccess: '没有选择用户组：这个用户创建后不能使用任何上游，需要把他加入用户组，或在权限中为他授权。',
       },
       groups: {
         createdAt: '创建于 {{date}}',

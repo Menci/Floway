@@ -1844,6 +1844,7 @@ const en = {
           message: 'Delete {{username}}? Their sessions will be revoked and their API keys will stop working.',
         },
         createdDefaultKey: 'A Default API key is created with each new user.',
+        createdWithoutAccess: 'No group is selected: this user will not be able to use any upstream until they join a group or are granted access in Permissions.',
       },
       groups: {
         createdAt: 'Created {{date}}',
