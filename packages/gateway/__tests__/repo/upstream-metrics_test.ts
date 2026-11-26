@@ -4,7 +4,7 @@ import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { UpstreamMetricRecord } from '../../src/repo/types.ts';
-import type { UpstreamMetricIdentity } from '@floway-dev/provider';
+import type { UpstreamMetricIdentity } from '@floway-dev/upstream';
 
 const point = (timestamp: number, value: number, identity: UpstreamMetricIdentity = { name: 'quota.remaining', labels: { quota: 'premium_interactions' } }): UpstreamMetricRecord => ({ upstreamId: 'up-1', ...identity, timestamp, value });
 

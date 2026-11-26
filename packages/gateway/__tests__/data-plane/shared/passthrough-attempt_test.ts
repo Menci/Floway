@@ -5,17 +5,17 @@ import { passthroughAttempt } from '../../../src/data-plane/shared/passthrough-a
 import type { RawAttemptResult } from '../../../src/data-plane/shared/raw-attempt-result.ts';
 import type { AuthVars } from '../../../src/middleware/auth.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
-import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, stubModelCandidate, stubUpstream } from '@floway-dev/test-utils';
 
 // Drives one attempt against a canned upstream response, through the same Hono
 // context the serve layer builds.
 const runPassthroughAttempt = async (upstream: Response): Promise<RawAttemptResult> => {
   const base = stubModelCandidate();
   const candidate = stubModelCandidate({
-    provider: {
-      ...base.provider,
+    upstream: {
+      ...base.upstream,
       kind: 'custom',
-      instance: stubProvider({
+      instance: stubUpstream({
         callOpenAIEmbeddings: async () => ({ http: upstream, modelKey: 'test-model' }),
       }),
     },
@@ -28,7 +28,7 @@ const runPassthroughAttempt = async (upstream: Response): Promise<RawAttemptResu
       ctx: mockGatewayCtx(),
       candidate,
       operation: 'embeddings',
-      call: (provider, model, opts) => provider.instance.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts),
+      call: (u, model, opts) => u.instance.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts),
     });
     return c.text('ok');
   });

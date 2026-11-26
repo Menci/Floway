@@ -8,14 +8,14 @@ import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules.ts';
 import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
+import { upstreamStreamResultToExecuteResult } from '../shared/upstream-stream-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { type ModelCandidate, type ExecuteResult } from '@floway-dev/provider';
 import { routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
+import { type ModelCandidate, type ExecuteResult } from '@floway-dev/upstream';
 
 // `/v1/chat/completions` generate prefers a native OpenAI Chat Completions target,
 // then the translated Anthropic Messages path, then the translated OpenAI Responses path.
@@ -55,13 +55,13 @@ const dispatchOpenAIChatCompletions = async (
   if (targetApi === 'openaiChatCompletions') {
     if (candidate.rules !== undefined) applyRulesToUpstreamOpenAIChatCompletions(invocation.payload, candidate.rules);
     const { model: _model, ...body } = invocation.payload;
-    const providerResult = await candidate.provider.instance.callOpenAIChatCompletions(
+    const upstreamResult = await candidate.upstream.instance.callOpenAIChatCompletions(
       candidate.model,
       body,
       ctx.abortSignal,
       buildUpstreamCallOptions(candidate, ctx, invocation.headers),
     );
-    return await providerStreamResultToExecuteResult(providerResult, candidate, 'openaiChatCompletions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
+    return await upstreamStreamResultToExecuteResult(upstreamResult, candidate, 'openaiChatCompletions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
   }
   if (targetApi === 'anthropicMessages') {
     return await executeTranslation(

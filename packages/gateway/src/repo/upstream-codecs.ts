@@ -1,9 +1,9 @@
 import { parseStoredJson } from './stored-json.ts';
 import { canonicalizeStoredJson } from './upstream-json.ts';
-import type { ProviderModel, ProxyFallbackEntry, UpstreamModelConfig } from '@floway-dev/provider';
-import type { FlagId } from '@floway-dev/provider/flags';
+import type { UpstreamModel, ProxyFallbackEntry, UpstreamModelConfig } from '@floway-dev/upstream';
+import type { FlagId } from '@floway-dev/upstream/flags';
 
-type RawStoredProviderModel = Omit<ProviderModel, 'enabledFlags'> & {
+type RawStoredUpstreamModel = Omit<UpstreamModel, 'enabledFlags'> & {
   enabledFlags: readonly FlagId[];
 };
 
@@ -13,12 +13,12 @@ export const decodeUpstreamConfig = (raw: string, id: string): unknown =>
 export const decodeUpstreamState = (raw: string, id: string): unknown =>
   parseStoredJson<unknown>(raw, `Malformed upstream state JSON for ${id}`);
 
-export const decodeUpstreamModel = (raw: string, upstreamId: string): ProviderModel => {
-  const parsed = parseStoredJson<RawStoredProviderModel>(raw, `Malformed upstream model JSON for ${upstreamId}`);
+export const decodeUpstreamModel = (raw: string, upstreamId: string): UpstreamModel => {
+  const parsed = parseStoredJson<RawStoredUpstreamModel>(raw, `Malformed upstream model JSON for ${upstreamId}`);
   return Object.assign(parsed, { enabledFlags: new Set(parsed.enabledFlags) });
 };
 
-export const encodeUpstreamModel = (model: ProviderModel): string =>
+export const encodeUpstreamModel = (model: UpstreamModel): string =>
   JSON.stringify(canonicalizeStoredJson(model));
 
 export const decodeUpstreamManualModel = (raw: string, upstreamId: string): UpstreamModelConfig =>

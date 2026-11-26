@@ -4,7 +4,7 @@ import type { UpstreamMetricsMetadata } from '../../../src/components/upstream-m
 import { resolveUpstreamMetricDisplays } from '../../../src/components/upstream-metrics/display-name';
 import { i18n, setLanguage } from '../../../src/i18n';
 import type { TFunction } from '../../../src/i18n/translation';
-import { normalizeUpstreamMetricIdentity } from '@floway-dev/provider/browser';
+import { normalizeUpstreamMetricIdentity } from '@floway-dev/upstream/browser';
 
 const t = i18n.t.bind(i18n) as unknown as TFunction;
 const upstream = (kind: UpstreamMetricsMetadata['kind'], id = 'up-1'): UpstreamMetricsMetadata => ({ id, kind, name: 'Seat', hue: 210 });

@@ -10,8 +10,8 @@ import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../api/typ
 import jinaIconUrl from '../assets/jina-color.svg';
 import microsoftIconUrl from '../assets/microsoft-color.svg';
 import tavilyIconUrl from '../assets/tavily-color.svg';
+import { SEARCH_BACKEND_LABEL_KEYS } from '../components/search/backend';
 import { eligibleSearchUpstreams, servesChatFor } from '../components/search/eligibility';
-import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { EmptyStateLine } from '../components/ui/empty-state';
 import { Dropdown, LISTBOX_POSITIONING } from '../components/ui/fluent-form-controls';
@@ -62,17 +62,17 @@ export async function clientLoader(): Promise<LoaderData> {
   };
 }
 
-// Marks keep their owner's colors, unlike the one-tone-per-provider upstream
+// Marks keep their owner's colors, unlike the one-tone-per-upstream
 // chips: nothing else in the row says who the third party is.
-interface ProviderOption {
-  value: SearchConfig['provider'];
+interface BackendOption {
+  value: SearchConfig['backend'];
   iconUrl?: string;
   url?: string;
   getApiKey: (config: SearchConfig) => string;
   setApiKey: (config: SearchConfig, key: string) => SearchConfig;
 }
 
-const PROVIDER_OPTIONS: ProviderOption[] = [
+const BACKEND_OPTIONS: BackendOption[] = [
   {
     value: 'disabled',
     getApiKey: () => '',
@@ -143,17 +143,17 @@ function SearchSettings({ config, models, upstreams }: {
     null,
   );
 
-  // The gateway may echo back a provider this build does not know. An
+  // The gateway may echo back a backend this build does not know. An
   // unrecognized id is named verbatim rather than collapsed onto a familiar one,
   // and its key field stays shut: this build has no field to store that key in,
   // so every keystroke into it would be discarded on save.
-  const knownProviderLabel = (provider: string) => {
-    const option = PROVIDER_OPTIONS.find(candidate => candidate.value === provider);
-    return option ? t(SEARCH_PROVIDER_LABEL_KEYS[option.value]) : undefined;
+  const knownBackendLabel = (backend: string) => {
+    const option = BACKEND_OPTIONS.find(candidate => candidate.value === backend);
+    return option ? t(SEARCH_BACKEND_LABEL_KEYS[option.value]) : undefined;
   };
-  const activeOption = PROVIDER_OPTIONS.find(option => option.value === draft.provider);
-  const activeProviderLabel = knownProviderLabel(draft.provider)
-    ?? t('search.unavailable', { id: draft.provider });
+  const activeOption = BACKEND_OPTIONS.find(option => option.value === draft.backend);
+  const activeBackendLabel = knownBackendLabel(draft.backend)
+    ?? t('search.unavailable', { id: draft.backend });
   const eligibleUpstreams = useMemo(() => eligibleSearchUpstreams(upstreams, models), [models, upstreams]);
   const modelsForSelectedUpstream = useMemo(
     () => models.filter(model => servesChatFor(model, draft.passthroughOpenAiSearch.upstreamId)),
@@ -192,12 +192,12 @@ function SearchSettings({ config, models, upstreams }: {
     setPassthroughUpstream(selected.id, draft.passthroughOpenAiSearch.model);
   }, [draft.passthroughOpenAiSearch, eligibleUpstreams, setPassthroughUpstream]);
 
-  const handleProviderChange = useCallback(
+  const handleBackendChange = useCallback(
     (_: unknown, data: { optionValue?: string | undefined }) => {
       if (data.optionValue) {
         setDraft(prev => ({
           ...prev,
-          provider: data.optionValue as SearchConfig['provider'],
+          backend: data.optionValue as SearchConfig['backend'],
         }));
         setTestResult(null);
         setTestError(null);
@@ -208,10 +208,10 @@ function SearchSettings({ config, models, upstreams }: {
 
   const handleApiKeyChange = useCallback(
     (_: unknown, data: { value: string }) => {
-      if (!activeOption) throw new Error(`Search provider ${draft.provider} has no API key field in this build`);
+      if (!activeOption) throw new Error(`Search backend ${draft.backend} has no API key field in this build`);
       setDraft(prev => activeOption.setApiKey(prev, data.value));
     },
-    [activeOption, draft.provider],
+    [activeOption, draft.backend],
   );
 
   const handleSave = useCallback(async () => {
@@ -254,32 +254,32 @@ function SearchSettings({ config, models, upstreams }: {
           className="!w-auto flex-none"
           button={{
             children: (
-              <ProviderOptionLabel
+              <BackendOptionLabel
                 iconUrl={activeOption?.iconUrl}
-                label={activeProviderLabel}
+                label={activeBackendLabel}
               />
             ),
           }}
           listWidth="content"
-          onOptionSelect={handleProviderChange}
+          onOptionSelect={handleBackendChange}
           positioning={{ ...LISTBOX_POSITIONING, align: 'end' }}
-          selectedOptions={[draft.provider]}
-          value={activeProviderLabel}
+          selectedOptions={[draft.backend]}
+          value={activeBackendLabel}
         >
-          {activeOption === undefined && <Option disabled text={draft.provider} value={draft.provider}>
-            {activeProviderLabel}
+          {activeOption === undefined && <Option disabled text={draft.backend} value={draft.backend}>
+            {activeBackendLabel}
           </Option>}
-          {PROVIDER_OPTIONS.map(opt => (
-            <Option key={opt.value} value={opt.value} text={t(SEARCH_PROVIDER_LABEL_KEYS[opt.value])}>
-              <ProviderOptionLabel iconUrl={opt.iconUrl} label={t(SEARCH_PROVIDER_LABEL_KEYS[opt.value])} />
+          {BACKEND_OPTIONS.map(opt => (
+            <Option key={opt.value} value={opt.value} text={t(SEARCH_BACKEND_LABEL_KEYS[opt.value])}>
+              <BackendOptionLabel iconUrl={opt.iconUrl} label={t(SEARCH_BACKEND_LABEL_KEYS[opt.value])} />
             </Option>
           ))}
         </Dropdown>}
-        defaultOpen={draft.provider !== 'disabled'}
-        description={t('search.providerHint')}
-        header={t('search.providerLabel')}
+        defaultOpen={draft.backend !== 'disabled'}
+        description={t('search.backendHint')}
+        header={t('search.backendLabel')}
         icon={<GlobeSearch24Regular />}
-        toggledOn={draft.provider !== 'disabled'}
+        toggledOn={draft.backend !== 'disabled'}
       >
         <div className="grid gap-3">
           <Field label={t('search.apiKeyLabel')}>
@@ -289,7 +289,7 @@ function SearchSettings({ config, models, upstreams }: {
                 label={secretVisible ? t('upstreams.editor.actions.hideSecret') : t('upstreams.editor.actions.showSecret')}
                 onClick={() => setSecretVisible(value => !value)}
               />}
-              disabled={activeOption === undefined || draft.provider === 'disabled'}
+              disabled={activeOption === undefined || draft.backend === 'disabled'}
               onChange={handleApiKeyChange}
               placeholder={t('search.apiKeyPlaceholder')}
               revealed={secretVisible}
@@ -380,7 +380,7 @@ function SearchSettings({ config, models, upstreams }: {
           {t('search.save')}
         </Button>
         <Button
-          disabled={draft.provider === 'disabled'}
+          disabled={draft.backend === 'disabled'}
           disabledFocusable={testing}
           onClick={() => void handleTest()}
         >
@@ -404,8 +404,8 @@ function SearchSettings({ config, models, upstreams }: {
               {testResult.ok ? t('search.testBadge.ok') : t('search.testBadge.error')}
             </StatusBadge>
             <Text size={200} className="text-fui-fg3">
-              {t('search.testedProvider', {
-                provider: knownProviderLabel(testResult.provider) ?? testResult.provider,
+              {t('search.testedBackend', {
+                backend: knownBackendLabel(testResult.backend) ?? testResult.backend,
               })}
             </Text>
             {testResult.query && <Text size={200} className="text-fui-fg3">
@@ -478,7 +478,7 @@ function DescribedOptionLabel({ description, label }: { description?: string | u
   );
 }
 
-function ProviderOptionLabel({ iconUrl, label }: { iconUrl?: string | undefined; label: string }) {
+function BackendOptionLabel({ iconUrl, label }: { iconUrl?: string | undefined; label: string }) {
   return (
     <span className="flex items-center gap-2 min-w-0">
       {iconUrl && <img alt="" className="block h-[16px] w-[16px] flex-none" src={iconUrl} />}

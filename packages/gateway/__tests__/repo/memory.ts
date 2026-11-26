@@ -104,10 +104,10 @@ import type {
 import { serializeStoredState } from '../../src/repo/upstream-json.ts';
 import { usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
-import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
+import { assertWebSearchBackendName, type WebSearchConfig } from '../../src/shared/web-search-backends.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, defaultUserPreferences, multiplyDecimalStrings, parseUserPreferences, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type ModelKind, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
-import { normalizeUpstreamMetricIdentity, upstreamMetricIdentityKey, UpstreamGoneError, type ProviderModel, type UpstreamModelConfig, type UpstreamModelSource, type UpstreamRecord } from '@floway-dev/provider';
+import { normalizeUpstreamMetricIdentity, upstreamMetricIdentityKey, UpstreamGoneError, type UpstreamModel, type UpstreamModelConfig, type UpstreamModelSource, type UpstreamRecord } from '@floway-dev/upstream';
 
 const SEED_ADMIN_USER: User = {
   id: SEED_ADMIN_USER_ID,
@@ -826,28 +826,28 @@ class MemoryUsageRepo implements UsageRepo {
 class MemoryWebSearchUsageRepo implements WebSearchUsageRepo {
   private store = new Map<string, WebSearchUsageRecord>();
 
-  private key(r: { provider: WebSearchUsageRecord['provider']; keyId: string; action: WebSearchUsageRecord['action']; hour: string }): string {
-    return `${r.provider}\0${r.keyId}\0${r.action}\0${r.hour}`;
+  private key(r: { backend: WebSearchUsageRecord['backend']; keyId: string; action: WebSearchUsageRecord['action']; hour: string }): string {
+    return `${r.backend}\0${r.keyId}\0${r.action}\0${r.hour}`;
   }
 
-  record(args: { provider: WebSearchUsageRecord['provider']; keyId: string; action: WebSearchUsageRecord['action']; hour: string; requests: number }): Promise<void> {
+  record(args: { backend: WebSearchUsageRecord['backend']; keyId: string; action: WebSearchUsageRecord['action']; hour: string; requests: number }): Promise<void> {
     return Promise.resolve().then(() => {
-      const validProvider = assertWebSearchProviderName(args.provider);
-      const k = this.key({ provider: validProvider, keyId: args.keyId, action: args.action, hour: args.hour });
+      const validBackend = assertWebSearchBackendName(args.backend);
+      const k = this.key({ backend: validBackend, keyId: args.keyId, action: args.action, hour: args.hour });
       const existing = this.store.get(k);
       if (existing) {
         existing.requests += args.requests;
       } else {
-        this.store.set(k, { provider: validProvider, keyId: args.keyId, action: args.action, hour: args.hour, requests: args.requests });
+        this.store.set(k, { backend: validBackend, keyId: args.keyId, action: args.action, hour: args.hour, requests: args.requests });
       }
     });
   }
 
-  query(opts: { provider?: WebSearchUsageRecord['provider']; keyId?: string; action?: WebSearchUsageRecord['action']; start: string; end: string }): Promise<WebSearchUsageRecord[]> {
+  query(opts: { backend?: WebSearchUsageRecord['backend']; keyId?: string; action?: WebSearchUsageRecord['action']; start: string; end: string }): Promise<WebSearchUsageRecord[]> {
     return Promise.resolve().then(() => {
-      const provider = opts.provider ? assertWebSearchProviderName(opts.provider) : undefined;
+      const backend = opts.backend ? assertWebSearchBackendName(opts.backend) : undefined;
       return [...this.store.values()]
-        .filter(r => !provider || r.provider === provider)
+        .filter(r => !backend || r.backend === backend)
         .filter(r => !opts.keyId || r.keyId === opts.keyId)
         .filter(r => !opts.action || r.action === opts.action)
         .filter(r => r.hour >= opts.start && r.hour < opts.end)
@@ -862,8 +862,8 @@ class MemoryWebSearchUsageRepo implements WebSearchUsageRepo {
 
   set(record: WebSearchUsageRecord): Promise<void> {
     return Promise.resolve().then(() => {
-      const provider = assertWebSearchProviderName(record.provider);
-      const validRecord = { ...record, provider };
+      const backend = assertWebSearchBackendName(record.backend);
+      const validRecord = { ...record, backend };
       this.store.set(this.key(validRecord), validRecord);
     });
   }
@@ -1409,7 +1409,7 @@ class MemoryUpstreamModelsRepo implements UpstreamModelsRepo {
 
   listCatalog(filter: UpstreamCatalogFilter | null): Promise<{
     readonly upstreams: CatalogUpstreamRow[];
-    readonly modelsByUpstream: Map<string, ProviderModel[]>;
+    readonly modelsByUpstream: Map<string, UpstreamModel[]>;
   }> {
     const include = filter?.include;
     const exclude = filter?.exclude;
@@ -1432,7 +1432,7 @@ class MemoryUpstreamModelsRepo implements UpstreamModelsRepo {
       hue: u.hue,
       modelPrefix: structuredClone(u.modelPrefix),
     }));
-    const modelsByUpstream = new Map<string, ProviderModel[]>();
+    const modelsByUpstream = new Map<string, UpstreamModel[]>();
     for (const u of orderedUpstreams) {
       const disabled = new Set(u.disabledPublicModelIds);
       const active = (this.shared.models.get(u.id) ?? [])
@@ -1504,7 +1504,7 @@ class MemoryUpstreamModelsRepo implements UpstreamModelsRepo {
     return Promise.resolve(filtered.map(entry => ({ source: entry.source, model: structuredClone(entry.model) })));
   }
 
-  getByKey(upstreamId: string, modelId: string, kind: ModelKind): Promise<ProviderModel | null> {
+  getByKey(upstreamId: string, modelId: string, kind: ModelKind): Promise<UpstreamModel | null> {
     const found = (this.shared.models.get(upstreamId) ?? []).find(
       entry => entry.model.id === modelId && entry.model.kind === kind,
     );

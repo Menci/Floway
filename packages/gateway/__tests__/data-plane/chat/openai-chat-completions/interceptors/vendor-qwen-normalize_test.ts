@@ -4,8 +4,8 @@ import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-pl
 import { withVendorQwenOpenAIChatCompletionsNormalize } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/vendor-qwen-normalize.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
-import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { eventResult, type FlagId } from '@floway-dev/upstream';
 
 const stubCtx = mockChatGatewayCtx();
 

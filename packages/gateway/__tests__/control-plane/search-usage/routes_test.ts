@@ -18,9 +18,9 @@ const seedWebSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryR
     openaiResponsesRetentionSeconds: 0,
   });
 
-  await repo.webSearchUsage.set({ provider: 'tavily', keyId: primaryKeyId, action: 'search', hour: '2026-03-15T10', requests: 2 });
-  await repo.webSearchUsage.set({ provider: 'tavily', keyId: primaryKeyId, action: 'fetch_page', hour: '2026-03-15T10', requests: 3 });
-  await repo.webSearchUsage.set({ provider: 'microsoft-web-iq', keyId: 'key_other', action: 'search', hour: '2026-03-15T11', requests: 4 });
+  await repo.webSearchUsage.set({ backend: 'tavily', keyId: primaryKeyId, action: 'search', hour: '2026-03-15T10', requests: 2 });
+  await repo.webSearchUsage.set({ backend: 'tavily', keyId: primaryKeyId, action: 'fetch_page', hour: '2026-03-15T10', requests: 3 });
+  await repo.webSearchUsage.set({ backend: 'microsoft-web-iq', keyId: 'key_other', action: 'search', hour: '2026-03-15T11', requests: 4 });
 };
 
 test('/api/search-usage scopes to the actor\'s keys when called with an API key', async () => {
@@ -36,7 +36,7 @@ test('/api/search-usage scopes to the actor\'s keys when called with an API key'
   // Non-admin actor sees only their own key's rows; the other user's row is excluded.
   assertEquals(body, [
     {
-      provider: 'tavily',
+      backend: 'tavily',
       keyId: apiKey.id,
       hour: '2026-03-15T10',
       requests: 5,
@@ -57,7 +57,7 @@ test('/api/search-usage all-by-user view aggregates across keys per user', async
   // Two distinct rows: tavily/user2 (apiKey.userId === 2) and microsoft-web-iq/user1.
   // Aggregation summed both actions for the tavily row. Sort order is hour, userId, provider.
   assertEquals(body, [
-    { provider: 'tavily', userId: 2, hour: '2026-03-15T10', requests: 5 },
-    { provider: 'microsoft-web-iq', userId: 1, hour: '2026-03-15T11', requests: 4 },
+    { backend: 'tavily', userId: 2, hour: '2026-03-15T10', requests: 5 },
+    { backend: 'microsoft-web-iq', userId: 1, hour: '2026-03-15T11', requests: 4 },
   ]);
 });

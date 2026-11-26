@@ -13,7 +13,7 @@ import { UpstreamWorkspace, type ModelsYamlDraft } from '../../../src/components
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
-import type { UpstreamModelConfig } from '@floway-dev/provider/browser';
+import type { UpstreamModelConfig } from '@floway-dev/upstream/browser';
 
 vi.mock('../../../src/components/upstream-editor/models-yaml-editor', () => ({
   default: ({ onChange, value }: { onChange: (value: string) => void; value: string }) => (

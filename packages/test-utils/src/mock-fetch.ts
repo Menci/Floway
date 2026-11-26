@@ -1,4 +1,4 @@
-import { isReplayableBody, toRequestInit, type Fetcher } from '@floway-dev/provider';
+import { isReplayableBody, toRequestInit, type Fetcher } from '@floway-dev/upstream';
 
 type FetchInput = Parameters<typeof fetch>[0];
 type FetchInit = Parameters<typeof fetch>[1];

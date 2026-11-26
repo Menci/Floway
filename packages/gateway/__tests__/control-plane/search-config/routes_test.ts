@@ -39,7 +39,7 @@ test('/api/search-config PUT persists config and POST /test returns preview', as
     },
     async () => {
       const config = {
-        provider: 'tavily',
+        backend: 'tavily',
         tavily: { apiKey: 'tvly-test' },
         microsoftWebIq: { apiKey: 'ms-test' },
         jina: { apiKey: 'jina-test' },

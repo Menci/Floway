@@ -54,7 +54,7 @@ export const withExclusiveCachedTokensNormalized: OpenAIResponsesInterceptor = a
 
   const model = ctx.candidate.model;
   const declaredExclusive = model.enabledFlags.has('usage-exclusive-cached-tokens');
-  const identity = `${ctx.candidate.provider.upstreamId}/${model.id}`;
+  const identity = `${ctx.candidate.upstream.upstreamId}/${model.id}`;
 
   const result = await run();
   if (result.type !== 'events') return result;

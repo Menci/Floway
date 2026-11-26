@@ -5,8 +5,8 @@ import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-pl
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { type ExecuteResult, eventResult } from '@floway-dev/upstream';
 
 const stubCtx = mockChatGatewayCtx();
 

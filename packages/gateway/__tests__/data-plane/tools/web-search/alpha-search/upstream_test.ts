@@ -1,11 +1,11 @@
 import { expect, test, vi } from 'vitest';
 
-import type { InboundHeaderMatcher, ModelCandidate } from '@floway-dev/provider';
-import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, stubModelCandidate, stubUpstream } from '@floway-dev/test-utils';
+import type { InboundHeaderMatcher, ModelCandidate } from '@floway-dev/upstream';
 
 let resolvedCandidate: ModelCandidate | undefined;
-vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../../src/data-plane/providers/resolution.ts')>();
+vi.mock('../../../../../src/data-plane/upstreams/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../../../src/data-plane/upstreams/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async () => ({
@@ -28,19 +28,19 @@ const context: Parameters<typeof resolveAlphaSearchDispatcher>[0] = {
 const dispatcherFor = async (kind: 'chatgpt' | 'custom', inboundHeaderAllowlist: readonly InboundHeaderMatcher[] = []) => {
   let observedHeaders: Headers | undefined;
   const base = stubModelCandidate();
-  const provider = {
-    ...base.provider,
+  const upstream = {
+    ...base.upstream,
     upstreamId: context.config.upstreamId,
     kind,
     inboundHeaderAllowlist,
-    instance: stubProvider({
+    instance: stubUpstream({
       callAlphaSearch: async (_model, _body, _signal, opts) => {
         observedHeaders = opts.headers;
         return { http: new Response('{}'), modelKey: 'search-model' };
       },
     }),
   };
-  resolvedCandidate = stubModelCandidate({ provider });
+  resolvedCandidate = stubModelCandidate({ upstream });
   const dispatcher = await resolveAlphaSearchDispatcher(context);
   return { dispatcher, observedHeaders: () => observedHeaders };
 };
@@ -52,7 +52,7 @@ test('Alpha Search reports a missing model when the selection has no permitted c
 
 test('Alpha Search rejects unsupported providers as configuration failures', async () => {
   const candidate = stubModelCandidate();
-  resolvedCandidate = { ...candidate, provider: { ...candidate.provider, upstreamId: context.config.upstreamId, kind: 'copilot' } };
+  resolvedCandidate = { ...candidate, upstream: { ...candidate.upstream, upstreamId: context.config.upstreamId, kind: 'copilot' } };
   await expect(resolveAlphaSearchDispatcher(context)).rejects.toThrow();
 });
 

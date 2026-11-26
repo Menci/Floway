@@ -8,7 +8,7 @@ import type { UpstreamRecord } from '../../../src/api/types';
 import { refineCustomIngressHeaderRules } from '../../../src/components/upstream-editor/custom-ingress-header-rules-validation';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
-import { ProviderConfigSection } from '../../../src/components/upstream-editor/provider-config';
+import { UpstreamKindConfigSection } from '../../../src/components/upstream-editor/upstream-kind-config';
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
@@ -37,7 +37,7 @@ function Harness({ ingressHeadersRules = [] }: { ingressHeadersRules?: { key: st
   const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(upstream), mode: 'onBlur', resolver: zodResolver(schema) });
   const config = useWatch({ control: form.control, name: 'config' }) as typeof upstream.config;
   return <FormProvider {...form}>
-    <ProviderConfigSection record={upstream} onPatch={vi.fn()} />
+    <UpstreamKindConfigSection record={upstream} onPatch={vi.fn()} />
     <button onClick={() => void form.handleSubmit(() => {})()}>Save probe</button>
     <output data-testid="rules">{JSON.stringify(config.ingressHeadersRules)}</output>
   </FormProvider>;

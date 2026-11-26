@@ -3,8 +3,8 @@ import { describe, expect, test } from 'vitest';
 import { filterInboundHeaders } from '../../../src/data-plane/shared/inbound-headers.ts';
 import { buildUpstreamCallOptions } from '../../../src/data-plane/shared/upstream-call-options.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
-import type { InboundHeaderMatcher } from '@floway-dev/provider';
-import { stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
+import { stubModelCandidate, stubUpstream } from '@floway-dev/test-utils';
+import type { InboundHeaderMatcher } from '@floway-dev/upstream';
 
 const headerRecord = (headers: Headers): Record<string, string> => Object.fromEntries(headers);
 
@@ -40,8 +40,8 @@ describe('filterInboundHeaders', () => {
 });
 
 describe('provider inbound header policies', () => {
-  const provider = (inboundHeaderAllowlist: readonly InboundHeaderMatcher[]) => ({
-    ...stubModelCandidate().provider,
+  const upstream = (inboundHeaderAllowlist: readonly InboundHeaderMatcher[]) => ({
+    ...stubModelCandidate().upstream,
     inboundHeaderAllowlist,
   });
 
@@ -52,11 +52,11 @@ describe('provider inbound header policies', () => {
       'x-client-request-id': 'request-1',
     });
     const ctx = mockGatewayCtx();
-    const first = buildUpstreamCallOptions(stubModelCandidate({ provider: provider([]) }), ctx, source);
+    const first = buildUpstreamCallOptions(stubModelCandidate({ upstream: upstream([]) }), ctx, source);
     const second = buildUpstreamCallOptions(stubModelCandidate({
-      provider: {
-        ...provider(['user-agent', 'x-client-request-id']),
-        instance: stubProvider(),
+      upstream: {
+        ...upstream(['user-agent', 'x-client-request-id']),
+        instance: stubUpstream(),
       },
     }), ctx, source);
     first.headers.set('x-client-request-id', 'candidate-mutation');

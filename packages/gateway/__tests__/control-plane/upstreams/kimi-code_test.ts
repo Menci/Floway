@@ -3,8 +3,8 @@ import { expect, test, vi } from 'vitest';
 import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from '../../../src/control-plane/upstreams/serialize.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
 import { withMockedFetch } from '@floway-dev/test-utils';
+import type { UpstreamRecord } from '@floway-dev/upstream';
 
 const config = { region: 'china', apiKey: 'sk-kimi-obviously-fake-test-key' } as const;
 const quota = {

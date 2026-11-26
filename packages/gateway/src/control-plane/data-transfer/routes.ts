@@ -24,10 +24,10 @@ import { supportsManualModels } from '../../upstreams/models-refresh.ts';
 import { type exportQuery, type importBody } from '../schemas.ts';
 import { saveUpstreams } from '../shared/save-upstreams.ts';
 import { type FullSerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamRecord } from '@floway-dev/upstream';
 
 interface ExportPayload {
-  version: 26;
+  version: 27;
   exportedAt: string;
   data: {
     users: User[];
@@ -47,7 +47,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 26;
+const EXPORT_VERSION = 27;
 
 const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
   const ids = new Map<string, number>();

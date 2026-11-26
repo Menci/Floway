@@ -3,7 +3,7 @@ import { type SSEStreamingApi, streamSSE } from 'hono/streaming';
 
 import { prepareSseResponse } from './upstream-response.ts';
 import { type SseWritableFrame, sseCommentFrame } from '@floway-dev/protocols/common';
-import type { HttpHead } from '@floway-dev/provider';
+import type { HttpHead } from '@floway-dev/upstream';
 
 export const DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS = 15_000;
 

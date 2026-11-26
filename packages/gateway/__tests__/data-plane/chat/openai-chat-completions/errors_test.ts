@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { inputErrorResult } from '../../../../src/data-plane/chat/openai-chat-completions/errors.ts';
-import { decodeResponseBody, type ApiErrorResult } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
+import { decodeResponseBody, type ApiErrorResult } from '@floway-dev/upstream';
 
 const apiErrorOf = (result: ReturnType<typeof inputErrorResult>): ApiErrorResult => result as ApiErrorResult;
 const bodyOf = (result: ReturnType<typeof inputErrorResult>): unknown =>

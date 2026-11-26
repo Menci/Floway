@@ -18,15 +18,15 @@ import type { ChatGatewayCtx } from '../../../../../src/data-plane/chat/shared/g
 import { SidecarDomain } from '../../../../../src/data-plane/chat/shared/sidecar-codec.ts';
 import { resolveAlphaSearchDispatcher } from '../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
 import type { AlphaSearchDispatcher } from '../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
-import { resolveConfiguredWebSearchProvider } from '../../../../../src/data-plane/tools/web-search/provider.ts';
+import { resolveConfiguredWebSearchBackend } from '../../../../../src/data-plane/tools/web-search/backend.ts';
 import type {
-  ConfiguredWebSearchProvider,
+  ConfiguredWebSearchBackend,
   WebSearchConfig,
   WebSearchFetchPageRequest,
   WebSearchFetchPageResult,
-  WebSearchProvider,
-  WebSearchProviderRequest,
-  WebSearchProviderResult,
+  WebSearchBackend,
+  WebSearchBackendRequest,
+  WebSearchBackendResult,
 } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { getRepo, initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -46,9 +46,9 @@ import type {
   OpenAIResponsesToolChoice,
   OpenAIResponsesWebSearchAction,
 } from '@floway-dev/protocols/openai-responses';
-import { decodeResponseBody, eventResult, type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, assertRejects, stubModelCandidate } from '@floway-dev/test-utils';
 import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
+import { decodeResponseBody, eventResult, type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/upstream';
 
 const withOpenAIResponsesWebSearchShim = withOpenAIResponsesServerToolShim([webSearchServerTool]);
 
@@ -337,14 +337,14 @@ const mkMessageDone = (outputIndex: number, text: string, itemId = `msg_${output
     },
   });
 
-// We replace `resolveConfiguredWebSearchProvider` because real provider
-// construction (`createTavilyWebSearchProvider` etc.) would otherwise
+// We replace `resolveConfiguredWebSearchBackend` because real provider
+// construction (`createTavilyWebSearchBackend` etc.) would otherwise
 // pull in network-hitting backend impls. Tests insert a WebSearchConfig
 // row through the in-memory repo so `loadWebSearchConfig` returns
 // non-default values; the mock then ignores the config and returns a
 // test stub. Tests that need a specific configured state set
 // `mockResolveConfigured.mockReturnValue(...)` per call.
-vi.mock('../../../../../src/data-plane/tools/web-search/provider.ts');
+vi.mock('../../../../../src/data-plane/tools/web-search/backend.ts');
 vi.mock('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
 
 const mkResponseCompleted = (
@@ -386,18 +386,18 @@ const testTelemetryModelIdentity = {
 };
 
 interface ProviderOverrides {
-  search?: (req: WebSearchProviderRequest) => Promise<WebSearchProviderResult> | WebSearchProviderResult;
+  search?: (req: WebSearchBackendRequest) => Promise<WebSearchBackendResult> | WebSearchBackendResult;
   fetchPage?: (req: WebSearchFetchPageRequest) => Promise<WebSearchFetchPageResult> | WebSearchFetchPageResult;
 }
 
 interface BackendCall {
   kind: 'search' | 'fetchPage';
-  request: WebSearchProviderRequest | WebSearchFetchPageRequest;
+  request: WebSearchBackendRequest | WebSearchFetchPageRequest;
 }
 
-const makeStubProvider = (overrides: ProviderOverrides = {}): { provider: WebSearchProvider; calls: BackendCall[] } => {
+const makeStubProvider = (overrides: ProviderOverrides = {}): { provider: WebSearchBackend; calls: BackendCall[] } => {
   const calls: BackendCall[] = [];
-  const provider: WebSearchProvider = {
+  const provider: WebSearchBackend = {
     async search(request) {
       calls.push({ kind: 'search', request });
       if (overrides.search) return await overrides.search(request);
@@ -432,11 +432,11 @@ const makeStubProvider = (overrides: ProviderOverrides = {}): { provider: WebSea
 };
 
 interface DepsOverrides {
-  configured?: ConfiguredWebSearchProvider;
+  configured?: ConfiguredWebSearchBackend;
   providerOverrides?: ProviderOverrides;
 }
 
-const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchProvider);
+const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchBackend);
 const mockResolveAlpha = vi.mocked(resolveAlphaSearchDispatcher);
 
 // Seed a per-test InMemoryRepo and a default tavily search config so
@@ -448,7 +448,7 @@ beforeEach(() => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   void repo.webSearchConfig.save({
-    provider: 'tavily',
+    backend: 'tavily',
     tavily: { apiKey: 'test-key' },
     microsoftWebIq: { apiKey: '' },
     jina: { apiKey: '' },
@@ -457,12 +457,12 @@ beforeEach(() => {
 });
 
 const makeStubDeps = (overrides: DepsOverrides = {}): {
-  backend: { provider: WebSearchProvider; calls: BackendCall[] };
+  backend: { provider: WebSearchBackend; calls: BackendCall[] };
 } => {
   const backend = makeStubProvider(overrides.providerOverrides);
-  const configured: ConfiguredWebSearchProvider = overrides.configured ?? {
+  const configured: ConfiguredWebSearchBackend = overrides.configured ?? {
     type: 'enabled',
-    provider: 'tavily',
+    backend: 'tavily',
     impl: backend.provider,
   };
   mockResolveConfigured.mockReturnValue(configured);
@@ -658,7 +658,7 @@ test('shim propagates filters / user_location / search_context_size to backend',
   await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
 
   assertEquals(backend.calls.length, 1);
-  const searchCall = backend.calls[0].request as WebSearchProviderRequest;
+  const searchCall = backend.calls[0].request as WebSearchBackendRequest;
   assertEquals(searchCall.query, 'q1');
   assertEquals(searchCall.maxResults, 40);
   assertEquals(searchCall.allowedDomains, ['allowed.com']);
@@ -758,7 +758,7 @@ test.each([
     return await script.run();
   });
   assertEquals(backend.calls.length, 1);
-  assertEquals((backend.calls[0].request as WebSearchProviderRequest).query, query);
+  assertEquals((backend.calls[0].request as WebSearchBackendRequest).query, query);
   const restored = inputs[1].find(item => item.type === 'function_call');
   assert(restored?.type === 'function_call');
   assertEquals(restored.call_id, 'call_raw');
@@ -1708,7 +1708,7 @@ const lastFunctionCallOutput = (input: CanonicalOpenAIResponsesInputItem[]): str
 test('responses target with OpenAI passthrough forwards the complete alpha-search command and settings shapes', async () => {
   makeStubDeps();
   await getRepo().webSearchConfig.save({
-    provider: 'tavily',
+    backend: 'tavily',
     tavily: { apiKey: 'test-key' },
     microsoftWebIq: { apiKey: '' },
     jina: { apiKey: '' },
@@ -1758,7 +1758,7 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
 test('responses target preserves a missing-model failure once a search runs', async () => {
   makeStubDeps();
   await getRepo().webSearchConfig.save({
-    provider: 'tavily',
+    backend: 'tavily',
     tavily: { apiKey: 'test-key' },
     microsoftWebIq: { apiKey: '' },
     jina: { apiKey: '' },

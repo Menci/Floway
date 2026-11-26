@@ -242,7 +242,7 @@ export class FileDumpStore implements DumpStore {
     // millisecond still page deterministically — ULID lex order matches
     // creation order within the ms.
     const select
-      = 'SELECT d.id, d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue '
+      = 'SELECT d.id, d.meta_json, d.upstream_id, u.name AS upstream_name, u.kind AS upstream_kind, u.hue AS upstream_hue '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
       + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL ';
     const conditions = ['d.key_id = ?', 'd.created_at >= ? - k.dump_retention_seconds * 1000'];
@@ -266,7 +266,7 @@ export class FileDumpStore implements DumpStore {
 
   async get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
     const row = await this.db.prepare(
-      'SELECT d.id, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue, '
+      'SELECT d.id, d.upstream_id, u.name AS upstream_name, u.kind AS upstream_kind, u.hue AS upstream_hue, '
       + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor, d.response_upstream_body_descriptor '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
       + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL '

@@ -3,15 +3,15 @@ import type {
   FullSerializedUpstreamRecord,
   RedactedSerializedUpstreamRecord,
 } from './types.ts';
-import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
-import type { FlagOverrides, ProxyFallbackEntry, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
-import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/provider-chatgpt';
-import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
-import { assertCopilotUpstreamRecord, assertCopilotUpstreamState } from '@floway-dev/provider-copilot';
-import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
-import { assertKimiCodeUpstreamRecord, readKimiCodeUpstreamState } from '@floway-dev/provider-kimi-code';
-import { assertOllamaUpstreamRecord, readOllamaUpstreamState } from '@floway-dev/provider-ollama';
+import { flagDefaultsForKind } from '../../data-plane/upstreams/registry.ts';
+import type { FlagOverrides, ProxyFallbackEntry, UpstreamModelConfig, UpstreamKind, UpstreamRecord } from '@floway-dev/upstream';
+import { assertAzureUpstreamRecord } from '@floway-dev/upstream-azure';
+import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/upstream-chatgpt';
+import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/upstream-claude-code';
+import { assertCopilotUpstreamRecord, assertCopilotUpstreamState } from '@floway-dev/upstream-copilot';
+import { assertCustomUpstreamRecord } from '@floway-dev/upstream-custom';
+import { assertKimiCodeUpstreamRecord, readKimiCodeUpstreamState } from '@floway-dev/upstream-kimi-code';
+import { assertOllamaUpstreamRecord, readOllamaUpstreamState } from '@floway-dev/upstream-ollama';
 
 export type { FullSerializedUpstreamRecord } from './types.ts';
 
@@ -197,7 +197,7 @@ export const upstreamRecordToFullJson = (
   }
 };
 
-const blueprintBase = (kind: UpstreamProviderKind) => ({
+const blueprintBase = (kind: UpstreamKind) => ({
   id: '',
   name: '',
   enabled: false,
@@ -212,7 +212,7 @@ const blueprintBase = (kind: UpstreamProviderKind) => ({
   model_prefix: null,
 });
 
-export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSerializedUpstreamRecord => {
+export const blueprintUpstreamRecord = (kind: UpstreamKind): BlueprintSerializedUpstreamRecord => {
   const base = blueprintBase(kind);
   switch (kind) {
   case 'copilot':

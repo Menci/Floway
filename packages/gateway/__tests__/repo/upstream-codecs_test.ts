@@ -4,10 +4,10 @@ import {
   decodeUpstreamModel,
   encodeUpstreamModel,
 } from '../../src/repo/upstream-codecs.ts';
-import type { ProviderModel } from '@floway-dev/provider';
+import type { UpstreamModel } from '@floway-dev/upstream';
 
 test('stored model codec round-trips a decision target and enabledFlags Set', () => {
-  const model: ProviderModel = {
+  const model: UpstreamModel = {
     id: 'decision-1',
     upstreamModelId: 'decision-1',
     kind: 'decision',
@@ -33,7 +33,7 @@ test('encodeUpstreamModel is byte-deterministic across property/Set orders and p
     ['__proto__', { nestedA: 2, nestedZ: 1 }],
   ]);
 
-  const modelA: ProviderModel = {
+  const modelA: UpstreamModel = {
     id: 'gpt-5',
     upstreamModelId: 'gpt-5-wire',
     kind: 'chat',
@@ -45,11 +45,11 @@ test('encodeUpstreamModel is byte-deterministic across property/Set orders and p
     },
     opaqueBlobCompatibilityScope: { key: 'shared', bindToUpstream: false },
     enabledFlags: new Set(['vendor-kimi', 'vendor-deepseek', 'serialize-stream-items'] as const),
-    providerData: protoDataA,
+    upstreamData: protoDataA,
   };
 
-  const modelB: ProviderModel = {
-    providerData: protoDataB,
+  const modelB: UpstreamModel = {
+    upstreamData: protoDataB,
     enabledFlags: new Set(['serialize-stream-items', 'vendor-deepseek', 'vendor-kimi'] as const),
     opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'shared' },
     chat: {
@@ -69,8 +69,8 @@ test('encodeUpstreamModel is byte-deterministic across property/Set orders and p
 
   const decoded = decodeUpstreamModel(encodedA, 'up_test');
   expect(decoded.enabledFlags).toEqual(new Set(['serialize-stream-items', 'vendor-deepseek', 'vendor-kimi']));
-  const providerData = decoded.providerData as Record<string, unknown>;
-  expect(Object.hasOwn(providerData, '__proto__')).toBe(true);
-  expect(providerData['__proto__']).toEqual({ nestedA: 2, nestedZ: 1 });
-  expect(providerData.alpha).toBe(42);
+  const upstreamData = decoded.upstreamData as Record<string, unknown>;
+  expect(Object.hasOwn(upstreamData, '__proto__')).toBe(true);
+  expect(upstreamData['__proto__']).toEqual({ nestedA: 2, nestedZ: 1 });
+  expect(upstreamData.alpha).toBe(42);
 });

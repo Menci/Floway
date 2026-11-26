@@ -5,8 +5,8 @@ import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { kimiCodeUsageBody } from '../schemas.ts';
-import type { Fetcher } from '@floway-dev/provider';
-import { parseKimiCodeUpstreamConfig, refreshKimiCodeAccountProbe, refreshKimiCodeUsageProbe, type KimiCodeUpstreamConfig } from '@floway-dev/provider-kimi-code';
+import type { Fetcher } from '@floway-dev/upstream';
+import { parseKimiCodeUpstreamConfig, refreshKimiCodeAccountProbe, refreshKimiCodeUsageProbe, type KimiCodeUpstreamConfig } from '@floway-dev/upstream-kimi-code';
 
 export const kimiCodeUsage = async (c: CtxWithJson<typeof kimiCodeUsageBody>) => {
   const { record } = c.req.valid('json');

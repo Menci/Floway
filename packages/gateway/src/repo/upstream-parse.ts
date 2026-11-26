@@ -3,14 +3,14 @@
 // error attribution and validation policy stay uniform across SELECT
 // shapes.
 
-import type { UpstreamProviderKind } from '@floway-dev/provider';
-import { assertUpstreamProviderKind, normalizeUpstreamHue } from '@floway-dev/provider';
+import type { UpstreamKind } from '@floway-dev/upstream';
+import { assertUpstreamKind, normalizeUpstreamHue } from '@floway-dev/upstream';
 
-export const parseUpstreamKind = (id: string, value: string | null): UpstreamProviderKind => {
+export const parseUpstreamKind = (id: string, value: string | null): UpstreamKind => {
   try {
-    return assertUpstreamProviderKind(value ?? '');
+    return assertUpstreamKind(value ?? '');
   } catch (cause) {
-    throw new Error(`Invalid upstream provider kind for ${id}`, { cause });
+    throw new Error(`Invalid upstream kind for ${id}`, { cause });
   }
 };
 

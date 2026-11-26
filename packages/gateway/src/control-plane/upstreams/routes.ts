@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 
 import { loadCachedModelsForDashboard, modelsCacheStatus } from './models-cache-projection.ts';
 import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
-import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './shared.ts';
+import { isValidUpstreamKind, upstreamErrorMessage as errorMessage } from './shared.ts';
 import type { FullSerializedUpstreamRecord, ModelsCacheStatus, RedactedSerializedUpstreamRecord } from './types.ts';
 import { checkMany, loadSubjectAccessResolver } from '../../access-control/check.ts';
 import { type UpstreamAccess, resolveUpstreamAccesses, resolveUpstreamEditLevel } from '../../access-control/upstream-edit.ts';
@@ -17,24 +17,24 @@ import { shortId } from '../../shared/short-id.ts';
 import { supportsManualModels } from '../../upstreams/models-refresh.ts';
 import type { createUpstreamBody, reorderUpstreamsBody, updateUpstreamBody, upstreamOptionsQuery } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
-import { type ManualModelsProviderKind, validateManualModels } from '../shared/manual-models.ts';
+import { type ManualModelsUpstreamKind, validateManualModels } from '../shared/manual-models.ts';
 import { appendUpstream, saveUpstream } from '../shared/save-upstreams.ts';
 import {
   normalizeModelPrefix,
-  ALL_PROVIDER_KINDS,
+  ALL_UPSTREAM_KINDS,
   type ModelPrefixConfig,
   type ProxyFallbackEntry,
   type UpstreamModelConfig,
-  type UpstreamProviderKind,
+  type UpstreamKind,
   type UpstreamRecord,
-} from '@floway-dev/provider';
-import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
-import { type ChatGPTQuotaSnapshotMap, type ChatGPTUpstreamConfig, assertChatGPTUpstreamRecord, assertChatGPTUpstreamState, getChatGPTQuota, patchChatGPTIdentityMetadata } from '@floway-dev/provider-chatgpt';
-import { assertClaudeCodeUpstreamRecord, readClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
-import { parseCopilotUpstreamConfig, readCopilotUpstreamState } from '@floway-dev/provider-copilot';
-import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
-import { assertKimiCodeUpstreamRecord, kimiCodeStateSurvivesConfigChange, type KimiCodeUpstreamConfig } from '@floway-dev/provider-kimi-code';
-import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
+} from '@floway-dev/upstream';
+import { assertAzureUpstreamRecord } from '@floway-dev/upstream-azure';
+import { type ChatGPTQuotaSnapshotMap, type ChatGPTUpstreamConfig, assertChatGPTUpstreamRecord, assertChatGPTUpstreamState, getChatGPTQuota, patchChatGPTIdentityMetadata } from '@floway-dev/upstream-chatgpt';
+import { assertClaudeCodeUpstreamRecord, readClaudeCodeUpstreamState } from '@floway-dev/upstream-claude-code';
+import { parseCopilotUpstreamConfig, readCopilotUpstreamState } from '@floway-dev/upstream-copilot';
+import { assertCustomUpstreamRecord } from '@floway-dev/upstream-custom';
+import { assertKimiCodeUpstreamRecord, kimiCodeStateSurvivesConfigChange, type KimiCodeUpstreamConfig } from '@floway-dev/upstream-kimi-code';
+import { assertOllamaUpstreamRecord } from '@floway-dev/upstream-ollama';
 
 type ChatGPTQuotaProjection = { chatgpt_quota?: ChatGPTQuotaSnapshotMap | null };
 
@@ -148,7 +148,7 @@ const modelUseForUpstreams = async (
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const validateManualModelsForKind = (
-  kind: ManualModelsProviderKind,
+  kind: ManualModelsUpstreamKind,
   rawManualModels: unknown,
 ): ValidationResult<UpstreamModelConfig[]> => {
   try {
@@ -184,14 +184,14 @@ const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
   }
 };
 
-const mergeConfigPatch = (provider: UpstreamProviderKind, existing: unknown, patch: unknown): ValidationResult<unknown> => {
+const mergeConfigPatch = (kind: UpstreamKind, existing: unknown, patch: unknown): ValidationResult<unknown> => {
   if (!isRecord(patch)) return { ok: false, error: 'config must be an object' };
   const next: Record<string, unknown> = {
     ...(isRecord(existing) ? structuredClone(existing) : {}),
     ...structuredClone(patch),
   };
 
-  if (provider === 'custom') {
+  if (kind === 'custom') {
     if (patch.pathOverrides === null) delete next.pathOverrides;
   }
   return { ok: true, value: next };
@@ -316,8 +316,8 @@ export const listUpstreamOptions = async (c: CtxWithQuery<typeof upstreamOptions
 
 export const getUpstreamBlueprint = (c: Context) => {
   const kind = c.req.query('kind');
-  if (!isValidProviderKind(kind)) {
-    return c.json({ error: `kind must be one of: ${ALL_PROVIDER_KINDS.join(', ')}` }, 400);
+  if (!isValidUpstreamKind(kind)) {
+    return c.json({ error: `kind must be one of: ${ALL_UPSTREAM_KINDS.join(', ')}` }, 400);
   }
   return c.json({
     ...blueprintUpstreamRecord(kind),
@@ -350,9 +350,9 @@ export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   });
 };
 
-const hasManualModelsField = <T extends { kind: UpstreamProviderKind }>(
+const hasManualModelsField = <T extends { kind: UpstreamKind }>(
   body: T,
-): body is Extract<T, { kind: ManualModelsProviderKind }> => supportsManualModels(body.kind);
+): body is Extract<T, { kind: ManualModelsUpstreamKind }> => supportsManualModels(body.kind);
 
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {
   const body = c.req.valid('json');

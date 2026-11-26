@@ -1,6 +1,6 @@
 import { pricingEntryDraftsFor, pricingIsValid } from './pricing-model';
 import { kindForEndpoints } from '@floway-dev/protocols/browser';
-import { validateUpstreamPath, modelsField, type UpstreamModelConfig } from '@floway-dev/provider/browser';
+import { validateUpstreamPath, modelsField, type UpstreamModelConfig } from '@floway-dev/upstream/browser';
 
 export type ModelValidationField = 'configuration' | 'endpoints' | 'pricing' | 'reasoning' | 'rerankTarget' | 'decisionTarget' | 'upstreamModelId';
 

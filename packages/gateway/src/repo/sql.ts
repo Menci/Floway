@@ -80,11 +80,11 @@ import {
 } from '../access-control/types.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
-import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
+import { assertWebSearchBackendName, type WebSearchConfig } from '../shared/web-search-backends.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, defaultUserPreferences, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, parseStoredUserPreferences, serializeUserPreferences, type AliasSelection, type AnnouncedMetadata, type UserPreferences } from '@floway-dev/protocols/common';
-import { parsePerformanceOperation } from '@floway-dev/provider';
+import { parsePerformanceOperation } from '@floway-dev/upstream';
 
 interface ApiKeyRow {
   id: string;
@@ -943,25 +943,25 @@ const assembleUsageRecords = (metrics: readonly UsageMetricRow[], requests: read
 class SqlWebSearchUsageRepo implements WebSearchUsageRepo {
   constructor(private db: SqlDatabase) {}
 
-  async record(args: { provider: WebSearchUsageRecord['provider']; keyId: string; action: WebSearchUsageRecord['action']; hour: string; requests: number }): Promise<void> {
-    const validProvider = assertWebSearchProviderName(args.provider);
+  async record(args: { backend: WebSearchUsageRecord['backend']; keyId: string; action: WebSearchUsageRecord['action']; hour: string; requests: number }): Promise<void> {
+    const validBackend = assertWebSearchBackendName(args.backend);
     await this.db
       .prepare(
-        `INSERT INTO search_usage (provider, key_id, action, hour, requests) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (provider, key_id, action, hour) DO UPDATE SET
+        `INSERT INTO search_usage (backend, key_id, action, hour, requests) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (backend, key_id, action, hour) DO UPDATE SET
            requests = requests + excluded.requests`,
       )
-      .bind(validProvider, args.keyId, args.action, args.hour, args.requests)
+      .bind(validBackend, args.keyId, args.action, args.hour, args.requests)
       .run();
   }
 
-  async query(opts: { provider?: WebSearchUsageRecord['provider']; keyId?: string; action?: WebSearchUsageRecord['action']; start: string; end: string }): Promise<WebSearchUsageRecord[]> {
+  async query(opts: { backend?: WebSearchUsageRecord['backend']; keyId?: string; action?: WebSearchUsageRecord['action']; start: string; end: string }): Promise<WebSearchUsageRecord[]> {
     const filters = ['hour >= ?', 'hour < ?'];
     const binds: SqlBindValue[] = [opts.start, opts.end];
-    if (opts.provider) {
-      const validProvider = assertWebSearchProviderName(opts.provider);
-      filters.unshift('provider = ?');
-      binds.unshift(validProvider);
+    if (opts.backend) {
+      const validBackend = assertWebSearchBackendName(opts.backend);
+      filters.unshift('backend = ?');
+      binds.unshift(validBackend);
     }
     if (opts.keyId) {
       filters.push('key_id = ?');
@@ -973,10 +973,10 @@ class SqlWebSearchUsageRepo implements WebSearchUsageRepo {
     }
 
     const { results } = await this.db
-      .prepare(`SELECT provider, key_id, action, hour, requests FROM search_usage WHERE ${filters.join(' AND ')} ORDER BY hour`)
+      .prepare(`SELECT backend, key_id, action, hour, requests FROM search_usage WHERE ${filters.join(' AND ')} ORDER BY hour`)
       .bind(...binds)
       .all<{
-      provider: string;
+      backend: string;
       key_id: string;
       action: string;
       hour: string;
@@ -986,8 +986,8 @@ class SqlWebSearchUsageRepo implements WebSearchUsageRepo {
   }
 
   async listAll(): Promise<WebSearchUsageRecord[]> {
-    const { results } = await this.db.prepare('SELECT provider, key_id, action, hour, requests FROM search_usage ORDER BY hour').all<{
-      provider: string;
+    const { results } = await this.db.prepare('SELECT backend, key_id, action, hour, requests FROM search_usage ORDER BY hour').all<{
+      backend: string;
       key_id: string;
       action: string;
       hour: string;
@@ -997,14 +997,14 @@ class SqlWebSearchUsageRepo implements WebSearchUsageRepo {
   }
 
   async set(record: WebSearchUsageRecord): Promise<void> {
-    const provider = assertWebSearchProviderName(record.provider);
+    const backend = assertWebSearchBackendName(record.backend);
     await this.db
       .prepare(
-        `INSERT INTO search_usage (provider, key_id, action, hour, requests) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (provider, key_id, action, hour) DO UPDATE SET
+        `INSERT INTO search_usage (backend, key_id, action, hour, requests) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (backend, key_id, action, hour) DO UPDATE SET
            requests = excluded.requests`,
       )
-      .bind(provider, record.keyId, record.action, record.hour, record.requests)
+      .bind(backend, record.keyId, record.action, record.hour, record.requests)
       .run();
   }
 
@@ -1195,12 +1195,12 @@ class SqlPerformanceRepo implements PerformanceRepo {
   }
 }
 
-const toWebSearchUsageRecord = (row: { provider: string; key_id: string; action: string; hour: string; requests: number }): WebSearchUsageRecord => {
+const toWebSearchUsageRecord = (row: { backend: string; key_id: string; action: string; hour: string; requests: number }): WebSearchUsageRecord => {
   if (row.action !== 'search' && row.action !== 'fetch_page') {
     throw new TypeError(`Invalid search usage action: ${row.action}`);
   }
   return {
-    provider: assertWebSearchProviderName(row.provider),
+    backend: assertWebSearchBackendName(row.backend),
     keyId: row.key_id,
     action: row.action,
     hour: row.hour,
@@ -1273,11 +1273,11 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
 
   async get(): Promise<unknown | null> {
     const row = await this.db
-      .prepare('SELECT provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1')
-      .first<{ provider: string; tavily_api_key: string; microsoft_web_iq_api_key: string; jina_api_key: string; passthrough_openai_search: number; alpha_search_upstream_id: string; alpha_search_model: string }>();
+      .prepare('SELECT backend, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1')
+      .first<{ backend: string; tavily_api_key: string; microsoft_web_iq_api_key: string; jina_api_key: string; passthrough_openai_search: number; alpha_search_upstream_id: string; alpha_search_model: string }>();
     if (!row) throw new Error('search_config singleton row missing');
     return {
-      provider: row.provider,
+      backend: row.backend,
       tavily: { apiKey: row.tavily_api_key },
       microsoftWebIq: { apiKey: row.microsoft_web_iq_api_key },
       jina: { apiKey: row.jina_api_key },
@@ -1290,13 +1290,13 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
   }
 
   async save(config: WebSearchConfig): Promise<void> {
-    const { provider, tavily, microsoftWebIq, jina, passthroughOpenAiSearch } = config;
+    const { backend, tavily, microsoftWebIq, jina, passthroughOpenAiSearch } = config;
     await this.db
       .prepare(
-        `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
+        `INSERT INTO search_config (id, backend, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
          VALUES (1, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET
-           provider = excluded.provider,
+           backend = excluded.backend,
            tavily_api_key = excluded.tavily_api_key,
            microsoft_web_iq_api_key = excluded.microsoft_web_iq_api_key,
            jina_api_key = excluded.jina_api_key,
@@ -1305,7 +1305,7 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
            alpha_search_model = excluded.alpha_search_model,
            updated_at = excluded.updated_at`,
       )
-      .bind(provider, tavily.apiKey, microsoftWebIq.apiKey, jina.apiKey, passthroughOpenAiSearch.enabled ? 1 : 0, passthroughOpenAiSearch.upstreamId, passthroughOpenAiSearch.model)
+      .bind(backend, tavily.apiKey, microsoftWebIq.apiKey, jina.apiKey, passthroughOpenAiSearch.enabled ? 1 : 0, passthroughOpenAiSearch.upstreamId, passthroughOpenAiSearch.model)
       .run();
   }
 }

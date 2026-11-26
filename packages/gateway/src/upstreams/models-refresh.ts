@@ -1,13 +1,13 @@
-import { createProvider } from '../data-plane/providers/registry.ts';
+import { createUpstream } from '../data-plane/upstreams/registry.ts';
 import { createPerRequestFetcher, createValidatedPerRequestFetcher, InvalidProxyConfigurationError } from '../dial/per-request.ts';
 import { getRepo } from '../repo/index.ts';
 import { isModelsCacheDue, MODEL_CATALOG_REVISION } from '../repo/models-cache-contract.ts';
 import { modelsRefreshRetryAt } from '../repo/models-refresh-backoff.ts';
 import type { StoredUpstreamRecord, UpstreamModelEntry } from '../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
-import { projectAzureModels } from '@floway-dev/provider-azure';
-import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomModels } from '@floway-dev/provider-custom';
+import { UpstreamModelsUnavailableError, type Fetcher, type UpstreamModel, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/upstream';
+import { projectAzureModels } from '@floway-dev/upstream-azure';
+import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomModels } from '@floway-dev/upstream-custom';
 
 export type ModelsRefreshResult =
   | { readonly kind: 'discovered'; readonly entries: UpstreamModelEntry[]; readonly publication: 'published'; readonly version: number }
@@ -104,7 +104,7 @@ const withRedactedCredentialEcho = async <T>(fetcher: Fetcher, discover: (fetche
     if (error instanceof Error && credentials.size > 0) {
       error.message = redact(error.message);
       if (error.stack !== undefined) error.stack = redact(error.stack);
-      if (error instanceof ProviderModelsUnavailableError && error.cause instanceof Error) {
+      if (error instanceof UpstreamModelsUnavailableError && error.cause instanceof Error) {
         error.cause.message = redact(error.cause.message);
         if (error.cause.stack !== undefined) error.cause.stack = redact(error.cause.stack);
       }
@@ -114,7 +114,7 @@ const withRedactedCredentialEcho = async <T>(fetcher: Fetcher, discover: (fetche
 };
 
 export const modelsRefreshErrorMessage = (error: unknown): string => {
-  if (error instanceof ProviderModelsUnavailableError) {
+  if (error instanceof UpstreamModelsUnavailableError) {
     if (error.displayResponse !== null) {
       const body = error.displayResponse.body.trim();
       const summary = body === '' ? `HTTP ${error.displayResponse.status}` : `HTTP ${error.displayResponse.status}: ${body}`;
@@ -132,7 +132,7 @@ export const isModelsRefreshConfigurationError = (error: unknown): error is Inva
 const tagModelEntries = (
   kind: UpstreamRecord['kind'],
   manualModels: readonly UpstreamModelConfig[],
-  models: readonly ProviderModel[],
+  models: readonly UpstreamModel[],
 ): UpstreamModelEntry[] => {
   if (kind === 'azure') return models.map(model => ({ source: 'manual', model }));
   if (kind !== 'custom' && kind !== 'ollama') return models.map(model => ({ source: 'auto', model }));
@@ -147,13 +147,13 @@ const discoverModels = async (
   record: UpstreamRecord,
   manualModels: readonly UpstreamModelConfig[],
   fetcher: Fetcher,
-): Promise<ProviderModel[]> => await withRedactedCredentialEcho(fetcher, async trackedFetcher => {
+): Promise<UpstreamModel[]> => await withRedactedCredentialEcho(fetcher, async trackedFetcher => {
   if (record.kind === 'custom') {
     const custom = assertCustomUpstreamRecord(record);
     const response = await fetchCustomModels(custom.config, trackedFetcher);
     return projectCustomModels(record, manualModels, response);
   }
-  return [...await createProvider(record).instance.getProvidedModels(trackedFetcher, manualModels)];
+  return [...await createUpstream(record).instance.getModels(trackedFetcher, manualModels)];
 });
 
 const runSavedRefresh = async (input: {
@@ -179,7 +179,7 @@ const runSavedRefresh = async (input: {
     ? await repo.upstreamModels.listManualModels(record.id)
     : [];
 
-  let models: ProviderModel[];
+  let models: UpstreamModel[];
   try {
     if (!requiresNetwork) {
       models = record.kind === 'azure'

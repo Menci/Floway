@@ -5,8 +5,8 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type UpstreamStreamResult, type UpstreamCallOptions } from '@floway-dev/upstream';
 
 // Mock the resolver seam so each test hands the serve exactly the model
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -16,8 +16,8 @@ interface QueuedResolution {
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastResolveCall: { model?: string } = {};
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
+vi.mock('../../../../src/data-plane/upstreams/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../../src/data-plane/upstreams/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async ({ model }: { model: string }) => {
@@ -84,18 +84,18 @@ const makeCandidate = (overrides: {
   upstream?: string;
   modelId?: string;
   endpoints?: ModelEndpoints;
-  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
+  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const provider = stubProvider({
+  const instance = stubUpstream({
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      instance: provider,
+      instance,
     },
-    model: stubProviderModel({
+    model: stubUpstreamModel({
       id: overrides.modelId ?? 'test-model',
       ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
     }),
@@ -146,14 +146,14 @@ test('generate falls through to the next candidate when the first yields an upst
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
-  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     const message = (body as Omit<OpenAIChatCompletionsPayloadEx, 'model'>).messages[0];
     if (!Array.isArray(message.content) || message.content[0]?.type !== 'image_url') throw new Error('expected image content');
     message.content[0].image_url.url = 'data:image/webp;base64,COMPRESSED';
     return { ok: false, http: firstError, modelKey: 'first-key' };
   });
   let fallbackImageUrl: string | undefined;
-  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     const message = (body as Omit<OpenAIChatCompletionsPayloadEx, 'model'>).messages[0];
     if (!Array.isArray(message.content) || message.content[0]?.type !== 'image_url') throw new Error('expected image content');
     fallbackImageUrl = message.content[0].image_url.url;
@@ -186,7 +186,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   installRepo();
   const capturedBodies: OpenAIChatCompletionsPayloadEx[] = [];
   const observedModelIds: string[] = [];
-  const callOpenAIChatCompletions = vi.fn(async (model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+  const callOpenAIChatCompletions = vi.fn(async (model: unknown, body: unknown): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     observedModelIds.push((model as { id: string }).id);
     capturedBodies.push(body as OpenAIChatCompletionsPayloadEx);
     return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'gpt-5.4', http: { status: 200, headers: new Headers() } };

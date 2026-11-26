@@ -4,7 +4,7 @@ import type { TFunction } from '../../i18n/translation';
 import { formatUsd } from '../../lib/decimal-display';
 import { shortDate } from '../../lib/format-time';
 import { parseNonNegativeDecimalString } from '@floway-dev/protocols/browser';
-import type { OllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
+import type { OllamaAccountUsage } from '@floway-dev/upstream-ollama/browser';
 
 export type OllamaRecord = Extract<UpstreamRecord, { kind: 'ollama' }>;
 

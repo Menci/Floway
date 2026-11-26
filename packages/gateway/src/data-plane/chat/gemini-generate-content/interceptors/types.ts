@@ -2,7 +2,7 @@ import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { Interceptor, InterceptorRun } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { ApiErrorResult, ExecuteResult, GeminiGenerateContentInvocation, PlainResult } from '@floway-dev/provider';
+import type { ApiErrorResult, ExecuteResult, GeminiGenerateContentInvocation, PlainResult } from '@floway-dev/upstream';
 
 export type GeminiGenerateContentInterceptor = Interceptor<
   GeminiGenerateContentInvocation,

@@ -1,9 +1,9 @@
 import type { ListedUpstreamModel, ModelsCacheStatus } from './types.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
-import type { ProviderModel, UpstreamModelConfig } from '@floway-dev/provider';
+import type { UpstreamModel, UpstreamModelConfig } from '@floway-dev/upstream';
 
-export const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => ({
+export const reshapeModelForDashboard = (model: UpstreamModel): ListedUpstreamModel => ({
   upstreamModelId: model.upstreamModelId,
   publicModelId: model.id,
   kind: model.kind,

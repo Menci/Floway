@@ -5,8 +5,8 @@ import type { AnthropicMessagesInvocation } from '../../../../../src/data-plane/
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { type ExecuteResult, eventResult } from '@floway-dev/upstream';
 
 const stubCtx = mockChatGatewayCtx();
 

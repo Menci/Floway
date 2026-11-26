@@ -4,8 +4,8 @@
 
 import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel, CodexServiceTier } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
-import type { InternalModel, ProviderModel } from '@floway-dev/provider';
-import type { ChatGPTCodexModelMetadata } from '@floway-dev/provider-chatgpt';
+import type { InternalModel, UpstreamModel } from '@floway-dev/upstream';
+import type { ChatGPTCodexModelMetadata } from '@floway-dev/upstream-chatgpt';
 
 // Keep the established 128K compaction policy for synthesized models whose
 // provider has no published limit. Operators can replace it with a model limit.
@@ -82,21 +82,21 @@ export const synthesizeCatalogEntry = (
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
   catalogServiceTiers: ReadonlyMap<string, CodexServiceTier> = EMPTY_SERVICE_TIERS,
-  { metadata: codexMetadata, serviceTiers, chatProviderModels }: {
+  { metadata: codexMetadata, serviceTiers, chatUpstreamModels }: {
     metadata?: ChatGPTCodexModelMetadata | undefined;
     serviceTiers?: CodexServiceTier[] | undefined;
-    chatProviderModels?: readonly ProviderModel[] | undefined;
+    chatUpstreamModels?: readonly UpstreamModel[] | undefined;
   } = {},
 ): CatalogModel => {
   const { max_context_window: _sourceMaxContextWindow, ...source }: CatalogModel = { ...(base ?? BASELINE), ...codexMetadata };
 
   const supportsAudio = capabilities.audioInput && model.endpoints.openaiResponses !== undefined && model.chat?.modalities?.input.includes('audio')
-    && (chatProviderModels?.every(providerModel => providerModel.endpoints.openaiResponses !== undefined && providerModel.chat?.modalities?.input.includes('audio')) ?? true);
+    && (chatUpstreamModels?.every(upstreamModel => upstreamModel.endpoints.openaiResponses !== undefined && upstreamModel.chat?.modalities?.input.includes('audio')) ?? true);
   const inputModalities = (model.chat?.modalities?.input ?? source.input_modalities ?? BASELINE.input_modalities)
     .filter(m => m !== 'audio' || supportsAudio);
   const hasImage = inputModalities.includes('image');
-  const imageDetailOriginal = chatProviderModels?.length
-    ? chatProviderModels.every(providerModel => providerModel.chat?.image_detail_original === true)
+  const imageDetailOriginal = chatUpstreamModels?.length
+    ? chatUpstreamModels.every(upstreamModel => upstreamModel.chat?.image_detail_original === true)
     : model.chat?.image_detail_original === true;
 
   // Lossy projection: Codex CLI's catalog wire can only model effort-tiered
@@ -119,14 +119,14 @@ export const synthesizeCatalogEntry = (
   const hasUltra = supportedReasoning.some(level => level.effort === 'ultra');
   const ultraToAppend = highestThinkingEffort !== undefined && !hasUltra ? capabilities.ultraReasoningLevel : undefined;
 
-  const providerLimits = [model.limits.max_context_window_tokens, model.limits.max_prompt_tokens]
+  const upstreamLimits = [model.limits.max_context_window_tokens, model.limits.max_prompt_tokens]
     .filter((limit): limit is number => limit !== undefined);
-  const providerWindow = providerLimits.length > 0
-    ? Math.min(...providerLimits)
+  const upstreamWindow = upstreamLimits.length > 0
+    ? Math.min(...upstreamLimits)
     : source.context_window ?? BASELINE.context_window;
-  const contextWindow = codexMetadata?.context_window ?? providerWindow;
+  const contextWindow = codexMetadata?.context_window ?? upstreamWindow;
   const maxContextWindow = codexMetadata === undefined
-    ? providerWindow
+    ? upstreamWindow
     : codexMetadata.max_context_window;
 
   const entry: CatalogModel = {

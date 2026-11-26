@@ -5,8 +5,8 @@ import { saveUpstreamForTest } from './upstreams.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { UpstreamRepo } from '../../src/repo/types.ts';
 import { divideDecimalString, priceRequest, type ModelPricing, validateModelPricing } from '@floway-dev/protocols/common';
-import type { UpstreamRecord } from '@floway-dev/provider';
 import { assert, assertEquals } from '@floway-dev/test-utils';
+import type { UpstreamRecord } from '@floway-dev/upstream';
 
 const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id' | 'kind' | 'createdAt' | 'sortOrder'>): UpstreamRecord => ({
   name: overrides.id,
@@ -154,7 +154,7 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
                 json_object('baseUrl', 'https://b.example', 'apiKey', 'k', 'authStyle', 'bearer'), '{}', '[]', '[]'),
               ('up_cold', 'custom', 'Cold', 1, 2, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z',
                 json_object('baseUrl', 'https://c.example', 'apiKey', 'k', 'authStyle', 'bearer'), '{}', '[]', '[]')`);
-    // Revision 4 already carried the core ProviderModel projection below;
+    // Revision 4 already carried the core UpstreamModel projection below;
     // revision 5 changed pricing semantics. The migration must preserve this
     // faithful old catalog even though current hydration treats it as cold.
     db.run(`INSERT INTO models_cache (upstream_id, revision, fetched_at, models_json, last_error_json)

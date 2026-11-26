@@ -1,7 +1,7 @@
 import { openAiErrorResult, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/upstream';
 
 export type OpenAIResponsesServeFailure = ChatServeFailure | { readonly kind: 'item-not-found'; readonly itemId: string };
 

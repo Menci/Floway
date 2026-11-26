@@ -3,7 +3,7 @@ import { recordTokenUsage, recordUsage, type UsageMeasurement } from './usage.ts
 import type { TokenUsage } from '../../../repo/types.ts';
 import type { GatewayCtx } from '../gateway-ctx.ts';
 import type { SseOutcome } from '../sse.ts';
-import type { TelemetryModelIdentity } from '@floway-dev/provider';
+import type { TelemetryModelIdentity } from '@floway-dev/upstream';
 
 export const recordSseOutcome = (ctx: GatewayCtx, outcome: SseOutcome, identity: TelemetryModelIdentity, usage: TokenUsage | null): boolean => {
   if (outcome.type === 'completed') {

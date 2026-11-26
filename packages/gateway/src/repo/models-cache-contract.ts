@@ -1,6 +1,6 @@
 import type { UpstreamModelsCacheState } from './types.ts';
 
-// Persisted ProviderModel rows contain code-derived metadata as well as the
+// Persisted UpstreamModel rows contain code-derived metadata as well as the
 // upstream response. Increment this whenever that derived catalog contract or
 // its serialization changes so Cron refreshes older rows across deployments.
 export const MODEL_CATALOG_REVISION = 31;

@@ -7,8 +7,8 @@ import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts'
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { UPSTREAM_STATE_WRITE_ATTEMPTS } from '../../src/repo/upstream-models-sql.ts';
 import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
-import type { UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertRejects, stubProviderModel } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, stubUpstreamModel } from '@floway-dev/test-utils';
+import type { UpstreamRecord } from '@floway-dev/upstream';
 
 const goodAccount = { chatgptAccountId: 'aid', refresh_token: 'rt_v1', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z' };
 const GENERATION = '2026-06-05T00:00:00.000Z';
@@ -46,16 +46,16 @@ test('SQL upstream repo preserves opaque provider data while restoring only the 
     version: inserted.version,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
-    models: [stubProviderModel({
+    models: [stubUpstreamModel({
       id: 'cached-model',
-      providerData: JSON.parse('{"enabledFlags":["provider-private"],"future":{"__proto__":{"marker":"provider"}}}'),
+      upstreamData: JSON.parse('{"enabledFlags":["provider-private"],"future":{"__proto__":{"marker":"provider"}}}'),
     })],
   });
 
   const model = (await fullRepo.upstreamModels.listByUpstream('up_test'))[0]?.model;
   assertEquals(model?.enabledFlags instanceof Set, true);
-  assertEquals(ownValue(model?.providerData, 'enabledFlags'), ['provider-private']);
-  assertEquals(ownValue(ownValue(ownValue(model?.providerData, 'future'), '__proto__'), 'marker'), 'provider');
+  assertEquals(ownValue(model?.upstreamData, 'enabledFlags'), ['provider-private']);
+  assertEquals(ownValue(ownValue(ownValue(model?.upstreamData, 'future'), '__proto__'), 'marker'), 'provider');
 });
 
 // Deterministic stand-in for a concurrent writer: each of the first `times`

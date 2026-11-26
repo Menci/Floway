@@ -5,7 +5,7 @@ import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { isModelsRefreshConfigurationError, modelsRefreshErrorMessage, refreshModelsExplicit } from '../../upstreams/models-refresh.ts';
-import { ProviderModelsUnavailableError } from '@floway-dev/provider';
+import { UpstreamModelsUnavailableError } from '@floway-dev/upstream';
 
 const MODEL_LISTING_FAILURE_CODE = 'upstream_model_listing_failed';
 
@@ -40,7 +40,7 @@ export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => 
       .map(entry => reshapeModelForDashboard(entry.model));
     return c.json({ kind: record.kind, data, modelsCache: modelsCacheStatus(refreshed, counts.get(id) ?? null) });
   } catch (e) {
-    if (!(e instanceof ProviderModelsUnavailableError) && !isModelsRefreshConfigurationError(e) && !malformedConfigResponse(e)) throw e;
+    if (!(e instanceof UpstreamModelsUnavailableError) && !isModelsRefreshConfigurationError(e) && !malformedConfigResponse(e)) throw e;
     const [afterFailure, counts] = await Promise.all([
       repo.upstreams.getById(id),
       repo.upstreamModels.countListedByUpstream([id]),
@@ -48,7 +48,7 @@ export const fetchSavedModels = async (c: AuthedContext<'/:id/list-models'>) => 
     if (afterFailure === null || afterFailure.version !== target.version) {
       return c.json({ error: 'Upstream changed during models refresh' }, 409);
     }
-    if (e instanceof ProviderModelsUnavailableError) {
+    if (e instanceof UpstreamModelsUnavailableError) {
       return c.json({
         error: { message: modelsRefreshErrorMessage(e), type: 'api_error', code: MODEL_LISTING_FAILURE_CODE, upstreamResponse: e.displayResponse },
         modelsCache: modelsCacheStatus(afterFailure, counts.get(id) ?? null),

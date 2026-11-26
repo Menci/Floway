@@ -2,8 +2,8 @@ import { describe, expect, test } from 'vitest';
 
 import type { CatalogModel, CodexCatalogCapabilities } from '../../../src/data-plane/codex/catalog.ts';
 import { synthesizeCatalogEntry } from '../../../src/data-plane/codex/synthesize.ts';
-import type { InternalModel, ProviderModel } from '@floway-dev/provider';
-import { stubProviderModel } from '@floway-dev/test-utils';
+import { stubUpstreamModel } from '@floway-dev/test-utils';
+import type { InternalModel, UpstreamModel } from '@floway-dev/upstream';
 
 const base: InternalModel = {
   id: 'deepseek-v4-pro',
@@ -83,26 +83,26 @@ describe('synthesizeCatalogEntry', () => {
   });
 
   test('audio requires native Responses and audio input on every chat fallback', () => {
-    const chat: NonNullable<ProviderModel['chat']> = { modalities: { input: ['text', 'audio'], output: ['text'] } };
-    const primary = stubProviderModel({ endpoints: { openaiResponses: {} }, chat });
-    const listed = (fallback: ProviderModel) => synthesizeCatalogEntry({ ...base, endpoints: primary.endpoints, chat }, undefined, { audioInput: true }, undefined, { chatProviderModels: [primary, fallback] }).input_modalities;
+    const chat: NonNullable<UpstreamModel['chat']> = { modalities: { input: ['text', 'audio'], output: ['text'] } };
+    const primary = stubUpstreamModel({ endpoints: { openaiResponses: {} }, chat });
+    const listed = (fallback: UpstreamModel) => synthesizeCatalogEntry({ ...base, endpoints: primary.endpoints, chat }, undefined, { audioInput: true }, undefined, { chatUpstreamModels: [primary, fallback] }).input_modalities;
     expect(listed(primary)).toEqual(['text', 'audio']);
     expect(listed({ ...primary, endpoints: { anthropicMessages: {} } })).toEqual(['text']);
     expect(listed({ ...primary, chat: { modalities: { input: ['text'], output: ['text'] } } })).toEqual(['text']);
   });
 
   test('rejects original detail when one of several providers does not state it', () => {
-    const draft: Partial<ProviderModel> = {
+    const draft: Partial<UpstreamModel> = {
       id: 'gpt-5.5',
       upstreamModelId: 'gpt-5.5',
       endpoints: { openaiResponses: {} },
     };
     const chat = { image_detail_original: true };
-    const accepting = stubProviderModel({ ...draft, chat });
-    const rejecting = stubProviderModel(draft);
+    const accepting = stubUpstreamModel({ ...draft, chat });
+    const rejecting = stubUpstreamModel(draft);
 
-    for (const chatProviderModels of [[accepting, rejecting], [rejecting, accepting]]) {
-      const entry = synthesizeCatalogEntry({ ...base, chat }, bundledBase, {}, undefined, { chatProviderModels });
+    for (const chatUpstreamModels of [[accepting, rejecting], [rejecting, accepting]]) {
+      const entry = synthesizeCatalogEntry({ ...base, chat }, bundledBase, {}, undefined, { chatUpstreamModels });
       expect(entry.supports_image_detail_original).toBe(false);
     }
   });

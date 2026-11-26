@@ -7,8 +7,8 @@ import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { flushBackground } from '../../test-utils/background-tracker.ts';
-import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, stubUpstreamModel, withMockedFetch } from '@floway-dev/test-utils';
+import type { UpstreamKind, UpstreamRecord } from '@floway-dev/upstream';
 
 type JsonObject = Record<string, any>;
 
@@ -17,7 +17,7 @@ type JsonObject = Record<string, any>;
 // edit-flow tests (`record.id !== ''`) built from a repo-fetched row.
 const envelopeFromRecord = (record: UpstreamRecord): Record<string, unknown> => upstreamRecordToFullJson(record) as unknown as Record<string, unknown>;
 
-const blueprintEnvelope = (kind: UpstreamProviderKind, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+const blueprintEnvelope = (kind: UpstreamKind, overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   ...blueprintUpstreamRecord(kind),
   proxy_fallback_list: MOCKED_FETCH_EGRESS,
   ...overrides,
@@ -150,7 +150,7 @@ test('PATCH /api/upstreams preserves omitted secrets and invalidates the old cat
     version: storedBefore.version,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
-    models: [stubProviderModel({ id: 'stale-model', upstreamModelId: 'stale-model', endpoints: {} })],
+    models: [stubUpstreamModel({ id: 'stale-model', upstreamModelId: 'stale-model', endpoints: {} })],
   });
 
   await withMockedFetch(
@@ -216,8 +216,8 @@ test('GET /api/upstreams/:id exposes cached editor rows without an upstream requ
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [
-      stubProviderModel({ id: 'visible-model', upstreamModelId: 'visible-model', display_name: 'Visible' }),
-      stubProviderModel({ id: 'hidden-model', upstreamModelId: 'hidden-model' }),
+      stubUpstreamModel({ id: 'visible-model', upstreamModelId: 'visible-model', display_name: 'Visible' }),
+      stubUpstreamModel({ id: 'hidden-model', upstreamModelId: 'hidden-model' }),
     ],
   });
 
@@ -231,7 +231,7 @@ test('GET /api/upstreams/:id exposes cached editor rows without an upstream requ
       assertEquals(body.cachedModels.map((model: { publicModelId: string }) => model.publicModelId), ['hidden-model', 'visible-model']);
       const visible = body.cachedModels.find((model: { publicModelId: string }) => model.publicModelId === 'visible-model');
       assertEquals(visible.display_name, 'Visible');
-      assertEquals(visible.providerData, undefined);
+      assertEquals(visible.upstreamData, undefined);
     },
   );
 });

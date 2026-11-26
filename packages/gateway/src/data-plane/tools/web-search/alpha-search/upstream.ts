@@ -1,9 +1,9 @@
 import type { User } from '../../../../repo/types.ts';
-import { enumerateModelCandidates } from '../../../providers/resolution.ts';
-import { filterInboundHeadersForProvider } from '../../../shared/inbound-headers.ts';
+import { filterInboundHeadersForUpstream } from '../../../shared/inbound-headers.ts';
+import { enumerateModelCandidates } from '../../../upstreams/resolution.ts';
 import type { WebSearchConfig } from '../types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { identityWrapUpstreamCall } from '@floway-dev/provider';
+import { identityWrapUpstreamCall } from '@floway-dev/upstream';
 
 export type AlphaSearchDispatcher = (body: Record<string, unknown>, signal: AbortSignal | undefined, headers: Headers) => Promise<Response>;
 
@@ -38,11 +38,11 @@ export const resolveAlphaSearchDispatcher = async ({
     kind: 'chat',
     runtimeLocation,
   });
-  const candidate = candidates.find(value => value.provider.upstreamId === config.upstreamId);
+  const candidate = candidates.find(value => value.upstream.upstreamId === config.upstreamId);
   if (candidate === undefined) {
     throw new AlphaSearchModelNotFoundError();
   }
-  if (candidate.provider.kind !== 'chatgpt' && candidate.provider.kind !== 'custom') {
+  if (candidate.upstream.kind !== 'chatgpt' && candidate.upstream.kind !== 'custom') {
     throw new Error('Selected upstream does not support OpenAI search passthrough');
   }
 
@@ -50,14 +50,14 @@ export const resolveAlphaSearchDispatcher = async ({
     const { model: _callerModel, ...request } = body;
     // TODO: pin SearchRequest.id to one provider account when ChatGPT upstreams
     // support account pools. The current ChatGPT provider has one active account.
-    const result = await candidate.provider.instance.callAlphaSearch(
+    const result = await candidate.upstream.instance.callAlphaSearch(
       candidate.model,
       request,
       signal,
       {
         fetcher: candidate.fetcher,
         waitUntil: scheduler,
-        headers: filterInboundHeadersForProvider(headers, candidate.provider),
+        headers: filterInboundHeadersForUpstream(headers, candidate.upstream),
         wrapUpstreamCall: identityWrapUpstreamCall,
       },
     );

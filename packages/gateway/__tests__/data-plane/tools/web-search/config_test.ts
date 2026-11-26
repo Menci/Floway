@@ -13,7 +13,7 @@ test('loadWebSearchConfig strict-parses a stored row and trims valid api keys', 
   initRepo(repo);
 
   await repo.webSearchConfig.save({
-    provider: 'jina',
+    backend: 'jina',
     tavily: { apiKey: '  tvly-trim  ' },
     microsoftWebIq: { apiKey: '  ms-trim  ' },
     jina: { apiKey: '  jina-trim  ' },
@@ -21,7 +21,7 @@ test('loadWebSearchConfig strict-parses a stored row and trims valid api keys', 
   });
 
   assertEquals(await loadWebSearchConfig(), {
-    provider: 'jina',
+    backend: 'jina',
     tavily: { apiKey: 'tvly-trim' },
     microsoftWebIq: { apiKey: 'ms-trim' },
     jina: { apiKey: 'jina-trim' },
@@ -31,7 +31,7 @@ test('loadWebSearchConfig strict-parses a stored row and trims valid api keys', 
 
 test('parseWebSearchConfigStrict throws on missing required fields', () => {
   assertThrows(
-    () => parseWebSearchConfigStrict({ provider: 'disabled', tavily: {}, microsoftWebIq: { apiKey: '' }, jina: { apiKey: '' } }),
+    () => parseWebSearchConfigStrict({ backend: 'disabled', tavily: {}, microsoftWebIq: { apiKey: '' }, jina: { apiKey: '' } }),
     Error,
   );
 });
@@ -48,7 +48,7 @@ test('current SQL schema round-trips Microsoft Web IQ configuration', async () =
   initRepo(repo);
 
   const config: WebSearchConfig = {
-    provider: 'microsoft-web-iq',
+    backend: 'microsoft-web-iq',
     tavily: { apiKey: '' },
     microsoftWebIq: { apiKey: 'web-iq-test' },
     jina: { apiKey: '' },

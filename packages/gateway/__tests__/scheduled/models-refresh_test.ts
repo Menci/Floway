@@ -5,8 +5,8 @@ import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts'
 import { scheduleModelsCacheRefreshes } from '../../src/scheduled/models-refresh.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
 import { withMockedFetch } from '@floway-dev/test-utils';
+import type { UpstreamRecord } from '@floway-dev/upstream';
 
 const custom = (id: string, enabled: boolean): UpstreamRecord => ({
   id,

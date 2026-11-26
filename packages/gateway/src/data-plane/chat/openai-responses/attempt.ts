@@ -14,14 +14,14 @@ import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt
 import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
 import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
+import { upstreamStreamResultToExecuteResult } from '../shared/upstream-stream-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type ModelCandidate, eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction } from '@floway-dev/provider';
 import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions, type TranslateInputError } from '@floway-dev/translate';
+import { type ModelCandidate, eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type UpstreamOpenAIResponsesResult, type OpenAIResponsesAction } from '@floway-dev/upstream';
 
 // `/v1/responses` generate prefers the native OpenAI Responses target, then the
 // translated Anthropic Messages path, then the translated OpenAI Chat Completions path. The
@@ -126,14 +126,14 @@ const dispatchOpenAIResponses = async (
       const { model: _model, ...rest } = invocation.payload;
       body = rest;
     }
-    const providerResult = await candidate.provider.instance.callOpenAIResponses(
+    const upstreamResult = await candidate.upstream.instance.callOpenAIResponses(
       candidate.model,
       body,
       invocation.action,
       ctx.abortSignal,
       buildUpstreamCallOptions(candidate, ctx, invocation.headers),
     );
-    return await providerOpenAIResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx);
+    return await upstreamOpenAIResponsesResultToExecuteResult(upstreamResult, candidate, targetApi, ctx);
   }
   case 'anthropicMessages':
     if (invocation.action === 'compact') {
@@ -180,20 +180,20 @@ const dispatchOpenAIResponses = async (
   }
 };
 
-// Lowers a `ProviderOpenAIResponsesResult` into the chain's
+// Lowers a `UpstreamOpenAIResponsesResult` into the chain's
 // ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEvent>> currency. The compact
 // branch synthesizes SSE frames from the envelope so every downstream
 // interceptor sees the same event-stream contract regardless of which action
 // the provider executed.
-const providerOpenAIResponsesResultToExecuteResult = async (
-  providerResult: ProviderOpenAIResponsesResult,
+const upstreamOpenAIResponsesResultToExecuteResult = async (
+  upstreamResult: UpstreamOpenAIResponsesResult,
   candidate: ModelCandidate,
   targetApi: ChatTargetApi,
   ctx: ChatGatewayCtx,
 ): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
-  if (providerResult.action === 'generate') {
-    return await providerStreamResultToExecuteResult(
-      providerResult,
+  if (upstreamResult.action === 'generate') {
+    return await upstreamStreamResultToExecuteResult(
+      upstreamResult,
       candidate,
       targetApi,
       ctx,
@@ -201,19 +201,19 @@ const providerOpenAIResponsesResultToExecuteResult = async (
     );
   }
   const context = upstreamPerformanceContext(ctx, candidate, 'chat');
-  if (!providerResult.ok) {
-    return { ...(await readUpstreamApiError(providerResult.http, candidate.provider.upstreamId)), performance: context };
+  if (!upstreamResult.ok) {
+    return { ...(await readUpstreamApiError(upstreamResult.http, candidate.upstream.upstreamId)), performance: context };
   }
   // A native compaction is a turn the upstream ran and charged for, and its
   // body states the counts.
-  const modelIdentity = telemetryModelIdentity(candidate, providerResult.modelKey);
-  const billableUsage = billableUsageFromOpenAIResponsesResult(providerResult.result);
+  const modelIdentity = telemetryModelIdentity(candidate, upstreamResult.modelKey);
+  const billableUsage = billableUsageFromOpenAIResponsesResult(upstreamResult.result);
   return eventResult(
-    syntheticEventsFromCompaction(providerResult.result),
+    syntheticEventsFromCompaction(upstreamResult.result),
     modelIdentity,
     {
       performance: context,
-      http: providerResult.http,
+      http: upstreamResult.http,
       ...(billableUsage === null ? {} : { finalMetadata: Promise.resolve({ modelIdentity, billableUsage }) }),
     },
   );

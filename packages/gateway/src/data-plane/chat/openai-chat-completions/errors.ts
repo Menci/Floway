@@ -1,7 +1,7 @@
 import { openAiErrorResult, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/upstream';
 
 // Validation failures retain the telemetry of the candidate whose attempt rejected the request.
 export const inputErrorResult = (

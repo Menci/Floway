@@ -3,8 +3,8 @@ import { test } from 'vitest';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
 
 test('/v1/images/generations rejects model on custom upstream without /images/generations capability', async () => {
   const { apiKey, repo } = await setupAppTest();

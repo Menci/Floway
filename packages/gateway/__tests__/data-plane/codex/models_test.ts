@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'vitest';
 
 import { assembleCodexCatalog } from '../../../src/data-plane/codex/models.ts';
-import type { CatalogUpstreamMeta } from '../../../src/data-plane/providers/catalog.ts';
 import type { AddressableIdEntry } from '../../../src/data-plane/shared/listing/addressable.ts';
-import type { InternalModel } from '@floway-dev/provider';
-import { stubProviderModel } from '@floway-dev/test-utils';
+import type { CatalogUpstreamMeta } from '../../../src/data-plane/upstreams/catalog.ts';
+import { stubUpstreamModel } from '@floway-dev/test-utils';
+import type { InternalModel } from '@floway-dev/upstream';
 
 const meta = (id: string, kind: CatalogUpstreamMeta['kind']): CatalogUpstreamMeta => ({
   id,
@@ -50,9 +50,9 @@ describe('assembleCodexCatalog', () => {
     const model = chat('codex/future-model', 'Future', 600000);
     const out = assembleCodexCatalog(bundled, [entry(model, undefined, [{
       upstream: provider,
-      model: stubProviderModel({
+      model: stubUpstreamModel({
         limits: { max_context_window_tokens: 600000 },
-        providerData: { contextWindow: 80000, useResponsesLite: false },
+        upstreamData: { contextWindow: 80000, useResponsesLite: false },
       }),
     }])]);
     expect(out.models[0]).toMatchObject({ slug: 'codex/future-model', context_window: 80000, max_context_window: 600000 });
@@ -63,12 +63,12 @@ describe('assembleCodexCatalog', () => {
     const secondary = meta('secondary', 'chatgpt');
     const model = chat('gpt-5.5', 'Primary', 200000);
     const out = assembleCodexCatalog(bundled, [entry(model, undefined, [
-      { upstream: primary, model: stubProviderModel({ limits: { max_context_window_tokens: 200000 } }) },
+      { upstream: primary, model: stubUpstreamModel({ limits: { max_context_window_tokens: 200000 } }) },
       {
         upstream: secondary,
-        model: stubProviderModel({
+        model: stubUpstreamModel({
           limits: { max_context_window_tokens: 872000 },
-          providerData: { contextWindow: 272000, useResponsesLite: false },
+          upstreamData: { contextWindow: 272000, useResponsesLite: false },
         }),
       },
     ])]);
@@ -85,14 +85,14 @@ describe('assembleCodexCatalog', () => {
     const subscription = meta('subscription', 'chatgpt');
     const pricing = { entries: ['priority', 'ultrafast'].map(serviceTier => ({ selector: { serviceTier }, rates: { input_tokens: '1' } })) };
     const model: InternalModel = { ...chat('shared'), pricing };
-    const nativeContrib = { upstream: native, model: stubProviderModel({ pricing, endpoints: { openaiResponses: {} } }) };
-    const subContrib = { upstream: subscription, model: stubProviderModel({ providerData: { contextWindow: 100000, codex } }) };
+    const nativeContrib = { upstream: native, model: stubUpstreamModel({ pricing, endpoints: { openaiResponses: {} } }) };
+    const subContrib = { upstream: subscription, model: stubUpstreamModel({ upstreamData: { contextWindow: 100000, codex } }) };
     for (const contributions of [[nativeContrib, subContrib], [subContrib, nativeContrib]]) {
       const [row] = assembleCodexCatalog(bundled, [entry(model, undefined, contributions)]).models;
       expect(row.service_tiers?.map(tier => tier.id)).toEqual(expected);
       expect(row.additional_speed_tiers).toEqual(expected.some(id => id === 'priority') ? ['fast'] : []);
     }
-    const unpricedNative = { upstream: native, model: stubProviderModel({ endpoints: { openaiResponses: {} } }) };
+    const unpricedNative = { upstream: native, model: stubUpstreamModel({ endpoints: { openaiResponses: {} } }) };
     expect(assembleCodexCatalog(bundled, [entry(model, undefined, [subContrib, unpricedNative])]).models[0].service_tiers).toEqual([]);
   });
 

@@ -19,8 +19,8 @@ import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type UpstreamModel, type UpstreamOpenAIResponsesResult, type UpstreamStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/upstream';
 
 const API_KEY_ID = 'key_attempt_test';
 
@@ -55,20 +55,20 @@ const makeProviderEvents = async function* (events: readonly OpenAIResponsesStre
 };
 
 const makeCandidate = (
-  callOpenAIResponses: (model: ProviderModel, body: Omit<CanonicalOpenAIResponsesPayload, 'model'>, action: OpenAIResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>,
+  callOpenAIResponses: (model: UpstreamModel, body: Omit<CanonicalOpenAIResponsesPayload, 'model'>, action: OpenAIResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<UpstreamOpenAIResponsesResult>,
   enabledFlags: ReadonlySet<FlagId> = new Set<FlagId>(),
 ): ModelCandidate => {
-  const provider = stubProvider({ callOpenAIResponses });
+  const instance = stubUpstream({ callOpenAIResponses });
   const upstream = 'up_test';
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream,
       kind: 'custom',
       name: upstream,
       inboundHeaderAllowlist: [],
-      instance: provider,
+      instance,
     },
-    model: stubProviderModel({ enabledFlags }),
+    model: stubUpstreamModel({ enabledFlags }),
     fetcher: directFetcher,
   };
 };
@@ -98,7 +98,7 @@ test('generate isolates provider mutations with JSON-safe container cloning', as
   const metadata = JSON.parse('{"__proto__":{"retained":true},"nested":{"value":"source"}}') as Record<string, unknown>;
   const payload = makePayload({ metadata: metadata as unknown as Record<string, string> });
   const sourceItem = payload.input[0];
-  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+  const callOpenAIResponses = vi.fn(async (_model, body): Promise<UpstreamOpenAIResponsesResult> => {
     const clonedMetadata = body.metadata as { nested: { value: string } } & Record<string, unknown>;
     assert(Object.hasOwn(clonedMetadata, '__proto__'), 'clone lost the own __proto__ JSON field');
     clonedMetadata.nested.value = 'provider';
@@ -154,7 +154,7 @@ test('generate sends an explicit null namespace for unresolved calls to previous
       { ...call('qualified'), namespace: 'first' },
     ],
   });
-  const providerCall = vi.fn(async (_model: ProviderModel, _body: Omit<CanonicalOpenAIResponsesPayload, 'model'>): Promise<ProviderOpenAIResponsesResult> => ({
+  const providerCall = vi.fn(async (_model: UpstreamModel, _body: Omit<CanonicalOpenAIResponsesPayload, 'model'>): Promise<UpstreamOpenAIResponsesResult> => ({
     action: 'generate', ok: true, events: makeProviderEvents([]), modelKey: 'test-model-key',
   }));
 
@@ -178,9 +178,9 @@ test('generate treats a translated OpenAI Responses payload as opaque to native 
   installRepo();
   let observedBody: Omit<CanonicalOpenAIResponsesPayload, 'model'> | undefined;
   const callOpenAIResponses = vi.fn(async (
-    _model: ProviderModel,
+    _model: UpstreamModel,
     body: Omit<CanonicalOpenAIResponsesPayload, 'model'>,
-  ): Promise<ProviderOpenAIResponsesResult> => {
+  ): Promise<UpstreamOpenAIResponsesResult> => {
     observedBody = body;
     return {
       action: 'generate',
@@ -200,9 +200,9 @@ test('generate treats a translated OpenAI Responses payload as opaque to native 
   const carrier = await ctx.affinity.codec.wrap(
     undefined,
     {
-      upstreamId: candidate.provider.upstreamId,
+      upstreamId: candidate.upstream.upstreamId,
       modelId: candidate.model.id,
-      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
+      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.upstream.upstreamId, key: candidate.model.id },
     },
     'openai-responses.reasoning.encrypted_content',
   );
@@ -231,9 +231,9 @@ test('generate defers the role rewrite until after translation to OpenAI Chat Co
   installRepo();
   let observedBody: Omit<OpenAIChatCompletionsPayloadEx, 'model'> | undefined;
   const callOpenAIChatCompletions = vi.fn(async (
-    _model: ProviderModel,
+    _model: UpstreamModel,
     body: Omit<OpenAIChatCompletionsPayloadEx, 'model'>,
-  ): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+  ): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     observedBody = body;
     return {
       ok: true,
@@ -268,14 +268,14 @@ test('generate defers the role rewrite until after translation to OpenAI Chat Co
   const upstream = 'up_chat';
   const endpoints = { openaiChatCompletions: {} };
   const candidate: ModelCandidate = {
-    provider: {
+    upstream: {
       upstreamId: upstream,
       kind: 'custom',
       name: upstream,
       inboundHeaderAllowlist: [],
-      instance: stubProvider({ callOpenAIChatCompletions }),
+      instance: stubUpstream({ callOpenAIChatCompletions }),
     },
-    model: stubProviderModel({
+    model: stubUpstreamModel({
       endpoints,
       enabledFlags: new Set(['rewrite-system-to-developer']),
     }),
@@ -313,9 +313,9 @@ test('generate strips disallowed headers and states a remote image URL to Anthro
   let observedHeaders: Headers | undefined;
   let observedAnthropicBeta: readonly string[] | undefined;
   let observedBody: Omit<AnthropicMessagesPayload, 'model'> | undefined;
-  const upstreamModel = stubProviderModel({ endpoints: { anthropicMessages: {} } });
-  const anthropicMessagesProvider = stubProvider({
-    callAnthropicMessages: async (_model, body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
+  const upstreamModel = stubUpstreamModel({ endpoints: { anthropicMessages: {} } });
+  const anthropicMessagesProvider = stubUpstream({
+    callAnthropicMessages: async (_model, body, _signal, opts): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => {
       observedHeaders = opts.headers;
       observedAnthropicBeta = (opts as AnthropicMessagesUpstreamCallOptions).anthropicBeta;
       observedBody = body as Omit<AnthropicMessagesPayload, 'model'>;
@@ -340,7 +340,7 @@ test('generate strips disallowed headers and states a remote image URL to Anthro
     },
   });
   const candidate: ModelCandidate = {
-    provider: {
+    upstream: {
       upstreamId: 'up_test', kind: 'custom', name: 'up_test', inboundHeaderAllowlist: [],
       instance: anthropicMessagesProvider,
     },
@@ -408,7 +408,7 @@ test('generate restores signed hosted-tool replay data without stored state', as
     { type: 'response.in_progress', sequence_number: 1, response: upstreamResponse },
     { type: 'response.completed', sequence_number: 2, response: upstreamResponse },
   ];
-  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+  const callOpenAIResponses = vi.fn(async (_model, body): Promise<UpstreamOpenAIResponsesResult> => {
     capturedBody = body as { input?: unknown[] };
     return { action: 'generate', ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', http: { status: 200, headers: new Headers() } };
   });
@@ -418,9 +418,9 @@ test('generate restores signed hosted-tool replay data without stored state', as
   const carrier = await ctx.affinity.codec.wrap(
     await ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode({ v: 1, type: storedItem.type, ...replay }),
     {
-      upstreamId: candidate.provider.upstreamId,
+      upstreamId: candidate.upstream.upstreamId,
       modelId: candidate.model.id,
-      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
+      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.upstream.upstreamId, key: candidate.model.id },
     },
     'openai-responses.reasoning.encrypted_content',
   );
@@ -472,9 +472,9 @@ test('namespace wire mapping follows compact expansion and is isolated from oute
   const endpoints = { openaiChatCompletions: {} };
   const candidate: ModelCandidate = {
     ...makeCandidate(async () => { throw new Error('native Responses must not be called'); }),
-    model: stubProviderModel({ endpoints }),
+    model: stubUpstreamModel({ endpoints }),
   };
-  candidate.provider.instance.callOpenAIChatCompletions = async (_model, body) => {
+  candidate.upstream.instance.callOpenAIChatCompletions = async (_model, body) => {
     providerBodies.push(structuredClone(body));
     assert(JSON.stringify(body.messages).includes('files_read_2'), 'compact-expanded history must be mapped at dispatch');
     const tool = body.tools?.[1];
@@ -540,10 +540,10 @@ test('generate lowers a standalone function_call_output to external context acro
   let observedBody: Omit<OpenAIChatCompletionsPayloadEx, 'model'> | undefined;
   const endpoints = { openaiChatCompletions: {} };
   const candidate: ModelCandidate = {
-    provider: {
+    upstream: {
       upstreamId: 'up_chat', kind: 'custom', name: 'up_chat', inboundHeaderAllowlist: [],
-      instance: stubProvider({
-        callOpenAIChatCompletions: async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+      instance: stubUpstream({
+        callOpenAIChatCompletions: async (_model, body): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
           observedBody = body;
           return {
             ok: true,
@@ -557,7 +557,7 @@ test('generate lowers a standalone function_call_output to external context acro
         },
       }),
     },
-    model: stubProviderModel({ endpoints }),
+    model: stubUpstreamModel({ endpoints }),
     fetcher: directFetcher,
   };
 

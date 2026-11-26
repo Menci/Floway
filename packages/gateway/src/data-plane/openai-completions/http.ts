@@ -17,7 +17,7 @@ import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ProviderModel } from '@floway-dev/provider';
+import type { UpstreamModel } from '@floway-dev/upstream';
 
 export const openaiCompletions = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
@@ -56,7 +56,7 @@ export const openaiCompletions = async (c: Context): Promise<Response> => {
   // The scaffold picks the upstream after these closures are built, and this
   // endpoint has no interceptor chain to normalize usage on the way in, so
   // the serving model is staked here for the billing read to consult.
-  let serving: { model: ProviderModel; upstreamId: string } | undefined;
+  let serving: { model: UpstreamModel; upstreamId: string } | undefined;
   const declaredExclusive = (): boolean => serving?.model.enabledFlags.has('usage-exclusive-cached-tokens') === true;
   const servingIdentity = (): string => serving === undefined ? 'unresolved upstream' : `${serving.upstreamId}/${serving.model.id}`;
   const transformFrame = (frame: ProtocolFrame<unknown>): ProtocolFrame<unknown> | null => {
@@ -78,9 +78,9 @@ export const openaiCompletions = async (c: Context): Promise<Response> => {
     model: request.model,
     kind: 'chat',
     modelServesEndpoint: model => model.endpoints.openaiCompletions !== undefined,
-    call: (provider, model, opts) => {
-      serving = { model, upstreamId: provider.upstreamId };
-      return provider.instance.callOpenAICompletions(model, upstreamBody, ctx.abortSignal, opts);
+    call: (upstream, model, opts) => {
+      serving = { model, upstreamId: upstream.upstreamId };
+      return upstream.instance.callOpenAICompletions(model, upstreamBody, ctx.abortSignal, opts);
     },
     response: wantsStream
       ? { format: 'strategy', respond: context => respondOpenAICompletionsSse(context, transformFrame, settleUsage) }

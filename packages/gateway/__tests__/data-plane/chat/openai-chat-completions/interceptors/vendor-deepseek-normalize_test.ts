@@ -5,8 +5,8 @@ import { withVendorDeepSeekOpenAIChatCompletionsNormalize } from '../../../../..
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/upstream';
 
 type DeepSeekReasoningDelta = OpenAIChatCompletionsAssistantDeltaEx & {
   reasoning_content?: string;
