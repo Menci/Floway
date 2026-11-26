@@ -315,6 +315,31 @@ test.each([true, false])('Kimi cached-token normalization follows its model flag
   await running.done;
 });
 
+test.each([
+  { status: 204, body: null, outcome: { kind: 'result', result: null } },
+  { status: 205, body: null, outcome: { kind: 'result', result: null } },
+  { status: 200, body: '', outcome: { kind: 'error', source: 'upstream' } },
+  { status: 200, body: 'null', outcome: { kind: 'error', source: 'upstream' } },
+])('count-tokens preserves status $status and classifies body $body', async ({ status, body, outcome }) => {
+  const fetcher: Fetcher = () => Promise.resolve(new Response(body, {
+    status,
+    statusText: 'Count response',
+    headers: { 'content-type': 'application/json', 'x-upstream-count': 'preserved' },
+  }));
+  using anthropic = invoke(azurePipelines.anthropicMessagesCountTokens, input('anthropicMessagesCountTokens', {
+    model: 'public-model', messages: [],
+  }), fetcher);
+  const head = {
+    status, statusText: 'Count response', body: null,
+    headers: [['content-type', 'application/json'], ['x-upstream-count', 'preserved']],
+  };
+  expect(await anthropic.result).toMatchObject({
+    'response.http': head,
+    'response.anthropicMessagesCountTokens': outcome,
+  });
+  await anthropic.done;
+});
+
 test('Responses Compact publishes a scalar result from Azure', async () => {
   const result = { id: 'compact', object: 'response.compaction', output: [] };
   const fetcher: Fetcher = () => Promise.resolve(Response.json(result));

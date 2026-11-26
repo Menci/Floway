@@ -13,10 +13,15 @@ export const anthropicMessages = azureOperation('anthropicMessages', {
 
 export const anthropicMessagesCountTokens = azureOperation('anthropicMessagesCountTokens', {
   surface: 'anthropicMessages',
-  parse: parseResultResponse('anthropicMessagesCountTokens', bytes => {
-    const parsed = parseJsonBody(bytes);
-    return parsed.ok ? decodeAnthropicMessagesCountTokensResult(parsed.value) : parsed;
-  }, anthropicMessagesError),
+  parse: parseResultResponse('anthropicMessagesCountTokens', {
+    needs: [],
+    decode(bytes) {
+      const parsed = parseJsonBody(bytes);
+      return parsed.ok ? decodeAnthropicMessagesCountTokensResult(parsed.value) : parsed;
+    },
+    format: anthropicMessagesError,
+    noContent: null,
+  }),
   prepare: (payload, modelId, endpoint) => ({
     url: azureAnthropicMessagesUrl(endpoint, '/v1/messages/count_tokens'),
     ...jsonBody({ ...payload, model: modelId }),
