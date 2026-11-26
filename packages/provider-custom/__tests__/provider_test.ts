@@ -98,21 +98,21 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
   );
 });
 
-test('a manual model without explicit pricing inherits pricing from its shadowed auto row', async () => {
-  const inheritedPricing: ModelPricing = { entries: [{ rates: { input_tokens: '3', output_tokens: '12' } }] };
+test('a manual model without explicit pricing stays unpriced even when its shadowed auto row has pricing', async () => {
+  const autoPricing: ModelPricing = { entries: [{ rates: { input_tokens: '3', output_tokens: '12' } }] };
   const manualModels: UpstreamModelConfig[] = [{ upstreamModelId: 'shared-id', kind: 'chat', endpoints: { openaiChatCompletions: {} } }];
   const instance = createCustomProvider(buildCustomUpstream());
 
   await withMockedFetch(
     () => jsonResponse({
       object: 'list',
-      data: [{ id: 'shared-id', pricing: inheritedPricing }],
+      data: [{ id: 'shared-id', pricing: autoPricing }],
     }),
     async () => {
       const models = await instance.instance.getProvidedModels(directFetcher, manualModels);
       assertEquals(models.length, 1);
       assertEquals(models[0]?.id, 'shared-id');
-      assertEquals(models[0]?.pricing, inheritedPricing);
+      assertEquals(models[0]?.pricing, undefined);
     },
   );
 });

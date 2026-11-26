@@ -464,7 +464,7 @@ test('scoped non-admin /v1/models pre-prunes upstreams, honors model rules, pres
   expect(globalDeniedIds).toEqual(['claude-sonnet', 'gpt-5', 'other-model', 'secret-alpha', 'smart']);
 });
 
-test('saving manual models materializes immediately, inherits custom auto pricing, and restores shadowed auto models on removal', async () => {
+test('saving manual models materializes immediately, keeps manual overrides independent of auto pricing, and restores shadowed auto models on removal', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -565,18 +565,7 @@ test('saving manual models materializes immediately, inherits custom auto pricin
       expect(afterOverride).toHaveLength(1);
       expect(afterOverride[0]!.source).toBe('manual');
       expect(afterOverride[0]!.model.display_name).toBe('Manual Name');
-      expect(afterOverride[0]!.model.pricing).toEqual(expectedPricing);
-
-      // Editing the manual override again preserves inherited /models pricing without fetching.
-      const secondEdit = await requestApp(`/api/upstreams/${custom.id}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({
-          manual_models: [manualModel('shared-model', 'Manual Name v2')],
-        }),
-      });
-      expect(secondEdit.status).toBe(200);
-      expect((await repo.upstreamModels.listByUpstream(custom.id))[0]!.model.pricing).toEqual(expectedPricing);
+      expect(afterOverride[0]!.model.pricing).toBeUndefined();
 
       const clearResp = await requestApp(`/api/upstreams/${custom.id}`, {
         method: 'PATCH',
@@ -603,6 +592,7 @@ test('saving manual models materializes immediately, inherits custom auto pricin
       expect(afterRefresh).toHaveLength(1);
       expect(afterRefresh[0]!.source).toBe('auto');
       expect(afterRefresh[0]!.model.id).toBe('shared-model');
+      expect(afterRefresh[0]!.model.pricing).toEqual(expectedPricing);
     },
   );
 });

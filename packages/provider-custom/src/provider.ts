@@ -80,14 +80,12 @@ const finalizeCustomModels = (
 export const projectCustomManualModels = (
   record: UpstreamRecord,
   manualModels: readonly UpstreamModelConfig[],
-  inheritedPricing?: ReadonlyMap<string, NonNullable<ProviderModel['pricing']>>,
 ): ProviderModel[] => {
   assertCustomUpstreamRecord(record);
   return manualModels.map(model => {
     const enabledFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides, model.flagOverrides]);
     const endpoints = model.endpoints;
     const kind = kindForEndpoints(endpoints);
-    const pricing = model.pricing ?? inheritedPricing?.get(model.upstreamModelId);
     const internal: ProviderModel = {
       id: publicModelId(model),
       upstreamModelId: model.upstreamModelId,
@@ -101,7 +99,7 @@ export const projectCustomManualModels = (
       ...(model.decisionTarget ? { decisionTarget: model.decisionTarget } : {}),
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
-    if (pricing) internal.pricing = pricing;
+    if (model.pricing) internal.pricing = model.pricing;
     if (kind === 'chat' && model.chat) internal.chat = model.chat;
     return internal;
   });
@@ -117,16 +115,13 @@ export const projectCustomModels = (
   // Only the upstream layer applies to auto models (no per-model override
   // layer). Manual models layer their own flag overrides on top.
   const upstreamFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides]);
+  const effectiveManualModels = projectCustomManualModels(record, manualModels);
 
   if (!config.modelsFetch.enabled || response === undefined) {
-    return projectCustomManualModels(record, manualModels);
+    return effectiveManualModels;
   }
 
   const overriddenIds = new Set(manualModels.map(m => m.upstreamModelId));
-  const fetchedPricing = new Map(
-    response.data.flatMap(model => model.pricing ? [[model.id, model.pricing] as const] : []),
-  );
-  const effectiveManualModels = projectCustomManualModels(record, manualModels, fetchedPricing);
   // Drop any auto-fetched model whose id is pinned by a manual override so
   // the manual copy is the only one emitted for that id.
   const filtered: CustomModelsResponse = { data: response.data.filter(raw => !overriddenIds.has(raw.id)) };

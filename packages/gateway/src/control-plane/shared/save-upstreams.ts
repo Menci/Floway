@@ -7,7 +7,7 @@ import type { StoredUpstreamRecord, UpstreamModelEntry, UpstreamModelsWritePaylo
 import { serializeStoredConfig, serializeStoredState } from '../../repo/upstream-json.ts';
 import { scheduleUpstreamModelsRefresh, supportsManualModels, upstreamRequiresNetworkForModels } from '../../upstreams/models-refresh.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { resolveEffectiveFlags, type ProviderModel, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
+import { resolveEffectiveFlags, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import { projectAzureModels } from '@floway-dev/provider-azure';
 import { assertCustomUpstreamRecord, projectCustomManualModels } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord, projectOllamaManualModels } from '@floway-dev/provider-ollama';
@@ -45,13 +45,12 @@ const sameRemoteConnection = (previous: UpstreamRecord, next: UpstreamRecord): b
 const projectManualEntries = (
   record: UpstreamRecord,
   manualModels: readonly UpstreamModelConfig[],
-  inheritedCustomPricing?: ReadonlyMap<string, NonNullable<ProviderModel['pricing']>>,
 ): UpstreamModelEntry[] => {
   if (record.kind === 'azure') {
     return projectAzureModels(record, manualModels).map(model => ({ source: 'manual', model }));
   }
   if (record.kind === 'custom') {
-    return projectCustomManualModels(record, manualModels, inheritedCustomPricing).map(model => ({ source: 'manual', model }));
+    return projectCustomManualModels(record, manualModels).map(model => ({ source: 'manual', model }));
   }
   if (record.kind === 'ollama') {
     return projectOllamaManualModels(record, manualModels).map(model => ({ source: 'manual', model }));
@@ -160,37 +159,9 @@ const planReplaceModelsWrite = async (
   // background refresh to restore any shadowed auto model.
   if (next.kind === 'custom' || next.kind === 'ollama') {
     if (sameRemoteConnection(previous, next)) {
+      const existingAuto = await repo.upstreamModels.listByUpstream(next.id, { source: 'auto' });
       const overriddenIds = new Set(effectiveManual.map(model => model.upstreamModelId));
       const upstreamFlags = resolveEffectiveFlags([flagDefaultsForKind(next.kind), next.flagOverrides]);
-      let existingAuto: UpstreamModelEntry[];
-      let inheritedCustomPricing: Map<string, NonNullable<ProviderModel['pricing']>> | undefined;
-      let clearedExplicitPricing = false;
-      if (next.kind === 'custom') {
-        const existingRows = await repo.upstreamModels.listByUpstream(next.id);
-        existingAuto = [];
-        inheritedCustomPricing = new Map();
-        const previousManualById = new Map(previousManualModels.map(model => [model.upstreamModelId, model] as const));
-        for (const entry of existingRows) {
-          if (entry.source === 'auto') {
-            existingAuto.push(entry);
-            if (entry.model.pricing !== undefined) {
-              inheritedCustomPricing.set(entry.model.upstreamModelId, entry.model.pricing);
-            }
-          } else if (
-            entry.model.pricing !== undefined
-            && previousManualById.get(entry.model.upstreamModelId)?.pricing === undefined
-          ) {
-            inheritedCustomPricing.set(entry.model.upstreamModelId, entry.model.pricing);
-          }
-        }
-        clearedExplicitPricing = effectiveManual.some(
-          model => model.pricing === undefined
-            && previousManualById.get(model.upstreamModelId)?.pricing !== undefined
-            && !inheritedCustomPricing!.has(model.upstreamModelId),
-        );
-      } else {
-        existingAuto = await repo.upstreamModels.listByUpstream(next.id, { source: 'auto' });
-      }
       const keptAuto: UpstreamModelEntry[] = existingAuto
         .filter(({ model }) => !overriddenIds.has(model.upstreamModelId))
         .map(({ model }) => ({
@@ -199,10 +170,10 @@ const planReplaceModelsWrite = async (
         }));
       const manualRemoved = previousManualModels.some(prev => !overriddenIds.has(prev.upstreamModelId));
       const clearErrorForTransport = transportChanged && hadError;
-      const shouldMarkStale = manualRemoved || clearedExplicitPricing || clearErrorForTransport;
+      const shouldMarkStale = manualRemoved || clearErrorForTransport;
       return {
         modelsWrite: {
-          models: [...projectManualEntries(next, effectiveManual, inheritedCustomPricing), ...keptAuto],
+          models: [...projectManualEntries(next, effectiveManual), ...keptAuto],
           cacheAction: shouldMarkStale ? { kind: 'mark-stale' } : { kind: 'preserve' },
         },
         needsBackgroundRefresh: shouldMarkStale || previous.modelsCache.fetchedAt === null,
