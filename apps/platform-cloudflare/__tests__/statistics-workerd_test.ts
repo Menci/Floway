@@ -178,3 +178,79 @@ test('D1 Usage overview reads a long window in one bounded query', async () => {
   expect(rowsRead[0]).toBeGreaterThanOrEqual(factCount);
   expect(rowsRead[0]).toBeLessThan(factCount * 100);
 });
+
+test('D1 Usage increments integers in a batch and applies only skipped metrics through exact arithmetic', async () => {
+  const db = platform!.env.DB;
+  const batches: (number | undefined)[][] = [];
+  const meter = new SqlRepo({
+    prepare: sql => db.prepare(sql),
+    exec: sql => db.exec(sql),
+    async batch(statements) {
+      const results = await db.batch!(statements);
+      batches.push(results.map(result => result.meta.changes));
+      return results;
+    },
+  });
+  const identity = {
+    keyId: 'statistics-key', model: 'integer-model', modelKey: 'integer-model',
+    upstream: null, hour: '2026-11-01T01', pricingSelector: {},
+  };
+  await repo.usage.set({
+    ...identity,
+    requests: 1,
+    metrics: [
+      { metric: 'input_tokens', quantity: '9223372036854775806', unitPrice: '0.5' },
+      { metric: 'output_tokens', quantity: '9007199254740993', unitPrice: null },
+    ],
+  });
+  await meter.usage.record({
+    ...identity,
+    requests: 1,
+    metrics: [
+      { metric: 'input_tokens', quantity: '1', unitPrice: '1' },
+      { metric: 'output_tokens', quantity: '2', unitPrice: '1' },
+      { metric: 'input_audio_seconds', quantity: '0.1', unitPrice: '0.3' },
+    ],
+  });
+  expect(batches).toEqual([[1, 1, 1, 1]]);
+
+  await Promise.all(Array.from({ length: 5 }, () => meter.usage.record({
+    ...identity,
+    requests: 1,
+    metrics: [
+      { metric: 'input_tokens', quantity: '1', unitPrice: '1' },
+      { metric: 'output_tokens', quantity: '3', unitPrice: '1' },
+      { metric: 'input_audio_seconds', quantity: '0.2', unitPrice: '1' },
+    ],
+  })));
+  expect(batches.slice(1)).toEqual(Array.from({ length: 5 }, () => [1, 0, 1, 0]));
+  const [record] = await repo.usage.query({ start: identity.hour, end: '2026-11-01T02' });
+  expect(record!.requests).toBe(7);
+  expect(record!.metrics).toEqual([
+    { metric: 'input_tokens', quantity: '9223372036854775812', unitPrice: '0.5' },
+    { metric: 'output_tokens', quantity: '9007199254741010', unitPrice: null },
+    { metric: 'input_audio_seconds', quantity: '1.1', unitPrice: '0.3' },
+  ]);
+});
+
+test('D1 rolls back the Usage request count and earlier metrics on a hard batch failure', async () => {
+  await platform!.env.DB.prepare(`
+    CREATE TRIGGER reject_test_usage_metric BEFORE INSERT ON usage
+    WHEN NEW.model = 'rejected-batch' AND NEW.metric = 'output_tokens'
+      AND EXISTS (SELECT 1 FROM usage_requests WHERE model = NEW.model AND requests = 1)
+      AND EXISTS (SELECT 1 FROM usage WHERE model = NEW.model AND metric = 'input_tokens')
+    BEGIN
+      SELECT RAISE(ABORT, 'Usage metric insert rejected');
+    END`).run();
+
+  await expect(repo.usage.record({
+    keyId: 'statistics-key', model: 'rejected-batch', modelKey: 'rejected-batch',
+    upstream: null, hour: '2026-11-01T02', pricingSelector: {},
+    requests: 1,
+    metrics: [
+      { metric: 'input_tokens', quantity: '3', unitPrice: null },
+      { metric: 'output_tokens', quantity: '2', unitPrice: null },
+    ],
+  })).rejects.toThrow('Usage metric insert rejected');
+  expect(await repo.usage.query({ start: '2026-11-01T02', end: '2026-11-01T03' })).toEqual([]);
+});

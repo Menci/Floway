@@ -60,13 +60,12 @@ test('group restores and directory snapshots use native SQLite transactions and 
   expect((await repo.groups.findByName('\u00e4'))?.name).toBe('\u00e4');
 }));
 
-test('api key update lands every patched column and leaves the rest alone', () => withRepo(async repo => {
+test('API key timestamp writes and patches preserve unrelated fields', () => withRepo(async repo => {
   await seedKey(repo);
 
-  // recordUsage() takes this path after every proxied request.
-  const touched = await repo.apiKeys.update('key_node', { lastUsedAt: '2026-07-26T12:00:00.000Z' });
+  await repo.apiKeys.setLastUsedAt('key_node', '2026-07-26T12:00:00.000Z');
+  const touched = await repo.apiKeys.getById('key_node');
   assertEquals(touched?.lastUsedAt, '2026-07-26T12:00:00.000Z');
-  // The columns whose CASE WHEN guard is false must survive untouched.
   assertEquals(touched?.name, 'Node key');
   assertEquals(touched?.openaiResponsesRetentionSeconds, 0);
 
@@ -81,7 +80,6 @@ test('api key update lands every patched column and leaves the rest alone', () =
   assertEquals(edited?.name, 'Renamed');
   assertEquals(edited?.upstreamIds, ['up-a']);
   assertEquals(edited?.dumpRetentionSeconds, 3600);
-  // Not in the patch — the earlier value stays.
   assertEquals(edited?.lastUsedAt, '2026-07-26T12:00:00.000Z');
 
   assertEquals((await repo.apiKeys.getById('key_node'))?.name, 'Renamed');

@@ -549,6 +549,12 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     return { ...next };
   }
 
+  setLastUsedAt(id: string, lastUsedAt: string): Promise<void> {
+    const key = this.keys.find(key => key.id === id && key.deletedAt === null);
+    if (key) key.lastUsedAt = lastUsedAt;
+    return Promise.resolve();
+  }
+
   async softDelete(id: string): Promise<boolean> {
     const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
     if (i < 0) return false;

@@ -174,7 +174,9 @@ export function ModelDetail({
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             <Input
               aria-label={t('models.editor.opaqueBlobCompatibilityKey')}
-              className="min-w-[220px] flex-1 font-mono"
+              // `!`: Fluent's Input states its own min-width from a sheet injected
+              // after the utility sheet, and without this floor the row never wraps.
+              className="!min-w-[220px] flex-1 font-mono"
               placeholder={row.config.upstreamModelId}
               readOnly={fieldsReadOnly}
               value={opaqueBlobCompatibilityScope?.key ?? ''}

@@ -36,10 +36,12 @@ function CopyButton({ text }: { text: string }) {
 function HeaderTable({ headers, revealable }: { headers: Array<[string, string]>; revealable: boolean }) {
   const { t } = useTranslation();
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
-  return <table className="w-full table-fixed font-mono text-left"><colgroup><col className="w-1/3" /><col className="w-2/3" /></colgroup><tbody>
-    {headers.map(([name, value], index) => <tr key={index}>
-      <th className="align-top py-2 pr-2 font-normal text-fui-fg3 break-words">{name}</th>
-      <td className="py-2 pl-2 break-all">
+  // At a phone's width the name stands over its value: a third of the row
+  // cuts names and values alike into a few characters per line.
+  return <table className="w-full table-fixed font-mono text-left max-[680px]:block"><colgroup><col className="w-1/3" /><col className="w-2/3" /></colgroup><tbody className="max-[680px]:block">
+    {headers.map(([name, value], index) => <tr className="max-[680px]:block max-[680px]:py-2" key={index}>
+      <th className="align-top py-2 pr-2 font-normal text-fui-fg3 break-words max-[680px]:block max-[680px]:p-0">{name}</th>
+      <td className="py-2 pl-2 break-all max-[680px]:block max-[680px]:p-0">
         {isSensitiveHeader(name) && !revealed.has(index) ? value === REDACTED_HEADER_VALUE ? value : redactHeaderValue(value) : value}
         {isSensitiveHeader(name) && value !== REDACTED_HEADER_VALUE && revealable && <TooltipIconButton
           icon={revealed.has(index) ? <EyeOffRegular /> : <EyeRegular />}
@@ -128,8 +130,11 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
     </Dropdown> : <Text size={200} className="text-fui-fg3">{t(request ? 'requests.requestBody' : 'requests.responseBody')}</Text>}
   </div>;
   return <div className="h-full min-h-0 flex flex-col">
-    <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 min-w-0 shrink-0 border-b border-[var(--winui-divider-stroke-default)]`}>
-      <Dropdown size="small" className="flex-1" aria-label={t('requests.detailTitle')} selectedOptions={[source]} value={labels[source]} onOptionSelect={(_, data) => chooseSource(data.optionValue)}>
+    {/* Wraps instead of squeezing: the source picker asks for its label's room
+        before the badges and readings beside it are laid out, and whatever no
+        longer fits moves to a second line. */}
+    <div className={`${PANEL_BAND_CLASS} flex flex-wrap items-center gap-2 min-w-0 shrink-0 border-b border-[var(--winui-divider-stroke-default)]`}>
+      <Dropdown size="small" className="grow basis-40" aria-label={t('requests.detailTitle')} selectedOptions={[source]} value={labels[source]} onOptionSelect={(_, data) => chooseSource(data.optionValue)}>
         {Object.entries(labels).map(([value, label]) => <Option key={value} value={value}>{label}</Option>)}
       </Dropdown>
       <HttpStatusBadge severity={requestSeverity(status, record.meta.error)}>{status ?? t('requests.noStatus')}</HttpStatusBadge>
