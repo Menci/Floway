@@ -7,7 +7,8 @@ import { dialAlphaSearch, dialOpenAIImagesEdits, dialOpenAIImagesGenerations, di
 import { chatgptFactSpace } from './facts.ts';
 import { injectOpenAIResponsesCompactDefaultInstructions, injectOpenAIResponsesDefaultInstructions } from './openai-responses/inject-default-instructions.ts';
 import { codexResponsesRequest } from './openai-responses/request.ts';
-import { openaiResponsesCompactLite, openaiResponsesLite } from './openai-responses/responses-lite.ts';
+import { openaiResponsesCompactLite } from './openai-responses/responses-compact-lite.ts';
+import { openaiResponsesLite } from './openai-responses/responses-lite.ts';
 import { normalizeOpenAIResponsesOutput } from './openai-responses/responses-output.ts';
 import { stripOpenAIResponsesCompactUnsupportedFields, stripOpenAIResponsesUnsupportedFields } from './openai-responses/strip-unsupported-fields.ts';
 import { normalizeDeepSeek } from './openai-responses/vendor-deepseek-normalize.ts';

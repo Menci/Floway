@@ -16,6 +16,29 @@ import type {
 } from '@floway-dev/protocols/openai-responses';
 import type { ProviderModelFact } from '@floway-dev/provider';
 
+const { defineStage } = chatgptFactSpace;
+
+export const openaiResponsesLite = defineStage({
+  name: 'chatgpt.openaiResponses.responses-lite',
+  through: {
+    request: { needs: ['request.http', 'request.openaiResponses', 'provider.model'], provides: ['request.openaiResponses', 'request.chatgptResponsesIdentity'], consumes: [] },
+    response: { needs: ['response.openaiResponses'], provides: ['response.openaiResponses'], consumes: [] },
+  },
+  async execute(facts, scope) {
+    const { body, identity, movedFields } = prepareChatGPTResponsesLiteRequest(facts['request.openaiResponses'], facts['request.http'].headers, facts['provider.model'], false);
+    const answer = await scope.next({ ...facts, 'request.openaiResponses': body, 'request.chatgptResponsesIdentity': identity });
+    const outcome = answer['response.openaiResponses'];
+    if (outcome.kind !== 'stream' || Object.keys(movedFields).length === 0) return answer;
+    const stream = scope.wrapStream(outcome.stream, async function* (source, producer) {
+      for await (const item of producer.read(source)) {
+        if (!item.ok) yield item;
+        else yield { ok: true, value: projectMovedChatGPTResponsesFields(item.value, movedFields) };
+      }
+    });
+    return { ...answer, 'response.openaiResponses': { kind: 'stream', stream } };
+  },
+});
+
 export type ChatGPTResponsesBody = Omit<CanonicalOpenAIResponsesPayload, 'model'>;
 
 export interface ChatGPTResponsesLiteRequest<Body = ChatGPTResponsesBody> {
@@ -196,43 +219,8 @@ const projectMovedChatGPTResponsesFields = (
   return event;
 };
 
-const prepare = <Body extends ChatGPTResponsesRequestBody>(body: Body, headers: HttpHeaders, model: ProviderModelFact, compact: boolean) => {
+export const prepareChatGPTResponsesLiteRequest = <Body extends ChatGPTResponsesRequestBody>(body: Body, headers: HttpHeaders, model: ProviderModelFact, compact: boolean) => {
   const identity = responsesIdentity(body, headers, compact);
   const encoded = chatgptModelUsesResponsesLite(model) ? encodeChatGPTResponsesLiteRequest(body, identity.threadId) : { body, movedFields: {} };
   return { identity, ...encoded };
 };
-
-const { defineStage } = chatgptFactSpace;
-
-export const openaiResponsesLite = defineStage({
-  name: 'chatgpt.openaiResponses.responses-lite',
-  through: {
-    request: { needs: ['request.http', 'request.openaiResponses', 'provider.model'], provides: ['request.openaiResponses', 'request.chatgptResponsesIdentity'], consumes: [] },
-    response: { needs: ['response.openaiResponses'], provides: ['response.openaiResponses'], consumes: [] },
-  },
-  async execute(facts, scope) {
-    const { body, identity, movedFields } = prepare(facts['request.openaiResponses'], facts['request.http'].headers, facts['provider.model'], false);
-    const answer = await scope.next({ ...facts, 'request.openaiResponses': body, 'request.chatgptResponsesIdentity': identity });
-    const outcome = answer['response.openaiResponses'];
-    if (outcome.kind !== 'stream' || Object.keys(movedFields).length === 0) return answer;
-    const stream = scope.wrapStream(outcome.stream, async function* (source, producer) {
-      for await (const item of producer.read(source)) {
-        if (!item.ok) yield item;
-        else yield { ok: true, value: projectMovedChatGPTResponsesFields(item.value, movedFields) };
-      }
-    });
-    return { ...answer, 'response.openaiResponses': { kind: 'stream', stream } };
-  },
-});
-
-export const openaiResponsesCompactLite = defineStage({
-  name: 'chatgpt.openaiResponsesCompact.responses-lite',
-  through: {
-    request: { needs: ['request.http', 'request.openaiResponsesCompact', 'provider.model'], provides: ['request.openaiResponsesCompact', 'request.chatgptResponsesIdentity'], consumes: [] },
-    response: { needs: [], provides: [], consumes: [] },
-  },
-  async execute(facts, scope) {
-    const { body, identity } = prepare(facts['request.openaiResponsesCompact'], facts['request.http'].headers, facts['provider.model'], true);
-    return await scope.next({ ...facts, 'request.openaiResponsesCompact': body, 'request.chatgptResponsesIdentity': identity });
-  },
-});
