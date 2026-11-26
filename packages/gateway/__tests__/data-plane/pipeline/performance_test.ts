@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { meteredStream, testCandidate } from './fixtures.ts';
 import { computeUsage } from '../../../src/data-plane/pipeline/compute-usage.ts';
@@ -12,13 +12,8 @@ import { generateServerSecret } from '../../../src/shared/server-secret.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import { run } from '@floway-dev/pipeline';
 
-test.each(['native done', 'panic'] as const)('stores authoritative stream usage before %s', async completion => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const services = await createGatewayServices('TEST', { id: 'key', serverSecret: generateServerSecret(), openaiResponsesRetentionSeconds: 0 });
-  const release = Promise.withResolvers<void>();
-  const detached: Promise<unknown>[] = [];
-  const pipeline = compose('performance-fixture', {
+const performancePipeline = (release: Promise<void>) =>
+  compose('performance-fixture', {
     entry: ['request.auth.apiKeyId', 'serve.runtimeLocation'],
     exit: ['response.usage', 'response.performance', 'response.http', 'response.openaiCompletions'],
     stages: [
@@ -29,8 +24,16 @@ test.each(['native done', 'panic'] as const)('stores authoritative stream usage 
         stream: () => ({ frame: () => [tokenUsageMeasurement({ output: 2 })], done: () => [] }),
       }),
     ],
-    ending: meteredStream({ release: release.promise }),
+    ending: meteredStream({ release }),
   });
+
+test.each(['native done', 'panic'] as const)('stores authoritative stream usage before %s', async completion => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const services = await createGatewayServices('TEST', { id: 'key', serverSecret: generateServerSecret(), openaiResponsesRetentionSeconds: 0 });
+  const release = Promise.withResolvers<void>();
+  const detached: Promise<unknown>[] = [];
+  const pipeline = performancePipeline(release.promise);
   const controller = new AbortController();
   const running = run(pipeline, {
     'request.auth.apiKeyId': 'key',
@@ -68,4 +71,60 @@ test.each(['native done', 'panic'] as const)('stores authoritative stream usage 
   expect(await repo.performance.listAll()).toMatchObject(
     completion === 'native done' ? [{ upstream: 'upstream', requests: 1, ttftSamplesOk: 1 }] : [],
   );
+});
+
+test('records TPOT at stream completion while the usage write is pending', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const services = await createGatewayServices('TEST', { id: 'key', serverSecret: generateServerSecret(), openaiResponsesRetentionSeconds: 0 });
+  const release = Promise.withResolvers<void>();
+  const usageStarted = Promise.withResolvers<void>();
+  const releaseUsage = Promise.withResolvers<void>();
+  const detached: Promise<unknown>[] = [];
+  const recordUsage = repo.usage.record.bind(repo.usage);
+  vi.spyOn(repo.usage, 'record').mockImplementation(async row => {
+    usageStarted.resolve();
+    await releaseUsage.promise;
+    await recordUsage(row);
+  });
+  let time = 100;
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => time);
+  const controller = new AbortController();
+  try {
+    const running = run(performancePipeline(release.promise), {
+      'request.auth.apiKeyId': 'key',
+      'serve.runtimeLocation': 'TEST',
+    }, {
+      services,
+      signal: controller.signal,
+      waitUntil: work => { detached.push(work); },
+    });
+    const answer = await running.result;
+    const outcome = answer['response.openaiCompletions'];
+    if (outcome.kind !== 'stream') throw new Error('Expected the fixture stream');
+    const reader = running.read(outcome.stream);
+    expect((await reader.next()).done).toBe(false);
+    await running.read(answer['response.usage']);
+    await usageStarted.promise;
+    expect(await running.read(answer['response.performance'])).toEqual({ ttftMs: 20 });
+    expect(await repo.usage.listAll()).toEqual([]);
+    expect(await repo.performance.listAll()).toEqual([]);
+
+    time = 140;
+    release.resolve();
+    expect((await reader.next()).done).toBe(true);
+    await running.done;
+    time = 1_000;
+    await vi.waitFor(async () => expect(await repo.performance.listAll()).toMatchObject([
+      { requests: 1, tpotSamples: 1, tpotUsSum: 40_000 },
+    ]));
+    expect(await repo.usage.listAll()).toEqual([]);
+  } finally {
+    release.resolve();
+    releaseUsage.resolve();
+    controller.abort();
+    clock.mockRestore();
+    await Promise.all(detached);
+  }
+  expect(await repo.usage.listAll()).toMatchObject([{ modelKey: 'native-fast-variant', requests: 1 }]);
 });
