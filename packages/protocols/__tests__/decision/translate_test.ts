@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { isJsonObject, parseJSONWithRawNumbers } from '../../src/common/json.ts';
-import { decodeDecisionResponse, parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, serializeDecisionRequest } from '../../src/decision/translate.ts';
+import { DecisionRequestValidationError, decodeDecisionResponse, parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, serializeDecisionRequest } from '../../src/decision/index.ts';
 
 const choiceRequest = {
   model: 'microsoft-decision-1',
@@ -14,6 +14,29 @@ const choiceRequest = {
     },
   },
 };
+
+test.each([
+  ['typesafe-systemone', null],
+  ['typesafe-systemone', { ...choiceRequest, model: '' }],
+  ['typesafe-systemone', { ...choiceRequest, state: false }],
+  ['typesafe-systemone', { ...choiceRequest, questions: { q: { type: 'choice', criteria: { one: null } } } }],
+  ['openai-decisions', { model: 'm', input: [{ role: 'user', content: [{ type: 'input_text', text: 5 }] }], questions: [] }],
+  ['openai-decisions', { model: 'm', input: 'test', questions: [{ type: 'choice', name: 'q', instructions: 'Pick', choices: [{ value: 4 }] }] }],
+] as const)('uses the request validation error for malformed %s input', (protocol, value) => {
+  expect(() => parseDecisionRequest(protocol, value)).toThrow(DecisionRequestValidationError);
+});
+
+test('preserves unexpected decision request exceptions by identity', () => {
+  const failure = new TypeError('unexpected question accessor failure');
+  const value = { ...choiceRequest, get questions() { throw failure; } };
+  let caught: unknown;
+  try {
+    parseDecisionRequest('typesafe-systemone', value);
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBe(failure);
+});
 
 describe('decision request ingress', () => {
 

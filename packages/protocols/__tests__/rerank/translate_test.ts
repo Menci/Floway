@@ -1,8 +1,30 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderCrossDialectRerankResponse, renderRerankResponse, RerankResponseValidationError, serializeRerankRequest } from '../../src/rerank/index.ts';
+import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderCrossDialectRerankResponse, renderRerankResponse, RerankRequestValidationError, RerankResponseValidationError, serializeRerankRequest } from '../../src/rerank/index.ts';
 
 describe('rerank request ingress', () => {
+  test.each([
+    ['cohere-v1', null],
+    ['cohere-v1', { model: 'm', query: 'q', documents: [{ text: 4 }] }],
+    ['cohere-v2', { model: 'm', query: 'q', documents: ['one'], top_n: 0 }],
+    ['cohere-v2', { model: 'm', query: 'q', documents: ['one'], return_documents: true }],
+    ['jina-v1', { model: 'm', query: 'q', documents: [{ image: 3 }] }],
+    ['voyage-v1', { model: 'm', query: 'q', documents: ['one'], truncation: 'false' }],
+  ] as const)('uses the request validation error for malformed %s input', (protocol, value) => {
+    expect(() => parseRerankRequest(protocol, value)).toThrow(RerankRequestValidationError);
+  });
+
+  test('preserves unexpected rerank request exceptions by identity', () => {
+    const failure = new TypeError('unexpected document accessor failure');
+    const value = { model: 'm', query: 'q', get documents() { throw failure; } };
+    let caught: unknown;
+    try {
+      parseRerankRequest('cohere-v2', value);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBe(failure);
+  });
 
   test('Cohere v2 admits only its string-document contract', () => {
     const parsed = parseRerankRequest('cohere-v2', {
@@ -126,7 +148,7 @@ describe('rerank response translation', () => {
 
   test('keeps request validation and unexpected response exceptions outside the response wire error class', () => {
     const parseRequest = () => parseRerankRequest('cohere-v2', { model: 4, query: 'query', documents: ['one'] });
-    expect(parseRequest).toThrow('model must be a non-empty string');
+    expect(parseRequest).toThrow(RerankRequestValidationError);
     expect(parseRequest).not.toThrow(RerankResponseValidationError);
 
     const body = { get results() { throw new TypeError('unexpected accessor failure'); } };

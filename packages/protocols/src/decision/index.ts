@@ -171,6 +171,7 @@ export interface ParsedDecisionRequest {
 
 export { DEFAULT_DECISION_PATHS } from './default-paths.ts';
 export {
+  DecisionRequestValidationError,
   decodeDecisionResponse,
   parseDecisionRequest,
   parseDecisionResponse,

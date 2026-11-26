@@ -7,7 +7,7 @@ import type { AnthropicMessagesCountTokensResult, AnthropicMessagesPayload, Anth
 import type { JsonObject, ProtocolDecodeError } from '@floway-dev/protocols/common';
 import type { CanonicalDecisionRequest, CanonicalDecisionResponse } from '@floway-dev/protocols/decision';
 import type { GeminiCountTokensPayload, GeminiGenerateContentCountTokensResult, GeminiGenerateContentPayload, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIAudioSpeechPayload, OpenAIAudioSpeechStreamEvent, OpenAIAudioTranscriptionStreamEvent } from '@floway-dev/protocols/openai-audio';
+import type { OpenAIAudioSpeechPayload, OpenAIAudioSpeechStreamEvent, OpenAIAudioTranscriptionStreamItem } from '@floway-dev/protocols/openai-audio';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsResultEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload, OpenAICompletionsResult, OpenAICompletionsStreamEvent } from '@floway-dev/protocols/openai-completions';
 import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
@@ -80,7 +80,7 @@ interface Operations {
   geminiGenerateContent: Operation<GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent, never>;
   geminiGenerateContentCountTokens: Operation<GeminiCountTokensPayload, never, GeminiGenerateContentCountTokensResult | null>;
   openaiAudioSpeech: Operation<OpenAIAudioSpeechPayload, OpenAIAudioSpeechStreamEvent, Uint8Array>;
-  openaiAudioTranscriptions: Operation<OpenAIAudioTranscriptionPayload, OpenAIAudioTranscriptionStreamEvent, Uint8Array>;
+  openaiAudioTranscriptions: Operation<OpenAIAudioTranscriptionPayload, OpenAIAudioTranscriptionStreamItem, Uint8Array>;
   openaiChatCompletions: Operation<OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, never>;
   openaiCompletions: Operation<OpenAICompletionsPayload, OpenAICompletionsStreamEvent, OpenAICompletionsResult>;
   openaiEmbeddings: Operation<OpenAIEmbeddingsPayload, never, JsonObject>;

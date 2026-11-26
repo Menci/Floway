@@ -1,3 +1,5 @@
+import type { OpenAISseWireEvent } from '../common/decode-sse-events.ts';
+
 // OpenAI-compatible audio transcription stream terminal. The wire remains open
 // so provider additions pass through unchanged while the gateway observes only
 // the terminal event it needs.
@@ -7,6 +9,8 @@ export interface OpenAIAudioTranscriptionStreamEvent {
   type: string;
   [key: string]: unknown;
 }
+
+export type OpenAIAudioTranscriptionStreamItem = OpenAISseWireEvent<OpenAIAudioTranscriptionStreamEvent>;
 
 export interface OpenAIAudioTranscriptionDoneEvent extends OpenAIAudioTranscriptionStreamEvent {
   type: 'transcript.text.done';
@@ -37,3 +41,4 @@ export interface OpenAIAudioSpeechStreamEvent {
 }
 
 export { decodeOpenAIAudioSpeechStream, decodeOpenAIAudioTranscriptionsStream } from './stream.ts';
+export { decodeOpenAIAudioTranscriptionsResult } from './transcriptions-result.ts';

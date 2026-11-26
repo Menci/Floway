@@ -75,11 +75,16 @@ interface OpenAISseCompletion<Event> {
   event?: (event: Event) => boolean;
 }
 
-export const decodeOpenAISseEvents = async function* <Event, Failure>(
+export interface OpenAISseWireEvent<Event> {
+  data: Event;
+  eventName?: string;
+}
+
+export const decodeOpenAISseWireEvents = async function* <Event, Failure>(
   body: ProtocolByteStream<Failure>,
   protocol: string,
   completion?: OpenAISseCompletion<Event>,
-): ProtocolEventStream<Event, Failure> {
+): ProtocolEventStream<OpenAISseWireEvent<Event>, Failure> {
   let ended = false;
   const onDone = () => { if (completion?.done === true) ended = true; };
   for await (const item of decodeSseEvents<Event, Failure>(body, { protocol, onDone, ignoreEvents: () => ended })) {
@@ -93,7 +98,17 @@ export const decodeOpenAISseEvents = async function* <Event, Failure>(
       return;
     }
     ended = completion?.event?.(data) === true;
-    yield { ok: true, value: data };
+    yield { ok: true, value: { data, ...(eventName === undefined ? {} : { eventName }) } };
   }
   if (completion !== undefined && !ended) yield protocolDecodeError(completion.missing);
+};
+
+export const decodeOpenAISseEvents = async function* <Event, Failure>(
+  body: ProtocolByteStream<Failure>,
+  protocol: string,
+  completion?: OpenAISseCompletion<Event>,
+): ProtocolEventStream<Event, Failure> {
+  for await (const item of decodeOpenAISseWireEvents(body, protocol, completion)) {
+    yield item.ok ? { ok: true, value: item.value.data } : item;
+  }
 };

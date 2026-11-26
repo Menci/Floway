@@ -1,17 +1,21 @@
 import type { ParsedRerankRequest, CanonicalRerankRequest, CanonicalRerankResponse, CanonicalRerankResult, RerankInput } from './index.ts';
 import type { RerankProtocol, RerankSourceProtocol } from '../common/models.ts';
 
+export class RerankRequestValidationError extends Error {
+  override readonly name = 'RerankRequestValidationError';
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const requiredString = (value: unknown, field: string, Invalid: new (message: string) => Error = Error): string => {
+const requiredString = (value: unknown, field: string, Invalid: new (message: string) => Error = RerankRequestValidationError): string => {
   if (typeof value !== 'string' || value.length === 0) throw new Invalid(`${field} must be a non-empty string`);
   return value;
 };
 
 const optionalBoolean = (value: unknown, field: string): boolean | undefined => {
   if (value === undefined) return undefined;
-  if (typeof value !== 'boolean') throw new Error(`${field} must be a boolean`);
+  if (typeof value !== 'boolean') throw new RerankRequestValidationError(`${field} must be a boolean`);
   return value;
 };
 
@@ -20,13 +24,13 @@ const optionalNullableBoolean = (value: unknown, field: string): boolean | undef
 
 const optionalFiniteNumber = (value: unknown, field: string): number | undefined => {
   if (value === undefined) return undefined;
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${field} must be a finite number`);
+  if (typeof value !== 'number' || !Number.isFinite(value)) throw new RerankRequestValidationError(`${field} must be a finite number`);
   return value;
 };
 
 const optionalPositiveInteger = (value: unknown, field: string): number | undefined => {
   const number = optionalFiniteNumber(value, field);
-  if (number !== undefined && (!Number.isInteger(number) || number < 1)) throw new Error(`${field} must be a positive integer`);
+  if (number !== undefined && (!Number.isInteger(number) || number < 1)) throw new RerankRequestValidationError(`${field} must be a positive integer`);
   return number;
 };
 
@@ -35,39 +39,39 @@ const optionalNullablePositiveInteger = (value: unknown, field: string): number 
 
 const optionalInteger = (value: unknown, field: string): number | undefined => {
   const number = optionalFiniteNumber(value, field);
-  if (number !== undefined && !Number.isInteger(number)) throw new Error(`${field} must be an integer`);
+  if (number !== undefined && !Number.isInteger(number)) throw new RerankRequestValidationError(`${field} must be an integer`);
   return number;
 };
 
 const stringArray = (value: unknown, field: string): string[] => {
   if (!Array.isArray(value) || value.length === 0 || value.some(item => typeof item !== 'string')) {
-    throw new Error(`${field} must be a non-empty array of strings`);
+    throw new RerankRequestValidationError(`${field} must be a non-empty array of strings`);
   }
   return value as string[];
 };
 
 const stringRecord = (value: unknown, field: string): Record<string, string> => {
   if (!isRecord(value) || Object.values(value).some(item => typeof item !== 'string')) {
-    throw new Error(`${field} must be a string or an object whose values are strings`);
+    throw new RerankRequestValidationError(`${field} must be a string or an object whose values are strings`);
   }
   return value as Record<string, string>;
 };
 
 const cohereV1Documents = (value: unknown): RerankInput[] => {
-  if (!Array.isArray(value) || value.length === 0) throw new Error('documents must be a non-empty array');
+  if (!Array.isArray(value) || value.length === 0) throw new RerankRequestValidationError('documents must be a non-empty array');
   return value.map((document, index) => typeof document === 'string' ? document : stringRecord(document, `documents[${index}]`));
 };
 
 const jinaStructuredInput = (value: unknown, field: string, keys: readonly ('text' | 'image')[]): RerankInput => {
   if (typeof value === 'string') return value;
   if (!isRecord(value) || !keys.some(key => typeof value[key] === 'string')) {
-    throw new Error(`${field} must be a string or an object with a string ${keys.join(' or ')} field`);
+    throw new RerankRequestValidationError(`${field} must be a string or an object with a string ${keys.join(' or ')} field`);
   }
   return value;
 };
 
 const jinaDocuments = (value: unknown): RerankInput[] => {
-  if (!Array.isArray(value) || value.length === 0) throw new Error('documents must be a non-empty array');
+  if (!Array.isArray(value) || value.length === 0) throw new RerankRequestValidationError('documents must be a non-empty array');
   return value.map((document, index) => jinaStructuredInput(document, `documents[${index}]`, ['text', 'image']));
 };
 
@@ -78,11 +82,11 @@ const baseRequest = (body: Record<string, unknown>, sourceProtocol: RerankSource
 
 const rejectFields = (body: Record<string, unknown>, protocol: RerankSourceProtocol, fields: readonly string[]): void => {
   const unsupported = fields.filter(field => body[field] !== undefined);
-  if (unsupported.length > 0) throw new Error(`${protocol} does not support ${unsupported.join(', ')}`);
+  if (unsupported.length > 0) throw new RerankRequestValidationError(`${protocol} does not support ${unsupported.join(', ')}`);
 };
 
 export const parseRerankRequest = (protocol: RerankSourceProtocol, value: unknown): ParsedRerankRequest => {
-  if (!isRecord(value)) throw new Error('Rerank request body must be an object');
+  if (!isRecord(value)) throw new RerankRequestValidationError('Rerank request body must be an object');
   const model = requiredString(value.model, 'model');
   switch (protocol) {
   case 'cohere-v1': {

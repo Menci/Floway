@@ -41,6 +41,7 @@ export interface ParsedRerankRequest {
 
 export { DEFAULT_RERANK_PATHS } from './default-paths.ts';
 export {
+  RerankRequestValidationError,
   parseRerankRequest,
   parseRerankResponse,
   parseRerankUsage,

@@ -19,11 +19,15 @@ import { isRawNumber, type JsonNumber } from '../common/json.ts';
 import type { DecisionProtocol } from '../common/models.ts';
 import type { Result } from '@floway-dev/pipeline';
 
+export class DecisionRequestValidationError extends Error {
+  override readonly name = 'DecisionRequestValidationError';
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const requiredString = (value: unknown, field: string): string => {
-  if (typeof value !== 'string' || value.length === 0) throw new Error(`${field} must be a non-empty string`);
+  if (typeof value !== 'string' || value.length === 0) throw new DecisionRequestValidationError(`${field} must be a non-empty string`);
   return value;
 };
 
@@ -89,11 +93,11 @@ const isImageDetail = (value: unknown): value is 'low' | 'high' | 'auto' | 'orig
   value === 'low' || value === 'high' || value === 'auto' || value === 'original';
 
 const openAIContentPart = (part: unknown, field: string): DecisionContentPart => {
-  if (!isRecord(part)) throw new Error(`${field} must be an object`);
+  if (!isRecord(part)) throw new DecisionRequestValidationError(`${field} must be an object`);
   if (part.type === 'input_text') return { type: 'text', text: requiredString(part.text, `${field}.text`) };
   if (part.type === 'input_image') {
     const detail = part.detail ?? undefined;
-    if (detail !== undefined && !isImageDetail(detail)) throw new Error(`${field}.detail must be one of low, high, auto, original`);
+    if (detail !== undefined && !isImageDetail(detail)) throw new DecisionRequestValidationError(`${field}.detail must be one of low, high, auto, original`);
     return {
       type: 'image',
       imageUrl: requiredString(part.image_url, `${field}.image_url`),
@@ -101,15 +105,15 @@ const openAIContentPart = (part: unknown, field: string): DecisionContentPart =>
     };
   }
   if (part.type === 'input_json') {
-    if (!isRecord(part.data) && !Array.isArray(part.data)) throw new Error(`${field}.data must be an object or an array`);
+    if (!isRecord(part.data) && !Array.isArray(part.data)) throw new DecisionRequestValidationError(`${field}.data must be an object or an array`);
     return { type: 'json', data: part.data as Record<string, unknown> | readonly unknown[] };
   }
-  throw new Error(`${field}.type ${JSON.stringify(part.type)} is not supported`);
+  throw new DecisionRequestValidationError(`${field}.type ${JSON.stringify(part.type)} is not supported`);
 };
 
 const openAIContent = (content: unknown, field: string): readonly DecisionContentPart[] | string => {
   if (typeof content === 'string') return content;
-  if (!Array.isArray(content) || content.length === 0) throw new Error(`${field} must be a string or a non-empty array of parts`);
+  if (!Array.isArray(content) || content.length === 0) throw new DecisionRequestValidationError(`${field} must be a string or a non-empty array of parts`);
   return content.map((part, index) => openAIContentPart(part, `${field}[${index}]`));
 };
 
@@ -120,11 +124,11 @@ const OPENAI_MESSAGE_ROLES = new Set(['user', 'developer', 'system', 'assistant'
 // and images into one ordered evidence list; a non-message item is rejected.
 const openAIInputState = (input: unknown): DecisionState => {
   if (typeof input === 'string') return { kind: 'text', value: input };
-  if (!Array.isArray(input) || input.length === 0) throw new Error('input must be a string or a non-empty array');
+  if (!Array.isArray(input) || input.length === 0) throw new DecisionRequestValidationError('input must be a string or a non-empty array');
   const parts: DecisionContentPart[] = [];
   for (const [index, item] of input.entries()) {
-    if (!isRecord(item)) throw new Error(`input[${index}] must be an object`);
-    if (!OPENAI_MESSAGE_ROLES.has(String(item.role))) throw new Error(`input[${index}].role is not supported`);
+    if (!isRecord(item)) throw new DecisionRequestValidationError(`input[${index}] must be an object`);
+    if (!OPENAI_MESSAGE_ROLES.has(String(item.role))) throw new DecisionRequestValidationError(`input[${index}].role is not supported`);
     const content = openAIContent(item.content, `input[${index}].content`);
     if (typeof content === 'string') parts.push({ type: 'text', text: content });
     else parts.push(...content);
@@ -154,7 +158,7 @@ const typesafeSystemOneInstructions = (value: unknown, field: string, assets: un
   }
   if (isRecord(value)) return { instructions: value };
   if (Array.isArray(value)) return { instructions: value };
-  throw new Error(`${field} must be a string, an object, an array, or null`);
+  throw new DecisionRequestValidationError(`${field} must be a string, an object, an array, or null`);
 };
 
 // A whole-string asset reference becomes an image part; a structured state keeps
@@ -168,21 +172,21 @@ const typesafeSystemOneState = (state: unknown, assets: unknown): DecisionState 
     const images = collectAssetImages(state, assets);
     return { kind: 'json', value: state as Record<string, unknown> | readonly unknown[], ...(images.length === 0 ? {} : { images }) };
   }
-  throw new Error('state must be a string, an object, or an array');
+  throw new DecisionRequestValidationError('state must be a string, an object, or an array');
 };
 
 const typesafeSystemOneNoul = (name: string, value: Record<string, unknown>, assets: unknown): DecisionNoulQuestion => {
   const instructions = typesafeSystemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
   // `null` is the SDK's explicit "no criteria", equivalent to omitting it.
   if (value.criteria === undefined || value.criteria === null) return { type: 'noul', name, ...instructions };
-  if (!isRecord(value.criteria)) throw new Error(`questions.${name}.criteria must be an object`);
+  if (!isRecord(value.criteria)) throw new DecisionRequestValidationError(`questions.${name}.criteria must be an object`);
   const trueCriterion = value.criteria.true;
   const falseCriterion = value.criteria.false;
   if (trueCriterion !== undefined && typeof trueCriterion !== 'string' && !isRecord(trueCriterion) && !Array.isArray(trueCriterion)) {
-    throw new Error(`questions.${name}.criteria.true must be a string, an object, or an array`);
+    throw new DecisionRequestValidationError(`questions.${name}.criteria.true must be a string, an object, or an array`);
   }
   if (falseCriterion !== undefined && typeof falseCriterion !== 'string' && !isRecord(falseCriterion) && !Array.isArray(falseCriterion)) {
-    throw new Error(`questions.${name}.criteria.false must be a string, an object, or an array`);
+    throw new DecisionRequestValidationError(`questions.${name}.criteria.false must be a string, an object, or an array`);
   }
   return {
     type: 'noul',
@@ -197,29 +201,29 @@ const typesafeSystemOneNoul = (name: string, value: Record<string, unknown>, ass
 
 const typesafeSystemOneChoice = (name: string, value: Record<string, unknown>, assets: unknown): DecisionChoiceQuestion => {
   const instructions = typesafeSystemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
-  if (!isRecord(value.criteria)) throw new Error(`questions.${name}.criteria must be an object`);
+  if (!isRecord(value.criteria)) throw new DecisionRequestValidationError(`questions.${name}.criteria must be an object`);
   const options: DecisionChoiceOption[] = Object.entries(value.criteria).map(([option, description]) => {
     if (description === null) return { value: option };
     if (typeof description !== 'string' && !isRecord(description) && !Array.isArray(description)) {
-      throw new Error(`questions.${name}.criteria.${option} must be a string, an object, an array, or null`);
+      throw new DecisionRequestValidationError(`questions.${name}.criteria.${option} must be a string, an object, an array, or null`);
     }
     return { value: option, description: description as DecisionEntry };
   });
   if (options.length < CHOICE_OPTION_MIN || options.length > CHOICE_OPTION_MAX) {
-    throw new Error(`questions.${name}.criteria must have ${CHOICE_OPTION_MIN}-${CHOICE_OPTION_MAX} options`);
+    throw new DecisionRequestValidationError(`questions.${name}.criteria must have ${CHOICE_OPTION_MIN}-${CHOICE_OPTION_MAX} options`);
   }
   return { type: 'choice', name, ...instructions, options };
 };
 
 const typesafeSystemOneScore = (name: string, value: Record<string, unknown>, assets: unknown): DecisionScoreQuestion => {
   const instructions = typesafeSystemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
-  if (!Array.isArray(value.criteria)) throw new Error(`questions.${name}.criteria must be an array of level descriptions`);
+  if (!Array.isArray(value.criteria)) throw new DecisionRequestValidationError(`questions.${name}.criteria must be an array of level descriptions`);
   if (value.criteria.length < SCORE_LEVEL_MIN || value.criteria.length > SCORE_LEVEL_MAX) {
-    throw new Error(`questions.${name}.criteria must have ${SCORE_LEVEL_MIN}-${SCORE_LEVEL_MAX} levels`);
+    throw new DecisionRequestValidationError(`questions.${name}.criteria must have ${SCORE_LEVEL_MIN}-${SCORE_LEVEL_MAX} levels`);
   }
   const levels: DecisionScoreLevel[] = value.criteria.map((level, index) => {
     if (typeof level !== 'string' && !isRecord(level) && !Array.isArray(level)) {
-      throw new Error(`questions.${name}.criteria[${index}] must be a string, an object, or an array`);
+      throw new DecisionRequestValidationError(`questions.${name}.criteria[${index}] must be a string, an object, or an array`);
     }
     return { label: level as DecisionEntry };
   });
@@ -227,21 +231,21 @@ const typesafeSystemOneScore = (name: string, value: Record<string, unknown>, as
 };
 
 const parseSystemOneQuestion = (name: string, value: unknown, assets: unknown): DecisionQuestion => {
-  if (!isRecord(value)) throw new Error(`questions.${name} must be an object`);
+  if (!isRecord(value)) throw new DecisionRequestValidationError(`questions.${name} must be an object`);
   if (value.type === 'noul') return typesafeSystemOneNoul(name, value, assets);
   if (value.type === 'choice') return typesafeSystemOneChoice(name, value, assets);
   if (value.type === 'score') return typesafeSystemOneScore(name, value, assets);
-  throw new Error(`questions.${name}.type must be one of noul, choice, score`);
+  throw new DecisionRequestValidationError(`questions.${name}.type must be one of noul, choice, score`);
 };
 
 const parseSystemOneRequest = (value: Record<string, unknown>): CanonicalDecisionRequest => {
   const unknownFields = Object.keys(value).filter(key => !SYSTEMONE_TOP_LEVEL_FIELDS.has(key));
-  if (unknownFields.length > 0) throw new Error(`System One does not support ${unknownFields.join(', ')}`);
-  if (value.state === undefined) throw new Error('state is required');
+  if (unknownFields.length > 0) throw new DecisionRequestValidationError(`System One does not support ${unknownFields.join(', ')}`);
+  if (value.state === undefined) throw new DecisionRequestValidationError('state is required');
   const state = typesafeSystemOneState(value.state, value.assets);
-  if (!isRecord(value.questions)) throw new Error('questions must be an object keyed by question name');
+  if (!isRecord(value.questions)) throw new DecisionRequestValidationError('questions must be an object keyed by question name');
   const questions = Object.entries(value.questions).map(([name, entry]) => parseSystemOneQuestion(name, entry, value.assets));
-  if (questions.length === 0) throw new Error('questions must contain at least one question');
+  if (questions.length === 0) throw new DecisionRequestValidationError('questions must contain at least one question');
   return { sourceProtocol: 'typesafe-systemone', raw: value, state, questions };
 };
 
@@ -255,58 +259,58 @@ const OPENAI_TOP_LEVEL_FIELDS = new Set([
 ]);
 
 const bounded = <T>(items: T[], field: string, min: number, max: number): readonly T[] => {
-  if (items.length < min || items.length > max) throw new Error(`${field} must have ${min}-${max} entries`);
+  if (items.length < min || items.length > max) throw new DecisionRequestValidationError(`${field} must have ${min}-${max} entries`);
   return items;
 };
 
 // Choice values are typed in this dialect; a string and a boolean that read the
 // same are distinct options.
 const openAIChoiceOption = (value: unknown, field: string): DecisionChoiceOption => {
-  if (!isRecord(value)) throw new Error(`${field} must be an object`);
+  if (!isRecord(value)) throw new DecisionRequestValidationError(`${field} must be an object`);
   const option = value.value;
-  if (typeof option !== 'string' && typeof option !== 'boolean') throw new Error(`${field}.value must be a string or boolean`);
-  if (value.description !== undefined && typeof value.description !== 'string') throw new Error(`${field}.description must be a string`);
+  if (typeof option !== 'string' && typeof option !== 'boolean') throw new DecisionRequestValidationError(`${field}.value must be a string or boolean`);
+  if (value.description !== undefined && typeof value.description !== 'string') throw new DecisionRequestValidationError(`${field}.description must be a string`);
   return value.description === undefined ? { value: option } : { value: option, description: value.description };
 };
 
 const openAILevel = (value: unknown, field: string): DecisionScoreLevel => {
-  if (!isRecord(value)) throw new Error(`${field} must be an object`);
+  if (!isRecord(value)) throw new DecisionRequestValidationError(`${field} must be an object`);
   const label = requiredString(value.label, `${field}.label`);
-  if (value.description !== undefined && typeof value.description !== 'string') throw new Error(`${field}.description must be a string`);
+  if (value.description !== undefined && typeof value.description !== 'string') throw new DecisionRequestValidationError(`${field}.description must be a string`);
   return value.description === undefined ? { label } : { label, description: value.description };
 };
 
 const openAIQuestion = (value: unknown, index: number): DecisionQuestion => {
-  if (!isRecord(value)) throw new Error(`questions[${index}] must be an object`);
+  if (!isRecord(value)) throw new DecisionRequestValidationError(`questions[${index}] must be an object`);
   const name = requiredString(value.name, `questions[${index}].name`);
   const instructions = openAIContent(value.instructions, `questions[${index}].instructions`);
   if (value.type === 'predicate') return { type: 'noul', name, instructions };
   if (value.type === 'choice') {
-    if (!Array.isArray(value.choices)) throw new Error(`questions[${index}].choices must be an array`);
+    if (!Array.isArray(value.choices)) throw new DecisionRequestValidationError(`questions[${index}].choices must be an array`);
     const options = value.choices.map((choice, choiceIndex) => openAIChoiceOption(choice, `questions[${index}].choices[${choiceIndex}]`));
     return { type: 'choice', name, instructions, options: bounded(options, `questions[${index}].choices`, CHOICE_OPTION_MIN, CHOICE_OPTION_MAX) };
   }
   if (value.type === 'score') {
-    if (!Array.isArray(value.levels)) throw new Error(`questions[${index}].levels must be an array`);
+    if (!Array.isArray(value.levels)) throw new DecisionRequestValidationError(`questions[${index}].levels must be an array`);
     const levels = value.levels.map((level, levelIndex) => openAILevel(level, `questions[${index}].levels[${levelIndex}]`));
     return { type: 'score', name, instructions, levels: bounded(levels, `questions[${index}].levels`, SCORE_LEVEL_MIN, SCORE_LEVEL_MAX) };
   }
-  throw new Error(`questions[${index}].type must be one of predicate, choice, score`);
+  throw new DecisionRequestValidationError(`questions[${index}].type must be one of predicate, choice, score`);
 };
 
 const parseOpenAIDecisionsRequest = (value: Record<string, unknown>): CanonicalDecisionRequest => {
   const unknownFields = Object.keys(value).filter(key => !OPENAI_TOP_LEVEL_FIELDS.has(key));
-  if (unknownFields.length > 0) throw new Error(`OpenAI Decisions does not support ${unknownFields.join(', ')}`);
-  if (value.input === undefined) throw new Error('input is required');
+  if (unknownFields.length > 0) throw new DecisionRequestValidationError(`OpenAI Decisions does not support ${unknownFields.join(', ')}`);
+  if (value.input === undefined) throw new DecisionRequestValidationError('input is required');
   const state = openAIInputState(value.input);
-  if (!Array.isArray(value.questions)) throw new Error('questions must be an array');
+  if (!Array.isArray(value.questions)) throw new DecisionRequestValidationError('questions must be an array');
   const questions = value.questions.map((entry, index) => openAIQuestion(entry, index));
-  if (questions.length === 0) throw new Error('questions must contain at least one question');
+  if (questions.length === 0) throw new DecisionRequestValidationError('questions must contain at least one question');
   return { sourceProtocol: 'openai-decisions', raw: value, state, questions };
 };
 
 export const parseDecisionRequest = (protocol: DecisionProtocol, value: unknown): ParsedDecisionRequest => {
-  if (!isRecord(value)) throw new Error('Decision request body must be an object');
+  if (!isRecord(value)) throw new DecisionRequestValidationError('Decision request body must be an object');
   const model = requiredString(value.model, 'model');
   switch (protocol) {
   case 'typesafe-systemone': return { model, request: parseSystemOneRequest(value) };
