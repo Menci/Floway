@@ -11,9 +11,8 @@ import type { HttpContentDecoders, RawHttpResponse, SocketHttpResponse } from '.
 /**
  * Bridge a wire-faithful {@link RawHttpResponse} to a Web `Response`. The
  * Web `Response` constructor rejects status outside 200..599 and rejects a
- * non-null body for 204/304 — both of which the wire can legitimately
- * carry — so the parser stays a pure wire decoder and this is the single
- * place that maps the parsed shape onto the Fetch standard's constraints.
+ * non-null body for 204, 205, and 304. This is the single place that maps
+ * the wire parser's response onto the Fetch standard's constraints.
  *
  * `parseHttpResponse` transparently skips 1xx interim heads, so anything
  * reaching this function should already be a final 2xx..5xx response.
@@ -30,12 +29,10 @@ export const toWebResponse = (raw: RawHttpResponse, contentDecoders?: HttpConten
       { rfc: 'WHATWG Fetch §response-class' },
     );
   }
-  // RFC 9110 §15.3.5 + §15.4.5: 204 No Content and 304 Not Modified MUST
-  // NOT carry a body. The Web Response constructor also refuses a non-null
-  // body for these statuses, so we cancel the body stream (in case the
-  // parser fell back to until-EOF framing on a misbehaving upstream) and
-  // construct with `null`.
-  if (raw.status === 204 || raw.status === 304) {
+  // Fetch requires a null body for these statuses. Cancelling also releases
+  // a body stream framed as until-EOF when the upstream keeps the socket open.
+  // https://fetch.spec.whatwg.org/#null-body-status
+  if (raw.status === 204 || raw.status === 205 || raw.status === 304) {
     raw.body.cancel().catch(() => {});
     return Object.assign(new Response(null, { status: raw.status, statusText: raw.statusText, headers: raw.headers }), {
       headerLines: raw.headerLines,
@@ -98,10 +95,8 @@ const decodeContentEncoding = (
 
 /**
  * Parse an HTTP/1.1 response off a byte-stream reader. Returns a
- * wire-faithful struct rather than a Web `Response`: Response rejects 1xx
- * and refuses to carry a body for 204/304, but those are legal on the
- * wire. Bridge to a Response with {@link toWebResponse} when the caller
- * wants one.
+ * wire-faithful struct. Use {@link toWebResponse} to apply the Fetch
+ * constructor's restrictions on status and body.
  *
  * 1xx interim heads (100 Continue, 103 Early Hints, …) are read and
  * discarded transparently — RFC 9112 §6 mandates no body on a 1xx, so any

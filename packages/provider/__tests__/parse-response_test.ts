@@ -1,10 +1,11 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
 
-import { httpDialError, httpTerminal, parseHttpResponse, parseJsonBody, parseResultResponse, parseSseResponse, stripHeaders, type GatewayFacts, type HttpTerminalFacts, type ProviderServices } from '../src/index.ts';
+import { httpDialError, httpTerminal, parseHttpResponse, parseJsonBody, parseResultResponse, parseSseResponse, stripHeaders, type GatewayFacts, type HttpTerminalFacts, type ProviderResponseFacts, type ProviderServices } from '../src/index.ts';
 import { UpstreamTransportError, type Fetcher } from '@floway-dev/http';
 import { factSpace, run, Secret } from '@floway-dev/pipeline';
-import { decodeAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
+import { decodeAnthropicMessagesCountTokensResult, decodeAnthropicMessagesStream, type AnthropicMessagesCountTokensResult } from '@floway-dev/protocols/anthropic-messages';
 import { isJsonObject } from '@floway-dev/protocols/common';
+import { decodeGeminiGenerateContentCountTokensResult, type GeminiGenerateContentCountTokensResult } from '@floway-dev/protocols/gemini-generate-content';
 import { decodeOpenAIAudioSpeechStream } from '@floway-dev/protocols/openai-audio';
 import { decodeOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseRerankResponse } from '@floway-dev/protocols/rerank';
@@ -22,7 +23,7 @@ const host = (fetcher: Fetcher, signal = new AbortController().signal) => ({
   services: { fetcher: () => async (url: string, init: Parameters<Fetcher>[1]) => ({ response: await fetcher(url, init) }) },
 });
 
-const dial = (operation: 'alphaSearch' | 'anthropicMessages' | 'openaiChatCompletions' | 'openaiAudioSpeech' | 'rerank') => {
+const dial = (operation: 'alphaSearch' | 'anthropicMessages' | 'anthropicMessagesCountTokens' | 'geminiGenerateContentCountTokens' | 'openaiChatCompletions' | 'openaiAudioSpeech' | 'rerank') => {
   const outcome = `response.${operation}` as const;
   return defineStage({
     name: 'prepare-dial',
@@ -74,6 +75,34 @@ const anthropic = compose('anthropic-messages.provider', {
   ending: httpTerminal,
 });
 
+const anthropicCountParser = parseResultResponse('anthropicMessagesCountTokens', {
+  needs: [], noContent: null, format,
+  decode(bytes) {
+    const parsed = parseJsonBody(bytes);
+    return parsed.ok ? decodeAnthropicMessagesCountTokensResult(parsed.value) : parsed;
+  },
+});
+
+const anthropicCount = compose('anthropic-messages.count-tokens.provider', {
+  entry,
+  exit: ['response.http', 'response.anthropicMessagesCountTokens'],
+  stages: [anthropicCountParser, dial('anthropicMessagesCountTokens')],
+  ending: httpTerminal,
+});
+
+const geminiCount = compose('gemini-generate-content.count-tokens.provider', {
+  entry,
+  exit: ['response.http', 'response.geminiGenerateContentCountTokens'],
+  stages: [parseResultResponse('geminiGenerateContentCountTokens', {
+    needs: [], noContent: null, format,
+    decode(bytes) {
+      const parsed = parseJsonBody(bytes);
+      return parsed.ok ? decodeGeminiGenerateContentCountTokensResult(parsed.value) : parsed;
+    },
+  }), dial('geminiGenerateContentCountTokens')],
+  ending: httpTerminal,
+});
+
 const speech = compose('openai-audio-speech.provider', {
   entry: [...entry, 'request.openaiAudioSpeech'],
   exit: ['response.http', 'response.openaiAudioSpeech'],
@@ -95,6 +124,76 @@ const speech = compose('openai-audio-speech.provider', {
 });
 
 describe('provider HTTP return path', () => {
+  it('types the optional dispatch model key and restricts no-content results to nullable operations', () => {
+    expectTypeOf<Pick<GatewayFacts, 'response.usageModelKey'>>().toEqualTypeOf<{ 'response.usageModelKey'?: string }>();
+    expectTypeOf<Pick<ProviderResponseFacts<'openaiChatCompletions'>, 'response.usageModelKey'>>().toEqualTypeOf<{ 'response.usageModelKey'?: string }>();
+    expectTypeOf<Parameters<typeof parseResultResponse<'openaiEmbeddings', readonly []>>[1]['noContent']>().toEqualTypeOf<undefined>();
+    expectTypeOf<Extract<GatewayFacts['response.anthropicMessagesCountTokens'], { kind: 'result' }>['result']>().toEqualTypeOf<AnthropicMessagesCountTokensResult | null>();
+    expectTypeOf<Extract<GatewayFacts['response.geminiGenerateContentCountTokens'], { kind: 'result' }>['result']>().toEqualTypeOf<GeminiGenerateContentCountTokensResult | null>();
+  });
+
+  it.each([204, 205])('preserves a bodyless count response and its HTTP %s head', async status => {
+    const runOptions = host(() => Promise.resolve(new Response(null, { status, statusText: 'Upstream status', headers: { 'x-upstream': 'kept' } })));
+    const anthropicRun = run(anthropicCount, request, runOptions);
+    const geminiRun = run(geminiCount, request, runOptions);
+    const expectedHead = { status, statusText: 'Upstream status', headers: [['x-upstream', 'kept']], body: null, startedAt: expect.any(Number) };
+    await expect(anthropicRun.result).resolves.toEqual({
+      'response.http': expectedHead,
+      'response.anthropicMessagesCountTokens': { kind: 'result', result: null },
+    });
+    await expect(geminiRun.result).resolves.toEqual({
+      'response.http': expectedHead,
+      'response.geminiGenerateContentCountTokens': { kind: 'result', result: null },
+    });
+    await Promise.all([anthropicRun.done, geminiRun.done]);
+  });
+
+  it.each([
+    ['an absent body at 200', 200, null],
+    ['empty bytes at 200', 200, ''],
+    ['JSON null at 200', 200, 'null'],
+    ['an absent body at 304', 304, null],
+  ] as const)('returns an upstream count error for %s', async (_description, status, body) => {
+    const runOptions = host(() => Promise.resolve(new Response(body, { status })));
+    const anthropicRun = run(anthropicCount, request, runOptions);
+    const geminiRun = run(geminiCount, request, runOptions);
+    await expect(anthropicRun.result).resolves.toMatchObject({
+      'response.http': { status, body: null },
+      'response.anthropicMessagesCountTokens': { kind: 'error', source: 'upstream' },
+    });
+    await expect(geminiRun.result).resolves.toMatchObject({
+      'response.http': { status, body: null },
+      'response.geminiGenerateContentCountTokens': { kind: 'error', source: 'upstream' },
+    });
+    await Promise.all([anthropicRun.done, geminiRun.done]);
+  });
+
+  it('does not treat a present managed body as absent at status 205', async () => {
+    const ending = defineStage({
+      name: 'raw-count-http',
+      request: { needs: [] },
+      return: { provides: ['response.http'] },
+      async execute(_facts, scope) {
+        const body = scope.createStream<Uint8Array, never>(async function* () {
+          yield { ok: true, value: new TextEncoder().encode('null') };
+        });
+        return { 'response.http': { status: 205, statusText: 'Reset Content', headers: [], body } };
+      },
+    });
+    const pipeline = compose('anthropic-messages.count-tokens.present-body', {
+      entry: [],
+      exit: ['response.http', 'response.anthropicMessagesCountTokens'],
+      stages: [anthropicCountParser],
+      ending,
+    });
+    const running = run(pipeline, {}, host(() => { throw new Error('The custom terminal owns this response'); }));
+    await expect(running.result).resolves.toMatchObject({
+      'response.http': { status: 205, body: null },
+      'response.anthropicMessagesCountTokens': { kind: 'error', source: 'upstream' },
+    });
+    await running.done;
+  });
+
   it('requires a single operation key for each decoder factory', () => {
     expectTypeOf<Parameters<typeof parseSseResponse<'anthropicMessages' | 'openaiChatCompletions'>>[0]>().toBeNever();
     expectTypeOf<Parameters<typeof parseResultResponse<'alphaSearch' | 'openaiEmbeddings'>>[0]>().toBeNever();

@@ -154,11 +154,13 @@ type ResultDecoder<Op extends ProviderOperation, Needs extends RequestNeeds = re
   body: Uint8Array,
   http: HttpResponseFact,
   requestFacts: RequestedFacts<Needs>,
-) => Result<ProviderResult<Op>, unknown>;
+) => Result<Exclude<ProviderResult<Op>, null>, unknown>;
 
 type ParseMode<Op extends ProviderOperation, Needs extends RequestNeeds> =
   | { kind: 'stream'; decode: ProtocolStreamDecoder<ProviderEvent<Op>> }
-  | { kind: 'result'; decode: ResultDecoder<Op, Needs> };
+  | ({ kind: 'result'; decode: ResultDecoder<Op, Needs> } & NoContentResult<Op>);
+
+type NoContentResult<Op extends ProviderOperation> = { noContent?: Extract<ProviderResult<Op>, null> };
 
 const parseSuccess = async <Op extends ProviderOperation, Needs extends RequestNeeds>(
   http: UpstreamHttpResponse,
@@ -168,6 +170,9 @@ const parseSuccess = async <Op extends ProviderOperation, Needs extends RequestN
   requestFacts: RequestedFacts<Needs>,
 ): Promise<ParsedOutcome<Op>> => {
   if (mode.kind === 'result') {
+    if (mode.noContent === null && http.body === null && (http.status === 204 || http.status === 205)) {
+      return { kind: 'result', result: mode.noContent };
+    }
     const body = await readBody(http.body, scope);
     if (!body.ok) return ioError(body.error, http.status, format);
     const result = mode.decode(body.value, http, requestFacts);
@@ -266,11 +271,11 @@ export const parseSseResponse = <Op extends StreamOperation>(
 
 type ParseResponseStage = ReturnType<typeof responseParser>;
 
-interface ContextualResultDecoder<Op extends ProviderOperation, Needs extends RequestNeeds> {
+type ContextualResultDecoder<Op extends ProviderOperation, Needs extends RequestNeeds> = {
   needs: Needs;
   decode: ResultDecoder<Op, Needs>;
   format: FormatProtocolError;
-}
+} & NoContentResult<Op>;
 
 export function parseResultResponse<Op extends ResultOperation>(
   operation: Op & SingleOperation<Op>,

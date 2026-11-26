@@ -243,10 +243,13 @@ describe('parseHttpResponse — 1xx interim heads', () => {
 });
 
 describe('toWebResponse', () => {
-  it('returns a null-body Response for 204 No Content (Fetch standard refuses a body)', async () => {
-    const r = toWebResponse(await parseHttpResponse(respondAndEnd('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n')));
-    expect(r.status).toBe(204);
-    expect(r.body).toBeNull();
+  it.each([[204, 'No Content'], [205, 'Reset Content'], [304, 'Not Modified']] as const)('returns a null-body Response with the original %s head', async (status, statusText) => {
+    const raw = await parseHttpResponse(respondAndEnd(`HTTP/1.1 ${status} ${statusText}\r\nX-Upstream: kept\r\n\r\n`));
+    const response = toWebResponse(raw);
+    expect(response.status).toBe(status);
+    expect(response.statusText).toBe(statusText);
+    expect(response.headerLines).toEqual([['X-Upstream', 'kept']]);
+    expect(response.body).toBeNull();
   });
 
   it('preserves the head while the body rejects an unsupported content coding', async () => {
