@@ -4,8 +4,8 @@ import { withRoleCompatibilityApplied } from '../../../../../src/data-plane/chat
 import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
-import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { eventResult, type FlagId } from '@floway-dev/upstream';
 
 const gatewayCtx = mockChatGatewayCtx();
 const okEvents = () => Promise.resolve(eventResult((async function* () {})(), testTelemetryModelIdentity));

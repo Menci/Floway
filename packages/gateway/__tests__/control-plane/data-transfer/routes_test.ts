@@ -219,7 +219,7 @@ const USAGE_2: UsageRecord = {
 };
 
 const WEB_SEARCH_USAGE_1: WebSearchUsageRecord = {
-  provider: 'tavily',
+  backend: 'tavily',
   keyId: 'key-a',
   action: 'search',
   hour: '2026-01-01T10',
@@ -227,7 +227,7 @@ const WEB_SEARCH_USAGE_1: WebSearchUsageRecord = {
 };
 
 const WEB_SEARCH_USAGE_2: WebSearchUsageRecord = {
-  provider: 'microsoft-web-iq',
+  backend: 'microsoft-web-iq',
   keyId: 'key-b',
   action: 'fetch_page',
   hour: '2026-01-01T11',
@@ -298,7 +298,7 @@ const doExport = async (app: Hono, includePerformance = false) => {
   return (await resp.json()) as Record<string, any>;
 };
 
-const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 26) => {
+const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 27) => {
   const resp = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -361,7 +361,7 @@ test('import rejects any version other than the current one before deleting data
   await repo.apiKeys.save(KEY_A);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
 
-  const VERSION_ERROR = 'version must be 26 — older export formats are not supported; re-export from the current deployment';
+  const VERSION_ERROR = 'version must be 27 — older export formats are not supported; re-export from the current deployment';
   const previousV25 = await doImport(app, 'replace', latestImportData(), 25);
   const previousV11 = await doImport(app, 'replace', latestImportData(), 11);
   const ancientVersion = await doImport(app, 'replace', { apiKeys: [] }, 1);
@@ -392,7 +392,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
   await repo.openaiResponsesItems.insertMany([STORED_OPENAI_RESPONSES_ITEM], 0);
   await repo.webSearchConfig.save({
-    provider: 'tavily',
+    backend: 'tavily',
     tavily: { apiKey: 'old' },
     microsoftWebIq: { apiKey: '' },
     jina: { apiKey: '' },
@@ -409,7 +409,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: {
-      provider: 'microsoft-web-iq',
+      backend: 'microsoft-web-iq',
       tavily: { apiKey: '' },
       microsoftWebIq: { apiKey: 'ms-new' },
       jina: { apiKey: '' },
@@ -433,7 +433,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_2]);
   assertEquals(await repo.openaiResponsesItems.lookupMany('key-a', [STORED_OPENAI_RESPONSES_ITEM.id], 0), []);
   assertEquals(await repo.webSearchConfig.get(), {
-    provider: 'microsoft-web-iq',
+    backend: 'microsoft-web-iq',
     tavily: { apiKey: '' },
     microsoftWebIq: { apiKey: 'ms-new' },
     jina: { apiKey: '' },
@@ -620,7 +620,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     apiKeys: [],
     upstreams: [],
     usage: [],
-    searchUsage: [{ provider: 'not-real', keyId: 'key-a', hour: '2026-01-01T10', requests: 1 }],
+    searchUsage: [{ backend: 'not-real', keyId: 'key-a', hour: '2026-01-01T10', requests: 1 }],
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
@@ -771,7 +771,7 @@ test('replace-mode import clears sessions before writing users', async () => {
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
     siteSettings: { siteName: null },
-  }, 26);
+  }, 27);
 
   assertEquals(result.status, 200);
   // No public listAll on sessions; create a fresh session and check the
@@ -780,7 +780,7 @@ test('replace-mode import clears sessions before writing users', async () => {
   assertEquals(await repo.sessions.deleteByUserId(USER_BOB.id), 0);
 });
 
-test('v26 replace import refuses payload missing user 1', async () => {
+test('v27 replace import refuses payload missing user 1', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
     ...EMPTY_ACCESS_TRANSFER,
@@ -793,12 +793,12 @@ test('v26 replace import refuses payload missing user 1', async () => {
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
     siteSettings: { siteName: null },
-  }, 26);
+  }, 27);
   assertEquals(result.status, 400);
   expect(result.body.error).toContain('user 1');
 });
 
-test('a full v26 export re-imports verbatim — the export→import round trip is closed', async () => {
+test('a full v27 export re-imports verbatim — the export→import round trip is closed', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
@@ -815,7 +815,7 @@ test('a full v26 export re-imports verbatim — the export→import round trip i
   await repo.performance.set(PERFORMANCE_1);
   await repo.performance.set(PERFORMANCE_2);
   const config = {
-    provider: 'tavily' as const,
+    backend: 'tavily' as const,
     tavily: { apiKey: 'tk' },
     microsoftWebIq: { apiKey: '' },
     jina: { apiKey: '' },
@@ -824,12 +824,12 @@ test('a full v26 export re-imports verbatim — the export→import round trip i
   await repo.webSearchConfig.save(config);
 
   const exported = await doExport(app, true);
-  assertEquals(exported.version, 26);
+  assertEquals(exported.version, 27);
 
   // Replace-import the export's own `data`, verbatim. If the export emits any
   // shape the import parser rejects, this 400s — the round trip is the
   // invariant, so this test fails the moment the two sides drift.
-  const result = await doImport(app, 'replace', exported.data, 26);
+  const result = await doImport(app, 'replace', exported.data, 27);
   assertEquals(result.status, 200);
   assertEquals(result.body.imported, { users: 2, userPreferences: 0, groups: 0, accessRecords: 0, apiKeys: 2, upstreams: 4, proxies: 0, usage: 2, searchUsage: 2, upstreamMetrics: 0, performance: 2 });
 

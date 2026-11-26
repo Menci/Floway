@@ -9,8 +9,8 @@ import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesResultToEvents, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type FlagId, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, assertStringIncludes, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertStringIncludes, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type FlagId, type ModelCandidate, directFetcher, type UpstreamOpenAIResponsesResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/upstream';
 
 // Mock the resolver seam so each test hands the http entry exactly the
 // provider candidates it wants, optionally with an alias-rules overlay
@@ -21,8 +21,8 @@ interface QueuedResolution {
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastSeenModel: { value: string | null } = { value: null };
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
+vi.mock('../../../../src/data-plane/upstreams/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../../src/data-plane/upstreams/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async ({ model }: { model: string }) => {
@@ -119,22 +119,22 @@ const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
   enabledFlags?: ReadonlySet<FlagId>;
-  callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
+  callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamOpenAIResponsesResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const endpoints = overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
-  const provider = stubProvider({
+  const instance = stubUpstream({
     callOpenAIResponses: overrides.callOpenAIResponses,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream,
       kind: 'custom',
       name: upstream,
       inboundHeaderAllowlist: [],
-      instance: provider,
+      instance,
     },
-    model: stubProviderModel({
+    model: stubUpstreamModel({
       endpoints,
       enabledFlags: overrides.enabledFlags ?? new Set(),
     }),
@@ -146,7 +146,7 @@ const completedEvents = (id = 'resp_test'): OpenAIResponsesStreamEventEx[] =>
   openaiResponsesResultToEvents(makeOpenAIResponsesResult(id)).map(frame => frame.event);
 
 const queueCompletedResponse = (id = 'resp_test') => {
-  const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
+  const callOpenAIResponses = vi.fn(async (): Promise<UpstreamOpenAIResponsesResult> => ({
     action: 'generate', ok: true,
     events: makeProviderEvents(completedEvents(id)),
     modelKey: 'test-model-key',
@@ -280,7 +280,7 @@ const compactTurn = async (
     usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
     ...upstream,
   };
-  const callOpenAIResponses = vi.fn(async (_model: unknown, _body: unknown, action: OpenAIResponsesAction): Promise<ProviderOpenAIResponsesResult> => {
+  const callOpenAIResponses = vi.fn(async (_model: unknown, _body: unknown, action: OpenAIResponsesAction): Promise<UpstreamOpenAIResponsesResult> => {
     if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
     return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key', http };
   });

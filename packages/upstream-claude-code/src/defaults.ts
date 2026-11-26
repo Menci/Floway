@@ -1,0 +1,41 @@
+import type { FlagDefaults } from '@floway-dev/upstream';
+
+// Exhaustive flag defaults for Claude.ai (Claude Code) subscription
+// upstreams.
+//
+// * Hosted-tool shims stay off — Claude Code's Anthropic Messages passthrough
+//   forwards caller bytes verbatim, so a gateway-side shim would silently
+//   rewrite a request the operator deliberately let through unchanged.
+// * `openai-responses-compact-shim` defaults on: Anthropic Messages has no
+//   /responses/compact concept, and the shim is what synthesizes a
+//   `response.compaction` envelope for callers that expect one.
+// * `strip-billing-attribution` defaults off: the `x-anthropic-billing-header:`
+//   block from Claude Code clients IS the input Anthropic reads to bill
+//   the request against the user's subscription. Stripping it here would
+//   route billing away from the user's plan.
+export const CLAUDE_CODE_DEFAULT_FLAGS: FlagDefaults = {
+  'vendor-deepseek': false,
+  'vendor-qwen': false,
+  'vendor-kimi': false,
+  'vendor-mistral': false,
+  'anthropic-messages-web-search-shim': false,
+  'openai-responses-web-search-shim': false,
+  'openai-responses-image-generation-shim': false,
+  'openai-responses-compact-shim': true,
+  'openai-responses-compact-decrypt': false,
+  'openai-responses-collaboration-shim': true,
+  'openai-responses-agent-message-shim': false,
+  'openai-responses-standalone-tool-output-shim': false,
+  'serialize-stream-items': false,
+  'disable-reasoning-on-forced-tool-choice': false,
+  'empty-tools-tool-choice-none': false,
+  'openai-responses-null-unresolved-function-call-namespace': true,
+  'rewrite-mid-conv-system-to-user': false,
+  'rewrite-disallowed-mid-conv-system-to-user': true,
+  'rewrite-developer-to-system': false,
+  'rewrite-system-to-developer': false,
+  'strip-billing-attribution': false,
+  'strip-prompt-cache-key': false,
+  'usage-exclusive-cached-tokens': false,
+  'openai-responses-store-false': false,
+};

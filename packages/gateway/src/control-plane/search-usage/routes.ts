@@ -7,7 +7,7 @@
 import { aggregateWebSearchUsageByKey, aggregateWebSearchUsageByUser } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { WEB_SEARCH_PROVIDER_NAMES, isWebSearchProviderName } from '../../shared/web-search-providers.ts';
+import { WEB_SEARCH_BACKEND_NAMES, isWebSearchBackendName } from '../../shared/web-search-backends.ts';
 import type { webSearchUsageQuery } from '../schemas.ts';
 import { buildKeyToUserMap } from '../shared/key-to-user.ts';
 import { loadTelemetryOverviewIdentity, telemetryIdentityMetadata, telemetryRecordVisible } from '../shared/telemetry-overview.ts';
@@ -21,9 +21,9 @@ export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>
   }
   const { start, end } = query;
 
-  const { provider } = query;
-  if (provider !== undefined && !isWebSearchProviderName(provider)) {
-    return c.json({ error: `provider must be one of ${WEB_SEARCH_PROVIDER_NAMES.map(name => `'${name}'`).join(', ')}` }, 400);
+  const { backend } = query;
+  if (backend !== undefined && !isWebSearchBackendName(backend)) {
+    return c.json({ error: `backend must be one of ${WEB_SEARCH_BACKEND_NAMES.map(name => `'${name}'`).join(', ')}` }, 400);
   }
 
   const resolved = resolveUsageView(c, query.view, query.key_id);
@@ -35,7 +35,7 @@ export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>
 
   if (resolved.view === 'all-by-user') {
     const [rawRecords, keys, identity] = await Promise.all([
-      repo.webSearchUsage.query({ provider, start, end }),
+      repo.webSearchUsage.query({ backend, start, end }),
       repo.apiKeys.listIncludingDeleted(),
       loadTelemetryOverviewIdentity(c),
     ]);
@@ -61,7 +61,7 @@ export const webSearchUsage = async (c: CtxWithQuery<typeof webSearchUsageQuery>
   }
 
   const rawRecords = await repo.webSearchUsage.query({
-    provider,
+    backend,
     keyId: explicitKeyId,
     start,
     end,

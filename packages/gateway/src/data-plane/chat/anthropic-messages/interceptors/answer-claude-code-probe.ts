@@ -2,7 +2,7 @@ import type { AnthropicMessagesInterceptor } from './types.ts';
 import { telemetryModelIdentity } from '../../../shared/telemetry/attribution.ts';
 import { createAnthropicMessagesUsage, toAnthropicMessagesUsageDelta, generateAnthropicId, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, type ExecuteResult, type ModelCandidate } from '@floway-dev/provider';
+import { eventResult, type ExecuteResult, type ModelCandidate } from '@floway-dev/upstream';
 
 // Claude Code answers "is this model usable?" by generating one token against
 // it. `/model <id>` runs the CLI's `model_validation` side query — a

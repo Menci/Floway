@@ -1,7 +1,7 @@
 import { beforeEach, expect, test } from 'vitest';
 
 import { executeOperationToIr, parseWebSearchOperations, startBatchFetch, type WebSearchExecutionSession } from '../../../../src/data-plane/tools/web-search/operations.ts';
-import type { WebSearchFetchPageResult, WebSearchProvider } from '../../../../src/data-plane/tools/web-search/types.ts';
+import type { WebSearchFetchPageResult, WebSearchBackend } from '../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { assert } from '@floway-dev/test-utils';
@@ -9,12 +9,12 @@ import { assert } from '@floway-dev/test-utils';
 beforeEach(() => { initRepo(new InMemoryRepo()); });
 
 const sessionFor = (result: WebSearchFetchPageResult): WebSearchExecutionSession => {
-  const provider: WebSearchProvider = {
+  const backend: WebSearchBackend = {
     search: () => Promise.reject(new Error('search should not be called')),
     fetchPage: () => Promise.resolve(result),
   };
   return {
-    getProvider: () => Promise.resolve({ type: 'enabled', provider: 'microsoft-web-iq', impl: provider }),
+    getBackend: () => Promise.resolve({ type: 'enabled', backend: 'microsoft-web-iq', impl: backend }),
     filters: {},
     apiKeyId: 'key',
     pageCache: new Map(),

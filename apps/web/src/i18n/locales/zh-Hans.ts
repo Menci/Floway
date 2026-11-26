@@ -131,7 +131,7 @@ const zhHansCN = {
     },
     upstreams: {
       title: '上游',
-      description: '管理模型提供商的路由优先级、可用状态、模型目录和连接配置',
+      description: '管理上游的路由优先级、可用状态、模型目录和连接配置',
       kinds: {
         custom: {
           label: '自定义',
@@ -253,7 +253,7 @@ const zhHansCN = {
       editor: {
         readyToSave: {
           title: '可以保存了',
-          description: '保存这个 {{provider}} 上游即可加载它的模型目录。',
+          description: '保存这个 {{kind}} 上游即可加载它的模型目录。',
         },
         documentTitleNew: '新建上游',
         documentTitleEdit: '上游详情',
@@ -348,7 +348,7 @@ const zhHansCN = {
           flags: '上游特性开关',
         },
         flags: {
-          intro: '不同提供商、API 和模型的上游行为可能不同。仅在兼容性需要时调整这些默认设置。',
+          intro: '不同上游类型、API 和模型的行为可能不同。仅在兼容性需要时调整这些默认设置。',
           inherit: '默认',
           on: '开',
           off: '关',
@@ -378,11 +378,11 @@ const zhHansCN = {
             },
             'anthropic-messages-web-search-shim': {
               label: 'Anthropic Messages 网页搜索兼容层',
-              description: 'Anthropic Messages API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索工具调用，而非转发到上游。\n当上游不提供 Messages API 时，此开关被视为开启。',
+              description: 'Anthropic Messages API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索后端来处理网页搜索工具调用，而非转发到上游。\n当上游不提供 Messages API 时，此开关被视为开启。',
             },
             'openai-responses-web-search-shim': {
               label: 'OpenAI Responses 网页搜索兼容层',
-              description: 'OpenAI Responses API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索 (`web_search`) 工具调用，而非转发到上游。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
+              description: 'OpenAI Responses API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索后端来处理网页搜索 (`web_search`) 工具调用，而非转发到上游。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
             'openai-responses-image-generation-shim': {
               label: 'OpenAI Responses 图像生成兼容层',
@@ -390,7 +390,7 @@ const zhHansCN = {
             },
             'openai-responses-collaboration-shim': {
               label: 'OpenAI Responses 协作兼容',
-              description: '通过普通工具命名空间使用明文 Codex 协作消息。所有提供商默认启用；如果某个上游或模型需要使用原生协作协议，可单独关闭。',
+              description: '通过普通工具命名空间使用明文 Codex 协作消息。所有上游默认启用；如果某个上游或模型需要使用原生协作协议，可单独关闭。',
             },
             'openai-responses-agent-message-shim': {
               label: 'OpenAI Responses 智能体消息兼容层',
@@ -1065,7 +1065,7 @@ const zhHansCN = {
       },
       generation: {
         reasoningEffort: '思考强度',
-        providerDefault: '提供商默认值',
+        upstreamDefault: '上游默认值',
       },
       customJsonHint: '协议原生字段会覆盖上方控件的值。',
       errors: {
@@ -1199,11 +1199,11 @@ const zhHansCN = {
     },
     search: {
       title: '搜索',
-      heading: '搜索提供商',
-      description: '配置 Anthropic Messages / OpenAI Responses API 网络搜索工具调用的提供商',
-      providerLabel: '提供商',
-      providerHint: '响应网络搜索工具调用的服务',
-      provider: {
+      heading: '搜索后端',
+      description: '配置 Anthropic Messages / OpenAI Responses API 网络搜索工具调用的搜索后端',
+      backendLabel: '后端',
+      backendHint: '响应网络搜索工具调用的服务',
+      backend: {
         disabled: '禁用',
         tavily: 'Tavily',
         microsoftWebIq: 'Microsoft Web IQ',
@@ -1233,7 +1233,7 @@ const zhHansCN = {
         ok: '成功',
         error: '失败',
       },
-      testedProvider: '提供商：{{provider}}',
+      testedBackend: '后端：{{backend}}',
       testedQuery: '查询：{{query}}',
       testSuccess: '连接测试成功，返回 {{count, number}} 条结果。',
       testFailed: '测试失败',
@@ -1611,7 +1611,7 @@ const zhHansCN = {
         },
         charts: {
           search: '搜索使用量',
-          searchWithProvider: '搜索使用量（{{provider}}）',
+          searchWithBackend: '搜索使用量（{{backend}}）',
         },
         metrics: {
           requests: '请求数',

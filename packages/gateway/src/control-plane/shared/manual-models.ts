@@ -1,11 +1,11 @@
-import type { UpstreamModelConfig } from '@floway-dev/provider';
-import { validateAzureManualModels } from '@floway-dev/provider-azure';
-import { validateCustomManualModels } from '@floway-dev/provider-custom';
-import { validateOllamaManualModels } from '@floway-dev/provider-ollama';
+import type { UpstreamModelConfig } from '@floway-dev/upstream';
+import { validateAzureManualModels } from '@floway-dev/upstream-azure';
+import { validateCustomManualModels } from '@floway-dev/upstream-custom';
+import { validateOllamaManualModels } from '@floway-dev/upstream-ollama';
 
-export type ManualModelsProviderKind = 'custom' | 'azure' | 'ollama';
+export type ManualModelsUpstreamKind = 'custom' | 'azure' | 'ollama';
 
-export const validateManualModels = (kind: ManualModelsProviderKind, raw: unknown): UpstreamModelConfig[] => {
+export const validateManualModels = (kind: ManualModelsUpstreamKind, raw: unknown): UpstreamModelConfig[] => {
   switch (kind) {
   case 'azure': return validateAzureManualModels(raw);
   case 'custom': return validateCustomManualModels(raw);

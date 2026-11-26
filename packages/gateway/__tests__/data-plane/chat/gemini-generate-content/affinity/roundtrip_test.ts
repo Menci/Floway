@@ -6,24 +6,24 @@ import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-pl
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { reassembleGeminiGenerateContentEvents, type GeminiGenerateContentContent, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
+import type { ModelCandidate } from '@floway-dev/upstream';
 
 const codec = new AffinityCodec('22'.repeat(32));
 
 const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
-    provider: { ...base.provider, upstreamId: upstream },
+    upstream: { ...base.upstream, upstreamId: upstream },
     model: { id: 'model' },
   });
 };
 
 const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
+  upstreamId: value.upstream.upstreamId,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
+  opaqueBlobCompatibilityIdentity: { upstreamId: value.upstream.upstreamId, key: value.model.id },
 });
 
 const frames = async function* (values: ProtocolFrame<GeminiGenerateContentStreamEvent>[]) {

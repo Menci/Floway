@@ -384,7 +384,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     </SettingsSection>
     <SettingsSection title={t('playground.settings.generation')}>
       <Field label={t('playground.generation.reasoningEffort')}>
-        <Combobox freeform placeholder={t('playground.generation.providerDefault')} value={reasoningEffort} onChange={event => setReasoningEffort(event.target.value)} onOptionSelect={(_, data) => setReasoningEffort(data.optionText ?? '')}>
+        <Combobox freeform placeholder={t('playground.generation.upstreamDefault')} value={reasoningEffort} onChange={event => setReasoningEffort(event.target.value)} onOptionSelect={(_, data) => setReasoningEffort(data.optionText ?? '')}>
           {effortOptions.map(effort => <Option key={effort}>{effort}</Option>)}
         </Combobox>
       </Field>

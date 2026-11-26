@@ -22,7 +22,7 @@ test('non-interactive CLI writes a private plan and applies only that artifact',
   const db = new DatabaseSync(databasePath);
   db.exec(`
     CREATE TABLE upstreams (
-      id TEXT PRIMARY KEY, provider TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
+      id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
       sort_order INTEGER NOT NULL, created_at TEXT NOT NULL, config_json TEXT NOT NULL,
       version INTEGER NOT NULL DEFAULT 1,
       models_cache_revision INTEGER, models_cache_fetched_at INTEGER

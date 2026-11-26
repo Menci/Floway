@@ -20,10 +20,10 @@ import { settle } from './telemetry/settle.ts';
 import { forwardUpstreamResponse } from './upstream-response.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
-import { enumerateModelCandidates } from '../providers/resolution.ts';
+import { enumerateModelCandidates } from '../upstreams/resolution.ts';
 import type { ModelKind } from '@floway-dev/protocols/common';
-import { toInternalDebugError } from '@floway-dev/provider';
-import type { PerformanceOperation, PerformanceTelemetryContext, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
+import { toInternalDebugError } from '@floway-dev/upstream';
+import type { PerformanceOperation, PerformanceTelemetryContext, Upstream, UpstreamCallResult, UpstreamModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/upstream';
 
 type PassthroughResponseHandling =
   | {
@@ -58,10 +58,10 @@ interface PassthroughServeContext {
   // to `model.kind === kind`; `sawModel=true && candidates=[]` becomes
   // the "model exists but doesn't support this endpoint" 400.
   readonly kind: ModelKind;
-  readonly modelServesEndpoint: (model: ProviderModel) => boolean;
+  readonly modelServesEndpoint: (model: UpstreamModel) => boolean;
   // Any throw here is preserved and becomes a 502 with the internal-debug
-  // envelope. `model` is the emitting upstream's `ProviderModel`.
-  readonly call: (provider: Provider, model: ProviderModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  // envelope. `model` is the emitting upstream's `UpstreamModel`.
+  readonly call: (upstream: Upstream, model: UpstreamModel, opts: UpstreamCallOptions) => Promise<UpstreamCallResult>;
   readonly response: PassthroughResponseHandling;
 }
 

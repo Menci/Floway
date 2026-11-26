@@ -3,7 +3,7 @@ import { isEqual } from 'es-toolkit';
 import type { AffinityIdentity, AffinityTarget, DecodedAffinityBlob, OpaqueBlobCompatibilityIdentity } from './carrier.ts';
 import type { ChatServeFailure } from '../errors.ts';
 import { materializeOpaqueBlobCompatibilityIdentity } from '@floway-dev/protocols/common';
-import { type ModelCandidate } from '@floway-dev/provider';
+import { type ModelCandidate } from '@floway-dev/upstream';
 
 export interface AffinityRequestAnalysis<T> {
   readonly requiredTargets: readonly AffinityIdentity[];
@@ -35,7 +35,7 @@ const sameCompatibilityIdentity = (
 ): boolean => left.upstreamId === right.upstreamId && left.key === right.key;
 
 const candidateMatchesExactTarget = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
-  candidate.provider.upstreamId === affinity.upstreamId
+  candidate.upstream.upstreamId === affinity.upstreamId
   && candidate.model.id === affinity.modelId
   // Alias targets always carry a rules object, while direct candidates omit
   // it. Both shapes describe the same no-overlay variant when the object is
@@ -44,13 +44,13 @@ const candidateMatchesExactTarget = (candidate: ModelCandidate, affinity: Affini
   && isEqual(candidate.rules ?? {}, affinity.rules ?? {});
 
 const candidateMatchesPhysicalTarget = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
-  candidate.provider.upstreamId === affinity.upstreamId && candidate.model.id === affinity.modelId;
+  candidate.upstream.upstreamId === affinity.upstreamId && candidate.model.id === affinity.modelId;
 
 export const compatibilityIdentityForCandidate = (candidate: ModelCandidate): OpaqueBlobCompatibilityIdentity => {
   const model = candidate.model;
   return materializeOpaqueBlobCompatibilityIdentity(
     model.opaqueBlobCompatibilityScope,
-    candidate.provider.upstreamId,
+    candidate.upstream.upstreamId,
     model.upstreamModelId,
   );
 };

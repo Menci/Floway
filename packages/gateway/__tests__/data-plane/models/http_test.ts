@@ -4,8 +4,8 @@ import type { OmpModel } from '../../../src/data-plane/models/omp-catalog.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelKind } from '@floway-dev/protocols/common';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
 
 test('/v1/models returns merged model list from Copilot and custom upstreams', async () => {
   const { repo, apiKey } = await setupAppTest();

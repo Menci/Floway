@@ -23,8 +23,8 @@ import {
   type OpenAIResponsesTool,
   type OpenAIResponsesToolChoice,
 } from '@floway-dev/protocols/openai-responses';
-import { decodeResponseBody, internalDebugErrorFields, toInternalDebugError, type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
 import type { SidecarCodec } from '@floway-dev/translate';
+import { decodeResponseBody, internalDebugErrorFields, toInternalDebugError, type EventResultMetadata, type ExecuteResult } from '@floway-dev/upstream';
 
 export interface MergeUsage {
   input_tokens?: number;

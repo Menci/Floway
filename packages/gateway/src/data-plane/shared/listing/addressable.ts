@@ -24,8 +24,8 @@ import {
   type CatalogAccumulator,
   type CatalogUpstreamMeta,
   type ModelContribution,
-} from '../../providers/catalog.ts';
-import type { AddressableForm, InternalModel, ProviderModel } from '@floway-dev/provider';
+} from '../../upstreams/catalog.ts';
+import type { AddressableForm, InternalModel, UpstreamModel } from '@floway-dev/upstream';
 
 export interface AddressableIdEntry {
   // The inbound model id the data plane will accept verbatim.
@@ -38,7 +38,7 @@ export interface AddressableIdEntry {
   readonly model: InternalModel;
   // Every upstream that surfaces this addressable id, in enumeration order.
   readonly upstreams: readonly CatalogUpstreamMeta[];
-  // Per-upstream raw ProviderModel contributions (preserving multi-kind rows
+  // Per-upstream raw UpstreamModel contributions (preserving multi-kind rows
   // on the same upstream) for downstream consumers such as Codex synthesis.
   readonly contributions: readonly ModelContribution[];
 }
@@ -56,12 +56,12 @@ const toUpstreamMeta = (row: Pick<CatalogUpstreamRow, 'id' | 'kind' | 'name' | '
   hue: row.hue,
 });
 
-const surfaceProviderModel = (
-  model: ProviderModel,
+const surfaceUpstreamModel = (
+  model: UpstreamModel,
   upstreamName: string,
   form: AddressableForm,
   publicId: string,
-): ProviderModel => form === 'prefixed'
+): UpstreamModel => form === 'prefixed'
   ? { ...model, id: publicId, display_name: `${upstreamName}: ${model.display_name ?? model.id}` }
   : model;
 
@@ -114,7 +114,7 @@ const catalogFilterForModelUse = (
 
 const assembleAddressableEntries = (
   upstreams: readonly CatalogUpstreamRow[],
-  modelsByUpstream: ReadonlyMap<string, readonly ProviderModel[]>,
+  modelsByUpstream: ReadonlyMap<string, readonly UpstreamModel[]>,
   auth: ModelUseAuthContext | null,
 ): AddressableIdEntry[] => {
   const acc = createCatalogAccumulator();
@@ -128,9 +128,9 @@ const assembleAddressableEntries = (
     const forms = cfg === null ? (['unprefixed'] as const) : cfg.addressable;
     const allowedPublicIds = hasModelRules ? new Map<string, boolean>() : null;
 
-    for (const providerModel of modelsByUpstream.get(upstream.id) ?? []) {
+    for (const upstreamModel of modelsByUpstream.get(upstream.id) ?? []) {
       for (const form of forms) {
-        const publicId = form === 'prefixed' ? `${cfg!.prefix}${providerModel.id}` : providerModel.id;
+        const publicId = form === 'prefixed' ? `${cfg!.prefix}${upstreamModel.id}` : upstreamModel.id;
         if (allowedPublicIds !== null) {
           let allowed = allowedPublicIds.get(publicId);
           if (allowed === undefined) {
@@ -144,7 +144,7 @@ const assembleAddressableEntries = (
           if (!allowed) continue;
         }
         if (cfg === null || cfg.listed.includes(form)) listedIds.add(publicId);
-        mergeIntoCatalog(acc, meta, surfaceProviderModel(providerModel, upstream.name, form, publicId), publicId);
+        mergeIntoCatalog(acc, meta, surfaceUpstreamModel(upstreamModel, upstream.name, form, publicId), publicId);
       }
     }
   }
@@ -167,7 +167,7 @@ const assembleResolvedMatches = (
     mergeIntoCatalog(
       acc,
       toUpstreamMeta(match.upstream),
-      surfaceProviderModel(match.model, match.upstream.name, match.matchedForm, publicId),
+      surfaceUpstreamModel(match.model, match.upstream.name, match.matchedForm, publicId),
       publicId,
     );
   }

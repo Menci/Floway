@@ -9,7 +9,7 @@ import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { saveUpstream } from '../shared/save-upstreams.ts';
-import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher, UpstreamRecord } from '@floway-dev/upstream';
 import {
   assertCopilotUpstreamRecord,
   clearInProcessCopilotTokenCache,
@@ -31,7 +31,7 @@ import {
   type CopilotUpstreamState,
   type CopilotUpstreamUser,
   type CopilotUsageResponse,
-} from '@floway-dev/provider-copilot';
+} from '@floway-dev/upstream-copilot';
 
 const parseCopilotDraftConfig = (config: unknown): { config: Record<string, unknown>; githubHost: string } => {
   if (!isRecord(config) || typeof config.githubHost !== 'string') {

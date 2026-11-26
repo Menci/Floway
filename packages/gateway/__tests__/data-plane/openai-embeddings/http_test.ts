@@ -2,8 +2,8 @@ import { expect, test } from 'vitest';
 
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
 
 test('/v1/embeddings wraps scalar string input for Copilot upstream', async () => {
   const { apiKey } = await setupAppTest();

@@ -4,8 +4,8 @@ import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-
 
 import type { EditorAuxData, RuntimeInfo, UpstreamEditLevel, UpstreamEditorValues } from './data';
 import { modelPrefixIsValid, modelsEditable, publicModelId } from './data';
-import { ApiPathsSection, ProviderConfigSection } from './provider-config';
 import { EditorSection } from './section';
+import { ApiPathsSection, UpstreamKindConfigSection } from './upstream-kind-config';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -18,7 +18,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { StatusBadge } from '../ui/status-badge';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { HuePicker } from '../upstreams/hue-picker';
-import { type UpstreamModelConfig, MODEL_PREFIX_MAX_LENGTH } from '@floway-dev/provider/browser';
+import { type UpstreamModelConfig, MODEL_PREFIX_MAX_LENGTH } from '@floway-dev/upstream/browser';
 
 const { Button, Checkbox, Field, MessageBar, MessageBarBody, Option, Text } = fluentComponents;
 
@@ -99,7 +99,7 @@ export function UpstreamConfigSidebar({
             error={errors.config?.message ? t(errors.config.message) : undefined}
             title={t('upstreams.editor.sections.connection')}
           >
-            <ProviderConfigSection
+            <UpstreamKindConfigSection
               readOnly={immutable}
               record={record}
               onPatch={onPatch}

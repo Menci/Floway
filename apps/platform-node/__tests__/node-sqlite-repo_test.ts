@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { applyMigrations } from '../src/migrate.ts';
 import { createNodeSqliteDatabase } from '../src/node-sqlite-database.ts';
 import { MODEL_CATALOG_REVISION, SqlRepo } from '@floway-dev/gateway';
-import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // The repo layer's own suite runs against sql.js, which — like D1 — coerces a
 // JS boolean to 0/1. `node:sqlite` rejects it outright, so a bind the Workers
@@ -113,7 +113,7 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
     version: storedUpstream.version,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_786_000_000_000,
-    models: [{ source: 'auto', model: stubProviderModel({ id: 'node-model', enabledFlags: new Set(['vendor-kimi'] as const) }) }],
+    models: [{ source: 'auto', model: stubUpstreamModel({ id: 'node-model', enabledFlags: new Set(['vendor-kimi'] as const) }) }],
   });
   await repo.modelAliases.insert({
     id: 'alias_node',

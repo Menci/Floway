@@ -36,10 +36,10 @@
 
 import type { AddressableIdEntry } from './addressable.ts';
 import type { ModelAliasRecord } from '../../../repo/types.ts';
-import { unionEndpoints } from '../../providers/endpoint-union.ts';
+import { unionEndpoints } from '../../upstreams/endpoint-union.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
 import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, OpaqueBlobCompatibilityScope, PublicModelLimits } from '@floway-dev/protocols/common';
-import type { InternalAliasedFrom, InternalModel } from '@floway-dev/provider';
+import type { InternalAliasedFrom, InternalModel } from '@floway-dev/upstream';
 
 export interface ListedAliasInputs {
   readonly aliases: readonly ModelAliasRecord[];

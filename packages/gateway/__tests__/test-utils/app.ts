@@ -9,8 +9,8 @@ import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileStore, initImageProcessor, initSocketDial, MemoryFileStore } from '@floway-dev/platform';
 import type { UserPreferences } from '@floway-dev/protocols/common';
-import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
+import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/upstream';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
 
 interface SetupOptions {
   // `null` models an unset ADMIN_KEY — the platform EnvGetter contract says

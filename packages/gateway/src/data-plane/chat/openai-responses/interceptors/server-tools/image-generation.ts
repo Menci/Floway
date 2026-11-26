@@ -2,11 +2,11 @@ import { isEqual } from 'es-toolkit';
 
 import type { User } from '../../../../../repo/types.ts';
 import { sleep } from '../../../../../shared/sleep.ts';
-import { enumerateModelCandidates } from '../../../../providers/resolution.ts';
 import { stampUpstreamCallStart } from '../../../../shared/attempt-timing.ts';
 import type { AttemptState } from '../../../../shared/gateway-ctx.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../../shared/telemetry/usage.ts';
+import { enumerateModelCandidates } from '../../../../upstreams/resolution.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-fetcher.ts';
 import type { ServerToolHistoryExpansion, ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolSlotResult } from '../server-tool-shim.ts';
 import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
@@ -22,7 +22,7 @@ import {
   type OpenAIResponsesOutputImageGenerationCall,
   type OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
-import { type Fetcher, type OpenAIImagesEditsRequest, type Provider, type ProviderCallResult, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
+import { type Fetcher, type OpenAIImagesEditsRequest, type Upstream, type UpstreamCallResult, type ModelCandidate, type UpstreamModel } from '@floway-dev/upstream';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -911,12 +911,12 @@ interface ShimState {
   imageDispatchCount: number;
 }
 
-const recordImageUsage = (state: ShimState, provider: Provider, model: ProviderModel, modelKey: string, responseBody: unknown): void => {
+const recordImageUsage = (state: ShimState, upstream: Upstream, model: UpstreamModel, modelKey: string, responseBody: unknown): void => {
   const usage = tokenUsageFromOpenAIImagesBody(responseBody);
   if (usage === null) return;
   const promise = recordTokenUsage(state.apiKeyId, {
     model: model.id,
-    upstream: provider.upstreamId,
+    upstream: upstream.upstreamId,
     modelKey,
     pricing: model.pricing ?? null,
   }, usage).catch((error: unknown) => {
@@ -1070,8 +1070,8 @@ export const parseRetryAfterMs = (headers: Headers): number | null => {
 // unread body — intermediate failed responses are drained inside the loop so
 // the underlying socket can be reused while we sleep.
 const issueImageCall = async (
-  provider: Provider,
-  model: ProviderModel,
+  upstream: Upstream,
+  model: UpstreamModel,
   fetcher: Fetcher,
   prompt: string,
   editRequest: OpenAIImagesEditsRequest | null,
@@ -1079,7 +1079,7 @@ const issueImageCall = async (
   state: ShimState,
   stream: boolean,
   attempt: AttemptState,
-): Promise<ProviderCallResult> => {
+): Promise<UpstreamCallResult> => {
   for (let retry = 0; ; retry++) {
     const opts = {
       fetcher,
@@ -1093,8 +1093,8 @@ const issueImageCall = async (
       wrapUpstreamCall: stampUpstreamCallStart(attempt.timing),
     };
     const result = await (editRequest === null
-      ? provider.instance.callOpenAIImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts)
-      : provider.instance.callOpenAIImagesEdits(model, editRequest, state.downstreamAbortSignal, opts));
+      ? upstream.instance.callOpenAIImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts)
+      : upstream.instance.callOpenAIImagesEdits(model, editRequest, state.downstreamAbortSignal, opts));
     const { http: response } = result;
     if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return result;
 
@@ -1112,8 +1112,8 @@ const issueImageCall = async (
 // outcome. Transport/backend failures become `{ok:false}` rather than
 // throwing, so the caller always produces a terminal image item.
 const consumeImageResponse = async (
-  provider: Provider,
-  model: ProviderModel,
+  upstream: Upstream,
+  model: UpstreamModel,
   modelKey: string,
   response: Response,
   state: ShimState,
@@ -1139,7 +1139,7 @@ const consumeImageResponse = async (
   if (b64 === null) {
     return { ok: false, error: { type: 'image_generation_error', message: 'Image backend response did not contain image bytes.', code: 'server_error', retryable: true } };
   }
-  recordImageUsage(state, provider, model, modelKey, parsed);
+  recordImageUsage(state, upstream, model, modelKey, parsed);
   return { ok: true, b64, echo: extractEcho(parsed) };
 };
 
@@ -1251,7 +1251,7 @@ const streamImageGeneration = (
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolSlotResult> {
   const resolved = await resolveImageCandidate(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
-  const { provider, fetcher } = resolved.candidate;
+  const { upstream, fetcher } = resolved.candidate;
   const model = resolved.candidate.model;
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
@@ -1259,7 +1259,7 @@ const streamImageGeneration = (
   const perfContext: PerformanceTelemetryContext = {
     keyId: state.apiKeyId,
     model: model.id,
-    upstream: provider.upstreamId,
+    upstream: upstream.upstreamId,
     operation: isEdit ? 'image_edit' : 'image_generation',
     runtimeLocation: state.runtimeLocation,
   };
@@ -1277,7 +1277,7 @@ const streamImageGeneration = (
       editRequest = buildEditsRequest(prompt, state.config, prepared.sources, prepared.mask, wantsPartials);
     }
     ({ http: response, modelKey } = await issueImageCall(
-      provider,
+      upstream,
       model,
       fetcher,
       prompt,
@@ -1292,7 +1292,7 @@ const streamImageGeneration = (
   }
 
   if (!wantsPartials) {
-    return finish(await consumeImageResponse(provider, model, modelKey, response, state));
+    return finish(await consumeImageResponse(upstream, model, modelKey, response, state));
   }
 
   if (!response.ok) {
@@ -1322,7 +1322,7 @@ const streamImageGeneration = (
   if (finalB64 === undefined) {
     return finish({ ok: false, error: { type: 'image_generation_error', message: 'Image backend stream ended without a completed image.', code: 'server_error', retryable: true } });
   }
-  recordImageUsage(state, provider, model, modelKey, { usage });
+  recordImageUsage(state, upstream, model, modelKey, { usage });
   return finish({ ok: true, b64: finalB64, echo: finalEcho });
 };
 

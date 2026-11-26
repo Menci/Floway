@@ -3,14 +3,14 @@ import { openaiResponsesTarget } from './attempt.ts';
 import { renderOpenAIResponsesFailure, type OpenAIResponsesServeFailure } from './errors.ts';
 import { hydrateOpenAIResponsesPayload } from './items/hydrate.ts';
 import type { OpenAIResponsesStatefulStore } from './items/store.ts';
-import { enumerateModelCandidates } from '../../providers/resolution.ts';
+import { enumerateModelCandidates } from '../../upstreams/resolution.ts';
 import type { AffinityCandidateSelection } from '../shared/affinity/index.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure, tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate, ExecuteResult } from '@floway-dev/provider';
+import type { ModelCandidate, ExecuteResult } from '@floway-dev/upstream';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
 // resolve. The HTTP/WS entry layer catches this and renders the OpenAI-shaped

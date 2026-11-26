@@ -7,8 +7,8 @@ import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts'
 import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-backoff.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo } from '../../src/repo/types.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
-import { stubProviderModel } from '@floway-dev/test-utils';
+import { stubUpstreamModel } from '@floway-dev/test-utils';
+import type { UpstreamRecord } from '@floway-dev/upstream';
 
 const record: UpstreamRecord = {
   id: 'up_refresh',
@@ -69,7 +69,7 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
       version: initial.version,
       revision: MODEL_CATALOG_REVISION,
       fetchedAt: now + 1,
-      models: [{ source: 'auto', model: stubProviderModel({ id: 'm1' }) }],
+      models: [{ source: 'auto', model: stubUpstreamModel({ id: 'm1' }) }],
     });
     expect(publishedVersion).not.toBeNull();
     const refreshed = await repo.getById(record.id);
@@ -95,7 +95,7 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
       version: current.version,
       revision: MODEL_CATALOG_REVISION,
       fetchedAt: 1,
-      models: [{ source: 'auto', model: stubProviderModel({ id: 'stale' }) }],
+      models: [{ source: 'auto', model: stubUpstreamModel({ id: 'stale' }) }],
     })).resolves.toBeNull();
     await expect(repo.recordModelsRefreshFailure({ id: record.id, version: current.version, error: { message: 'old', at: 1 } }))
       .resolves.toBe(false);
@@ -112,7 +112,7 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
       version: initial.version,
       revision: MODEL_CATALOG_REVISION,
       fetchedAt: 10,
-      models: [{ source: 'auto', model: stubProviderModel({ id: 'kept' }) }],
+      models: [{ source: 'auto', model: stubUpstreamModel({ id: 'kept' }) }],
     });
     if (publishedVersion === null) throw new Error('publish failed');
     await repo.recordModelsRefreshFailure({ id: record.id, version: publishedVersion, error: { message: 'failure', at: 20 } });

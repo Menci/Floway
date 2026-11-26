@@ -2,7 +2,7 @@ import type { OpenAIResponsesInterceptor } from './types.ts';
 import { telemetryModelIdentity } from '../../../shared/telemetry/attribution.ts';
 import { syntheticEventsFromResult } from '../items/output.ts';
 import type { OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
-import { eventResult } from '@floway-dev/provider';
+import { eventResult } from '@floway-dev/upstream';
 
 // Codex opens every session with a WebSocket prewarm: a `response.create` that
 // carries the session's instructions and tools with `generate: false`. It is

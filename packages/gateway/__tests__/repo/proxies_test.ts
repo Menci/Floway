@@ -5,8 +5,8 @@ import { createSqliteTestDb } from './test-sqlite.ts';
 import { saveUpstreamForTest } from './upstreams.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo } from '../../src/repo/types.ts';
-import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
+import type { ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/upstream';
 
 // Both backends must agree on the proxies repo contract.
 // Memory drives the unit tests by default, but the production deployments

@@ -1,6 +1,6 @@
-import { ALL_PROVIDER_KINDS, type UpstreamProviderKind } from '@floway-dev/provider';
+import { ALL_UPSTREAM_KINDS, type UpstreamKind } from '@floway-dev/upstream';
 
 export const upstreamErrorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
-export const isValidProviderKind = (value: unknown): value is UpstreamProviderKind =>
-  typeof value === 'string' && (ALL_PROVIDER_KINDS as readonly string[]).includes(value);
+export const isValidUpstreamKind = (value: unknown): value is UpstreamKind =>
+  typeof value === 'string' && (ALL_UPSTREAM_KINDS as readonly string[]).includes(value);

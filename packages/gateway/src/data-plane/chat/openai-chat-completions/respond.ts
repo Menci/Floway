@@ -13,7 +13,7 @@ import { eventResultMetadata, jsonResponseInit, observeChatFrames, settleChatSse
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiChatCompletionsProtocolFrameToSSEFrame, collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/openai-chat-completions';
-import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/upstream';
 
 export const respondOpenAIChatCompletions = async (
   c: Context,

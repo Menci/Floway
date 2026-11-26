@@ -6,8 +6,8 @@ import type { DumpAccumulator } from '../../../../src/dump/accumulator.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { toInternalDebugError, internalErrorResult, eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { toInternalDebugError, internalErrorResult, eventResult } from '@floway-dev/upstream';
 
 const recordingDump = () => {
   const frames: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];

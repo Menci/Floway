@@ -1,16 +1,16 @@
 import { toPublicModel } from '../../data-plane/models/load.ts';
-import type { CatalogUpstreamMeta } from '../../data-plane/providers/catalog.ts';
 import { type AddressableIdEntry, listedRealModels, loadAddressableSurfaces } from '../../data-plane/shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../../data-plane/shared/listing/alias.ts';
+import type { CatalogUpstreamMeta } from '../../data-plane/upstreams/catalog.ts';
 import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { modelsQuery } from '../schemas.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
-import type { InternalModel, UpstreamProviderKind } from '@floway-dev/provider';
+import type { InternalModel, UpstreamKind } from '@floway-dev/upstream';
 
 interface ControlPlaneModel extends PublicModel {
-  upstreams: { kind: UpstreamProviderKind; id: string; name: string; hue: number }[];
+  upstreams: { kind: UpstreamKind; id: string; name: string; hue: number }[];
 }
 
 interface ControlPlaneModelsResponse extends Omit<PublicModelsResponse, 'data'> {

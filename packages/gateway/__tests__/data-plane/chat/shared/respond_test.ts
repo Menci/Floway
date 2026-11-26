@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { plainResultFromResponse } from '../../../../src/data-plane/chat/shared/respond.ts';
 import { forwardBufferedUpstreamResponse } from '../../../../src/data-plane/shared/upstream-response.ts';
-import { bufferedResultToResponse, readUpstreamApiError } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
+import { bufferedResultToResponse, readUpstreamApiError } from '@floway-dev/upstream';
 
 test('measurement response conversion preserves retry and correlation headers without forwarding cookies or body framing', async () => {
   const upstream = new Response('rate limited', {

@@ -81,8 +81,8 @@ describe('bucket callout figures', () => {
 });
 
 describe('search chart', () => {
-  const searchRecord = (provider: string, requests: number) => ({
-    provider,
+  const searchRecord = (backend: string, requests: number) => ({
+    backend,
     keyId: 'key-1',
     keyName: 'Key 1',
     hour: RECORD_HOUR,
@@ -94,9 +94,9 @@ describe('search chart', () => {
     buckets: [bucket],
   });
 
-  it('plots recorded traffic from every provider, not just the configured one', () => {
+  it('plots recorded traffic from every backend, not just the configured one', () => {
     const chart = searchChart([searchRecord('tavily', 3), searchRecord('microsoft-web-iq', 4)]);
-    expect(chart.providers).toEqual(['microsoft-web-iq', 'tavily']);
+    expect(chart.backends).toEqual(['microsoft-web-iq', 'tavily']);
     expect(chart.entries.map(entry => entry.label)).toEqual(['Key 1']);
     expect(areaPlot(chart.plot).lineChartData![0]!.data).toEqual([expect.objectContaining({ y: 7 })]);
   });

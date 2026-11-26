@@ -5,8 +5,8 @@ import type {
   ModelPrefixConfig,
   ProxyFallbackEntry,
   UpstreamModelConfig,
-} from '@floway-dev/provider';
-import type { AzureUpstreamConfig as StoredAzureUpstreamConfig } from '@floway-dev/provider-azure';
+} from '@floway-dev/upstream';
+import type { AzureUpstreamConfig as StoredAzureUpstreamConfig } from '@floway-dev/upstream-azure';
 import type {
   ChatGPTAccountCredential,
   ChatGPTAccountIdentity,
@@ -16,7 +16,7 @@ import type {
   ChatGPTRateLimitResetCredits,
   ChatGPTUpstreamConfig as StoredChatGPTUpstreamConfig,
   ChatGPTUpstreamState as StoredChatGPTUpstreamState,
-} from '@floway-dev/provider-chatgpt';
+} from '@floway-dev/upstream-chatgpt';
 import type {
   ClaudeCodeAccessTokenEntry,
   ClaudeCodeAccountCredential,
@@ -27,25 +27,25 @@ import type {
   ClaudeCodeUpstreamConfig as StoredClaudeCodeUpstreamConfig,
   ClaudeCodeUpstreamState as StoredClaudeCodeUpstreamState,
   ClaudeCodeUsageProbeSnapshotEntry,
-} from '@floway-dev/provider-claude-code';
+} from '@floway-dev/upstream-claude-code';
 import type {
   CopilotQuotaSnapshotEntry,
   CopilotSeatEntry as StoredCopilotSeatEntry,
   CopilotUpstreamConfig as StoredCopilotUpstreamConfig,
   CopilotUpstreamState as StoredCopilotUpstreamState,
-} from '@floway-dev/provider-copilot';
+} from '@floway-dev/upstream-copilot';
 import type {
   CustomModelsFetch,
   CustomUpstreamConfig as StoredCustomUpstreamConfig,
-} from '@floway-dev/provider-custom';
-import type { KimiCodeUpstreamConfig as StoredKimiCodeUpstreamConfig, KimiCodeUpstreamState as StoredKimiCodeUpstreamState } from '@floway-dev/provider-kimi-code';
+} from '@floway-dev/upstream-custom';
+import type { KimiCodeUpstreamConfig as StoredKimiCodeUpstreamConfig, KimiCodeUpstreamState as StoredKimiCodeUpstreamState } from '@floway-dev/upstream-kimi-code';
 import type {
   OllamaUpstreamConfig as StoredOllamaUpstreamConfig,
   OllamaUpstreamState as StoredOllamaUpstreamState,
-} from '@floway-dev/provider-ollama';
+} from '@floway-dev/upstream-ollama';
 
 export type { ClaudeCodeQuotaWindow, ChatGPTQuotaSnapshot, ChatGPTQuotaSnapshotMap, ChatGPTRateLimitResetCredit, ChatGPTRateLimitResetCredits, CustomModelsFetch, ProxyFallbackEntry };
-export type { ProviderModelsFailureResponse } from '@floway-dev/provider';
+export type { UpstreamModelsFailureResponse } from '@floway-dev/upstream';
 
 type CustomConfigFields = Pick<
   StoredCustomUpstreamConfig,

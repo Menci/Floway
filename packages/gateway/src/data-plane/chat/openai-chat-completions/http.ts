@@ -8,7 +8,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
-import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
+import { internalErrorResult, toInternalDebugError } from '@floway-dev/upstream';
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
 // etc.) as an OpenAI Chat Completions-shaped 502 with the same internal-error

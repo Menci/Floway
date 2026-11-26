@@ -10,12 +10,12 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type UpstreamStreamResult, type UpstreamCallOptions } from '@floway-dev/upstream';
 
 const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean }[] = [];
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
+vi.mock('../../../../src/data-plane/upstreams/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../../src/data-plane/upstreams/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async () => {
@@ -105,16 +105,16 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
-  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
+  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const provider = stubProvider({ callOpenAIChatCompletions: overrides.callOpenAIChatCompletions });
+  const instance = stubUpstream({ callOpenAIChatCompletions: overrides.callOpenAIChatCompletions });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      instance: provider,
+      instance,
     },
-    model: stubProviderModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
     fetcher: directFetcher,
   };
 };
@@ -139,7 +139,7 @@ test.each(['prompt_cache_options', 'user'] as const)('POST /v1/chat/completions 
 test('client-carried opaque state restores the exact preferred candidate on the next turn', async () => {
   installRepo();
   const observedBodies: Array<{ messages?: Array<{ reasoning_opaque?: string }> }> = [];
-  const callA = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+  const callA = vi.fn(async (_model: unknown, body: unknown): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     observedBodies.push(body as { messages?: Array<{ reasoning_opaque?: string }> });
     const turn = observedBodies.length;
     return {
@@ -164,7 +164,7 @@ test('client-carried opaque state restores the exact preferred candidate on the 
       http: { status: 200, headers: new Headers() },
     };
   });
-  const callB = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+  const callB = vi.fn(async (): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     throw new Error('affinity should have reordered candidate A before B');
   });
   const candidateA = makeCandidate({ upstream: 'up-a', callOpenAIChatCompletions: callA });
@@ -202,7 +202,7 @@ test('client-carried opaque state restores the exact preferred candidate on the 
 
 test.each([false, true])('POST /v1/chat/completions emits the usage-only chunk only when stream_options.include_usage is set (%s)', async includeUsage => {
   installRepo();
-  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
@@ -231,7 +231,7 @@ test('POST /v1/chat/completions stamps TTFT on a streamed record', async () => {
     _body: unknown,
     _signal?: AbortSignal,
     opts?: UpstreamCallOptions,
-  ): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+  ): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     return await (opts?.wrapUpstreamCall ?? (d => d()))(async () => ({
       ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
     }));

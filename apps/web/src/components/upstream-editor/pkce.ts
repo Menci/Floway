@@ -1,5 +1,5 @@
 import { encodeBase64url } from '../../lib/base-encoding';
-import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
+import type { UpstreamKind } from '@floway-dev/upstream/browser';
 
 const encoder = new TextEncoder();
 
@@ -15,13 +15,13 @@ export const generatePkce = async () => {
   return { verifier, challenge, state: random(24) };
 };
 
-const storageKey = (kind: UpstreamProviderKind, flowKind: string) => `floway-pkce:${kind}:${flowKind}`;
+const storageKey = (kind: UpstreamKind, flowKind: string) => `floway-pkce:${kind}:${flowKind}`;
 
-export const stashPkce = (kind: UpstreamProviderKind, flowKind: string, value: { verifier: string; state: string }) => {
+export const stashPkce = (kind: UpstreamKind, flowKind: string, value: { verifier: string; state: string }) => {
   sessionStorage.setItem(storageKey(kind, flowKind), JSON.stringify(value));
 };
 
-export const recallPkce = (kind: UpstreamProviderKind, flowKind: string, state: string) => {
+export const recallPkce = (kind: UpstreamKind, flowKind: string, state: string) => {
   const raw = sessionStorage.getItem(storageKey(kind, flowKind));
   if (!raw) return null;
   const value = JSON.parse(raw) as unknown;
@@ -35,7 +35,7 @@ export const recallPkce = (kind: UpstreamProviderKind, flowKind: string, state: 
     : null;
 };
 
-export const clearPkce = (kind: UpstreamProviderKind, flowKind: string) => {
+export const clearPkce = (kind: UpstreamKind, flowKind: string) => {
   sessionStorage.removeItem(storageKey(kind, flowKind));
 };
 

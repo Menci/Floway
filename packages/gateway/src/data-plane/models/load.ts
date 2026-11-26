@@ -2,7 +2,7 @@ import type { ModelAliasesRepo, User } from '../../repo/types.ts';
 import { listedRealModels, loadAddressableSurfaces, type AddressableIdEntry } from '../shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
-import type { InternalModel } from '@floway-dev/provider';
+import type { InternalModel } from '@floway-dev/upstream';
 
 // Project an `InternalModel` onto the public-facing `/v1/models` wire DTO.
 // `endpoints` rides through as the merged upstream wire surface — the

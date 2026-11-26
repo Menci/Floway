@@ -7,7 +7,7 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/te
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import type { RerankTarget } from '@floway-dev/protocols/common';
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
-import type { ModelCandidate, ProviderRerankCallResult } from '@floway-dev/provider';
+import type { ModelCandidate, UpstreamRerankCallResult } from '@floway-dev/upstream';
 
 export interface RerankAttemptResult extends RawAttemptResult {
   readonly target: RerankTarget;
@@ -20,7 +20,7 @@ export const rerankAttempt = async (
   request: CanonicalRerankRequest,
 ): Promise<RerankAttemptResult> => {
   const model = candidate.model;
-  const result: ProviderRerankCallResult = await candidate.provider.instance.callRerank(
+  const result: UpstreamRerankCallResult = await candidate.upstream.instance.callRerank(
     model,
     request,
     ctx.abortSignal,

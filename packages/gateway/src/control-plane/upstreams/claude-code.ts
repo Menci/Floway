@@ -8,7 +8,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody } from '../schemas.ts';
 import { saveUpstream } from '../shared/save-upstreams.ts';
-import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher, UpstreamRecord } from '@floway-dev/upstream';
 import {
   type ClaudeCodeUpstreamConfig,
   type ClaudeCodeUpstreamState,
@@ -23,7 +23,7 @@ import {
   importClaudeCodeFromSetupTokenCallback,
   logInfo,
   readClaudeCodeUpstreamState,
-} from '@floway-dev/provider-claude-code';
+} from '@floway-dev/upstream-claude-code';
 
 // Claude Code OAuth + setup-token + probe endpoints under the unified
 // record-body contract. Create and edit share one endpoint each: the

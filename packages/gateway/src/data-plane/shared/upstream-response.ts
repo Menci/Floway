@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import type { StatusCode } from 'hono/utils/http-status';
 
-import { bufferedResultToResponse, type BufferedHttpResult, type HttpHead } from '@floway-dev/provider';
+import { bufferedResultToResponse, type BufferedHttpResult, type HttpHead } from '@floway-dev/upstream';
 
 // Upstream response headers are propagated through a blocklist so vendor
 // traces, quota state, and future end-to-end metadata remain visible. Only

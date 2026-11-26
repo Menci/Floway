@@ -1,6 +1,6 @@
 import { createDetachedFetcher, createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
+import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/upstream';
 
 // Fetcher resolution for control-plane operations that fire from the
 // dashboard edit form, where the in-progress proxy_fallback_list must take

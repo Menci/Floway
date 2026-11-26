@@ -5,8 +5,8 @@ import { expect, test } from 'vitest';
 import { chatTargetPicker } from '../../src/data-plane/chat/shared/target-picker.ts';
 import { decodeUpstreamConfig, decodeUpstreamManualModel } from '../../src/repo/upstream-codecs.ts';
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
-import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
-import { assertCustomUpstreamRecord, validateCustomManualModels } from '@floway-dev/provider-custom';
+import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/upstream';
+import { assertCustomUpstreamRecord, validateCustomManualModels } from '@floway-dev/upstream-custom';
 
 const MIGRATION = '0083_canonical_protocol_names.sql';
 

@@ -17,7 +17,7 @@ const createDatabase = async (): Promise<string> => {
   const db = new DatabaseSync(path);
   db.exec(`
     CREATE TABLE upstreams (
-      id TEXT PRIMARY KEY, provider TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
+      id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
       sort_order INTEGER NOT NULL, created_at TEXT NOT NULL, config_json TEXT NOT NULL,
       version INTEGER NOT NULL DEFAULT 1,
       models_cache_revision INTEGER, models_cache_fetched_at INTEGER
@@ -127,11 +127,11 @@ test('plan blocks an unpriced historical selector when priced siblings prove an 
 test('an unguarded plan keeps the stored catalog out of its apply statement', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'floway-tools-unguarded-'));
   const path = join(directory, 'floway.db');
-  const filler = JSON.stringify({ id: 'public', providerData: 'wire', filler: 'q'.repeat(120_000) });
+  const filler = JSON.stringify({ id: 'public', upstreamData: 'wire', filler: 'q'.repeat(120_000) });
   const db = new DatabaseSync(path);
   db.exec(`
     CREATE TABLE upstreams (
-      id TEXT PRIMARY KEY, provider TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
+      id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
       sort_order INTEGER NOT NULL, created_at TEXT NOT NULL, config_json TEXT NOT NULL,
       version INTEGER NOT NULL DEFAULT 1,
       models_cache_revision INTEGER, models_cache_fetched_at INTEGER

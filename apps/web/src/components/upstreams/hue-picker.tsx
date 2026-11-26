@@ -1,8 +1,8 @@
-import { ProviderBadge } from './provider-badge';
+import { UpstreamBadge } from './upstream-kind-badge';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { HUE_RAIL_GRADIENT } from '../../lib/hue';
-import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
+import type { UpstreamKind } from '@floway-dev/upstream/browser';
 
 const { Button, ColorSlider, Popover, PopoverSurface, PopoverTrigger, makeStyles } = fluentComponents;
 
@@ -14,7 +14,7 @@ const useStyles = makeStyles({
 
 export function HuePicker({ hue, kind, onChange, readOnly = false }: {
   hue: number;
-  kind: UpstreamProviderKind;
+  kind: UpstreamKind;
   onChange: (hue: number) => void;
   readOnly?: boolean | undefined;
 }) {
@@ -30,7 +30,7 @@ export function HuePicker({ hue, kind, onChange, readOnly = false }: {
           className="!min-w-0 !p-0"
           disabled={readOnly}
         >
-          <ProviderBadge upstream={{ hue, kind }} />
+          <UpstreamBadge upstream={{ hue, kind }} />
         </Button>
       </PopoverTrigger>
       <PopoverSurface className="w-[min(360px,calc(100vw-32px))]">

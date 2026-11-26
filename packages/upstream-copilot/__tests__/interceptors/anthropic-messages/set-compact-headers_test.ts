@@ -1,0 +1,92 @@
+import { test } from 'vitest';
+
+import { withCompactHeadersSet } from '../../../src/interceptors/anthropic-messages/set-compact-headers.ts';
+import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import type { ExecuteResult } from '@floway-dev/upstream';
+import { eventResult } from '@floway-dev/upstream';
+
+const stubRequest = {};
+
+const okEvents = (): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> =>
+  Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {})(), testTelemetryModelIdentity));
+
+const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
+  payload,
+  headers: new Headers(),
+  anthropicBeta: [],
+  model: stubUpstreamModel({ endpoints: { anthropicMessages: {} } }),
+});
+
+const COMPACT_LAST_MESSAGE_TEXT =
+  'Your task is to create a detailed summary of the conversation so far.\n\n' +
+  'CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.\n\n' +
+  'Pending Tasks:\n- finish refactor\n\nCurrent Work:\n- reviewing diff';
+
+test('Compact headers set when the last user message carries all three markers', async () => {
+  const ctx = invocation({
+    model: 'claude-test',
+    max_tokens: 10,
+    messages: [{ role: 'user', content: COMPACT_LAST_MESSAGE_TEXT }],
+  });
+
+  await withCompactHeadersSet(ctx, stubRequest, okEvents);
+
+  assertEquals(ctx.headers.get('x-initiator'), 'agent');
+  assertEquals(ctx.headers.get('x-interaction-type'), 'conversation-compaction');
+});
+
+test('Compact headers set when the system prompt starts with a compact summarization prefix', async () => {
+  const ctx = invocation({
+    model: 'claude-test',
+    max_tokens: 10,
+    system: 'You are a helpful AI assistant tasked with summarizing conversations and other things.',
+    messages: [{ role: 'user', content: 'go ahead' }],
+  });
+
+  await withCompactHeadersSet(ctx, stubRequest, okEvents);
+
+  assertEquals(ctx.headers.get('x-initiator'), 'agent');
+  assertEquals(ctx.headers.get('x-interaction-type'), 'conversation-compaction');
+});
+
+// Real client scenario: clients that round-trip the previous request's user
+// turn back as assistant history can place compact-summary text under an
+// assistant role. caozhiyuan's `getCompactCandidateText` returns empty text
+// for any non-user role; we mirror that so the tagging stays anchored to the
+// turn the human actually authored.
+test('Compact headers absent when the last message is assistant-role with compact-summary text', async () => {
+  const ctx = invocation({
+    model: 'claude-test',
+    max_tokens: 10,
+    messages: [
+      { role: 'user', content: 'kick off' },
+      { role: 'assistant', content: COMPACT_LAST_MESSAGE_TEXT },
+    ],
+  });
+
+  await withCompactHeadersSet(ctx, stubRequest, okEvents);
+
+  assertEquals(ctx.headers.has('x-initiator'), false);
+  assertEquals(ctx.headers.has('x-interaction-type'), false);
+});
+
+test('Auto-continue marks Claude Code resume prompts with x-initiator: agent only', async () => {
+  const ctx = invocation({
+    model: 'claude-test',
+    max_tokens: 10,
+    messages: [
+      {
+        role: 'user',
+        content: 'This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nMore detail follows.',
+      },
+    ],
+  });
+
+  await withCompactHeadersSet(ctx, stubRequest, okEvents);
+
+  assertEquals(ctx.headers.get('x-initiator'), 'agent');
+  assertEquals(ctx.headers.has('x-interaction-type'), false);
+});

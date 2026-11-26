@@ -4,8 +4,8 @@ import { expect, test } from 'vitest';
 
 import { decodeUpstreamConfig } from '../../src/repo/upstream-codecs.ts';
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
-import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
+import type { UpstreamRecord } from '@floway-dev/upstream';
+import { assertCustomUpstreamRecord } from '@floway-dev/upstream-custom';
 
 const MIGRATION = '0100_custom_protocol_auth.sql';
 

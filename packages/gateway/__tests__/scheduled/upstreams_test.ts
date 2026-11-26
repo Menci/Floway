@@ -4,7 +4,7 @@ import { initRepo } from '../../src/repo/index.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { runUpstreamScheduledTasks } from '../../src/scheduled/upstreams.ts';
 import { createSqliteTestDb } from '../repo/test-sqlite.ts';
-import { type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
+import { type Fetcher, type UpstreamRecord } from '@floway-dev/upstream';
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn<Fetcher>() }));
 vi.mock('../../src/dial/per-request.ts', () => ({ createPerRequestFetcher: async () => () => mocks.fetch }));

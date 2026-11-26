@@ -7,10 +7,10 @@
 import { normalizeDomainList } from './domain-normalize.ts';
 import { fetchPageAndRecordUsage } from './fetch-page.ts';
 import { runWebSearchAndRecordUsage } from './search.ts';
-import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from './types.ts';
+import type { ConfiguredWebSearchBackend, WebSearchBackend, WebSearchBackendName } from './types.ts';
 import { truncatePreservingCodePoints } from '../../shared/text.ts';
 import type { OpenAIResponsesWebSearchAction, OpenAIResponsesWebSearchTextResult } from '@floway-dev/protocols/openai-responses';
-import { isAbortError } from '@floway-dev/provider';
+import { isAbortError } from '@floway-dev/upstream';
 
 // Search-context-size → result-count mapping. Approximates the ~40 results
 // native hosted web_search returns regardless of search_context_size;
@@ -158,7 +158,7 @@ export const UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME = 'UnsupportedLocal
 
 export class UnsupportedLocalWebSearchFeatureError extends Error {
   constructor(path: string) {
-    super(`The configured web search provider does not implement OpenAI search feature \`${path}\`.`);
+    super(`The configured web search backend does not implement OpenAI search feature \`${path}\`.`);
     this.name = UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME;
   }
 }
@@ -331,8 +331,8 @@ export interface WebSearchExecutionSession {
   // Memoized lazy resolver. The first backend dispatch pays the
   // load+resolve cost; later dispatches reuse the cached result. Replay-only
   // paths (OpenAI Responses shim echoing prior items with no live op) never call
-  // this, so an unconfigured search provider does not 500 the request.
-  getProvider: () => Promise<ConfiguredWebSearchProvider>;
+  // this, so an unconfigured search backend does not 500 the request.
+  getBackend: () => Promise<ConfiguredWebSearchBackend>;
   filters: WebSearchFilters;
   apiKeyId: string;
   pageCache: Map<string, PageCacheEntry>;
@@ -435,11 +435,11 @@ export const unsupportedLocalWebSearchFeatureIr = (
 //   https://github.com/openai/gpt-oss/blob/285b05d96dea9ce7da52ecbbe86791f18239c510/gpt_oss/tools/simple_browser/simple_browser_tool.py#L444-L445
 // - litellm `Search failed: <e>` idiom:
 //   https://github.com/BerriAI/litellm/blob/6a797f97b22d74cc5603ddacb16e38bf4a259858/litellm/integrations/websearch_interception/handler.py#L180-L186
-const searchFailedText = (providerMessage: string): string =>
-  `Search failed: ${providerMessage}`;
+const searchFailedText = (backendMessage: string): string =>
+  `Search failed: ${backendMessage}`;
 
-const openFailedText = (url: string, providerMessage: string): string =>
-  `Error fetching URL \`${url}\`: ${providerMessage}`;
+const openFailedText = (url: string, backendMessage: string): string =>
+  `Error fetching URL \`${url}\`: ${backendMessage}`;
 
 const unsupportedOperationError = (subProperty: string): UnsupportedLocalWebSearchFeatureError =>
   new UnsupportedLocalWebSearchFeatureError(`commands.${subProperty}`);
@@ -579,23 +579,23 @@ export const formatMatches = (pattern: string, url: string, matches: readonly Fi
 const truncateString = (s: string, maxChars: number): string =>
   s.length <= maxChars ? s : `${truncatePreservingCodePoints(s, maxChars)}…`;
 
-// ── Provider resolution ──
+// ── Backend resolution ──
 
 // Resolve the configured backend or return an `unavailable` reason.
 // Disabled / missing-credential is per-op visible: each backend dispatch
 // synthesizes a snippet IR so the model sees the error in-band instead of
 // the whole request 5xx'ing.
-const resolveActiveProvider = async (
+const resolveActiveBackend = async (
   session: WebSearchExecutionSession,
-): Promise<{ provider: WebSearchProvider; providerName: WebSearchProviderName } | { unavailable: string }> => {
-  const configured = await session.getProvider();
+): Promise<{ backend: WebSearchBackend; backendName: WebSearchBackendName } | { unavailable: string }> => {
+  const configured = await session.getBackend();
   if (configured.type === 'enabled') {
-    return { provider: configured.impl, providerName: configured.provider };
+    return { backend: configured.impl, backendName: configured.backend };
   }
   if (configured.type === 'disabled') {
-    return { unavailable: 'Web search provider is not configured on this gateway.' };
+    return { unavailable: 'Web search backend is not configured on this gateway.' };
   }
-  return { unavailable: `Web search provider ${configured.provider} is missing its credential on this gateway.` };
+  return { unavailable: `Web search backend ${configured.backend} is missing its credential on this gateway.` };
 };
 
 // ── search ──
@@ -620,11 +620,11 @@ const intersectAllowedDomains = (
 const runOneSearchQuery = async (
   op: Extract<WebSearchOperation, { kind: 'search' }>,
   session: WebSearchExecutionSession,
-  active: { provider: WebSearchProvider; providerName: WebSearchProviderName },
+  active: { backend: WebSearchBackend; backendName: WebSearchBackendName },
 ): Promise<SearchQueryOutcome> => {
   try {
     const allowedDomains = intersectAllowedDomains(session.filters.allowedDomains, op.domains);
-    // Every provider treats an empty allow-list as "no filter". An empty
+    // Every backend treats an empty allow-list as "no filter". An empty
     // intersection therefore has to short-circuit: letting it through would
     // discard both the caller's query-level domains and the operator policy.
     // The upstream answers an unsatisfiable domain filter with a normal empty
@@ -644,8 +644,8 @@ const runOneSearchQuery = async (
       ...(session.signal !== undefined ? { signal: session.signal } : {}),
     };
     const result = await runWebSearchAndRecordUsage({
-      provider: active.provider,
-      providerName: active.providerName,
+      backend: active.backend,
+      backendName: active.backendName,
       keyId: session.apiKeyId,
       request: searchRequest,
     });
@@ -684,7 +684,7 @@ const runBackendSearch = async (
     const title = op.errorKind === 'missing-arg' ? 'Missing argument' : 'Invalid ref_id';
     return searchIr(op.query, [errorSnippet(title, op.error)]);
   }
-  const active = await resolveActiveProvider(session);
+  const active = await resolveActiveBackend(session);
   if ('unavailable' in active) {
     return searchIr(op.query, [errorSnippet('Search error', searchFailedText(active.unavailable))]);
   }
@@ -701,7 +701,7 @@ export const runBackendSearchMulti = async (
   session: WebSearchExecutionSession,
 ): Promise<WebSearchCallIR> => {
   const queries = ops.map(op => op.query);
-  const active = await resolveActiveProvider(session);
+  const active = await resolveActiveBackend(session);
   if ('unavailable' in active) {
     return searchIrFromQueries(queries, [errorSnippet('Search error', searchFailedText(active.unavailable))]);
   }
@@ -754,7 +754,7 @@ const runBatchFetch = async (
   session: WebSearchExecutionSession,
 ): Promise<WebSearchPageFetchMap> => {
   const perUrl: WebSearchPageFetchMap = new Map();
-  const active = await resolveActiveProvider(session);
+  const active = await resolveActiveBackend(session);
   if ('unavailable' in active) {
     for (const url of needFetch) {
       perUrl.set(url, { ok: false, output: openFailedText(url, active.unavailable) });
@@ -767,8 +767,8 @@ const runBatchFetch = async (
       ...(session.signal !== undefined ? { signal: session.signal } : {}),
     };
     const result = await fetchPageAndRecordUsage({
-      provider: active.provider,
-      providerName: active.providerName,
+      backend: active.backend,
+      backendName: active.backendName,
       keyId: session.apiKeyId,
       request: fetchRequest,
     });
@@ -781,10 +781,10 @@ const runBatchFetch = async (
       return perUrl;
     }
 
-    type ProviderOutcome =
+    type UpstreamOutcome =
       | { type: 'failure'; value: typeof result.failures[number] }
       | { type: 'page'; value: typeof result.pages[number] };
-    const outcomes = new Map<string, ProviderOutcome>();
+    const outcomes = new Map<string, UpstreamOutcome>();
     const unmatchedUrls: string[] = [];
     const claimedFailures = new Set<number>();
     const claimedPages = new Set<number>();

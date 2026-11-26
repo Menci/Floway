@@ -1,7 +1,7 @@
 import type { DumpAccumulator } from '../../../dump/accumulator.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { BufferedHttpResult, ChatTargetApi, ExecuteResult } from '@floway-dev/provider';
 import type { TranslateTrip, TranslateInputError } from '@floway-dev/translate';
+import type { BufferedHttpResult, ChatTargetApi, ExecuteResult } from '@floway-dev/upstream';
 
 // Capture target-protocol upstream data before translation so dumps use the target serializer.
 export interface TranslationUpstreamCapture {

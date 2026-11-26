@@ -14,7 +14,7 @@ import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { ollamaUsageBody } from '../schemas.ts';
-import type { Fetcher } from '@floway-dev/provider';
+import type { Fetcher } from '@floway-dev/upstream';
 import {
   fetchOllamaAccount,
   isOllamaUsageEnabled,
@@ -22,7 +22,7 @@ import {
   refreshOllamaAccount,
   refreshOllamaUsageProbe,
   type OllamaUpstreamConfig,
-} from '@floway-dev/provider-ollama';
+} from '@floway-dev/upstream-ollama';
 
 export const ollamaUsage = async (c: CtxWithJson<typeof ollamaUsageBody>) => {
   const { record } = c.req.valid('json');

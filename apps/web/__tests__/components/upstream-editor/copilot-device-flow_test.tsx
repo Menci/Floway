@@ -1,7 +1,7 @@
 import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ProviderConfigHarness } from './provider-config-harness';
+import { ProviderConfigHarness } from './upstream-kind-config-harness';
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';

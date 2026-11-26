@@ -4,9 +4,9 @@ import { MODEL_CATALOG_REVISION } from '../../../src/repo/models-cache-contract.
 import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
-import type { UpstreamModelConfig } from '@floway-dev/provider';
-import { projectCustomModels } from '@floway-dev/provider-custom';
 import { assertEquals } from '@floway-dev/test-utils';
+import type { UpstreamModelConfig } from '@floway-dev/upstream';
+import { projectCustomModels } from '@floway-dev/upstream-custom';
 
 const customManualModels: UpstreamModelConfig[] = [
   { upstreamModelId: 'gpt-5', kind: 'chat', endpoints: { openaiChatCompletions: {} } },

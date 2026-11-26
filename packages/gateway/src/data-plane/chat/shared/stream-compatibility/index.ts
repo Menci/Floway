@@ -1,7 +1,7 @@
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { FlagId } from '@floway-dev/provider';
+import type { FlagId } from '@floway-dev/upstream';
 
 export const shouldSerializeStreamItems = (flags: ReadonlySet<FlagId>, protocol: 'anthropicMessages' | 'openaiResponses', userAgent: string | null): boolean => {
   if (flags.has('serialize-stream-items')) return true;

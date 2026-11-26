@@ -4,7 +4,7 @@ import { serializeAnthropicMessagesStream, serializeOpenAIResponsesStream, shoul
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { FlagId } from '@floway-dev/provider';
+import type { FlagId } from '@floway-dev/upstream';
 
 const frames = async function* <T>(values: ProtocolFrame<T>[]) { yield* values; };
 const collect = async <T>(source: AsyncIterable<T>): Promise<T[]> => { const output: T[] = []; for await (const value of source) output.push(value); return output; };

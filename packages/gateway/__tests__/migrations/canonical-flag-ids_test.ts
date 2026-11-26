@@ -4,7 +4,7 @@ import { expect, test } from 'vitest';
 
 import { decodeUpstreamFlagOverrides, decodeUpstreamManualModel } from '../../src/repo/upstream-codecs.ts';
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
-import { parseFlagOverridesWire, resolveEffectiveFlags, type UpstreamModelConfig } from '@floway-dev/provider';
+import { parseFlagOverridesWire, resolveEffectiveFlags, type UpstreamModelConfig } from '@floway-dev/upstream';
 
 const MIGRATION = '0083_canonical_protocol_names.sql';
 

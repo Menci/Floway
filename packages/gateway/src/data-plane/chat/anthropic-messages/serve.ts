@@ -1,15 +1,15 @@
 import { analyzeAnthropicMessagesAffinity } from './affinity/ingress.ts';
 import { anthropicMessagesAttempt, anthropicMessagesGenerateTarget, anthropicMessagesCountTokensTarget } from './attempt.ts';
 import { renderAnthropicMessagesFailure } from './errors.ts';
-import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
+import { enumerateModelCandidates } from '../../upstreams/resolution.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { serializeAnthropicMessagesStream, shouldSerializeStreamItems } from '../shared/stream-compatibility/index.ts';
 import { parseAnthropicBetaHeader, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ExecuteResult, type PlainResult } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult } from '@floway-dev/upstream';
 
 export interface AnthropicMessagesServeGenerateArgs {
   readonly payload: AnthropicMessagesPayload;

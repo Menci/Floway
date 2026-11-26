@@ -3,8 +3,8 @@ import { loadProxyCatalog } from './proxy-catalog.ts';
 import { getRepo } from '../repo/index.ts';
 import { entryMatchesColo, isDirectFallbackId, normalizeProxyFallbackList } from '../repo/proxy-fallback-list.ts';
 import { getFetch, getHttpContentDecoders, getSocketDial } from '@floway-dev/platform';
-import type { Fetcher, ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
+import type { Fetcher, ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/upstream';
 
 export class InvalidProxyConfigurationError extends Error {
   constructor(message: string, cause?: unknown) {

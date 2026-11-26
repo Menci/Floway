@@ -1,7 +1,7 @@
 import { inputErrorFields, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
 import { generateAnthropicId, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/upstream';
 
 // Anthropic Messages error envelope used to render pre-stream
 // `ChatServeFailure`s. These are gateway-synthesized rather than received

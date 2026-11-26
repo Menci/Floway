@@ -11,7 +11,7 @@ import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { stubMatchMedia } from '../../match-media-stub';
 import { renderInApp } from '../../render';
-import type { UpstreamModelConfig } from '@floway-dev/provider/browser';
+import type { UpstreamModelConfig } from '@floway-dev/upstream/browser';
 
 // The two-column editor. happy-dom measures width queries against its 1024px
 // window, which is the single-column layout page-sectioned_test.tsx covers.

@@ -4,6 +4,7 @@ import { shortId } from '../../../../../shared/short-id.ts';
 import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
 import { executeAlphaSearch } from '../../../../tools/web-search/alpha-search/execution.ts';
 import { resolveAlphaSearchDispatcher } from '../../../../tools/web-search/alpha-search/upstream.ts';
+import { resolveConfiguredWebSearchBackend } from '../../../../tools/web-search/backend.ts';
 import { loadWebSearchConfig } from '../../../../tools/web-search/config.ts';
 import { normalizeDomainEntry } from '../../../../tools/web-search/domain-normalize.ts';
 import {
@@ -29,8 +30,7 @@ import {
   type WebSearchFilters,
   type WebSearchOperation,
 } from '../../../../tools/web-search/operations.ts';
-import { resolveConfiguredWebSearchProvider } from '../../../../tools/web-search/provider.ts';
-import type { ConfiguredWebSearchProvider } from '../../../../tools/web-search/types.ts';
+import type { ConfiguredWebSearchBackend } from '../../../../tools/web-search/types.ts';
 import type { ServerToolHistoryExpansion, ServerToolLoopState, ServerToolOutputItem, ServerToolRegistration } from '../server-tool-shim.ts';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesWebSearchTool, OpenAIResponsesInputWebSearchCall, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
 import { collectOpenAIResponsesToolEntries, createRandomOpenAIResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/openai-responses';
@@ -641,15 +641,15 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
   const { filters } = prepared;
   const webSearchConfig = await loadWebSearchConfig();
   const includeArray = Array.isArray(invocation.payload.include) ? invocation.payload.include : [];
-  let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
+  let configuredBackend: Promise<ConfiguredWebSearchBackend> | undefined;
   const hosted = tools.filter(isHostedWebSearchTool).at(-1);
   const settings = alphaSearchSettingsFromHosted(hosted);
   const state: ShimState = {
     filters,
     pageCache: new Map(),
-    getProvider: () => {
-      configuredProvider ??= Promise.resolve(resolveConfiguredWebSearchProvider(webSearchConfig));
-      return configuredProvider;
+    getBackend: () => {
+      configuredBackend ??= Promise.resolve(resolveConfiguredWebSearchBackend(webSearchConfig));
+      return configuredBackend;
     },
     apiKeyId: gatewayCtx.apiKeyId,
     includeSearchResults: includeArray.includes('web_search_call.results'),

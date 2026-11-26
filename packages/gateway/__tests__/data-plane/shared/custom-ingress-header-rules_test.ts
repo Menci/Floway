@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest, sseOpenAIChatCompletionsResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
 
 // One instance, one rule set, one route per attempt path that hands inbound
 // headers to the provider (the passthrough endpoints share one attempt, so

@@ -12,7 +12,7 @@ export type {
   ChatGPTQuotaSnapshotMap,
   ChatGPTRateLimitResetCredit,
   ChatGPTRateLimitResetCredits,
-  ProviderModelsFailureResponse,
+  UpstreamModelsFailureResponse,
   UpstreamRecord,
 } from '@floway-dev/gateway/browser';
 

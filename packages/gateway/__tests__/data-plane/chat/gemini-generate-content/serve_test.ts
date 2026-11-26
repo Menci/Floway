@@ -6,8 +6,8 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type UpstreamCallResult, type UpstreamStreamResult, type UpstreamCallOptions } from '@floway-dev/upstream';
 
 // Mock the resolver seam so each test hands the serve exactly the model
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -17,8 +17,8 @@ interface QueuedResolution {
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastResolveCall: { model?: string } = {};
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
+vi.mock('../../../../src/data-plane/upstreams/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../../src/data-plane/upstreams/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async ({ model }: { model: string }) => {
@@ -80,9 +80,9 @@ const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: 'openaiChatCompletions' | 'anthropicMessages' | 'openaiResponses';
   endpoints?: ModelEndpoints;
-  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
-  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
-  callGeminiGenerateContent?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
+  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>>;
+  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamCallResult>;
+  callGeminiGenerateContent?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'openaiChatCompletions';
@@ -97,17 +97,17 @@ const makeCandidate = (overrides: {
     : targetApi === 'anthropicMessages'
       ? { anthropicMessages: {} }
       : { openaiResponses: {} });
-  const provider = stubProvider({
+  const instance = stubUpstream({
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
     callGeminiGenerateContent: overrides.callGeminiGenerateContent,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      instance: provider,
+      instance,
     },
-    model: stubProviderModel({ endpoints }),
+    model: stubUpstreamModel({ endpoints }),
     fetcher: directFetcher,
   };
 };
@@ -147,7 +147,7 @@ test('generate filters out candidates whose endpoints do not satisfy the gemini-
 test('alias resolution overlays rules onto the target IR at the wire call', async () => {
   installRepo();
   const capturedBodies: Record<string, unknown>[] = [];
-  const callOpenAIChatCompletions = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+  const callOpenAIChatCompletions = vi.fn(async (_model: unknown, body: unknown): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     capturedBodies.push(body as Record<string, unknown>);
     return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'gpt-5.4', http: { status: 200, headers: new Headers() } };
   });
@@ -176,7 +176,7 @@ test('alias resolution overlays rules onto the target IR at the wire call', asyn
 
 test('generate prefers a native Gemini candidate over a translated one', async () => {
   installRepo();
-  const callGeminiGenerateContent = vi.fn(async (): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
+  const callGeminiGenerateContent = vi.fn(async (): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => ({
     ok: true,
     events: makeProtocolFrames([
       { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'native' }] }, finishReason: 'STOP' }] },
@@ -184,7 +184,7 @@ test('generate prefers a native Gemini candidate over a translated one', async (
     modelKey: 'k',
     http: { status: 200, headers: new Headers() },
   }));
-  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueResolution([
@@ -209,7 +209,7 @@ test('generate prefers a native Gemini candidate over a translated one', async (
 test('a native candidate keeps a foreign signature verbatim', async () => {
   installRepo();
   let observed: GeminiGenerateContentPayload | undefined;
-  const callGeminiGenerateContent = vi.fn(async (_model, body): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => {
+  const callGeminiGenerateContent = vi.fn(async (_model, body): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => {
     observed = structuredClone(body as GeminiGenerateContentPayload);
     return {
       ok: true,
