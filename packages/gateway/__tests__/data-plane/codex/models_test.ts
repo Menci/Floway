@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { assembleCodexCatalog } from '../../../src/data-plane/codex/models.ts';
 import type { AddressableIdEntry } from '../../../src/data-plane/shared/listing/addressable.ts';
 import type { InternalModel } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
+import { stubProviderModel } from '@floway-dev/test-utils';
 
 const bundled = {
   models: [
@@ -32,9 +32,13 @@ const entry = (model: InternalModel, unlisted?: true): AddressableIdEntry => ({
 
 const entries = (...models: InternalModel[]): AddressableIdEntry[] => models.map(m => entry(m));
 
+const upstream = (upstreamId: string, kind: AddressableIdEntry['upstreams'][number]['kind']): AddressableIdEntry['upstreams'][number] => ({
+  upstreamId, kind, name: upstreamId,
+});
+
 describe('assembleCodexCatalog', () => {
   test('uses the primary ChatGPT provider default for a prefixed model without a matching client entry', () => {
-    const provider = { ...stubModelCandidate().provider, kind: 'chatgpt' as const };
+    const provider = upstream('primary', 'chatgpt');
     const model = {
       ...chat('codex/future-model', 'Future', 600000),
       providerModels: {
@@ -49,8 +53,8 @@ describe('assembleCodexCatalog', () => {
   });
 
   test('a secondary ChatGPT provider cannot replace the primary provider budget', () => {
-    const primary = stubModelCandidate().provider;
-    const secondary = { ...primary, upstreamId: 'secondary', kind: 'chatgpt' as const };
+    const primary = upstream('primary', 'custom');
+    const secondary = upstream('secondary', 'chatgpt');
     const model = {
       ...chat('gpt-5.5', 'Primary', 200000),
       providerModels: {
@@ -71,8 +75,8 @@ describe('assembleCodexCatalog', () => {
     { codex: { additional_speed_tiers: ['fast'] }, expected: ['priority'] },
     { codex: { service_tiers: [{ id: 'ultrafast', name: 'Ultrafast', description: '' }] }, expected: ['ultrafast'] },
   ])('only lists tiers shared with the ChatGPT catalog $codex, in either routing order', ({ codex, expected }) => {
-    const native = { ...stubModelCandidate().provider, kind: 'custom' as const };
-    const subscription = { ...native, kind: 'chatgpt' as const, upstreamId: 'subscription' };
+    const native = upstream('native', 'custom');
+    const subscription = upstream('subscription', 'chatgpt');
     const pricing = { entries: ['priority', 'ultrafast'].map(serviceTier => ({ selector: { serviceTier }, rates: { input_tokens: '1' } })) };
     const model = {
       ...chat('shared'), pricing,

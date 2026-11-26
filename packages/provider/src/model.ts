@@ -137,19 +137,14 @@ interface ModelMetadata {
 // the union.
 //
 // A row is exactly one of two mutually-exclusive kinds:
-//   • Real row — carries `providerModels`, keyed on upstream id. Per-request
-//     dispatch reads the chosen upstream's `ProviderModel` off this map via
-//     `providerModelOf(candidate)`. A per-candidate row (from
-//     `enumerateRealModelCandidates`) narrows the map to the single dispatched
-//     upstream; the merged catalog row from `getModelsFromProviders`
-//     aggregates every contributing upstream.
+//   • Real row — carries `providerModels`, keyed on upstream id. Candidate
+//     resolution narrows the map to the selected upstream. The merged catalog
+//     row aggregates every contributing upstream.
 //   • Alias row — carries `aliasedFrom`, the operator-defined alias record.
 //     Alias rows appear in listings but never dispatch directly; the resolver
 //     walks the alias's targets and yields real-row candidates instead.
 //
 // The two carriers are exclusive: a row is either real or alias, never both.
-// `providerModelOf` throws with distinct messages for each miss so a mis-used
-// alias row surfaces the correct diagnostic.
 export type InternalModel = ModelMetadata & (
   | { readonly providerModels: Record<string, ProviderModel>; readonly aliasedFrom?: never }
   | { readonly providerModels?: never; readonly aliasedFrom: InternalAliasedFrom }
@@ -169,10 +164,10 @@ export interface InternalAliasedFrom {
   readonly targets: readonly AliasTarget[];
 }
 
-// Per-upstream projection returned by every provider's `getProvidedModels` and
-// the shape every provider's `callXxx(model, ...)` takes at dispatch time.
+// Per-upstream catalog projection. The selected model is projected into
+// `provider.model` for a provider pipeline.
 // Carries the same metadata as `InternalModel` plus `providerData` (opaque
-// provider-private invocation data whose shape is owned by the emitting
+// provider-private data whose shape is owned by the emitting
 // provider), `enabledFlags` (the effective flag set for the model on the
 // emitting upstream, already resolved through every layer), and `flagOverrides` (optional dashboard-only
 // view of the per-model layer that fed into `enabledFlags`). Providers only

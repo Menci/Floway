@@ -1,36 +1,5 @@
-export type {
-  OpenAIChatCompletionsInvocation,
-  GeminiGenerateContentInvocation,
-  ChatTargetApi,
-  AnthropicMessagesInvocation,
-  ModelCandidate,
-  OpenAIResponsesInvocation,
-} from './invocation.ts';
-export { providerModelOf } from './invocation.ts';
-
 export type { InternalDebugError } from './error.ts';
 export { internalDebugErrorFields, toInternalDebugError } from './error.ts';
-
-export type {
-  ApiErrorResult,
-  BufferedHttpResult,
-  EventResult,
-  EventResultMetadata,
-  ExecuteResult,
-  HttpHead,
-  InternalErrorResult,
-  PlainResult,
-} from './result.ts';
-export {
-  bufferedResultToResponse,
-  decodeResponseBody,
-  discardUpstreamResponse,
-  eventResult,
-  internalErrorResult,
-  plainResult,
-  readResponseBody,
-  readUpstreamApiError,
-} from './result.ts';
 
 export type {
   InternalAliasedFrom,
@@ -48,28 +17,10 @@ export { parsePerformanceOperation, PERFORMANCE_OPERATIONS } from './telemetry.t
 export type { AddressableForm, ModelPrefixConfig } from './model-prefix.ts';
 export { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeModelPrefix } from './model-prefix.ts';
 
-export type {
-  Provider,
-  InboundHeaderMatcher,
-  ProviderInstance,
-  ProviderCallResult,
-  ProviderCompactionResult,
-  ProviderRerankCallResult,
-  ProviderDecisionCallResult,
-  ProviderModule,
-  AnthropicMessagesUpstreamCallOptions,
-  ProviderOpenAIResponsesResult,
-  ProviderStreamResult,
-  OpenAIResponsesAction,
-  UpstreamCallOptions,
-} from './provider.ts';
-export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
 export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsBody, serializeOpenAIImagesEditsJsonBody, serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
 export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
-export type { ProviderStreamParser } from './streaming.ts';
-export { streamingProviderCall } from './streaming.ts';
 
 export { formatUpstreamMetricIdentity, groupUpstreamMetricSamples, quotaPercentDisplay, recordUpstreamMetric, recordUpstreamMetrics, resolveUpstreamMetricDisplaySeries, upstreamMetricAxisPriority } from './upstream-metrics.ts';
 export type { GroupedUpstreamMetricSamples, UpstreamMetrics, UpstreamMetricDisplay, UpstreamMetricDisplayOptions, UpstreamMetricDisplaySeries, UpstreamMetricLabelKey, UpstreamMetricObservation, UpstreamMetricSample, UpstreamMetricUnit } from './upstream-metrics.ts';
@@ -114,7 +65,7 @@ export type { ValidatePathErr, ValidatePathOk } from './join.ts';
 export { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 
 export type { Fetcher, FetchInit, HttpHeaderLines, ReplayableBody, UpstreamFetchOptions } from './options.ts';
-export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall, isReplayableBody, toRequestInit } from './options.ts';
+export { directFetcher, discardUpstreamResponse, dispatchUpstreamFetch, identityWrapUpstreamCall, isReplayableBody, toRequestInit } from './options.ts';
 
 export { isAbortError } from './abort.ts';
 

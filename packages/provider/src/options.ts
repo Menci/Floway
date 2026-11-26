@@ -16,7 +16,6 @@ export const directFetcher: Fetcher = (url, init) => {
 export interface UpstreamFetchOptions {
   extraHeaders?: HttpHeaderLines;
   fetcher: Fetcher;
-  /** See UpstreamCallOptions.wrapUpstreamCall — same contract. */
   wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
 }
 
@@ -40,4 +39,9 @@ export const dispatchUpstreamFetch = (
     owned = undefined;
     return options.fetcher(url, request);
   });
+};
+
+// Cancelling an unread body releases the transport, including directly dialed sockets.
+export const discardUpstreamResponse = async (response: Response): Promise<void> => {
+  await response.body?.cancel();
 };

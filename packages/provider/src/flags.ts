@@ -13,11 +13,8 @@
 // Defaults are NOT declared in this catalog. Each provider owns the
 // decision of which flags default on for its own upstream (and, when
 // per-model differentiation matters, per model). Vendor-specific
-// knowledge lives inside the provider package that talks to that vendor. See
-// `ProviderModule.defaultFlags` in `provider.ts` for the module surface, and
-// each provider package's `defaults.ts` for the per-kind constants themselves.
-// Per-model deltas are provider-internal: `createXxxProvider` computes them
-// once and stakes the result into `ProviderModel.enabledFlags`.
+// knowledge lives inside the owning provider package. Each provider's catalog
+// applies its defaults and per-model deltas to `ProviderModel.enabledFlags`.
 
 export const OPTIONAL_FLAG_IDS = [
   'vendor-deepseek',
