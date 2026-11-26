@@ -40,5 +40,19 @@ export const anthropicMessagesPayloadFromSegments = (
   applyLastSystemCacheBreakpoint(system);
   applyLastToolCacheBreakpoint(target.tools);
   applyLastMessageCacheBreakpoint(messages.filter(message => !restored.has(message)));
+
+  // Messages interprets trailing assistant text as prefill. Send a new user turn
+  // for assistant history, leaving the cache breakpoint on the history itself.
+  // https://platform.claude.com/docs/en/build-with-claude/working-with-messages#alternatives-to-a-prefill
+  const last = messages.at(-1);
+  if (request.assistantMessagesAreHistory === true && last?.role === 'assistant') {
+    const { content } = last;
+    if (typeof content === 'string' || (
+      content.some(block => block.type === 'text')
+      && content.every(block => block.type === 'text' || block.type === 'thinking' || block.type === 'redacted_thinking')
+    )) {
+      messages.push({ role: 'user', content: 'Continue.' });
+    }
+  }
   return target;
 };

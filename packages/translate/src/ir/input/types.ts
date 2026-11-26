@@ -54,6 +54,7 @@ export interface IRInputOutputFormat {
 // All
 export interface IRInputRequestHeader {
   readonly settings: IRInputSettings; // All
+  readonly assistantMessagesAreHistory?: true; // Responses
   // Absent and empty are the same thing: a request that declares no tool. Each
   // callable identity appears once; a source that allows redeclaration resolves it.
   readonly tools?: readonly IRInputTool[]; // All

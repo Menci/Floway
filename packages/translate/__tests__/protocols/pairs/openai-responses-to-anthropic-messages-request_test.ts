@@ -340,6 +340,28 @@ test('buildTargetPayload maps incomplete function output to an Anthropic tool er
   });
 });
 
+test('starts a new Messages turn after completed Responses assistant text', async () => {
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' }, strict: false }],
+    input: [
+      { type: 'message', role: 'user', content: 'Check the forecast.' },
+      { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{}' },
+      { type: 'function_call_output', call_id: 'call_1', output: 'Rain tomorrow.' },
+      { type: 'reasoning', id: 'rs_1', summary: [{ type: 'summary_text', text: '' }] },
+      { type: 'message', id: 'msg_1', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'I checked the forecast.' }] },
+    ],
+  });
+
+  assertEquals(result.target.messages, [
+    { role: 'user', content: 'Check the forecast.' },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'call_1', name: 'lookup', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'call_1', content: 'Rain tomorrow.' }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'I checked the forecast.', cache_control: { type: 'ephemeral' } }] },
+    { role: 'user', content: 'Continue.' },
+  ]);
+});
+
 test('keeps an empty assistant message as the turn that separates two client runs', async () => {
   // Dropping it would leave two adjacent user messages, which this wire merges
   // into one turn, losing the boundary the client stated.

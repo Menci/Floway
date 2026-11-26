@@ -382,6 +382,7 @@ export const readOpenAIResponsesRequest = (source: OpenAIResponsesRequestPayload
   return {
     request: {
       settings: openaiResponsesSettingsToIR(canonical),
+      assistantMessagesAreHistory: true,
       ...openaiResponsesToolsToIR(canonical),
     },
     turns: [
