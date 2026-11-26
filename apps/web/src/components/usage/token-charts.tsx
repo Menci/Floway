@@ -2,11 +2,12 @@ import { useMemo } from 'react';
 
 import { UsageChartSection } from './chart-section';
 import { formatMetricValue } from './format';
-import { buildTokenChart, dashboardBuckets, summarizeUsage } from './plot';
+import { buildTokenChart, summarizeUsage } from './plot';
 import { SummaryMetrics } from './summary-metrics';
 import type { UsageGroupBy, UsageMetric, UsageOverviewResponse, UsageRange, UsageUpstream } from './types';
 import { useTranslation } from '../../i18n/translation';
 import { useLocale } from '../../lib/use-locale';
+import { dashboardChartBuckets } from '../charts/dashboard-time';
 import type { TelemetryDimension } from '../telemetry/dimension-controls';
 import { EmptyStateLine } from '../ui/empty-state';
 import { usageUpstreamDimensionValue } from '@floway-dev/protocols/browser';
@@ -34,7 +35,7 @@ export function TokenUsageCharts({ usage, dimensions, upstreams, groupBy, range,
     return {
       summary: summarizeUsage(hidden.size === 0 ? usage.axes.none : visible),
       chart: buildTokenChart({
-        records: usage.series, dimensionOptions: selected.options, metric, range, buckets: dashboardBuckets(range, loadedAt),
+        records: usage.series, dimensionOptions: selected.options, metric, range, buckets: dashboardChartBuckets(range, loadedAt),
         seriesHues: groupBy === 'upstream' ? new Map(upstreams.map(upstream => [usageUpstreamDimensionValue(upstream.id), upstream.hue])) : undefined,
       }),
     };

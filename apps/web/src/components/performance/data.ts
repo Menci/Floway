@@ -1,8 +1,9 @@
 import type { PerformanceDisplayRecord, PerformanceFilters, PerformanceGroupBy, PerformanceOverviewView, PerformanceRange } from './overview';
 import { api, callApi, type ApiResult } from '../../api/client';
 import { dashboardFixedRangeQuery } from '../charts/dashboard-time';
+import { canContinueTelemetrySnapshot, mergeTelemetrySnapshot, sameTelemetryBucketGrid, sameTelemetryScope } from '../telemetry/snapshot';
 import type { PerformanceSlice, PerformanceSliceRow, PerformanceSlicesResponse } from '@floway-dev/gateway/browser';
-import { parseTelemetryHour, percentileFromBuckets, TELEMETRY_HOUR_MS, telemetryBucketHours, type HistogramBucket } from '@floway-dev/protocols/browser';
+import { percentileFromBuckets, type HistogramBucket } from '@floway-dev/protocols/browser';
 
 export type PerformanceQuery = { range: PerformanceRange; groupBy: PerformanceGroupBy; filters: PerformanceFilters };
 
@@ -44,36 +45,18 @@ const queryKey = ({ start: _start, end: _end, ...query }: WindowQuery): string =
 
 const reusable = (previous: PerformanceDataset | undefined, request: WindowQuery): previous is PerformanceDataset =>
   previous !== undefined && queryKey(previous.request) === queryKey(request)
-  && previous.snapshot.start <= request.start && previous.snapshot.end <= request.end
-  && (parseTelemetryHour(request.start) - parseTelemetryHour(previous.request.start)) % (telemetryBucketHours(request.bucket) * TELEMETRY_HOUR_MS) === 0
-  && !previous.snapshot.buckets.some(bucket => bucket.start < request.start && request.start < bucket.end);
-
-const mergeMetadata = <T>(previous: readonly T[], next: readonly T[], key: (value: T) => string | number): T[] =>
-  [...new Map([...previous, ...next].map(value => [key(value), value])).values()];
-
-const merge = (previous: Snapshot | undefined, response: Snapshot, start: string): Snapshot => {
-  if (response.reset) return response;
-  if (previous === undefined) throw new Error('Performance delta requires a baseline');
-  if (previous.buckets.some(bucket => bucket.start < response.start && response.start < bucket.end)) {
-    throw new Error('Performance delta crosses a retained bucket');
-  }
-  return {
-    ...response, start,
-    buckets: [...previous.buckets.filter(bucket => bucket.start >= start && bucket.end <= response.start), ...response.buckets],
-    users: response.metadataVisibility.complete ? response.users : mergeMetadata(previous.users, response.users, user => user.id),
-    upstreams: response.metadataVisibility.complete ? response.upstreams : mergeMetadata(previous.upstreams, response.upstreams, upstream => upstream.id),
-  };
-};
+  && sameTelemetryBucketGrid(previous.request, request)
+  && canContinueTelemetrySnapshot(previous.snapshot, request);
 
 const fetchDataset = async (request: WindowQuery, now: number, previous?: PerformanceDataset): Promise<ApiResult<PerformanceDataset>> => {
   const query = previous === undefined ? request : { ...request, cursor: previous.snapshot.cursor };
   const result = await callApi(() => api.api.performance.overview.$get({ query }));
   if (result.error) return result;
   if (!('edges' in result.data)) throw new Error('Expected Performance histogram slices');
-  if (previous !== undefined && !result.data.reset && JSON.stringify(result.data.scope) !== JSON.stringify(previous.snapshot.scope)) {
+  if (previous !== undefined && !result.data.reset && !sameTelemetryScope(result.data.scope, previous.snapshot.scope)) {
     return await fetchDataset(request, now);
   }
-  return { data: { request, snapshot: merge(previous?.snapshot, decode(result.data), request.start), loadedAt: now } };
+  return { data: { request, snapshot: mergeTelemetrySnapshot(previous?.snapshot, decode(result.data), request.start), loadedAt: now } };
 };
 
 export const createPerformanceLoader = (initial?: PerformanceDataset) => {
@@ -149,12 +132,12 @@ export const performanceRanking = ({ snapshot }: PerformanceDataset): Performanc
 
 export const performanceOverviewForDisplay = ({ snapshot }: PerformanceDataset): PerformanceOverviewView => {
   const { buckets, globalSummary } = snapshot;
-  const collect = (key: keyof PerformanceOverviewView['dimensionValues']) =>
-    [...new Set(buckets.flatMap(bucket => bucket.dimensionValues[key] as (string | number)[]))].sort();
+  const collect = <T>(values: (facets: PerformanceSlice['dimensionValues']) => T[], compare?: (a: T, b: T) => number) =>
+    [...new Set(buckets.flatMap(bucket => values(bucket.dimensionValues)))].sort(compare);
   const dimensionValues = {
-    models: collect('models') as string[], upstreams: collect('upstreams') as string[],
-    operations: collect('operations') as string[], runtimeLocations: collect('runtimeLocations') as string[],
-    keyIds: collect('keyIds') as string[], userIds: (collect('userIds') as number[]).sort((a, b) => a - b),
+    models: collect(values => values.models), upstreams: collect(values => values.upstreams),
+    operations: collect(values => values.operations), runtimeLocations: collect(values => values.runtimeLocations),
+    keyIds: collect(values => values.keyIds), userIds: collect(values => values.userIds, (a, b) => a - b),
   };
   const userIds = new Set([...snapshot.metadataVisibility.userIds, ...dimensionValues.userIds]);
   const upstreamIds = new Set([...snapshot.metadataVisibility.upstreamIds, ...dimensionValues.upstreams]);

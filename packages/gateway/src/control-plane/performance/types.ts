@@ -1,5 +1,5 @@
 import type { PerformanceDisplayRecord, PerformanceMetric, PerformanceOverviewResult, PerformanceSliceRecord } from '../../repo/types.ts';
-import type { TokenUsageOverviewResponse } from '../usage-types.ts';
+import type { TelemetryOverviewSnapshot } from '../shared/telemetry-overview-types.ts';
 
 export interface PerformanceSliceRow extends Omit<PerformanceSliceRecord, 'buckets'> {
   ttft: [edge: number, count: number][];
@@ -15,8 +15,7 @@ export interface PerformanceSlice {
   dimensionValues: PerformanceOverviewResult['dimensionValues'];
 }
 
-export interface PerformanceSlicesResponse extends Pick<TokenUsageOverviewResponse, 'start' | 'end' | 'cursor' | 'reset' | 'scope' | 'metadataVisibility' | 'keys' | 'users' | 'upstreams'> {
-  buckets: PerformanceSlice[];
+export interface PerformanceSlicesResponse extends TelemetryOverviewSnapshot<PerformanceSlice> {
   edges: Record<PerformanceMetric, [lower: number, upper: number | null][]>;
   globalSummary?: PerformanceDisplayRecord | null;
 }

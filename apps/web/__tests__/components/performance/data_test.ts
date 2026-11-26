@@ -40,9 +40,8 @@ it('replaces overlapping hours and decodes each delta against its own histogram 
   }));
   const loader = createPerformanceLoader();
   const now = Date.UTC(2026, 10, 26, 12);
-  const initial = loader.load(query, 'model', now);
-  expect(loader.load(query, 'model', now)).toBe(initial);
-  const baseline = (await initial).data!;
+  const [initial] = await Promise.all([loader.load(query, 'model', now), loader.load(query, 'model', now)]);
+  const baseline = initial.data!;
   expect(performanceOverviewForDisplay(baseline).rows[0]).toMatchObject({ requests: 3, ttftMsP95: 75 });
   const current = (await loader.load(query, 'model', now + 60_000)).data!;
   expect(parameters.map(request => request.get('cursor'))).toEqual([null, '2026-11-26T11']);

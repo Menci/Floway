@@ -4,24 +4,12 @@ import { metricConfig, summaryFieldForMetric } from './metrics';
 import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageMetric, UsageRange } from './types';
 import { decimalStringToPlottableNumber, sumDecimalStrings } from '../../lib/decimal-display';
 import type { ChartBucket } from '../charts/dashboard-time';
-import {
-  dashboardFixedBucketFrames,
-  formatBucketInterval,
-} from '../charts/dashboard-time';
 import { hueForSeriesSlot } from '../charts/palette';
 import type { ChartSeries } from '../charts/series-legends';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
 import { areaSeries, lineSeries } from '../charts/series-plot';
 import type { MultiselectOption } from '../ui/multiselect-combobox';
 import { parseTelemetryHour, type BillingMetric, type DecimalString } from '@floway-dev/protocols/browser';
-
-export const dashboardBuckets = (
-  range: UsageRange,
-  nowMs: number,
-): ChartBucket[] => {
-  return dashboardFixedBucketFrames(range, nowMs)
-    .map(frame => ({ ...frame, label: formatBucketInterval(frame) }));
-};
 
 export const buildTokenChart = ({
   records,

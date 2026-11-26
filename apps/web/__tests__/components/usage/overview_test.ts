@@ -1,8 +1,9 @@
 import { expect, test, vi } from 'vitest';
 
 import { dashboardFixedRangeQuery } from '../../../src/components/charts/dashboard-time';
+import { canContinueTelemetrySnapshot, mergeTelemetrySnapshot } from '../../../src/components/telemetry/snapshot';
 import { createUsageOverviewLoader } from '../../../src/components/usage/data';
-import { mergeUsageOverview, usageOverviewCursor, usageOverviewForDisplay } from '../../../src/components/usage/overview';
+import { usageOverviewForDisplay } from '../../../src/components/usage/overview';
 import type { TokenUsageOverviewBucket, TokenUsageOverviewResponse } from '@floway-dev/gateway/browser';
 
 const bucket = (
@@ -41,10 +42,10 @@ test('a rolling overview replaces overlapping hours and adds the remaining inter
       bucket('2026-05-02T09', '2026-05-02T10', 'model-b', 1, '0'),
     ],
   };
-  expect(usageOverviewCursor(baseline, start, delta.end)).toBe('before');
-  expect(usageOverviewCursor(baseline, '2026-04-29T12', delta.end)).toBeUndefined();
-  const snapshot = mergeUsageOverview(baseline, delta, start);
-  expect(mergeUsageOverview(snapshot, delta, start)).toEqual(snapshot);
+  expect(canContinueTelemetrySnapshot(baseline, { start, end: delta.end })).toBe(true);
+  expect(canContinueTelemetrySnapshot(baseline, { start: '2026-04-29T12', end: delta.end })).toBe(false);
+  const snapshot = mergeTelemetrySnapshot(baseline, delta, start);
+  expect(mergeTelemetrySnapshot(snapshot, delta, start)).toEqual(snapshot);
   const usage = usageOverviewForDisplay(snapshot, 'model');
   expect(usage.series.map(({ bucket, group, requests }) => [bucket, group, requests])).toEqual([
     ['2026-04-30T00', 'model-a', 1], ['2026-04-30T00', 'model-b', 2],

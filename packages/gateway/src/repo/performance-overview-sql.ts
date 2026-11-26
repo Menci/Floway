@@ -38,9 +38,13 @@ export const scopedRange = (table: string, scoped: boolean) => scoped
   ? `${table}.key_id IN (SELECT id FROM api_keys WHERE user_id = ?) AND ${table}.hour >= ? AND ${table}.hour < ?`
   : `${table}.hour >= ? AND ${table}.hour < ?`;
 
-const rangeBinds = (opts: PerformanceOverviewQueryOptions, scoped: boolean): SqlBindValue[] => scoped
+export const performanceRangeBinds = (opts: Pick<PerformanceOverviewQueryOptions, 'actorUserId' | 'start' | 'end'>, scoped: boolean): SqlBindValue[] => scoped
   ? [opts.actorUserId, opts.start, opts.end]
   : [opts.start, opts.end];
+
+export const performanceCoordinateSql = (left: string, right: string) =>
+  ['hour', 'key_id', 'model', 'upstream', 'operation', 'runtime_location']
+    .map(column => `${left}.${column} = ${right}.${column}`).join(' AND ');
 
 const overviewHoursSql = (scoped: boolean) => `/* performance-overview-hours */
   SELECT performance_summary.hour AS hour
@@ -141,13 +145,7 @@ bucket_map(hour, bucket) AS MATERIALIZED (
 orphan_buckets AS MATERIALIZED (
   SELECT 1 AS present
   FROM performance_buckets
-  LEFT JOIN performance_summary ON
-    performance_summary.hour = performance_buckets.hour
-    AND performance_summary.key_id = performance_buckets.key_id
-    AND performance_summary.model = performance_buckets.model
-    AND performance_summary.upstream = performance_buckets.upstream
-    AND performance_summary.operation = performance_buckets.operation
-    AND performance_summary.runtime_location = performance_buckets.runtime_location
+  LEFT JOIN performance_summary ON ${performanceCoordinateSql('performance_summary', 'performance_buckets')}
   WHERE ${scopedRange('performance_buckets', scoped)}
     AND performance_summary.hour IS NULL
   LIMIT 1
@@ -177,13 +175,7 @@ filtered_histogram AS MATERIALIZED (
     performance_buckets.upper,
     performance_buckets.count
   FROM filtered_summary
-  JOIN performance_buckets ON
-    performance_buckets.hour = filtered_summary.hour
-    AND performance_buckets.key_id = filtered_summary.key_id
-    AND performance_buckets.model = filtered_summary.model
-    AND performance_buckets.upstream = filtered_summary.upstream
-    AND performance_buckets.operation = filtered_summary.operation
-    AND performance_buckets.runtime_location = filtered_summary.runtime_location
+  JOIN performance_buckets ON ${performanceCoordinateSql('performance_buckets', 'filtered_summary')}
 ),
 summary_cube AS MATERIALIZED (
   SELECT
@@ -404,7 +396,7 @@ export const querySqlPerformanceOverview = async (
   opts: PerformanceOverviewQueryOptions,
 ): Promise<PerformanceOverviewResult> => {
   const scoped = opts.groupBy === 'keyId';
-  const range = rangeBinds(opts, scoped);
+  const range = performanceRangeBinds(opts, scoped);
   const { results: hours } = await db.prepare(overviewHoursSql(scoped))
     .bind(...range)
     .all<{ hour: string }>();

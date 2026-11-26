@@ -106,11 +106,10 @@ describe('Performance table state', () => {
       expect(upstreamTab.getAttribute('aria-selected')).toBe('true');
       const tableName = i18n.t('monitoring.performance.groupBy.upstream');
       expect(within(await screen.findByRole('table', { name: tableName })).getByText('upstream-a')).toBeTruthy();
-      expect(queries.map(query => query.get('dimension'))).toEqual(['model', 'upstream']);
       expect(queries[1]?.get('end')).toBe(queries[0]?.get('end'));
       await act(async () => { finishChart?.(); });
       expect(within(screen.getByRole('table', { name: tableName })).getByText('upstream-a')).toBeTruthy();
-      expect(queries).toHaveLength(2);
+      expect(queries.map(query => query.get('dimension'))).toEqual(['model', 'upstream']);
     } finally {
       clock.mockRestore();
     }

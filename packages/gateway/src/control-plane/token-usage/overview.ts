@@ -3,9 +3,9 @@ import { getRepo } from '../../repo/index.ts';
 import { overviewBucketKey, type OverviewBucket } from '../../repo/telemetry-bucket-sql.ts';
 import type { UsageOverviewGroupBy } from '../../repo/types.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
-import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata, type TelemetryOverviewWindow } from '../shared/telemetry-overview.ts';
+import { loadTelemetryOverviewIdentity, planTelemetrySlices, readTelemetryOverviewWindow, shiftTelemetryHour, telemetryIdentityError, telemetryIdentityMetadata, telemetryOverviewVisibility, telemetryUpstreamMetadata, type TelemetryOverviewWindow } from '../shared/telemetry-overview.ts';
 import type { TokenUsageOverviewResponse } from '../usage-types.ts';
-import { parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryBucketHours, telemetryHourKey, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
+import { parseTelemetryHour, telemetryBucketHours, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof tokenUsageOverviewQuery>;
 
@@ -44,9 +44,6 @@ const readUsageOverviewQuery = (
   };
 };
 
-const shiftHour = (hour: string, count: number): string =>
-  telemetryHourKey(parseTelemetryHour(hour) + count * TELEMETRY_HOUR_MS);
-
 const readCursor = (cursor: string | undefined): string | undefined => {
   if (cursor === undefined) return undefined;
   try {
@@ -68,30 +65,16 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const identityError = telemetryIdentityError(identity, filters.keyId);
   if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
   const ownedKeysOnly = groupBy === 'keyId';
-  // The dashboard compares the serialized scope across reads, so set order is canonical.
-  const userIds = [...identity.visibleUserIds].sort((left, right) => left - right);
-  const upstreamIds = [...identity.visibleUpstreams].sort();
-
-  const previous = readCursor(params.value.cursor);
-  const resumeFromHour = shiftHour(nowHour, -1);
-  const nextHour = shiftHour(nowHour, 1);
-  const coveredEnd = end < nextHour ? end : nextHour;
-  const windowEnd = coveredEnd < start ? start : coveredEnd;
-  const cursor = windowEnd < resumeFromHour ? windowEnd : resumeFromHour;
-  const resume = previous !== undefined && previous <= cursor;
-  const scanStart = resume && previous > start ? previous : start;
+  const visibility = telemetryOverviewVisibility(identity, ownedKeysOnly);
   const queryBucket: OverviewBucket = bucket === 'all' ? 'all' : bucket === 'month' || bucket === 'year'
     ? { calendar: bucket, timezoneOffsetMinutes }
     : { origin: start, hours: telemetryBucketHours(bucket) };
-  const hourlyBoundaries = resume ? [resumeFromHour, nowHour, scanStart] : [resumeFromHour, nowHour];
-  const hourlyBuckets = hourlyBoundaries
-    .filter(hour => hour >= scanStart && hour < windowEnd)
-    .map(hour => overviewBucketKey(queryBucket, hour));
+  const { scanStart, windowEnd, cursor, reset, hourlyBuckets } = planTelemetrySlices(start, end, nowHour, readCursor(params.value.cursor), queryBucket);
   const buckets = scanStart >= windowEnd ? [] : (await repo.usage.queryOverview({
     actorUserId: identity.actor.id,
     isAdmin: identity.actor.isAdmin,
-    visibleUserIds: userIds,
-    visibleUpstreams: upstreamIds,
+    visibleUserIds: visibility.metadataVisibility.userIds,
+    visibleUpstreams: visibility.metadataVisibility.upstreamIds,
     start: scanStart,
     end: windowEnd,
     ownedKeysOnly,
@@ -106,7 +89,7 @@ export const tokenUsageOverview = async (c: Ctx) => {
   })).map(({ firstHour, lastHour, axes, dimensionValues }) => ({
     bucket: overviewBucketKey(queryBucket, firstHour),
     start: firstHour,
-    end: shiftHour(lastHour, 1),
+    end: shiftTelemetryHour(lastHour, 1),
     axes,
     dimensionValues,
   }))
@@ -119,17 +102,12 @@ export const tokenUsageOverview = async (c: Ctx) => {
 
   return c.json({
     cursor,
-    reset: !resume,
+    reset,
     start: scanStart,
     end: windowEnd,
     buckets,
     ...metadata,
-    scope: {
-      actorId: identity.actor.id,
-      ownedKeyIds: [...identity.ownedKeyIds].sort(),
-      visibility: ownedKeysOnly ? 'owned-keys' : identity.actor.isAdmin ? 'all' : { userIds, upstreamIds },
-    },
-    metadataVisibility: { complete: identity.actor.isAdmin, userIds, upstreamIds },
+    ...visibility,
     upstreams: telemetryUpstreamMetadata(identity, revealedUpstreamIds),
   } satisfies TokenUsageOverviewResponse);
 };

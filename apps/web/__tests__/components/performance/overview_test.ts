@@ -17,10 +17,9 @@ describe('performance overview query', () => {
   it('requests fixed-width Performance buckets at the dashboard granularity', () => {
     const filters = { model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] };
 
-    expect(buildPerformanceQuery({ range: 'today', groupBy: 'model', filters }, 'model', Date.UTC(2026, 10, 1, 7))).toMatchObject({
-      bucket: 'hour', format: 'buckets', dimension: 'model',
+    expect(buildPerformanceQuery({ range: '30d', groupBy: 'model', filters }, 'upstream', Date.UTC(2026, 10, 1, 7))).toMatchObject({
+      bucket: 'day', format: 'buckets', group_by: 'model', dimension: 'upstream',
     });
-    expect(buildPerformanceQuery({ range: '30d', groupBy: 'model', filters }, 'model', Date.UTC(2026, 10, 1, 7)).bucket).toBe('day');
   });
 
   it('round-trips non-default dashboard state through the URL', () => {

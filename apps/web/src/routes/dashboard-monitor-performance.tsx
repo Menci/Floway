@@ -7,7 +7,7 @@ import type { Route } from './+types/dashboard-monitor-performance';
 import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi, type GlobalError } from '../api/client';
-import { sameDashboardRange } from '../components/charts/dashboard-time';
+import { dashboardChartBuckets, sameDashboardRange } from '../components/charts/dashboard-time';
 import { PerformanceChartSection } from '../components/performance/chart';
 import { createPerformanceLoader, performanceOverviewForDisplay, performanceRanking, type PerformanceDataset, type PerformanceQuery } from '../components/performance/data';
 import {
@@ -27,10 +27,11 @@ import {
   type PerformanceTableSort,
   type PerformanceUrlState,
 } from '../components/performance/overview';
-import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
+import { buildPerformanceChart } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
 import { TelemetryFilterFields, TelemetryGroupByField, type TelemetryDimension } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
+import { sameTelemetryScope } from '../components/telemetry/snapshot';
 import { TelemetryTimeRange } from '../components/telemetry/time-range';
 import { useTelemetryPolling } from '../components/telemetry/use-poll';
 import { ChoiceGroup } from '../components/ui/choice-group';
@@ -218,12 +219,11 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
 
   const needsRanking = overview !== null && regionAvailable !== null && breakdownGroup !== loadedQuery.groupBy;
   const rankingReload = useCallback(async (signal: AbortSignal) => {
-    if (!needsRanking) return;
     const requestedAt = pageWindow.current?.query === loadedQuery ? pageWindow.current.requestedAt : loadedAt;
     const result = await performanceLoader.load(loadedQuery, breakdownGroup, requestedAt);
     if (signal.aborted) return;
     setRanking({ dimension: breakdownGroup, query: loadedQuery, requestedAt, error: result.error ?? null });
-  }, [needsRanking, performanceLoader, loadedQuery, breakdownGroup, loadedAt]);
+  }, [performanceLoader, loadedQuery, breakdownGroup, loadedAt]);
   const {
     cancel: cancelRanking, refresh: refreshRanking, refreshInBackground: refreshRankingInBackground,
     backgroundRefreshing: rankingPolling, refreshing: rankingRefreshing,
@@ -268,7 +268,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     ...current,
     ...changeTelemetryFilter(current, key, value, identityContext),
   }));
-  const buckets = useMemo(() => performanceBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
+  const buckets = useMemo(() => dashboardChartBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
   const labels = useMemo(() => overview && performanceLabels(overview, overview.upstreams), [overview]);
   const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range), [buckets, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentile]);
 
@@ -281,10 +281,11 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const rankingWindow = Math.max(loadedAt, activeRanking?.requestedAt ?? loadedAt);
   const cachedRanking = needsRanking ? performanceLoader.get(loadedQuery, breakdownGroup, rankingWindow) : undefined;
   const rankingDataset = cachedRanking !== undefined && (
-    cachedRanking.loadedAt >= loadedAt || scope === undefined || JSON.stringify(scope) === JSON.stringify(cachedRanking.snapshot.scope)
+    cachedRanking.loadedAt >= loadedAt || scope === undefined || sameTelemetryScope(scope, cachedRanking.snapshot.scope)
   )
     ? cachedRanking : undefined;
   const rankingRows = useMemo(() => rankingDataset === undefined ? undefined : performanceRanking(rankingDataset), [rankingDataset]);
+  const tableRows = needsRanking ? rankingRows : overview?.rows;
   const rankingError = activeRanking?.error ?? null;
   const rankingBusy = needsRanking && (rankingPolling || rankingRefreshing || (rankingRows === undefined && rankingError === null));
   const summary = overview?.summary;
@@ -401,12 +402,12 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
           {rankingError !== null && <OutcomeMessageBar action={<Button size="small" appearance="subtle" onClick={() => void refreshRanking()}>{t('monitoring.performance.actions.retryBreakdown')}</Button>}>
             {rankingError.message}
           </OutcomeMessageBar>}
-          {(!needsRanking || rankingRows !== undefined) && <PerformanceTable groupBy={activeBreakdown.key}
+          {tableRows !== undefined && <PerformanceTable groupBy={activeBreakdown.key}
             labels={rankingDataset === undefined ? labels : performanceLabels({
               users: [...overview.users, ...rankingDataset.snapshot.users],
               keys: rankingDataset.snapshot.keys,
             }, [...overview.upstreams, ...rankingDataset.snapshot.upstreams])}
-            onSortChange={setSort} percentile={percentile} rows={rankingRows ?? overview.rows} sort={sort} />}
+            onSortChange={setSort} percentile={percentile} rows={tableRows} sort={sort} />}
         </Panel>
       </>;
     })()}

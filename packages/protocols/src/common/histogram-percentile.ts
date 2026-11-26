@@ -4,11 +4,11 @@ export interface HistogramBucket {
   count: number;
 }
 
-// The uniform order statistic preserves the rank within the selected bucket.
-// The open-ended bucket contributes its lower bound.
+// Estimate the value at the selected rank using a uniform distribution within its bucket.
 export const percentileFromBuckets = (buckets: readonly HistogramBucket[], percentile: number): number | null => {
   const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0);
   if (total <= 0) return null;
+  // Avoid rounding an integral nearest rank up because of floating-point error.
   const rank = Math.max(1, Math.min(total, Math.ceil(total * percentile - 1e-9)));
   const ordered = [...buckets].sort((a, b) => {
     if (a.upper === null) return b.upper === null ? 0 : 1;

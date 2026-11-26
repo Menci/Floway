@@ -10,7 +10,7 @@ import {
   type PerformancePercentile,
   type PerformanceRange,
 } from './overview';
-import { dashboardFixedBucketFrames, formatBucketInterval, type ChartBucket } from '../charts/dashboard-time';
+import type { ChartBucket } from '../charts/dashboard-time';
 import { hueForSeriesSlot } from '../charts/palette';
 import { withUniqueSeriesLegends, type ChartSeries } from '../charts/series-legends';
 import { lineSeries } from '../charts/series-plot';
@@ -74,6 +74,3 @@ export const buildPerformanceChart = (
     },
   };
 };
-
-export const performanceBuckets = (range: PerformanceRange, now: number): ChartBucket[] =>
-  dashboardFixedBucketFrames(range, now).map(frame => ({ ...frame, label: formatBucketInterval(frame) }));

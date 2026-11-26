@@ -1,19 +1,11 @@
-// GET /api/performance/overview — dashboard aggregate: chart series, summary,
-// six per-dimension breakdown tables, and dropdown menus, all built by the
-// database overview aggregate.
-//
-// Resource and user breakdowns follow the same Audit visibility as token usage.
-// Unfiltered non-key queries retain a global `none` axis as an explicit latency
-// exception. API-key axes and key metadata stay scoped to the actor's own keys.
-
 import type { PerformanceSliceRow, PerformanceSlicesResponse } from './types.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { overviewBucketKey, type OverviewBucket } from '../../repo/telemetry-bucket-sql.ts';
+import { overviewBucketKey } from '../../repo/telemetry-bucket-sql.ts';
 import type { PerformanceDisplayRecord, PerformanceOverviewGroupBy, PerformanceSliceQuery, PerformanceSliceRecord } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
-import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata, type TelemetryOverviewWindow } from '../shared/telemetry-overview.ts';
-import { createTelemetryBucket, parseTelemetryHour, percentileFromBuckets, TELEMETRY_HOUR_MS, telemetryBucketHours, telemetryHourKey } from '@floway-dev/protocols/common';
+import { loadTelemetryOverviewIdentity, planTelemetrySlices, readTelemetryOverviewWindow, shiftTelemetryHour, telemetryIdentityError, telemetryIdentityMetadata, telemetryOverviewVisibility, telemetryUpstreamMetadata, type TelemetryOverviewIdentity, type TelemetryOverviewWindow } from '../shared/telemetry-overview.ts';
+import { createTelemetryBucket, parseTelemetryHour, percentileFromBuckets, telemetryBucketHours } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 
@@ -30,8 +22,6 @@ interface PerformanceQueryParams extends TelemetryOverviewWindow {
   groupBy: PerformanceOverviewGroupBy;
   filters: PerformanceFilters;
 }
-
-const shiftHour = (hour: string, count: number) => telemetryHourKey(parseTelemetryHour(hour) + count * TELEMETRY_HOUR_MS);
 
 const displayGlobalSummary = (record: PerformanceSliceRecord): PerformanceDisplayRecord => {
   const { buckets, ...counters } = record;
@@ -72,7 +62,7 @@ const performanceSlices = async (
   c: Ctx,
   params: PerformanceQueryParams,
   query: Omit<PerformanceSliceQuery, 'dimension' | 'bucket' | 'hourlyBuckets' | 'includeTotals' | 'includeFacets'>,
-  identity: Awaited<ReturnType<typeof loadTelemetryOverviewIdentity>>,
+  identity: TelemetryOverviewIdentity,
   useGlobalSummary: boolean,
 ) => {
   const { bucket, start, end } = params;
@@ -88,17 +78,8 @@ const performanceSlices = async (
     }
   }
   const nowHour = new Date().toISOString().slice(0, 13);
-  const resumeFrom = shiftHour(nowHour, -1);
-  const nextHour = shiftHour(nowHour, 1);
-  const coveredEnd = end < nextHour ? end : nextHour;
-  const windowEnd = coveredEnd < start ? start : coveredEnd;
-  const cursor = windowEnd < resumeFrom ? windowEnd : resumeFrom;
-  const resume = previous !== undefined && previous <= cursor;
-  const scanStart = resume && previous > start ? previous : start;
-  const grid: OverviewBucket = { origin: start, hours: telemetryBucketHours(bucket) };
-  const hourlyBuckets = [...new Set([resumeFrom, nowHour, ...(resume ? [scanStart] : [])]
-    .filter(hour => hour >= scanStart && hour < windowEnd)
-    .map(hour => overviewBucketKey(grid, hour)))];
+  const grid = { origin: start, hours: telemetryBucketHours(bucket) };
+  const { scanStart, windowEnd, cursor, reset, hourlyBuckets } = planTelemetrySlices(start, end, nowHour, previous, grid);
   const repo = getRepo().performance;
   const [slices, global] = await Promise.all([
     scanStart >= windowEnd ? [] : repo.querySlices({
@@ -130,7 +111,7 @@ const performanceSlices = async (
   const buckets = slices.map(slice => ({
     bucket: overviewBucketKey(grid, slice.firstHour),
     start: slice.firstHour,
-    end: shiftHour(slice.lastHour, 1),
+    end: shiftTelemetryHour(slice.lastHour, 1),
     rows: slice.rows.map(encode),
     ...(slice.total === undefined ? {} : { total: encode(slice.total) }),
     dimensionValues: slice.dimensionValues,
@@ -139,16 +120,10 @@ const performanceSlices = async (
   const revealedUpstreams = slices.flatMap(slice => slice.dimensionValues.upstreams);
   if (dimension === 'userId') revealedUsers.push(...slices.flatMap(slice => slice.rows.map(row => Number(row.group))));
   if (dimension === 'upstream') revealedUpstreams.push(...slices.flatMap(slice => slice.rows.map(row => row.group)));
-  const userIds = [...query.visibleUserIds].sort((a, b) => a - b);
-  const upstreamIds = [...query.visibleUpstreams].sort();
   const globalRecord = global[0]?.rows[0];
   return c.json({
-    start: scanStart, end: windowEnd, cursor, reset: !resume, buckets, edges,
-    scope: {
-      actorId: query.actorUserId, ownedKeyIds: [...identity.ownedKeyIds].sort(),
-      visibility: query.ownedKeysOnly ? 'owned-keys' : query.isAdmin ? 'all' : { userIds, upstreamIds },
-    },
-    metadataVisibility: { complete: query.isAdmin, userIds, upstreamIds },
+    start: scanStart, end: windowEnd, cursor, reset, buckets, edges,
+    ...telemetryOverviewVisibility(identity, query.ownedKeysOnly),
     ...telemetryIdentityMetadata(identity, revealedUsers),
     upstreams: telemetryUpstreamMetadata(identity, revealedUpstreams),
     ...(includeSummary && useGlobalSummary ? { globalSummary: globalRecord === undefined ? null : displayGlobalSummary(globalRecord) } : {}),
@@ -160,7 +135,6 @@ export const performanceOverview = async (c: Ctx) => {
   if (params.type === 'error') return c.json({ error: params.error }, 400);
   const { start, end, bucket, groupBy, timezoneOffsetMinutes, filters } = params.value;
 
-  const repo = getRepo();
   const identity = await loadTelemetryOverviewIdentity(c);
   const identityError = telemetryIdentityError(identity, filters.keyId);
   if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
@@ -172,7 +146,6 @@ export const performanceOverview = async (c: Ctx) => {
     visibleUpstreams: [...identity.visibleUpstreams],
     start,
     end,
-    groupBy,
     filters: {
       keyIds: [...filters.keyId],
       userIds: [...filters.userId].map(Number),
@@ -181,23 +154,24 @@ export const performanceOverview = async (c: Ctx) => {
       operations: [...filters.operation],
       runtimeLocations: [...filters.runtimeLocation],
     },
-    bucketForHour: createTelemetryBucket({
-      bucket,
-      start,
-      timeZone: params.value.timeZone,
-      timezoneOffsetMinutes,
-    }),
   } as const;
+  // An unfiltered non-Key view may show a global summary. Buckets remain within
+  // Audit visibility, and Key data is limited to the actor's keys.
   const useGlobalSummary = !identity.actor.isAdmin && groupBy !== 'keyId'
     && Object.values(filters).every(values => values.size === 0);
   if (c.req.valid('query').format === 'buckets') {
     return await performanceSlices(c, params.value, { ...query, ownedKeysOnly: groupBy === 'keyId' }, identity, useGlobalSummary);
   }
+  const repo = getRepo().performance;
+  const overviewQuery = {
+    ...query, groupBy,
+    bucketForHour: createTelemetryBucket({ bucket, start, timeZone: params.value.timeZone, timezoneOffsetMinutes }),
+  };
   const [overview, global] = await Promise.all([
-    repo.performance.queryOverview(query),
+    repo.queryOverview(overviewQuery),
     useGlobalSummary
-      ? repo.performance.queryOverview({
-          ...query,
+      ? repo.queryOverview({
+          ...overviewQuery,
           isAdmin: true,
           visibleUserIds: [],
           visibleUpstreams: [],

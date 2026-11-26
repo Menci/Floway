@@ -1,17 +1,10 @@
 import type { DisplayWebSearchUsageByKeyRecord, DisplayWebSearchUsageByUserRecord } from './search-usage/aggregate.ts';
+import type { TelemetryKeyMetadata as UsageKeyMetadata, TelemetryOverviewSnapshot, TelemetryUserMetadata as UsageUserMetadata } from './shared/telemetry-overview-types.ts';
 import type { DisplayUsageByUserRecord, DisplayUsageRecord } from './token-usage/aggregate.ts';
 import type { UsageOverviewResult } from '../repo/types.ts';
 
-export interface UsageKeyMetadata {
-  id: string;
-  name: string;
-  createdAt: string;
-}
-
-export interface UsageUserMetadata {
-  id: number;
-  username: string;
-}
+export type { UsageKeyMetadata, UsageUserMetadata };
+export type { TelemetryOverviewScope as TokenUsageOverviewScope } from './shared/telemetry-overview-types.ts';
 
 export interface TokenUsageByKeyResponse {
   view: 'self-by-key';
@@ -33,24 +26,7 @@ export interface TokenUsageOverviewBucket extends Omit<UsageOverviewResult, 'fir
   end: string;
 }
 
-export interface TokenUsageOverviewScope {
-  actorId: number;
-  ownedKeyIds: string[];
-  visibility: 'owned-keys' | 'all' | { userIds: number[]; upstreamIds: string[] };
-}
-
-export interface TokenUsageOverviewResponse {
-  cursor: string;
-  reset: boolean;
-  start: string;
-  end: string;
-  buckets: TokenUsageOverviewBucket[];
-  scope: TokenUsageOverviewScope;
-  metadataVisibility: { complete: boolean; userIds: number[]; upstreamIds: string[] };
-  users: UsageUserMetadata[];
-  upstreams: Array<{ id: string; name: string; hue: number }>;
-  keys: UsageKeyMetadata[];
-}
+export type TokenUsageOverviewResponse = TelemetryOverviewSnapshot<TokenUsageOverviewBucket>;
 
 export interface SearchUsageByKeyResponse {
   view: 'self-by-key';

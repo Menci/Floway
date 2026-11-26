@@ -1,4 +1,4 @@
-import { overviewGroupSql, performanceFiltersSql, performanceVisibilitySql, scopedRange } from './performance-overview-sql.ts';
+import { overviewGroupSql, performanceCoordinateSql, performanceFiltersSql, performanceRangeBinds, performanceVisibilitySql, scopedRange } from './performance-overview-sql.ts';
 import { overviewBucketBinds, overviewBucketSql } from './telemetry-bucket-sql.ts';
 import type { PerformanceQuerySlice, PerformanceSliceQuery } from './types.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
@@ -6,8 +6,6 @@ import { parsePerformanceOperation } from '@floway-dev/provider';
 
 const dimensions = ['model', 'upstream', 'operation', 'runtimeLocation', 'userId', 'keyId'] as const;
 const facetValuesSql = dimensions.map(axis => `('${axis}')`).join(', ');
-const coordinate = (left: string, right: string) => ['hour', 'key_id', 'model', 'upstream', 'operation', 'runtime_location']
-  .map(column => `${left}.${column} = ${right}.${column}`).join(' AND ');
 
 const sliceSql = (query: PerformanceSliceQuery) => `/* performance-slices */
 WITH settings(
@@ -50,7 +48,7 @@ summaries AS (
 histograms AS (
   SELECT 'histogram' AS kind, projected.axis, projected.bucket, projected.group_value, NULL AS first_hour, NULL AS last_hour,
     json_array(metric, lower, upper, CAST(SUM(count) AS TEXT)) AS payload
-  FROM projected JOIN performance_buckets ON ${coordinate('projected', 'performance_buckets')}
+  FROM projected JOIN performance_buckets ON ${performanceCoordinateSql('projected', 'performance_buckets')}
   GROUP BY axis, bucket, group_value, metric, lower, upper
 ),
 facet_axes(axis) AS (VALUES ${facetValuesSql}),
@@ -69,7 +67,7 @@ orphan AS (
   SELECT 'orphan' AS kind, NULL AS axis, NULL AS bucket, NULL AS group_value,
     NULL AS first_hour, NULL AS last_hour, NULL AS payload
   FROM performance_buckets
-  LEFT JOIN performance_summary ON ${coordinate('performance_buckets', 'performance_summary')}
+  LEFT JOIN performance_summary ON ${performanceCoordinateSql('performance_buckets', 'performance_summary')}
   WHERE ${scopedRange('performance_buckets', query.ownedKeysOnly)}
     AND performance_summary.hour IS NULL
   LIMIT 1
@@ -77,15 +75,16 @@ orphan AS (
 SELECT * FROM summaries UNION ALL SELECT * FROM facets UNION ALL SELECT * FROM histograms UNION ALL SELECT * FROM orphan
 ORDER BY kind DESC, bucket, axis, group_value`;
 
-interface SliceRow {
-  kind: 'summary' | 'histogram' | 'facet' | 'orphan';
+type SliceRow = { kind: 'orphan' } | ({
   axis: string;
   bucket: string;
   group_value: string;
+} & ({ kind: 'histogram'; payload: string } | {
   first_hour: string;
   last_hour: string;
-  payload: string;
-}
+} & ({ kind: 'summary'; payload: string } | { kind: 'facet' })));
+
+const sliceRowKey = (row: Exclude<SliceRow, { kind: 'orphan' }>) => JSON.stringify([row.bucket, row.axis, row.group_value]);
 
 const safeCount = (value: string): number => {
   const parsed = Number(value);
@@ -99,19 +98,27 @@ const finishSlices = (rows: readonly SliceRow[], dimension: PerformanceSliceQuer
   const bounds = new Map<string, number | null>();
   for (const row of rows) {
     if (row.kind === 'orphan') throw new Error('performance_buckets row has no matching summary');
+    if (row.kind === 'histogram') {
+      const item = items.get(sliceRowKey(row));
+      if (item === undefined) throw new Error('Performance histogram has no summary');
+      const [metric, lower, upper, count] = JSON.parse(row.payload) as ['ttft_ms' | 'tpot_us', number, number | null, string];
+      const boundKey = `${metric}:${lower}`;
+      const existing = bounds.get(boundKey);
+      if (existing !== undefined && existing !== upper) throw new Error('performance_buckets rows disagree on histogram bounds');
+      bounds.set(boundKey, upper);
+      item.buckets.push({ metric, lower, upper, count: safeCount(count) });
+      continue;
+    }
     let slice = slices.get(row.bucket);
-    if (row.kind !== 'histogram' && slice === undefined) {
+    if (slice === undefined) {
       slice = {
         firstHour: row.first_hour, lastHour: row.last_hour, rows: [],
         dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: [], userIds: [], keyIds: [] },
       };
       slices.set(row.bucket, slice);
     }
-    if (slice === undefined) throw new Error('Performance histogram has no summary');
-    if (row.kind !== 'histogram') {
-      if (row.first_hour < slice.firstHour) slice.firstHour = row.first_hour;
-      if (row.last_hour > slice.lastHour) slice.lastHour = row.last_hour;
-    }
+    if (row.first_hour < slice.firstHour) slice.firstHour = row.first_hour;
+    if (row.last_hour > slice.lastHour) slice.lastHour = row.last_hour;
     if (row.kind === 'facet') {
       const { dimensionValues } = slice;
       const value = row.group_value;
@@ -126,29 +133,17 @@ const finishSlices = (rows: readonly SliceRow[], dimension: PerformanceSliceQuer
       }
       continue;
     }
-    const key = JSON.stringify([row.bucket, row.axis, row.group_value]);
-    if (row.kind === 'summary') {
-      const [requests, errors, ttftSamples, tpotSamples, neutral] = (JSON.parse(row.payload) as [string, string, string, string, string]).map(safeCount) as [number, number, number, number, number];
-      const item = { group: row.group_value, requests, errors, ttftSamples, tpotSamples, neutral, buckets: [] };
-      if (row.axis === dimension) slice.rows.push(item);
-      else slice.total = item;
-      items.set(key, item);
-    } else {
-      const item = items.get(key);
-      if (item === undefined) throw new Error('Performance histogram has no summary');
-      const [metric, lower, upper, count] = JSON.parse(row.payload) as ['ttft_ms' | 'tpot_us', number, number | null, string];
-      const boundKey = `${metric}:${lower}`;
-      const existing = bounds.get(boundKey);
-      if (existing !== undefined && existing !== upper) throw new Error('performance_buckets rows disagree on histogram bounds');
-      bounds.set(boundKey, upper);
-      item.buckets.push({ metric, lower, upper, count: safeCount(count) });
-    }
+    const [requests, errors, ttftSamples, tpotSamples, neutral] = (JSON.parse(row.payload) as [string, string, string, string, string]).map(safeCount) as [number, number, number, number, number];
+    const item = { group: row.group_value, requests, errors, ttftSamples, tpotSamples, neutral, buckets: [] };
+    if (row.axis === dimension) slice.rows.push(item);
+    else slice.total = item;
+    items.set(sliceRowKey(row), item);
   }
   return [...slices.values()].sort((a, b) => a.firstHour.localeCompare(b.firstHour));
 };
 
 export const querySqlPerformanceSlices = async (db: SqlDatabase, query: PerformanceSliceQuery): Promise<PerformanceQuerySlice[]> => {
-  const range = query.ownedKeysOnly ? [query.actorUserId, query.start, query.end] : [query.start, query.end];
+  const range = performanceRangeBinds(query, query.ownedKeysOnly);
   const { filters } = query;
   const { results } = await db.prepare(sliceSql(query)).bind(
     query.actorUserId, query.isAdmin ? 1 : 0, query.dimension, query.includeTotals ? 1 : 0, query.includeFacets ? 1 : 0,

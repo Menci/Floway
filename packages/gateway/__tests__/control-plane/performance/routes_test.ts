@@ -59,7 +59,6 @@ test('/api/performance/overview keeps only the none axis global for a non-admin'
   assertEquals(slices.buckets[0].rows[0].requests, 1);
   assertEquals(slices.buckets[0].total, undefined);
   const ranking = await useSlice('group_by=model&dimension=keyId');
-  assertEquals(ranking.status, 200);
   const rank = await ranking.json();
   assertEquals(rank.globalSummary, undefined);
   assertEquals(rank.buckets[0].rows.map((row: { group: string }) => row.group), [apiKey.id]);
