@@ -28,17 +28,9 @@ import type {
 //   the prologue and terminal resource of a stitched multi-call turn, later
 //   shim logic reads it, and its items are persisted. A value invented there is
 //   indistinguishable from an observed one for every later reader.
-// - This stage is terminal. Nothing below it consumes a value stated here.
-//   Item persistence runs underneath: `wrapOpenAIResponsesClientOutput` commits the
-//   rows carried by `response.output_item.done` and a snapshot record of their
-//   ordered ids, and awaits that before the terminal frame leaves it, so no
-//   response resource is ever stored. Affinity egress runs underneath too, and
-//   billing reads `billableUsage` off the `ExecuteResult` rather than the
-//   resource. One reader sits above this stage, the non-streaming `settle`
-//   call, and it reads only `status`, which rides through from the upstream and
-//   is never stated here. The WebSocket transport buffers the terminal event
-//   and flushes it last, branching only on the event type; it reads nothing off
-//   the resource at all.
+// - This boundary completes client resource fields after per-call metering,
+//   affinity projection, and item persistence. The schema defaults reach
+//   client delivery without changing the observations or stored items.
 //
 // #125's "no tools synthesized when upstream omits it" therefore still holds:
 // the interior resource carries no `tools`, and egress states `[]` on the way

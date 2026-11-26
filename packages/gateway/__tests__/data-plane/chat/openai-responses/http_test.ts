@@ -5,10 +5,12 @@ import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS } from './test-policy.ts';
 import { missingRequiredCompactionKeys, responseOnlyKeysAdded } from './test-required-resource-keys.ts';
 import { initOpenAIResponsesWebSocketUpgradeResolver, openaiResponsesWebSocket } from '../../../../src/data-plane/chat/openai-responses/websocket.ts';
 import { DEFAULT_WEB_SEARCH_CONFIG, saveWebSearchConfig } from '../../../../src/data-plane/tools/web-search/config.ts';
+import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../../../src/repo/models-cache-contract.ts';
 import type { ApiKey, StoredUpstreamRecord, User } from '../../../../src/repo/types.ts';
+import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { seedModelsCache, storedModelsRefreshIdentity } from '../../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
@@ -46,10 +48,10 @@ const user: User = {
   deletedAt: null, isAdmin: true,
 };
 
-const makeApp = () => {
+const makeApp = (key = apiKey) => {
   const app = new Hono<{ Variables: AuthVars }>();
   app.use('*', async (c, next) => {
-    c.set('apiKey', apiKey);
+    c.set('apiKey', key);
     c.set('user', user);
     await next();
   });
@@ -95,7 +97,7 @@ beforeEach(async () => {
   await repo.users.save(user);
 });
 
-const post = (body: Record<string, unknown>, path = '/v1/responses') => makeApp().request(path, {
+const post = (body: Record<string, unknown>, path = '/v1/responses', key = apiKey) => makeApp(key).request(path, {
   method: 'POST',
   headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ model: 'test-model', input: 'hello', ...body }),
@@ -108,6 +110,13 @@ const sample = (id = 'resp_upstream'): OpenAIResponsesResultEx => ({
     content: [{ type: 'output_text', text: 'hi', annotations: [] }],
   }],
   usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
+});
+
+const hostedSearchRound = (): OpenAIResponsesResultEx => ({
+  ...sample(), output: [{
+    type: 'function_call', id: 'fc_search', call_id: 'call_search', name: 'web_search',
+    arguments: '{"search_query":[{"q":"fixture"}]}', status: 'completed',
+  }],
 });
 
 const queueSse = (inspect?: (request: Record<string, unknown>) => void, result = sample()): void => {
@@ -337,6 +346,59 @@ test('hosted Alpha Search turns valid upstream bytes into tool output and resume
     type: 'function_call_output', call_id: 'call_search', output: expect.stringContaining(remoteOutput),
   }));
   expect(requests).toHaveLength(0);
+});
+
+test('a later ordinary ReAct failure preserves the first round’s stored billing', async () => {
+  const firstUsage = [{
+    upstream: upstream.id, model: 'test-model', modelKey: 'test-model', requests: 1,
+    metrics: expect.arrayContaining([
+      expect.objectContaining({ metric: 'input_tokens', quantity: '12' }),
+      expect.objectContaining({ metric: 'output_tokens', quantity: '3' }),
+    ]),
+  }];
+  queueSse(undefined, hostedSearchRound());
+  requests.push(async (url, init) => {
+    expect(new URL(url).pathname).toMatch(/\/responses$/);
+    expect(await new Request(url, init as RequestInit).json()).toMatchObject({
+      input: expect.arrayContaining([expect.objectContaining({ type: 'function_call_output', call_id: 'call_search' })]),
+    });
+    await vi.waitFor(async () => expect(await repo.usage.listAll()).toMatchObject(firstUsage));
+    return { response: Response.json({ error: { code: 'rate_limit_exceeded', message: 'second round rate limited' } }, { status: 429 }) };
+  });
+
+  const response = await post({ stream: true, store: false, tools: [{ type: 'web_search' }] });
+  expect(response.status).toBe(200);
+  const body = await response.text();
+  expect(body).toContain('second round rate limited');
+  expect(body).toContain('event: response.failed');
+  expect(body).not.toContain('[DONE]');
+  expect(await repo.usage.listAll()).toMatchObject(firstUsage);
+  expect(requests).toHaveLength(0);
+});
+
+test('a hosted Responses archive uses the first of two distinct ReAct TTFT measurements', async () => {
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const key = { ...apiKey, dumpRetentionSeconds: 3600 };
+  let time = 100;
+  const clock = vi.spyOn(performance, 'now').mockImplementation(() => time);
+  try {
+    queueSse(() => { time = 120; }, hostedSearchRound());
+    queueSse(request => {
+      expect(request.input).toContainEqual(expect.objectContaining({ type: 'function_call_output', call_id: 'call_search' }));
+      time = 200;
+    });
+
+    const response = await post({ stream: true, store: false, tools: [{ type: 'web_search' }] }, '/v1/responses', key);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('event: response.completed');
+    await vi.waitFor(() => expect(dumps.published).toMatchObject([{ meta: { ttftMs: 20 } }]));
+    await vi.waitFor(async () => expect(await repo.performance.listAll()).toMatchObject([{
+      upstream: upstream.id, model: 'test-model', requests: 2, ttftSamplesOk: 2, ttftMsSum: 100,
+    }]));
+    expect(requests).toHaveLength(0);
+  } finally {
+    clock.mockRestore();
+  }
 });
 
 test('upstream HTTP errors retain their status, retry hint, and parsed JSON', async () => {

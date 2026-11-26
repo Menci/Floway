@@ -82,6 +82,9 @@ export const discardHostedToolResponse = (answer: {
   if (performance !== undefined) scope.discard(performance);
 };
 
+export const isHostedScalarAbort = (outcome: ProtocolError, http: HttpResponseFact | null): boolean =>
+  outcome.source === 'local' && (http === null || http.startedAt !== undefined);
+
 const encoder = new TextEncoder();
 
 const createHostedBufferBudget = () => {
@@ -1422,8 +1425,7 @@ export const openAIResponsesHostedTools = defineStage({
         discardHostedToolResponse(next, producer);
         const outcome = next['response.openaiResponses'];
         if (outcome.kind === 'error') {
-          // A local scalar without a response head is the transport's pre-header cancellation.
-          const error: ProtocolStreamError = outcome.source === 'local' && next['response.http'] === null
+          const error: ProtocolStreamError = isHostedScalarAbort(outcome, next['response.http'])
             ? { kind: 'abort', cause: producer.signal.reason }
             : hostedScalarFailure(outcome, merge, active);
           yield { ok: false, error };

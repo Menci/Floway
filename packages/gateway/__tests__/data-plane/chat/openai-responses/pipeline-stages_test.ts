@@ -163,7 +163,7 @@ test('warmup answers locally only when a WebSocket response ID is present', asyn
   await fromWs.done;
 });
 
-test.each(['panic', 'abort', 'search-abort', 'local-refusal', 'midstream-refusal'] as const)('hosted tools preserve the %s outcome at its owning call boundary', async mode => {
+test.each(['panic', 'abort', 'post-header-abort', 'search-abort', 'local-refusal', 'midstream-refusal'] as const)('hosted tools preserve the %s outcome at its owning call boundary', async mode => {
   let rounds = 0;
   const failure = new Error(`ReAct second generation stage ${mode}`);
   const secondRound = Promise.withResolvers<void>();
@@ -189,7 +189,9 @@ test.each(['panic', 'abort', 'search-abort', 'local-refusal', 'midstream-refusal
         secondRound.resolve();
         await new Promise<void>(resolve => scope.signal.addEventListener('abort', () => resolve(), { once: true }));
         return {
-          'response.http': null,
+          'response.http': mode === 'post-header-abort' ? {
+            ...http, startedAt: 0, headers: [['x-request-id', 'exchange']],
+          } : null,
           'response.openaiResponses': { kind: 'error', source: 'local', error: { error: { message: 'Upstream request cancelled' } } },
         };
       }

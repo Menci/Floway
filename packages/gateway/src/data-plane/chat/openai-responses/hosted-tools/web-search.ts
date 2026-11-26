@@ -25,7 +25,7 @@ import {
   type WebSearchOperation,
 } from '../../../tools/web-search/operations.ts';
 import { localWebSearch } from '../../../tools/web-search/pipeline.ts';
-import { discardHostedToolResponse, hostedToolRequest, type HostedToolContext, type HostedToolFailure, type ServerToolHistoryExpansion, type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../hosted-tools.ts';
+import { discardHostedToolResponse, hostedToolRequest, isHostedScalarAbort, type HostedToolContext, type HostedToolFailure, type ServerToolHistoryExpansion, type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../hosted-tools.ts';
 import type { Result } from '@floway-dev/pipeline';
 import { isJsonObject, type JsonObject } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesWebSearchTool, OpenAIResponsesInputWebSearchCall, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
@@ -555,7 +555,7 @@ const runAlphaSearch = async (
     const outcome = answer['response.alphaSearch'];
     discardHostedToolResponse(answer, scope);
     if (outcome.kind === 'error') {
-      if (outcome.source === 'local' && answer['response.http'] === null) {
+      if (isHostedScalarAbort(outcome, answer['response.http'])) {
         return { failure: { kind: 'abort', cause: scope.signal.reason } };
       }
       const body = isJsonObject(outcome.error) ? outcome.error : {};
