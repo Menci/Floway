@@ -94,7 +94,7 @@ export const chatgptPipelines = Object.freeze({
     exit: ['response.http', 'response.alphaSearch'],
     stages: [
       stripHeaders('chatgpt.alphaSearch.strip-headers', name => name === 'x-codex-turn-metadata'),
-      parseResultResponse('alphaSearch', parseObject, formatError),
+      parseResultResponse('alphaSearch', bytes => ({ ok: true, value: bytes }), formatError),
       dialAlphaSearch(facts => {
         const payload = facts['request.alphaSearch'];
         const id = stringField(payload, 'id') ?? uuidV7();

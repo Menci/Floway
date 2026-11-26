@@ -1075,6 +1075,21 @@ const compactJsonResponse = (): Response =>
   });
 
 describe('alphaSearch', () => {
+  test.each([
+    { status: 200, body: '{\n  "output": "Search result"\n}\n' },
+    { status: 200, body: '[]' },
+    { status: 200, body: 'opaque upstream content' },
+    { status: 200, body: '' },
+    { status: 204, body: null },
+  ])('relays successful bytes verbatim for status $status and body $body', async ({ status, body }) => {
+    seedFreshAccessToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, { status, headers: { 'content-type': 'application/json' } }));
+    await expect(alphaSearch({ model, body: { id: 'search-session' }, headers: new Headers() })).resolves.toMatchObject({
+      http: { status, body: null },
+      outcome: { kind: 'result', result: new TextEncoder().encode(body ?? '') },
+    });
+  });
+
   test('posts the search request to the ChatGPT Codex endpoint with selected model and account auth', async () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
