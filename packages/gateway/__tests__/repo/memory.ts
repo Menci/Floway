@@ -28,7 +28,7 @@ import { quantizeOpenAIResponsesRefreshedAt, OPENAI_RESPONSES_REFRESH_GRANULARIT
 import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
 import { SEED_ADMIN_USER_ID } from '../../src/repo/seed-admin.ts';
 import { generateSessionToken } from '../../src/repo/session-tokens.ts';
-import { overviewBucketKey } from '../../src/repo/telemetry-bucket-sql.ts';
+import { overviewBucketId } from '../../src/repo/telemetry-bucket-sql.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -732,10 +732,10 @@ class MemoryUsageRepo implements UsageRepo {
       .map(([keyId]) => keyId));
     const hourlyBuckets = new Set(opts.hourlyBuckets);
     const buckets = Map.groupBy(authorized, ({ hour }) => {
-      const bucket = overviewBucketKey(opts.bucket, hour);
+      const bucket = overviewBucketId(opts.bucket, hour);
       return hourlyBuckets.has(bucket) ? hour : bucket;
     });
-    return [...buckets].sort(([left], [right]) => left.localeCompare(right)).map(([bucket, bucketRecords]) => {
+    return [...buckets.values()].map(bucketRecords => {
       const partitioned = partitionTelemetryOverviewRecords(bucketRecords, {
         keyId: {
           value: record => record.keyId,
@@ -756,7 +756,6 @@ class MemoryUsageRepo implements UsageRepo {
       const aggregates = aggregateMemoryOverview(partitioned.filtered, keyToUser, visibleKeyIds);
       const hours = bucketRecords.map(record => record.hour).sort();
       return {
-        bucket,
         firstHour: hours[0]!,
         lastHour: hours.at(-1)!,
         axes: {
@@ -773,7 +772,7 @@ class MemoryUsageRepo implements UsageRepo {
           upstreams: partitioned.dimensionValues.upstream,
         },
       };
-    });
+    }).sort((left, right) => left.firstHour.localeCompare(right.firstHour));
   }
 
   listAll(): Promise<UsageRecord[]> {

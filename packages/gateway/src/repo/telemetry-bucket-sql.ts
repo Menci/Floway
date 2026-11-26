@@ -4,11 +4,7 @@ export type OverviewBucket = 'all'
   | { origin: string; hours: number }
   | { calendar: 'month' | 'year'; timezoneOffsetMinutes: number };
 
-// Selected hours are at or after the grid origin, so truncating the quotient
-// gives its floor.
-// https://sqlite.org/lang_expr.html#castexpr
-const fixedTelemetryBucketSql = (hour: string, originSeconds: string, widthSeconds: string): string =>
-  `strftime('%Y-%m-%dT%H', ${originSeconds} + CAST((unixepoch(${hour} || ':00:00Z') - ${originSeconds}) / ${widthSeconds} AS INTEGER) * ${widthSeconds}, 'unixepoch')`;
+export type OverviewBucketId = string | number;
 
 export const overviewBucketKey = (bucket: OverviewBucket, hour: string): string => {
   if (bucket === 'all') return 'all';
@@ -19,13 +15,21 @@ export const overviewBucketKey = (bucket: OverviewBucket, hour: string): string 
   return telemetryHourKey(telemetryBucketStart(hourMs, parseTelemetryHour(bucket.origin), bucket.hours));
 };
 
+export const overviewBucketId = (bucket: OverviewBucket, hour: string): OverviewBucketId => {
+  if (bucket === 'all' || 'calendar' in bucket || bucket.hours === 1) return overviewBucketKey(bucket, hour);
+  return Math.floor((parseTelemetryHour(hour) - parseTelemetryHour(bucket.origin)) / (bucket.hours * TELEMETRY_HOUR_MS));
+};
+
 export const overviewBucketSql = (bucket: OverviewBucket, hour: string): string => {
   if (bucket === 'all') return "'all'";
   if ('calendar' in bucket) {
     const format = bucket.calendar === 'month' ? '%Y-%m' : '%Y';
     return `strftime('${format}', unixepoch(${hour} || ':00:00Z') - settings.bucket_offset_seconds, 'unixepoch')`;
   }
-  return bucket.hours === 1 ? hour : fixedTelemetryBucketSql(hour, 'settings.bucket_origin', 'settings.bucket_seconds');
+  if (bucket.hours === 1) return hour;
+  // Selected hours are at or after the grid origin, so truncating the quotient gives its floor.
+  // https://sqlite.org/lang_expr.html#castexpr
+  return `CAST((unixepoch(${hour} || ':00:00Z') - settings.bucket_origin) / settings.bucket_seconds AS INTEGER)`;
 };
 
 export const overviewBucketBinds = (bucket: OverviewBucket): readonly [number, number, number] => {

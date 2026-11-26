@@ -1,6 +1,6 @@
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { overviewBucketKey, type OverviewBucket } from '../../repo/telemetry-bucket-sql.ts';
+import { overviewBucketId, overviewBucketKey, type OverviewBucket } from '../../repo/telemetry-bucket-sql.ts';
 import type { UsageOverviewGroupBy } from '../../repo/types.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
 import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata, type TelemetryOverviewWindow } from '../shared/telemetry-overview.ts';
@@ -86,7 +86,7 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const hourlyBoundaries = resume ? [resumeFromHour, nowHour, scanStart] : [resumeFromHour, nowHour];
   const hourlyBuckets = hourlyBoundaries
     .filter(hour => hour >= scanStart && hour < windowEnd)
-    .map(hour => overviewBucketKey(queryBucket, hour));
+    .map(hour => overviewBucketId(queryBucket, hour));
   const buckets = scanStart >= windowEnd ? [] : (await repo.usage.queryOverview({
     actorUserId: identity.actor.id,
     isAdmin: identity.actor.isAdmin,

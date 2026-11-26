@@ -1,4 +1,4 @@
-import { overviewBucketBinds, overviewBucketSql, type OverviewBucket } from './telemetry-bucket-sql.ts';
+import { overviewBucketBinds, overviewBucketSql, type OverviewBucket, type OverviewBucketId } from './telemetry-bucket-sql.ts';
 import type {
   UsageOverviewAxis,
   UsageOverviewQueryOptions,
@@ -21,7 +21,7 @@ import {
 interface UsageOverviewSqlRow {
   row_kind: 'facet' | 'metric' | 'request' | 'validation';
   axis: string | null;
-  bucket: string | null;
+  bucket: OverviewBucketId | null;
   group_value: string | null;
   dimension: string | null;
   facet_value: string | null;
@@ -265,7 +265,7 @@ const parseStoredMetric = (
   return { metric, quantity, unitPrice };
 };
 
-const finishBucket = (bucket: string, rows: readonly UsageOverviewSqlRow[]): UsageOverviewResult => {
+const finishBucket = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResult => {
   let firstHour: string | undefined;
   let lastHour: string | undefined;
   const records = new Map<UsageOverviewAxis, Map<string, MutableOverviewRecord>>(
@@ -346,7 +346,6 @@ const finishBucket = (bucket: string, rows: readonly UsageOverviewSqlRow[]): Usa
 
   if (firstHour === undefined || lastHour === undefined) throw new Error('Usage overview bucket has no authorized hours');
   return {
-    bucket,
     firstHour,
     lastHour,
     axes: {
@@ -366,7 +365,7 @@ const finishBucket = (bucket: string, rows: readonly UsageOverviewSqlRow[]): Usa
 };
 
 const finishOverview = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResult[] => {
-  const byBucket = new Map<string, UsageOverviewSqlRow[]>();
+  const byBucket = new Map<OverviewBucketId, UsageOverviewSqlRow[]>();
   for (const row of rows) {
     if (row.row_kind === 'validation') {
       if (row.quantity === null) throw new TypeError('Stored Usage overview validation terms are missing');
@@ -387,8 +386,8 @@ const finishOverview = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResu
     }
     bucket.push(row);
   }
-  return [...byBucket].sort(([left], [right]) => left.localeCompare(right))
-    .map(([bucket, bucketRows]) => finishBucket(bucket, bucketRows));
+  return [...byBucket.values()].map(finishBucket)
+    .sort((left, right) => left.firstHour.localeCompare(right.firstHour));
 };
 
 export const querySqlUsageOverview = async (
