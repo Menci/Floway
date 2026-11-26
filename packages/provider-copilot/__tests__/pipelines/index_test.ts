@@ -1159,6 +1159,30 @@ const fakeModel = (overrides?: Parameters<typeof stubProviderModel>[0]) => stubP
   ...overrides,
 });
 
+test.each([
+  ['native', { input_tokens: 17, extra: true }, { input_tokens: 17, extra: true }],
+  ['translated', { total_tokens: 23, extra: true }, { input_tokens: 23, extra: true }],
+  ['zero translated count', { total_tokens: 0 }, { input_tokens: 0 }],
+  ['missing count', { extra: true }, null],
+  ['negative translated count', { total_tokens: -1 }, null],
+  ['fractional translated count', { total_tokens: 1.5 }, null],
+  ['invalid native count', { input_tokens: null, total_tokens: 23 }, null],
+] as const)('handles the %s Copilot Anthropic Messages count_tokens response', async (_label, body, expected) => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const fetcher = vi.fn<ProviderFetcher>(async url => {
+    expect(new URL(url).pathname).toBe('/v1/messages/count_tokens');
+    return { response: Response.json(body, { headers: { 'x-upstream': 'copilot' } }) };
+  });
+  const model = fakeModel({
+    providerData: { rawModels: [{ id: 'raw-model', supported_endpoints: ['/v1/messages'] }] },
+  });
+  const result = await copilotHost(copilotUpstream, fetcher, fakeCopilot()).invoke('anthropicMessagesCountTokens', model, { messages: [] });
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(result.http).toMatchObject({ status: 200, body: null, headers: expect.arrayContaining([['x-upstream', 'copilot']]) });
+  if (expected === null) expect(result.outcome).toMatchObject({ kind: 'error', source: 'upstream' });
+  else expect(result.outcome).toEqual({ kind: 'result', result: expected });
+});
+
 test.each([false, true])('classifies the dial failure with cancelled=%s and retains no HTTP head', async cancelled => {
   const controller = new AbortController();
   const { copilotUpstream } = await setupCopilotTest();
