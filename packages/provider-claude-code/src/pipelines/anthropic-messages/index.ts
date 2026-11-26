@@ -20,7 +20,7 @@ import { httpTerminal, type ProviderPipelines } from '@floway-dev/provider';
 export const claudeCodePipelines = {
   anthropicMessages: compose('claude-code.anthropic-messages', {
     entry: ['request.http', 'request.anthropicMessages', 'provider.model', 'provider.upstream'],
-    exit: ['response.http', 'response.anthropicMessages'],
+    exit: ['response.http', 'response.anthropicMessages', 'response.usageModelKey?'],
     stages: [
       stripClaudeCodeHeaders,
       detectShape,

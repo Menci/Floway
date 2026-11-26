@@ -20,7 +20,7 @@ export const dial = defineStage({
     },
     response: {
       needs: ['response.http', 'response.http.error?'],
-      provides: ['response.anthropicMessages?'],
+      provides: ['response.anthropicMessages?', 'response.usageModelKey'],
       consumes: ['response.http.error'],
     },
   },
@@ -34,7 +34,7 @@ export const dial = defineStage({
       ? http.headers
       : setHeader(Object.entries(pickClaudeCodeHeaders(upstreamModelId)), 'authorization', authorization);
     const payload = { ...facts['request.anthropicMessages'], model: upstreamModelId, stream: true };
-    const { 'response.http.error': error, ...answer } = await scope.next({
+    const { 'response.http.error': error, ...result } = await scope.next({
       ...request,
       'request.http': {
         ...http,
@@ -44,6 +44,7 @@ export const dial = defineStage({
         body: encoder.encode(JSON.stringify(payload)),
       },
     });
+    const answer = { ...result, 'response.usageModelKey': payload.model };
     return error === undefined
       ? answer
       : { ...answer, 'response.anthropicMessages': httpDialError(error, formatAnthropicError) };

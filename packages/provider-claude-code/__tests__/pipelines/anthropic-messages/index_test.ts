@@ -135,6 +135,8 @@ describe('Claude Code Anthropic Messages pipeline', () => {
     const { running } = host.start(fetch, { payload });
     expect(await readStream(running)).toEqual([{ ok: true, value: { type: 'message_stop' } }]);
     const wire = wireOf(fetch);
+    expect(wire.payload.model).not.toBe(model.id);
+    expect((await running.result)['response.usageModelKey']).toBe(wire.payload.model);
     expect(wire.url).toBe('https://api.anthropic.com/v1/messages?beta=true');
     expect(wire.headers.get('authorization')).toBe('Bearer access-cached');
     expect(wire.headers.get('user-agent')).toMatch(/^claude-cli\//);
@@ -212,7 +214,9 @@ describe('Claude Code Anthropic Messages pipeline', () => {
   test('returns a local 503 for inactive credentials before attempting an upstream call', async () => {
     const fetch = fetchResponse(() => sse());
     const { running } = fixture({ ...activeAccount, state: 'session_terminated', stateMessage: 'revoked' }).start(fetch);
-    expect((await running.result)['response.http']?.status).toBe(503);
+    const response = await running.result;
+    expect(response['response.http']?.status).toBe(503);
+    expect(Object.hasOwn(response, 'response.usageModelKey')).toBe(false);
     expect(await outcomeOf(running)).toMatchObject({ kind: 'error', source: 'local', error: { error: { message: expect.stringContaining('revoked') } } });
     await running.done;
     expect(fetch).not.toHaveBeenCalled();
@@ -241,7 +245,9 @@ describe('Claude Code Anthropic Messages pipeline', () => {
 
     const second = host.start(fetch, { model: fable }).running;
     expect(await outcomeOf(second)).toMatchObject({ kind: 'error', source: 'local' });
-    const localHead = (await second.result)['response.http'];
+    const localAnswer = await second.result;
+    expect(Object.hasOwn(localAnswer, 'response.usageModelKey')).toBe(false);
+    const localHead = localAnswer['response.http'];
     expect(localHead?.status).toBe(429);
     expect(Number(getHeader(localHead!.headers, 'retry-after'))).toBeGreaterThan(0);
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -273,7 +279,9 @@ describe('Claude Code Anthropic Messages pipeline', () => {
         expect(init.signal?.aborted).toBe(false);
         return { response: sse() };
       });
-    await readStream(host.start(fetch).running);
+    const { running } = host.start(fetch);
+    await readStream(running);
+    expect((await running.result)['response.usageModelKey']).toBe(wireOf(fetch).payload.model);
     expect(await cancelled.promise).toBe(firstSignal?.reason);
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(host.account()).toMatchObject({ refreshToken: 'refresh-new', accessToken: { token: 'access-new' } });
@@ -401,7 +409,9 @@ describe('Claude Code Anthropic Messages pipeline', () => {
   test('classifies a pre-header transport failure independently of the HTTP response', async () => {
     const fetch = vi.fn<ProviderFetcher>().mockRejectedValue(new UpstreamTransportError(new Error('network unavailable')));
     const { running } = fixture().start(fetch);
-    expect((await running.result)['response.http']).toBeNull();
+    const response = await running.result;
+    expect(response['response.http']).toBeNull();
+    expect(response['response.usageModelKey']).toBe(upstreamModelId);
     expect(await outcomeOf(running)).toMatchObject({ kind: 'error', source: 'upstream', error: { error: { message: 'network unavailable' } } });
     await running.done;
   });
