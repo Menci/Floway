@@ -79,6 +79,7 @@ test.each([
   }, fetch, async running => {
     const answer = await running.result;
     expect(answer['response.http']).toMatchObject({ status: 200, body: null });
+    expect(answer['response.usageModelKey']).toBe('native-model');
     const outcome = answer['response.openaiChatCompletions'];
     if (outcome.kind !== 'stream') throw new Error('Expected chat frames');
     expect(await Array.fromAsync(running.read(outcome.stream))).toEqual([{ ok: true, value: event }]);
@@ -100,6 +101,7 @@ test('preserves rate-limit metadata and records a later detached probe failure o
     expect(await running.result).toEqual({
       'response.http': expect.objectContaining({ status: 429, headers: expect.arrayContaining([['retry-after', '5']]), body: null }),
       'response.openaiEmbeddings': { kind: 'error', source: 'upstream', error: { error: { type: 'invalid_request_error', message: 'account limit reached' } } },
+      'response.usageModelKey': 'native-model',
     });
     await running.done;
     expect(pending).toHaveLength(1);
@@ -145,8 +147,9 @@ test('rebuilds multipart with the upstream model ID and returns the original non
       ],
     },
   }, fetch, async running => {
-    const outcome = (await running.result)['response.openaiAudioTranscriptions'];
-    expect(outcome).toEqual({ kind: 'result', result: new TextEncoder().encode('{ "text": "hello" }') });
+    const answer = await running.result;
+    expect(answer['response.openaiAudioTranscriptions']).toEqual({ kind: 'result', result: new TextEncoder().encode('{ "text": "hello" }') });
+    expect(answer['response.usageModelKey']).toBe('native-model');
     expect(fetch).toHaveBeenCalledExactlyOnceWith('https://ollama.example/v1/audio/transcriptions', expect.anything());
   });
 });
@@ -154,13 +157,16 @@ test('rebuilds multipart with the upstream model ID and returns the original non
 test('counts messages with the protocol header and no Ollama probe', async () => {
   const fetch = vi.fn<ProviderFetcher>(async (_url, init) => {
     expect(new Headers(init.headers).get('anthropic-beta')).toBe('future-feature');
+    expect(await new Response(init.body as Uint8Array<ArrayBuffer>).json()).toEqual({ model: 'native-model', messages: [] });
     return { response: Response.json({ input_tokens: 9 }) };
   });
   await withRun(ollamaPipelines.anthropicMessagesCountTokens, {
     ...entry,
     'request.anthropicMessagesCountTokens': { model: 'public-model', messages: [] },
   }, fetch, async (running, pending) => {
-    expect((await running.result)['response.anthropicMessagesCountTokens']).toEqual({ kind: 'result', result: { input_tokens: 9 } });
+    const answer = await running.result;
+    expect(answer['response.anthropicMessagesCountTokens']).toEqual({ kind: 'result', result: { input_tokens: 9 } });
+    expect(answer['response.usageModelKey']).toBe('native-model');
     expect(fetch).toHaveBeenCalledExactlyOnceWith('https://ollama.example/v1/messages/count_tokens', expect.anything());
     expect(pending).toHaveLength(0);
   });
@@ -329,7 +335,10 @@ test.each([
   { sameDialect: true, body: invalidDecision, malformed: true },
   { sameDialect: false, body: invalidDecision, malformed: true },
 ])('checks Ollama Decision responses with same dialect=$sameDialect and body=$body', async ({ sameDialect, body, malformed }) => {
-  const fetch = vi.fn<ProviderFetcher>(async () => ({ response: new Response(body, { headers: { 'content-type': 'application/json' } }) }));
+  const fetch = vi.fn<ProviderFetcher>(async (_url, init) => {
+    expect(await new Response(init.body as Uint8Array<ArrayBuffer>).json()).toMatchObject({ model: 'native-model' });
+    return { response: new Response(body, { headers: { 'content-type': 'application/json' } }) };
+  });
   const { request } = sameDialect
     ? parseDecisionRequest('typesafe-systemone', { model: 'public-model', state: 'A damaged box', questions: { damaged: { type: 'noul', instructions: 'Is it damaged?' } } })
     : parseDecisionRequest('openai-decisions', { model: 'public-model', input: 'A damaged box', questions: [{ type: 'predicate', name: 'damaged', instructions: 'Is it damaged?' }] });
@@ -338,7 +347,9 @@ test.each([
     'provider.model': { ...model, decisionTarget: { protocol: 'typesafe-systemone' } },
     'request.decision': request,
   }, fetch, async (running, pending) => {
-    const outcome = (await running.result)['response.decision'];
+    const answer = await running.result;
+    expect(answer['response.usageModelKey']).toBe('native-model');
+    const outcome = answer['response.decision'];
     if (malformed) {
       expect(outcome).toMatchObject({ kind: 'error', source: 'upstream' });
     } else if (sameDialect) {
@@ -349,4 +360,25 @@ test.each([
     expect(fetch).toHaveBeenCalledExactlyOnceWith(`https://ollama.example${DEFAULT_DECISION_PATHS['typesafe-systemone']}`, expect.anything());
     expect(pending).toHaveLength(0);
   });
+});
+
+test('a missing Decision target fails before Ollama dispatches or emits a model identity', async () => {
+  const fetch = vi.fn<ProviderFetcher>();
+  const { options, events, pending, abort } = host(fetch);
+  const { request } = parseDecisionRequest('typesafe-systemone', {
+    model: 'public-model', state: 'A damaged box', questions: { damaged: { type: 'noul', instructions: 'Is it damaged?' } },
+  });
+  const running = run(ollamaPipelines.decision, { ...entry, 'request.decision': request }, options);
+  try {
+    await Promise.all([
+      expect(running.result).rejects.toThrow('must use a System One target'),
+      expect(running.done).rejects.toThrow('must use a System One target'),
+    ]);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(pending).toHaveLength(0);
+    expect(events.some(event => event.type === 'stage.leaved' && 'facts' in event && 'response.usageModelKey' in event.facts)).toBe(false);
+  } finally {
+    abort.abort();
+    await Promise.all(pending);
+  }
 });

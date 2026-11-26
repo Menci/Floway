@@ -31,7 +31,7 @@ const commonEntry = ['request.http', 'provider.upstream', 'provider.model'] as c
 export const ollamaPipelines = Object.freeze({
   anthropicMessages: compose('ollama.anthropicMessages', {
     entry: [...commonEntry, 'request.anthropicMessages'],
-    exit: ['response.http', 'response.anthropicMessages'],
+    exit: ['response.http', 'response.anthropicMessages', 'response.usageModelKey?'],
     stages: [
       stripAnthropicMessagesHeaders,
       parseSseResponse('anthropicMessages', decodeAnthropicMessagesStream, formatAnthropicError),
@@ -42,7 +42,7 @@ export const ollamaPipelines = Object.freeze({
   }),
   anthropicMessagesCountTokens: compose('ollama.anthropicMessagesCountTokens', {
     entry: [...commonEntry, 'request.anthropicMessagesCountTokens'],
-    exit: ['response.http', 'response.anthropicMessagesCountTokens'],
+    exit: ['response.http', 'response.anthropicMessagesCountTokens', 'response.usageModelKey?'],
     stages: [
       stripAnthropicMessagesHeaders,
       parseAnthropicMessagesCountTokensResponse,
@@ -53,13 +53,13 @@ export const ollamaPipelines = Object.freeze({
   }),
   decision: compose('ollama.decision', {
     entry: [...commonEntry, 'request.decision'],
-    exit: ['response.http', 'response.decision'],
+    exit: ['response.http', 'response.decision', 'response.usageModelKey?'],
     stages: [stripOllamaHeaders, parseDecisionResponse, dialDecision],
     ending: httpTerminal,
   }),
   openaiAudioTranscriptions: compose('ollama.openaiAudioTranscriptions', {
     entry: [...commonEntry, 'request.openaiAudioTranscriptions'],
-    exit: ['response.http', 'response.openaiAudioTranscriptions'],
+    exit: ['response.http', 'response.openaiAudioTranscriptions', 'response.usageModelKey?'],
     stages: [
       stripOllamaHeaders,
       parseOpenAIAudioTranscriptionsResponse,
@@ -70,7 +70,7 @@ export const ollamaPipelines = Object.freeze({
   }),
   openaiChatCompletions: compose('ollama.openaiChatCompletions', {
     entry: [...commonEntry, 'request.openaiChatCompletions'],
-    exit: ['response.http', 'response.openaiChatCompletions'],
+    exit: ['response.http', 'response.openaiChatCompletions', 'response.usageModelKey?'],
     stages: [
       stripOllamaHeaders,
       renameOutputCapStage,
@@ -85,7 +85,7 @@ export const ollamaPipelines = Object.freeze({
   }),
   openaiCompletions: compose('ollama.openaiCompletions', {
     entry: [...commonEntry, 'request.openaiCompletions'],
-    exit: ['response.http', 'response.openaiCompletions'],
+    exit: ['response.http', 'response.openaiCompletions', 'response.usageModelKey?'],
     stages: [
       stripOllamaHeaders,
       parseOpenAICompletionsResponse,
@@ -96,7 +96,7 @@ export const ollamaPipelines = Object.freeze({
   }),
   openaiEmbeddings: compose('ollama.openaiEmbeddings', {
     entry: [...commonEntry, 'request.openaiEmbeddings'],
-    exit: ['response.http', 'response.openaiEmbeddings'],
+    exit: ['response.http', 'response.openaiEmbeddings', 'response.usageModelKey?'],
     stages: [
       stripOllamaHeaders,
       parseResultResponse('openaiEmbeddings', parseJsonObject, formatOpenAIError),
@@ -107,7 +107,7 @@ export const ollamaPipelines = Object.freeze({
   }),
   openaiResponses: compose('ollama.openaiResponses', {
     entry: [...commonEntry, 'request.openaiResponses'],
-    exit: ['response.http', 'response.openaiResponses'],
+    exit: ['response.http', 'response.openaiResponses', 'response.usageModelKey?'],
     stages: [
       stripOllamaHeaders,
       normalizeDeepSeekOpenAIResponses,
@@ -120,7 +120,7 @@ export const ollamaPipelines = Object.freeze({
   }),
   openaiResponsesCompact: compose('ollama.openaiResponsesCompact', {
     entry: [...commonEntry, 'request.openaiResponsesCompact'],
-    exit: ['response.http', 'response.openaiResponsesCompact'],
+    exit: ['response.http', 'response.openaiResponsesCompact', 'response.usageModelKey?'],
     stages: [
       stripOllamaHeaders,
       parseOpenAIResponsesCompactResponse,

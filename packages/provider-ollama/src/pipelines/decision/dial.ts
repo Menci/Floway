@@ -7,5 +7,6 @@ export const dial = ollamaDial('decision', (payload, model) => {
   const target = model.decisionTarget;
   if (target?.protocol !== 'typesafe-systemone') throw new Error(`Ollama decision model ${model.id} must use a System One target`);
   const path = target.path ?? DEFAULT_DECISION_PATHS[target.protocol];
-  return jsonRequest(path, serializeDecisionRequest(target.protocol, model.upstreamModelId, payload));
+  const modelId = model.upstreamModelId;
+  return jsonRequest(path, { ...serializeDecisionRequest(target.protocol, modelId, payload), model: modelId });
 }, formatOpenAIError);
