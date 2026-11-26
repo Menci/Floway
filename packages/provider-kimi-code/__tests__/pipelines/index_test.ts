@@ -219,6 +219,42 @@ test('counts with the requested Kimi lane and forwards Anthropic beta without sc
   });
 });
 
+test.each([
+  { status: 204, body: null, kind: 'result' },
+  { status: 205, body: null, kind: 'result' },
+  { status: 200, body: null, kind: 'error' },
+  { status: 200, body: '', kind: 'error' },
+  { status: 200, body: 'null', kind: 'error' },
+] as const)('handles HTTP $status with count body $body', async ({ status, body, kind }) => {
+  const fetch = vi.fn<ProviderFetcher>(async () => ({
+    response: new Response(body, {
+      status,
+      statusText: 'Upstream count response',
+      headers: { 'content-type': 'application/json', 'x-upstream': 'kept' },
+    }),
+  }));
+  await withRun(kimiCodePipelines.anthropicMessagesCountTokens, {
+    ...entry,
+    'request.anthropicMessagesCountTokens': { model: 'public-model', messages: [] },
+  }, fetch, async running => {
+    const answer = await running.result;
+    expect(answer['response.http']).toMatchObject({
+      status,
+      statusText: 'Upstream count response',
+      headers: [['content-type', 'application/json'], ['x-upstream', 'kept']],
+      body: null,
+    });
+    expect(answer['response.usageModelKey']).toBe('standard-model');
+    const outcome = answer['response.anthropicMessagesCountTokens'];
+    if (kind === 'result') {
+      expect(outcome).toEqual({ kind: 'result', result: null });
+    } else {
+      expect(outcome).toMatchObject({ kind: 'error', source: 'upstream' });
+    }
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+});
+
 test('a fast-only model rejects standard Chat Completions and Messages token counts without dialing', async () => {
   const fetch = vi.fn<ProviderFetcher>();
   const fastOnly = { ...entry, 'provider.model': { ...model, providerData: { fastModelId: 'fast-model' } } };

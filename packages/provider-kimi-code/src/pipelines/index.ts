@@ -13,8 +13,7 @@ import { normalizeDeepSeek as normalizeDeepSeekOpenAIResponses } from './openai-
 import { normalizeQwen as normalizeQwenOpenAIResponses } from './openai-responses/vendor-qwen-normalize.ts';
 import { refreshProbes } from './refresh-probes.ts';
 import { stripAnthropicMessagesHeaders, stripOpenAIHeaders } from './strip-headers.ts';
-import { decodeAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
-import { isJsonObject } from '@floway-dev/protocols/common';
+import { decodeAnthropicMessagesCountTokensResult, decodeAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { decodeOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { decodeOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
 import { httpTerminal, parseJsonBody, parseResultResponse, parseSseResponse, type ProviderPipelines } from '@floway-dev/provider';
@@ -71,14 +70,15 @@ export const kimiCodePipelines = Object.freeze({
     stages: [
       stripAnthropicMessagesHeaders,
       selectAnthropicMessagesCountTokensModel,
-      parseResultResponse('anthropicMessagesCountTokens', bytes => {
-        const parsed = parseJsonBody(bytes);
-        if (!parsed.ok) return parsed;
-        if (!isJsonObject(parsed.value) || typeof parsed.value.input_tokens !== 'number') {
-          return { ok: false, error: new Error('Expected an input_tokens count from Kimi Code') };
-        }
-        return { ok: true, value: { ...parsed.value, input_tokens: parsed.value.input_tokens } };
-      }, formatAnthropicError),
+      parseResultResponse('anthropicMessagesCountTokens', {
+        needs: [],
+        decode(bytes) {
+          const parsed = parseJsonBody(bytes);
+          return parsed.ok ? decodeAnthropicMessagesCountTokensResult(parsed.value) : parsed;
+        },
+        format: formatAnthropicError,
+        noContent: null,
+      }),
       kimiCodeDial('anthropicMessagesCountTokens', '/messages/count_tokens', formatAnthropicError),
     ],
     ending: httpTerminal,
