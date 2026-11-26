@@ -1,10 +1,11 @@
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import { overviewBucketKey, type OverviewBucket } from '../../repo/telemetry-bucket-sql.ts';
 import type { UsageOverviewGroupBy } from '../../repo/types.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
 import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata, type TelemetryOverviewWindow } from '../shared/telemetry-overview.ts';
 import type { TokenUsageOverviewResponse } from '../usage-types.ts';
-import { createTelemetryBucket, parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryHourKey, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
+import { parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryBucketHours, telemetryHourKey, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof tokenUsageOverviewQuery>;
 
@@ -79,12 +80,13 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const cursor = windowEnd < resumeFromHour ? windowEnd : resumeFromHour;
   const resume = previous !== undefined && previous <= cursor;
   const scanStart = resume && previous > start ? previous : start;
-  const chartBucketForHour = createTelemetryBucket({
-    bucket, start, timeZone: params.value.timeZone, timezoneOffsetMinutes,
-  });
+  const queryBucket: OverviewBucket = bucket === 'all' ? 'all' : bucket === 'month' || bucket === 'year'
+    ? { calendar: bucket, timezoneOffsetMinutes }
+    : { origin: start, hours: telemetryBucketHours(bucket) };
   const hourlyBoundaries = resume ? [resumeFromHour, nowHour, scanStart] : [resumeFromHour, nowHour];
-  const hourlyHours = hourlyBoundaries.filter(hour => hour >= scanStart && hour < windowEnd);
-  let hourlyBuckets: Set<string> | undefined;
+  const hourlyBuckets = [...new Set(hourlyBoundaries
+    .filter(hour => hour >= scanStart && hour < windowEnd)
+    .map(hour => overviewBucketKey(queryBucket, hour)))];
   const buckets = scanStart >= windowEnd ? [] : (await repo.usage.queryOverview({
     actorUserId: identity.actor.id,
     isAdmin: identity.actor.isAdmin,
@@ -99,14 +101,10 @@ export const tokenUsageOverview = async (c: Ctx) => {
       models: [...filters.model],
       upstreams: [...filters.upstream],
     },
-    bucketForHour: hour => {
-      if (bucket === 'hour') return `hour:${hour}`;
-      hourlyBuckets ??= new Set(hourlyHours.map(chartBucketForHour));
-      const chartBucket = chartBucketForHour(hour);
-      return hourlyBuckets.has(chartBucket) ? `hour:${hour}` : `bucket:${chartBucket}`;
-    },
+    bucket: queryBucket,
+    hourlyBuckets,
   })).map(({ firstHour, lastHour, axes, dimensionValues }) => ({
-    bucket: chartBucketForHour(firstHour),
+    bucket: overviewBucketKey(queryBucket, firstHour),
     start: firstHour,
     end: shiftHour(lastHour, 1),
     axes,

@@ -5,8 +5,7 @@ import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenCh
 import { decimalStringToPlottableNumber, sumDecimalStrings } from '../../lib/decimal-display';
 import type { ChartBucket } from '../charts/dashboard-time';
 import {
-  dashboardBucketFrames,
-  dashboardBucketMapper,
+  dashboardFixedBucketFrames,
   formatBucketInterval,
 } from '../charts/dashboard-time';
 import { hueForSeriesSlot } from '../charts/palette';
@@ -14,13 +13,13 @@ import type { ChartSeries } from '../charts/series-legends';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
 import { areaSeries, lineSeries } from '../charts/series-plot';
 import type { MultiselectOption } from '../ui/multiselect-combobox';
-import type { BillingMetric, DecimalString } from '@floway-dev/protocols/browser';
+import { parseTelemetryHour, type BillingMetric, type DecimalString } from '@floway-dev/protocols/browser';
 
 export const dashboardBuckets = (
   range: UsageRange,
   nowMs: number,
 ): ChartBucket[] => {
-  return dashboardBucketFrames(range, nowMs)
+  return dashboardFixedBucketFrames(range, nowMs)
     .map(frame => ({ ...frame, label: formatBucketInterval(frame) }));
 };
 
@@ -119,16 +118,15 @@ export const buildSearchChart = ({
   const groups = new Map<string, Map<string, number>>();
   const presentGroups = new Set<string>();
   const providers = new Set<string>();
-  const bucketKeys = new Set(buckets.map(bucket => bucket.key));
-  const bucketForHour = dashboardBucketMapper(range, 0);
   const meta = new Map<string, { name: string | undefined; createdAt: string | undefined }>();
   for (const key of search.keys) meta.set(key.id, { name: key.name, createdAt: key.createdAt });
 
   // Not gated on the configured provider: that would erase the history of every
   // provider since switched away from, and hide the panel once search is off.
   for (const record of search.records) {
-    const bucket = bucketForHour(record.hour);
-    if (!bucketKeys.has(bucket)) continue;
+    const hour = parseTelemetryHour(record.hour);
+    const bucket = buckets.find(({ start, end }) => start <= hour && hour < end)?.key;
+    if (bucket === undefined) continue;
     providers.add(record.provider);
     presentGroups.add(record.keyId);
     meta.set(record.keyId, {

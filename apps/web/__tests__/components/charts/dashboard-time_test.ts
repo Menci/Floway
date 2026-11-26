@@ -1,9 +1,24 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { dashboardBucketFrames, dashboardBucketMapper, dashboardGranularity, dashboardInterval } from '../../../src/components/charts/dashboard-time';
+import { dashboardBucketFrames, dashboardBucketMapper, dashboardFixedBucketFrames, dashboardFixedRangeQuery, dashboardGranularity, dashboardInterval } from '../../../src/components/charts/dashboard-time';
 import { calendarDate } from '../../../src/lib/calendar-date';
 
 afterEach(() => vi.unstubAllEnvs());
+
+test('fixed day grids retain the selected local date range across a clock change', () => {
+  vi.stubEnv('TZ', 'America/New_York');
+  const range = { start: '2026-03-01', end: '2026-03-30' };
+  expect(dashboardFixedRangeQuery(range, 0)).toEqual({
+    start: '2026-03-01T05',
+    end: '2026-03-31T04',
+    bucket: 'day',
+  });
+  const frames = dashboardFixedBucketFrames(range, 0);
+  expect(frames).toHaveLength(30);
+  expect(frames[8]!.key).toBe('2026-03-09T05');
+  expect(calendarDate(frames[8]!.date)).toBe('2026-03-09');
+  expect(frames.at(-1)!.end - frames.at(-1)!.start).toBe(23 * 3_600_000);
+});
 
 test('custom aggregation adapts to inclusive calendar-day density', () => {
   vi.stubEnv('TZ', 'UTC');

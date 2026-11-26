@@ -1,3 +1,4 @@
+import type { OverviewBucket } from './telemetry-bucket-sql.ts';
 import type { AccessPrincipal, AccessRecord, AccessRecordInput } from '../access-control/types.ts';
 import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
@@ -98,7 +99,8 @@ export interface UsageOverviewQueryOptions {
   end: string;
   ownedKeysOnly: boolean;
   filters: UsageOverviewFilters;
-  bucketForHour: (hour: string) => string;
+  bucket: OverviewBucket;
+  hourlyBuckets: readonly string[];
 }
 
 export interface UsageOverviewResult {

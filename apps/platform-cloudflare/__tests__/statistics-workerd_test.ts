@@ -74,7 +74,7 @@ test.each([
     start: '2026-11-01T00', end: '2026-11-01T01', bucketForHour: (hour: string) => hour,
   };
   const filters = { models: [], upstreams: [], userIds: [], keyIds: [] };
-  const usageOptions = { ...options, ownedKeysOnly: groupBy === 'keyId' };
+  const usageOptions = { ...options, ownedKeysOnly: groupBy === 'keyId', bucket: { origin: options.start, hours: 1 }, hourlyBuckets: [] };
   const [usage] = await repo.usage.queryOverview({ ...usageOptions, filters });
   expect(usage!.axes.none[0]).toEqual({
     group: 'all', requests: 3,
@@ -102,7 +102,7 @@ test.each([
   })).toEqual(performance);
 });
 
-test('D1 Usage overview reads a long window without revisiting the hour map for every facet', async () => {
+test('D1 Usage overview reads a long window in one bounded query', async () => {
   const db = platform!.env.DB;
   const hours = 30 * 24;
   const slotsPerHour = 8;
@@ -136,17 +136,15 @@ test('D1 Usage overview reads a long window without revisiting the hour map for 
     },
   });
   const measured = new SqlRepo({
-    prepare: sql => {
-      const statement = db.prepare(sql);
-      return sql.startsWith('/* usage-overview */') ? measure(statement) : statement;
-    },
+    prepare: sql => measure(db.prepare(sql)),
     exec: sql => db.exec(sql),
   });
   const buckets = await measured.usage.queryOverview({
     actorUserId: 1, isAdmin: true, visibleUserIds: [1], visibleUpstreams: [],
     start: '2026-11-02T00', end: '2026-12-02T00', ownedKeysOnly: false,
     filters: { models: [], upstreams: [], userIds: [], keyIds: [] },
-    bucketForHour: hour => hour.slice(0, 10),
+    bucket: { origin: '2026-11-02T00', hours: 24 },
+    hourlyBuckets: [],
   });
 
   expect(buckets).toHaveLength(30);

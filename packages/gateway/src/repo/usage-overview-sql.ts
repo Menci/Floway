@@ -1,3 +1,4 @@
+import { overviewBucketBinds, overviewBucketSql, type OverviewBucket } from './telemetry-bucket-sql.ts';
 import type {
   UsageOverviewAxis,
   UsageOverviewQueryOptions,
@@ -18,7 +19,7 @@ import {
 } from '@floway-dev/protocols/common';
 
 interface UsageOverviewSqlRow {
-  row_kind: 'facet' | 'metric' | 'missing_hour' | 'request' | 'validation';
+  row_kind: 'facet' | 'metric' | 'request' | 'validation';
   axis: string | null;
   bucket: string | null;
   group_value: string | null;
@@ -45,32 +46,17 @@ const rangeBinds = (opts: UsageOverviewQueryOptions, scoped: boolean): SqlBindVa
   ? [opts.actorUserId, opts.start, opts.end]
   : [opts.start, opts.end];
 
-const overviewHoursSql = (scoped: boolean) => `/* usage-overview-hours */
-  SELECT hour FROM (
-    SELECT usage_requests.hour AS hour
-    FROM usage_requests
-    WHERE ${scopedRange('usage_requests', scoped)}
-    UNION ALL
-    SELECT usage.hour AS hour
-    FROM usage
-    WHERE ${scopedRange('usage', scoped)}
-  )
-  GROUP BY hour
-  ORDER BY hour`;
-
 // CTE references expand before materialization; keep filters scalar and axes
 // tabular so each dimension does not copy the authorized source tree.
 // https://github.com/sqlite/sqlite/blob/version-3.54.1/src/select.c#L5672-L5682
-const overviewSql = (scoped: boolean) => `/* usage-overview */
+const overviewSql = (scoped: boolean, bucket: OverviewBucket) => `/* usage-overview */
 WITH
 settings(
   actor_user_id, is_admin, unattributed_user_id, no_upstream_value, upstream_prefix,
-  models_json, upstreams_json, users_json, keys_json, visible_users_json, visible_upstreams_json
+  models_json, upstreams_json, users_json, keys_json, visible_users_json, visible_upstreams_json,
+  bucket_origin, bucket_seconds, bucket_offset_seconds, hourly_buckets
 ) AS (
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-),
-bucket_map(hour, bucket) AS MATERIALIZED (
-  SELECT key, CAST(value AS TEXT) FROM json_each(?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ),
 facts AS MATERIALIZED (
   SELECT
@@ -109,7 +95,8 @@ authorized AS MATERIALIZED (
     CASE
       WHEN facts.upstream IS NULL THEN settings.no_upstream_value
       ELSE settings.upstream_prefix || facts.upstream
-    END AS upstream_value
+    END AS upstream_value,
+    ${overviewBucketSql(bucket, 'facts.hour')} AS chart_bucket
   FROM facts
   CROSS JOIN settings
   LEFT JOIN api_keys ON api_keys.id = facts.key_id
@@ -119,9 +106,15 @@ authorized AS MATERIALIZED (
     )
     OR facts.upstream IN (SELECT CAST(value AS TEXT) FROM json_each(settings.visible_upstreams_json))
 ),
-filtered AS MATERIALIZED (
-  SELECT authorized.*
+bucketed AS MATERIALIZED (
+  SELECT authorized.*,
+    CASE WHEN chart_bucket IN (SELECT value FROM json_each((SELECT hourly_buckets FROM settings)))
+      THEN authorized.hour ELSE chart_bucket END AS bucket
   FROM authorized
+),
+filtered AS MATERIALIZED (
+  SELECT bucketed.*
+  FROM bucketed
   CROSS JOIN settings
   WHERE
     (json_array_length(settings.models_json) = 0 OR model IN (SELECT CAST(value AS TEXT) FROM json_each(settings.models_json)))
@@ -144,7 +137,6 @@ projected AS MATERIALIZED (
   SELECT
     filtered.*,
     axes.axis,
-    bucket_map.bucket,
     CASE axes.axis
       WHEN 'none' THEN 'all'
       WHEN 'keyId' THEN filtered.key_id
@@ -154,29 +146,25 @@ projected AS MATERIALIZED (
     END AS group_value
   FROM filtered
   CROSS JOIN axes
-  JOIN bucket_map ON bucket_map.hour = filtered.hour
   WHERE (axes.owned_only = 0 OR filtered.owned = 1)
 ),
 facet_rows AS (
-  SELECT 'facet' AS row_kind, NULL AS axis, bucket_map.bucket, NULL AS group_value,
+  SELECT 'facet' AS row_kind, NULL AS axis, bucketed.bucket, NULL AS group_value,
     axes.axis AS dimension,
     CASE axes.axis
-      WHEN 'keyId' THEN authorized.key_id
-      WHEN 'userId' THEN CAST(authorized.user_id AS TEXT)
-      WHEN 'model' THEN authorized.model
-      WHEN 'upstream' THEN authorized.upstream_value
+      WHEN 'keyId' THEN bucketed.key_id
+      WHEN 'userId' THEN CAST(bucketed.user_id AS TEXT)
+      WHEN 'model' THEN bucketed.model
+      WHEN 'upstream' THEN bucketed.upstream_value
     END AS facet_value,
     NULL AS requests_text,
     NULL AS metric, NULL AS quantity, NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order,
-    MIN(authorized.hour) AS first_hour, MAX(authorized.hour) AS last_hour
-  -- Keep the hour lookup outside the facet loops to avoid scanning the map per fact and axis.
-  -- https://sqlite.org/optoverview.html#manual_control_of_query_plans_using_cross_join
-  FROM bucket_map
-  CROSS JOIN authorized ON authorized.hour = bucket_map.hour
+    MIN(bucketed.hour) AS first_hour, MAX(bucketed.hour) AS last_hour
+  FROM bucketed
   CROSS JOIN axes
   WHERE axes.axis <> 'none'
-    AND (axes.owned_only = 0 OR authorized.owned = 1)
-  GROUP BY bucket_map.bucket, dimension, facet_value
+    AND (axes.owned_only = 0 OR bucketed.owned = 1)
+  GROUP BY bucketed.bucket, dimension, facet_value
 ),
 request_rows AS (
   SELECT 'request' AS row_kind, axis, bucket, group_value, NULL AS dimension, NULL AS facet_value,
@@ -242,22 +230,11 @@ validation_rows AS (
   FROM validation_numbered
   GROUP BY term_chunk
 ),
-missing_hour_rows AS (
-  SELECT 'missing_hour' AS row_kind,
-    NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, hour AS facet_value,
-    NULL AS requests_text, NULL AS metric, NULL AS quantity, NULL AS unit_price,
-    NULL AS occurrences_text, NULL AS metric_order,
-    NULL AS first_hour, NULL AS last_hour
-  FROM authorized
-  WHERE NOT EXISTS (SELECT 1 FROM bucket_map WHERE bucket_map.hour = authorized.hour)
-  GROUP BY hour
-),
 wire AS (
   SELECT * FROM facet_rows
   UNION ALL SELECT * FROM request_rows
   UNION ALL SELECT * FROM metric_rows
   UNION ALL SELECT * FROM validation_rows
-  UNION ALL SELECT * FROM missing_hour_rows
 )
 SELECT * FROM wire
 ORDER BY row_kind, dimension, facet_value, axis, bucket, group_value, metric_order, metric, unit_price, quantity`;
@@ -402,7 +379,7 @@ const finishOverview = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResu
       }
       continue;
     }
-    if (row.bucket === null) throw new Error('Usage overview bucket map is incomplete');
+    if (row.bucket === null) throw new Error('Usage overview has an invalid bucket');
     let bucket = byBucket.get(row.bucket);
     if (!bucket) {
       bucket = [];
@@ -420,36 +397,22 @@ export const querySqlUsageOverview = async (
 ): Promise<UsageOverviewResult[]> => {
   const scoped = opts.ownedKeysOnly;
   const range = rangeBinds(opts, scoped);
-  const { results: hours } = await db.prepare(overviewHoursSql(scoped))
-    .bind(...range, ...range)
-    .all<{ hour: string }>();
-  const buckets = Object.fromEntries(hours.map(({ hour }) => [hour, opts.bucketForHour(hour)]));
-  while (true) {
-    const binds: SqlBindValue[] = [
-      opts.actorUserId,
-      opts.isAdmin ? 1 : 0,
-      tokenUsageUnattributedUserId,
-      usageWithoutUpstreamDimensionValue,
-      usageUpstreamDimensionPrefix,
-      JSON.stringify(opts.filters.models),
-      JSON.stringify(opts.filters.upstreams),
-      JSON.stringify(opts.filters.userIds),
-      JSON.stringify(opts.filters.keyIds),
-      JSON.stringify(opts.visibleUserIds),
-      JSON.stringify(opts.visibleUpstreams),
-      JSON.stringify(buckets),
-      ...range,
-      ...range,
-    ];
-    const { results } = await db.prepare(overviewSql(scoped)).bind(...binds).all<UsageOverviewSqlRow>();
-    const missingHours = results
-      .filter(row => row.row_kind === 'missing_hour')
-      .map(row => row.facet_value)
-      .filter((hour): hour is string => hour !== null);
-    if (missingHours.length === 0) return finishOverview(results);
-    for (const hour of missingHours) {
-      if (hour in buckets) throw new Error(`Usage overview did not accept bucket mapping for ${hour}`);
-      buckets[hour] = opts.bucketForHour(hour);
-    }
-  }
+  const { results } = await db.prepare(overviewSql(scoped, opts.bucket)).bind(
+    opts.actorUserId,
+    opts.isAdmin ? 1 : 0,
+    tokenUsageUnattributedUserId,
+    usageWithoutUpstreamDimensionValue,
+    usageUpstreamDimensionPrefix,
+    JSON.stringify(opts.filters.models),
+    JSON.stringify(opts.filters.upstreams),
+    JSON.stringify(opts.filters.userIds),
+    JSON.stringify(opts.filters.keyIds),
+    JSON.stringify(opts.visibleUserIds),
+    JSON.stringify(opts.visibleUpstreams),
+    ...overviewBucketBinds(opts.bucket),
+    JSON.stringify(opts.hourlyBuckets),
+    ...range,
+    ...range,
+  ).all<UsageOverviewSqlRow>();
+  return finishOverview(results);
 };
