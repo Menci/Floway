@@ -381,6 +381,10 @@ const en = {
               label: 'Kimi Compatibility',
               description: 'Kimi\'s API uses a non-standard format for cached-token usage statistics.\nEnable this option to normalize the flat cached-token field (`cached_tokens`) in Kimi responses to the OpenAI canonical format (`prompt_tokens_details.cached_tokens`).\nEnable this when the upstream is the **Kimi (Moonshot AI) Chat Completions API**.',
             },
+            'vendor-mistral': {
+              label: 'Mistral Compatibility',
+              description: 'Mistral\'s Chat Completions API rejects every request field its schema does not define (`422 extra_forbidden`), such as `stream_options.continuous_usage_stats` or a replayed assistant turn\'s `reasoning_content`.\nEnable this option to send only the fields Mistral\'s API defines, moving `max_completion_tokens` to Mistral\'s `max_tokens` and leaving out the client\'s `metadata`.\nEnable this when the upstream is the **Mistral Chat Completions API**.',
+            },
             'anthropic-messages-web-search-shim': {
               label: 'Anthropic Messages Web Search Shim',
               description: 'The Anthropic Messages API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the Anthropic Messages API.',
