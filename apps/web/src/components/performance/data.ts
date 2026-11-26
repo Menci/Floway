@@ -63,14 +63,20 @@ export const createPerformanceLoader = (initial?: PerformanceDataset) => {
   const cached = new Map<PerformanceGroupBy, PerformanceDataset>();
   const pending = new Map<PerformanceGroupBy, { key: string; promise: Promise<ApiResult<PerformanceDataset>> }>();
   if (initial !== undefined) cached.set(initial.request.dimension, initial);
+  const cachedFor = (dimension: PerformanceGroupBy, scopeKey: string | undefined) => {
+    const dataset = cached.get(dimension);
+    return scopeKey === undefined || (dataset !== undefined && JSON.stringify(dataset.snapshot.scope) === scopeKey)
+      ? dataset : undefined;
+  };
   return {
-    load(query: PerformanceQuery, dimension: PerformanceGroupBy, now: number): Promise<ApiResult<PerformanceDataset>> {
+    load(query: PerformanceQuery, dimension: PerformanceGroupBy, now: number, scopeKey?: string): Promise<ApiResult<PerformanceDataset>> {
       const request = buildPerformanceQuery(query, dimension, now);
-      const previous = cached.get(dimension);
-      const key = JSON.stringify([queryKey(request), request.start, request.end]);
+      const previous = cachedFor(dimension, scopeKey);
+      const key = JSON.stringify([queryKey(request), request.start, request.end, scopeKey]);
       const flight = pending.get(dimension);
       if (flight?.key === key) return flight.promise;
       if (previous !== undefined && previous.loadedAt >= now && JSON.stringify(previous.request) === JSON.stringify(request)) {
+        pending.delete(dimension);
         return Promise.resolve({ data: previous });
       }
       const promise = fetchDataset(request, now, reusable(previous, request) ? previous : undefined)
@@ -84,8 +90,8 @@ export const createPerformanceLoader = (initial?: PerformanceDataset) => {
       pending.set(dimension, { key, promise });
       return promise;
     },
-    get(query: PerformanceQuery, dimension: PerformanceGroupBy, now: number): PerformanceDataset | undefined {
-      const previous = cached.get(dimension);
+    get(query: PerformanceQuery, dimension: PerformanceGroupBy, now: number, scopeKey?: string): PerformanceDataset | undefined {
+      const previous = cachedFor(dimension, scopeKey);
       const request = buildPerformanceQuery(query, dimension, now);
       return reusable(previous, request) ? previous : undefined;
     },

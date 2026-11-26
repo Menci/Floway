@@ -31,7 +31,6 @@ import { buildPerformanceChart } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
 import { TelemetryFilterFields, TelemetryGroupByField, type TelemetryDimension } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
-import { sameTelemetryScope } from '../components/telemetry/snapshot';
 import { TelemetryTimeRange } from '../components/telemetry/time-range';
 import { useTelemetryPolling } from '../components/telemetry/use-poll';
 import { ChoiceGroup } from '../components/ui/choice-group';
@@ -122,7 +121,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [overview, setOverview] = useState<PerformanceOverviewView | null>(loaderData.overview);
   const [scope, setScope] = useState(() => loaderData.dataset?.snapshot.scope);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  const [ranking, setRanking] = useState<{ dimension: PerformanceGroupBy; query: PerformanceQuery; requestedAt: number; error: GlobalError | null }>();
+  const [ranking, setRanking] = useState<{ dimension: PerformanceGroupBy; query: PerformanceQuery; requestedAt: number; scopeKey: string | undefined; error: GlobalError | null }>();
   const pendingRegionAvailableRef = useRef<boolean | null>(null);
   const pageWindow = useRef<{ query: PerformanceQuery; requestedAt: number } | undefined>(undefined);
   const locale = useLocale();
@@ -218,12 +217,13 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   useTelemetryPolling(poll, loadedQuery.range, !editingRange && !refreshing);
 
   const needsRanking = overview !== null && regionAvailable !== null && breakdownGroup !== loadedQuery.groupBy;
+  const scopeKey = scope === undefined ? undefined : JSON.stringify(scope);
   const rankingReload = useCallback(async (signal: AbortSignal) => {
     const requestedAt = pageWindow.current?.query === loadedQuery ? pageWindow.current.requestedAt : loadedAt;
-    const result = await performanceLoader.load(loadedQuery, breakdownGroup, requestedAt);
+    const result = await performanceLoader.load(loadedQuery, breakdownGroup, requestedAt, scopeKey);
     if (signal.aborted) return;
-    setRanking({ dimension: breakdownGroup, query: loadedQuery, requestedAt, error: result.error ?? null });
-  }, [performanceLoader, loadedQuery, breakdownGroup, loadedAt]);
+    setRanking({ dimension: breakdownGroup, query: loadedQuery, requestedAt, scopeKey, error: result.error ?? null });
+  }, [performanceLoader, loadedQuery, breakdownGroup, loadedAt, scopeKey]);
   const {
     cancel: cancelRanking, refresh: refreshRanking, refreshInBackground: refreshRankingInBackground,
     backgroundRefreshing: rankingPolling, refreshing: rankingRefreshing,
@@ -277,13 +277,10 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     setRanking(undefined);
     setBreakdownGroup(key);
   };
-  const activeRanking = ranking?.dimension === breakdownGroup && ranking.query === loadedQuery ? ranking : undefined;
+  const activeRanking = ranking?.dimension === breakdownGroup && ranking.query === loadedQuery && ranking.scopeKey === scopeKey
+    ? ranking : undefined;
   const rankingWindow = Math.max(loadedAt, activeRanking?.requestedAt ?? loadedAt);
-  const cachedRanking = needsRanking ? performanceLoader.get(loadedQuery, breakdownGroup, rankingWindow) : undefined;
-  const rankingDataset = cachedRanking !== undefined && (
-    cachedRanking.loadedAt >= loadedAt || scope === undefined || sameTelemetryScope(scope, cachedRanking.snapshot.scope)
-  )
-    ? cachedRanking : undefined;
+  const rankingDataset = needsRanking ? performanceLoader.get(loadedQuery, breakdownGroup, rankingWindow, scopeKey) : undefined;
   const rankingRows = useMemo(() => rankingDataset === undefined ? undefined : performanceRanking(rankingDataset), [rankingDataset]);
   const tableRows = needsRanking ? rankingRows : overview?.rows;
   const rankingError = activeRanking?.error ?? null;
