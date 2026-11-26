@@ -47,5 +47,6 @@ export {
   rerankRequestIncompatibility,
   renderCrossDialectRerankResponse,
   renderRerankResponse,
+  RerankResponseValidationError,
   serializeRerankRequest,
 } from './translate.ts';

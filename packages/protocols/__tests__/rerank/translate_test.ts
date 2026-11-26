@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderCrossDialectRerankResponse, renderRerankResponse, serializeRerankRequest } from '../../src/rerank/translate.ts';
+import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderCrossDialectRerankResponse, renderRerankResponse, RerankResponseValidationError, serializeRerankRequest } from '../../src/rerank/index.ts';
 
 describe('rerank request ingress', () => {
 
@@ -110,6 +110,30 @@ describe('rerank request egress', () => {
 });
 
 describe('rerank response translation', () => {
+  test.each([
+    ['body', 'cohere-v2', null],
+    ['result list', 'cohere-v2', { results: {} }],
+    ['result item', 'cohere-v2', { results: [null] }],
+    ['index', 'cohere-v2', { results: [{ index: -1, relevance_score: 1 }] }],
+    ['relevance', 'cohere-v2', { results: [{ index: 0, relevance_score: Infinity }] }],
+    ['embedding', 'cohere-v2', { results: [{ index: 0, relevance_score: 1, embedding: [1, '2'] }] }],
+    ['output', 'dashscope-native', { request_id: 'valid', output: [] }],
+    ['request ID', 'dashscope-native', { output: { results: [] } }],
+    ['usage', 'cohere-v2', { results: [], meta: { tokens: { input_tokens: '1' } } }],
+  ] as const)('uses the dedicated error for malformed response %s', (_field, protocol, body) => {
+    expect(() => parseRerankResponse(protocol, body)).toThrow(RerankResponseValidationError);
+  });
+
+  test('keeps request validation and unexpected response exceptions outside the response wire error class', () => {
+    const parseRequest = () => parseRerankRequest('cohere-v2', { model: 4, query: 'query', documents: ['one'] });
+    expect(parseRequest).toThrow('model must be a non-empty string');
+    expect(parseRequest).not.toThrow(RerankResponseValidationError);
+
+    const body = { get results() { throw new TypeError('unexpected accessor failure'); } };
+    const parseResponse = () => parseRerankResponse('cohere-v2', body);
+    expect(parseResponse).toThrow(TypeError);
+    expect(parseResponse).not.toThrow(RerankResponseValidationError);
+  });
 
   test('Cohere usage accepts omitted and null optional objects but rejects malformed present objects', () => {
     for (const response of [
