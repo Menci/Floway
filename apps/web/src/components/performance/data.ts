@@ -98,13 +98,19 @@ export const createPerformanceLoader = (initial?: PerformanceDataset) => {
   };
 };
 
+const addCount = (previous: number, delta: number): number => {
+  const count = previous + delta;
+  if (!Number.isSafeInteger(count)) throw new RangeError('Performance count exceeds the safe integer range');
+  return count;
+};
+
 const addHistogram = (accumulator: HistogramBucket[], delta: readonly HistogramBucket[]): void => {
   for (const bucket of delta) {
     const existing = accumulator.find(value => value.lower === bucket.lower);
     if (existing === undefined) accumulator.push({ ...bucket });
     else {
       if (existing.upper !== bucket.upper) throw new Error('Performance slices disagree on histogram bounds');
-      existing.count += bucket.count;
+      existing.count = addCount(existing.count, bucket.count);
     }
   }
 };
@@ -119,11 +125,11 @@ const sum = (buckets: readonly DecodedSlice[], mode: 'series' | 'rows' | 'total'
       target = { bucket, group: row.group, requests: 0, errors: 0, ttftSamples: 0, tpotSamples: 0, neutral: 0, ttft: [], tpot: [] };
       sums.set(key, target);
     }
-    target.requests += row.requests;
-    target.errors += row.errors;
-    target.ttftSamples += row.ttftSamples;
-    target.tpotSamples += row.tpotSamples;
-    target.neutral += row.neutral;
+    target.requests = addCount(target.requests, row.requests);
+    target.errors = addCount(target.errors, row.errors);
+    target.ttftSamples = addCount(target.ttftSamples, row.ttftSamples);
+    target.tpotSamples = addCount(target.tpotSamples, row.tpotSamples);
+    target.neutral = addCount(target.neutral, row.neutral);
     addHistogram(target.ttft, row.ttft);
     addHistogram(target.tpot, row.tpot);
   }

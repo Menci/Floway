@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { buildPerformanceQuery, createPerformanceLoader, performanceOverviewForDisplay, type PerformanceDataset, type PerformanceQuery } from '../../../src/components/performance/data';
+import { buildPerformanceQuery, createPerformanceLoader, performanceOverviewForDisplay, performanceRanking, type PerformanceDataset, type PerformanceQuery } from '../../../src/components/performance/data';
 import type { PerformanceSlice, PerformanceSlicesResponse } from '@floway-dev/gateway/browser';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -74,4 +74,16 @@ it.each([false, true])('keeps the new ranking scope when a superseded request re
   expect(fetch).toHaveBeenCalledTimes(cached ? 1 : 2);
   expect(loader.get(query, 'upstream', now, scopeKey)).toBe(current);
   expect(loader.get(query, 'upstream', now, JSON.stringify(first.scope))).toBeUndefined();
+});
+
+it('rejects a ranking total that overflows only after merging safe slice counts', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+    ...first,
+    buckets: [
+      slice('2026-11-26T10', '2026-11-26T11', Number.MAX_SAFE_INTEGER),
+      slice('2026-11-26T11', '2026-11-26T12', 1),
+    ],
+  } satisfies PerformanceSlicesResponse)));
+  const dataset = (await createPerformanceLoader().load(query, 'model', now)).data!;
+  expect(() => performanceRanking(dataset)).toThrow(RangeError);
 });
