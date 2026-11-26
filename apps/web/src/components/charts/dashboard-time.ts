@@ -3,7 +3,9 @@ import { numericDateTime, numericTime } from '../../lib/format-time';
 import {
   createTelemetryBucket,
   isTelemetryHourlyBucket,
+  parseTelemetryHour,
   TELEMETRY_HOUR_MS,
+  telemetryBucketHours,
   telemetryDayOrdinal,
   telemetryHourBucketSizes,
   telemetryHourKey,
@@ -152,9 +154,25 @@ export const dashboardRangeQuery = (range: DashboardRange, nowMs: number) => {
   };
 };
 
-export const dashboardBucketMapper = (range: DashboardRange, nowMs: number) => {
-  const query = dashboardRangeQuery(range, nowMs);
-  return createTelemetryBucket({ bucket: query.bucket, start: query.start, timeZone: query.timezone, timezoneOffsetMinutes: Number(query.timezone_offset_minutes) });
+export const dashboardFixedRangeQuery = (range: DashboardRange, nowMs: number) => {
+  const { start, end } = dashboardInterval(range, nowMs);
+  const hours = (end - start) / TELEMETRY_HOUR_MS;
+  const bucket: DashboardGranularity = typeof range === 'string'
+    ? dashboardGranularity(range, nowMs)
+    : AUTO_GRANULARITIES.find(candidate => hours <= telemetryBucketHours(candidate) * AUTO_BUCKET_TARGET)
+      ?? `${Math.ceil(hours / (24 * AUTO_BUCKET_TARGET))}d`;
+  return { start: telemetryHourKey(start), end: telemetryHourKey(end), bucket };
+};
+
+export const dashboardFixedBucketFrames = (range: DashboardRange, nowMs: number): DashboardBucketFrame[] => {
+  const query = dashboardFixedRangeQuery(range, nowMs);
+  const width = telemetryBucketHours(query.bucket) * TELEMETRY_HOUR_MS;
+  const end = parseTelemetryHour(query.end);
+  const frames: DashboardBucketFrame[] = [];
+  for (let start = parseTelemetryHour(query.start); start < end; start += width) {
+    frames.push({ date: new Date(start), key: telemetryHourKey(start), start, end: Math.min(start + width, end) });
+  }
+  return frames;
 };
 
 export const parseDashboardRange = (search: URLSearchParams): DashboardRange => {

@@ -8,12 +8,13 @@ import type {
   UsageRange,
 } from './types';
 import { api, callApi, type ApiResult } from '../../api/client';
-import { dashboardRangeQuery } from '../charts/dashboard-time';
+import { dashboardFixedRangeQuery } from '../charts/dashboard-time';
 import type {
   SearchUsageByKeyResponse,
   SearchUsageByUserResponse,
   TokenUsageOverviewResponse,
 } from '@floway-dev/gateway/browser';
+import { parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryBucketHours } from '@floway-dev/protocols/browser';
 
 const userBucketId = (userId: number) => `user-${userId}`;
 
@@ -31,8 +32,8 @@ export const buildUsageOverviewQuery = (
   filters: UsageFilters,
   nowMs: number,
 ) => ({
-  ...dashboardRangeQuery(range, nowMs),
-  format: 'buckets' as const,
+  ...dashboardFixedRangeQuery(range, nowMs),
+  format: 'fixed-buckets' as const,
   group_by: groupBy,
   filter_model: filters.model,
   filter_upstream: filters.upstream,
@@ -53,8 +54,8 @@ const sameMembers = <T>(left: readonly T[], right: readonly T[]): boolean => {
 };
 
 const sameUsageQuery = (left: UsageOverviewQuery, right: UsageOverviewQuery): boolean =>
-  left.bucket === right.bucket && left.timezone === right.timezone
-  && (!left.bucket.endsWith('d') || left.start === right.start)
+  left.bucket === right.bucket
+  && (parseTelemetryHour(left.start) - parseTelemetryHour(right.start)) % (telemetryBucketHours(left.bucket) * TELEMETRY_HOUR_MS) === 0
   && (left.group_by === 'keyId') === (right.group_by === 'keyId')
   && sameMembers(left.filter_model, right.filter_model)
   && sameMembers(left.filter_upstream, right.filter_upstream)
@@ -93,7 +94,7 @@ export const loadUsagePageData = async (
   signal: AbortSignal,
   knownAuditableUserIds?: readonly number[],
 ) => {
-  const { start, end } = dashboardRangeQuery(range, loadedAt);
+  const { start, end } = dashboardFixedRangeQuery(range, loadedAt);
   const searchViewFor = (ids: readonly number[] | undefined): SearchUsageView => ids?.some(id => String(id) !== currentUserId)
     ? 'all-by-user'
     : 'self-by-key';

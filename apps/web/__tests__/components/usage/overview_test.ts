@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { dashboardRangeQuery } from '../../../src/components/charts/dashboard-time';
+import { dashboardFixedRangeQuery } from '../../../src/components/charts/dashboard-time';
 import { createUsageOverviewLoader } from '../../../src/components/usage/data';
 import { mergeUsageOverview, usageOverviewCursor, usageOverviewForDisplay } from '../../../src/components/usage/overview';
 import type { TokenUsageOverviewBucket, TokenUsageOverviewResponse } from '@floway-dev/gateway/browser';
@@ -10,7 +10,7 @@ const bucket = (
 ): TokenUsageOverviewBucket => {
   const row = { group, requests, metrics: [{ metric: 'input_tokens', quantity: '9007199254740992.1' }] as const, cost };
   return {
-    start, end, bucket: start.slice(0, 10),
+    start, end, bucket: `${start.slice(0, 10)}T00`,
     axes: {
       none: [{ ...row, group: 'all', metrics: [...row.metrics] }],
       model: [{ ...row, metrics: [...row.metrics] }],
@@ -47,8 +47,8 @@ test('a rolling overview replaces overlapping hours and adds the remaining inter
   expect(mergeUsageOverview(snapshot, delta, start)).toEqual(snapshot);
   const usage = usageOverviewForDisplay(snapshot, 'model');
   expect(usage.series.map(({ bucket, group, requests }) => [bucket, group, requests])).toEqual([
-    ['2026-04-30', 'model-a', 1], ['2026-04-30', 'model-b', 2],
-    ['2026-05-01', 'model-a', 1], ['2026-05-02', 'model-b', 1],
+    ['2026-04-30T00', 'model-a', 1], ['2026-04-30T00', 'model-b', 2],
+    ['2026-05-01T00', 'model-a', 1], ['2026-05-02T00', 'model-b', 1],
   ]);
   expect(usage.axes.none[0]).toMatchObject({ requests: 5, cost: '0.25', metrics: { input_tokens: '36028797018963968.4' } });
   expect(usage.axes.model.map(({ group, requests }) => [group, requests])).toEqual([['model-a', 2], ['model-b', 3]]);
@@ -57,7 +57,7 @@ test('a rolling overview replaces overlapping hours and adds the remaining inter
 
 test('Usage keeps a baseline across metadata and display changes and replaces it on revocation', async () => {
   const loadedAt = Date.UTC(2026, 3, 30, 14, 20);
-  const { start, end } = dashboardRangeQuery('30d', loadedAt);
+  const { start, end } = dashboardFixedRangeQuery('30d', loadedAt);
   const cursor = '2026-04-30T13';
   const initial: TokenUsageOverviewResponse = {
     start, end, cursor, reset: true,
@@ -81,7 +81,7 @@ test('Usage keeps a baseline across metadata and display changes and replaces it
   const cursors: Array<string | null> = [];
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
-    expect(url.searchParams.get('format')).toBe('buckets');
+    expect(url.searchParams.get('format')).toBe('fixed-buckets');
     cursors.push(url.searchParams.get('cursor'));
     const response = responses.shift();
     if (!response) throw new Error('Unexpected Usage request');

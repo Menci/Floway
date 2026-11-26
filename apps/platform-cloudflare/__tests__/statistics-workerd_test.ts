@@ -71,10 +71,10 @@ test.each([
 ] as const)('D1 statistics compile and retain exact results for $groupBy (admin: $isAdmin)', async ({ groupBy, isAdmin }) => {
   const options = {
     actorUserId: 1, isAdmin, visibleUserIds: [1], visibleUpstreams: ['statistics-upstream'],
-    start: '2026-11-01T00', end: '2026-11-01T01', bucketForHour: (hour: string) => hour,
+    start: '2026-11-01T00', end: '2026-11-01T01',
   };
   const filters = { models: [], upstreams: [], userIds: [], keyIds: [] };
-  const usageOptions = { ...options, ownedKeysOnly: groupBy === 'keyId' };
+  const usageOptions = { ...options, ownedKeysOnly: groupBy === 'keyId', bucket: { origin: options.start, hours: 1 }, hourlyBuckets: [] };
   const [usage] = await repo.usage.queryOverview({ ...usageOptions, filters });
   expect(usage!.axes.none[0]).toEqual({
     group: 'all', requests: 3,
@@ -86,7 +86,7 @@ test.each([
     filters: { models: ['statistics-model'], upstreams: usage!.dimensionValues.upstreams, userIds: [1], keyIds: ['statistics-key'] },
   })).toEqual([usage]);
 
-  const performanceOptions = { ...options, groupBy };
+  const performanceOptions = { ...options, groupBy, bucketForHour: (hour: string) => hour };
   const performance = await repo.performance.queryOverview({ ...performanceOptions, filters: { ...filters, operations: [], runtimeLocations: [] } });
   expect(performance.axes.none[0]).toMatchObject({
     bucket: 'all', group: 'all', requests: 3, errors: 1, ttftSamples: 2, tpotSamples: 2,
@@ -102,7 +102,7 @@ test.each([
   })).toEqual(performance);
 });
 
-test('D1 Usage overview reads a long window without revisiting the hour map for every facet', async () => {
+test('D1 Usage overview reads a long window in one bounded query', async () => {
   const db = platform!.env.DB;
   const hours = 30 * 24;
   const slotsPerHour = 8;
@@ -136,25 +136,28 @@ test('D1 Usage overview reads a long window without revisiting the hour map for 
     },
   });
   const measured = new SqlRepo({
-    prepare: sql => {
-      const statement = db.prepare(sql);
-      return sql.startsWith('/* usage-overview */') ? measure(statement) : statement;
-    },
+    prepare: sql => measure(db.prepare(sql)),
     exec: sql => db.exec(sql),
   });
   const buckets = await measured.usage.queryOverview({
     actorUserId: 1, isAdmin: true, visibleUserIds: [1], visibleUpstreams: [],
     start: '2026-11-02T00', end: '2026-12-02T00', ownedKeysOnly: false,
     filters: { models: [], upstreams: [], userIds: [], keyIds: [] },
-    bucketForHour: hour => hour.slice(0, 10),
+    bucket: { origin: '2026-11-02T00', hours: 24 },
+    hourlyBuckets: [29],
   });
 
-  expect(buckets).toHaveLength(30);
+  expect(buckets).toHaveLength(29 + 24);
   expect(buckets[0]).toMatchObject({
     firstHour: '2026-11-02T00',
     lastHour: '2026-11-02T23',
     axes: { none: [{ requests: 24 * slotsPerHour, cost: String(24 * slotsPerHour * 3) }] },
     dimensionValues: { models: ['long-window-model'] },
+  });
+  expect(buckets.at(-1)).toMatchObject({
+    firstHour: '2026-12-01T23',
+    lastHour: '2026-12-01T23',
+    axes: { none: [{ requests: slotsPerHour, cost: String(slotsPerHour * 3) }] },
   });
   expect(rowsRead).toHaveLength(1);
   const factCount = hours * slotsPerHour * 4;

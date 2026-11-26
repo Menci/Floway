@@ -902,7 +902,7 @@ const telemetryOverviewQuery = {
 
 export const tokenUsageOverviewQuery = z.object({
   ...telemetryOverviewQuery,
-  format: z.literal('buckets'),
+  format: z.literal('fixed-buckets'),
   // Token Usage overview exposes unattributed hard-deleted-key records through
   // the synthetic user bucket.
   filter_user_id: filterValues(filterTokenUsageOverviewUserId),
