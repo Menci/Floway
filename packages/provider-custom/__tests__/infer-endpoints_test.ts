@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
+import { projectCustomDiscoveredModels } from '../src/index.ts';
 import { inferEndpointsFromModelId } from '../src/infer-endpoints.ts';
-import { projectCustomDiscoveredModels } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -49,6 +49,7 @@ test('Custom dashboard projection shares endpoint inference and preserves unrout
       { id: 'speech', kind: 'transcription' },
       { id: 'ranker', kind: 'rerank' },
       { id: 'embedding', kind: 'embedding', chat: { image_detail_original: true } },
+      { id: 'voice', kind: 'speech' },
     ],
   });
   assertEquals(models.map(model => ({ id: model.upstreamModelId, kind: model.kind, endpoints: model.endpoints })), [
@@ -56,6 +57,7 @@ test('Custom dashboard projection shares endpoint inference and preserves unrout
     { id: 'speech', kind: 'transcription', endpoints: OPENAI_AUDIO },
     { id: 'ranker', kind: 'rerank', endpoints: { rerank: {} } },
     { id: 'embedding', kind: 'embedding', endpoints: { openaiEmbeddings: {} } },
+    { id: 'voice', kind: 'speech', endpoints: { openaiAudioSpeech: {} } },
   ]);
   assertEquals(models[0].opaqueBlobCompatibilityScope, { bindToUpstream: false, key: 'shared-images' });
   assertEquals(models[1].opaqueBlobCompatibilityScope, { bindToUpstream: true });

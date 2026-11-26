@@ -1,12 +1,6 @@
-import { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
-import { createCustomProvider } from './provider.ts';
-import type { ProviderModule } from '@floway-dev/provider';
-
-export const customProviderModule: ProviderModule = {
-  create: createCustomProvider,
-  defaultFlags: CUSTOM_DEFAULT_FLAGS,
-};
-
+export { getCustomModels, projectCustomDiscoveredModels, projectCustomModels } from './catalog.ts';
 export { assertCustomUpstreamRecord, type CustomAuthStyle, type CustomIngressHeaderRule, type CustomModelsFetch, type CustomUpstreamConfig } from './config.ts';
+export { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
 export { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
-export { projectCustomModels, projectCustomDiscoveredModels } from './provider.ts';
+export { customPipelines } from './pipelines/index.ts';
+export { toCustomUpstream, type CustomUpstream } from './upstream.ts';

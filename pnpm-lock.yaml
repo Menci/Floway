@@ -681,6 +681,12 @@ importers:
 
   packages/provider-custom:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols

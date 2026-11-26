@@ -15,9 +15,8 @@
 // follows `nextPageToken` until the catalog is complete.
 
 import type { CustomUpstreamConfig } from './config.ts';
-import { customFetchModels } from './fetch.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, type OpaqueBlobCompatibilityScope, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, opaqueBlobCompatibilityScopeField } from '@floway-dev/provider';
+import { chatField, fetchUpstreamModels, joinBaseAndPath, type Fetcher, type UpstreamChatModelConfig, opaqueBlobCompatibilityScopeField } from '@floway-dev/provider';
 
 export interface CustomRawModel {
   id: string;
@@ -99,7 +98,7 @@ const parsePricing = (value: unknown): ModelPricing | undefined => {
 };
 
 const parseKind = (value: unknown): ModelKind | undefined => {
-  if (value === 'chat' || value === 'embedding' || value === 'image' || value === 'rerank' || value === 'transcription') return value;
+  if (value === 'chat' || value === 'embedding' || value === 'image' || value === 'rerank' || value === 'speech' || value === 'transcription') return value;
   return undefined;
 };
 
@@ -187,11 +186,23 @@ const parseCustomModelsPage = (value: unknown): CustomModelsPage | null => {
 };
 
 export const fetchCustomModels = async (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> => {
+  const { authStyle, endpoint = '/v1/models' } = config.modelsFetch;
+  const headers: [string, string][] = [];
+  if (config.apiKey !== '') {
+    // https://platform.openai.com/docs/api-reference/authentication
+    // https://platform.claude.com/docs/en/api/versioning
+    // https://ai.google.dev/gemini-api/docs/api-key
+    if (authStyle === 'bearer') headers.push(['authorization', `Bearer ${config.apiKey}`]);
+    else headers.push([authStyle, config.apiKey]);
+    if (authStyle === 'x-api-key') headers.push(['anthropic-version', '2023-06-01']);
+  }
+  const baseUrl = joinBaseAndPath(config.baseUrl, endpoint);
   const data: CustomRawModel[] = [];
   let pageToken: string | undefined;
   do {
+    const url = pageToken === undefined ? baseUrl : `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}pageToken=${encodeURIComponent(pageToken)}`;
     const page = await fetchUpstreamModels(
-      () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }, pageToken),
+      () => fetcher(url, { method: 'GET', headers }),
       parseCustomModelsPage,
     );
     data.push(...page.data);

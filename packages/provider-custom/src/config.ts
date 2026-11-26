@@ -29,9 +29,7 @@ import { endpointsField, modelsField, validateUpstreamPath } from '@floway-dev/p
 // (`/models` — owned by modelsFetch.endpoint) are intentionally absent:
 // they derive their URL from a parent override or a separate field. Each
 // key is the default path fragment, so the upstream path is `/v1` + the key
-// unless overridden — the lookup table is the key itself. Kept
-// package-internal because outside callers reach the upstream through
-// the typed `customFetchXxx` transports, not by naming an endpoint key.
+// unless overridden. Each operation resolves its configured path before dialing.
 const CUSTOM_PATH_OVERRIDE_KEYS = [
   '/completions',
   '/chat/completions',
@@ -42,6 +40,7 @@ const CUSTOM_PATH_OVERRIDE_KEYS = [
   '/alpha/search',
   '/images/generations',
   '/images/edits',
+  '/audio/speech',
   '/audio/transcriptions',
 ] as const;
 
