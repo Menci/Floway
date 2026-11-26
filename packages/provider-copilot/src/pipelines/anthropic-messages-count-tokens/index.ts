@@ -16,20 +16,25 @@ import { httpTerminal, parseJsonBody, parseResultResponse } from '@floway-dev/pr
 
 const operation = 'anthropicMessagesCountTokens';
 
-const parse = parseResultResponse(operation, bytes => {
-  const parsed = parseJsonBody(bytes);
-  if (!parsed.ok) return parsed;
-  const body = parsed.value;
-  // Copilot's translated count reports total_tokens on the Anthropic endpoint.
-  // https://github.com/Menci/Floway/blob/844908d7813c92b59e836e5b4cec772a156e53c4/packages/gateway/src/data-plane/chat/gemini-generate-content/attempt.ts#L94-L99
-  if (isJsonObject(body) && !Object.hasOwn(body, 'input_tokens')) {
-    const { total_tokens: total, ...fields } = body;
-    if (typeof total === 'number' && Number.isSafeInteger(total) && total >= 0) {
-      return decodeAnthropicMessagesCountTokensResult({ ...fields, input_tokens: total });
+const parse = parseResultResponse(operation, {
+  needs: [],
+  noContent: null,
+  format: formatAnthropicMessagesError,
+  decode(bytes) {
+    const parsed = parseJsonBody(bytes);
+    if (!parsed.ok) return parsed;
+    const body = parsed.value;
+    // Copilot's translated count reports total_tokens on the Anthropic endpoint.
+    // https://github.com/Menci/Floway/blob/844908d7813c92b59e836e5b4cec772a156e53c4/packages/gateway/src/data-plane/chat/gemini-generate-content/attempt.ts#L94-L99
+    if (isJsonObject(body) && !Object.hasOwn(body, 'input_tokens')) {
+      const { total_tokens: total, ...fields } = body;
+      if (typeof total === 'number' && Number.isSafeInteger(total) && total >= 0) {
+        return decodeAnthropicMessagesCountTokensResult({ ...fields, input_tokens: total });
+      }
     }
-  }
-  return decodeAnthropicMessagesCountTokensResult(body);
-}, formatAnthropicMessagesError);
+    return decodeAnthropicMessagesCountTokensResult(body);
+  },
+});
 
 export const anthropicMessagesCountTokens = copilotOperation<typeof operation>().compose('copilot.anthropicMessagesCountTokens', {
   entry: ['request.http', 'provider.upstream', 'provider.model', 'request.anthropicMessagesCountTokens'],

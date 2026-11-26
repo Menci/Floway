@@ -1171,6 +1171,10 @@ const fakeModel = (overrides?: Parameters<typeof stubProviderModel>[0]) => stubP
   ...overrides,
 });
 
+const countModel = () => fakeModel({
+  providerData: { rawModels: [{ id: 'raw-model', supported_endpoints: ['/v1/messages'] }] },
+});
+
 test.each([
   ['native', { input_tokens: 17, extra: true }, { input_tokens: 17, extra: true }],
   ['translated', { total_tokens: 23, extra: true }, { input_tokens: 23, extra: true }],
@@ -1185,14 +1189,36 @@ test.each([
     expect(new URL(url).pathname).toBe('/v1/messages/count_tokens');
     return { response: Response.json(body, { headers: { 'x-upstream': 'copilot' } }) };
   });
-  const model = fakeModel({
-    providerData: { rawModels: [{ id: 'raw-model', supported_endpoints: ['/v1/messages'] }] },
-  });
-  const result = await copilotHost(copilotUpstream, fetcher, fakeCopilot()).invoke('anthropicMessagesCountTokens', model, { messages: [] });
+  const result = await copilotHost(copilotUpstream, fetcher, fakeCopilot()).invoke('anthropicMessagesCountTokens', countModel(), { messages: [] });
   expect(fetcher).toHaveBeenCalledOnce();
   expect(result.http).toMatchObject({ status: 200, body: null, headers: expect.arrayContaining([['x-upstream', 'copilot']]) });
   if (expected === null) expect(result.outcome).toMatchObject({ kind: 'error', source: 'upstream' });
   else expect(result.outcome).toEqual({ kind: 'result', result: expected });
+});
+
+test.each([
+  [204, null, 'result'],
+  [205, null, 'result'],
+  [200, null, 'error'],
+  [200, '', 'error'],
+  [200, 'null', 'error'],
+  [304, null, 'error'],
+] as const)('maps a Copilot count_tokens HTTP %s with body %j to a %s outcome', async (status, body, kind) => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const fetcher = vi.fn<ProviderFetcher>(async url => {
+    expect(new URL(url).pathname).toBe('/v1/messages/count_tokens');
+    return { response: new Response(body, { status, statusText: 'Copilot', headers: { 'x-upstream': 'copilot' } }) };
+  });
+  const result = await copilotHost(copilotUpstream, fetcher, fakeCopilot()).invoke('anthropicMessagesCountTokens', countModel(), { messages: [] });
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(result.http).toMatchObject({
+    status,
+    statusText: 'Copilot',
+    body: null,
+    headers: expect.arrayContaining([['x-upstream', 'copilot']]),
+  });
+  if (kind === 'result') expect(result.outcome).toEqual({ kind, result: null });
+  else expect(result.outcome).toMatchObject({ kind, source: 'upstream' });
 });
 
 test.each([false, true])('classifies the dial failure with cancelled=%s and retains no HTTP head', async cancelled => {
