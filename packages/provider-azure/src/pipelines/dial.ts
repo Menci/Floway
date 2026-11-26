@@ -63,7 +63,7 @@ const azureDial = <Op extends ProviderOperation>(
         ...facts,
         'request.http': { ...request, method: 'POST', url, headers, body },
       });
-      const answer = { ...response, 'response.usageModelKey': modelId };
+      const answer = error?.kind === 'abort' ? response : { ...response, 'response.usageModelKey': modelId };
       return error === undefined ? answer : { ...answer, [outcome]: httpDialError(error, format) };
     },
   });

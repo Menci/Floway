@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
 import { azurePipelines, projectAzureModels, toAzureUpstream, type AzureUpstream } from '../../src/index.ts';
-import { type Fetcher, type FetchInit, type HttpHeaders, toRequestInit } from '@floway-dev/http';
+import { type Fetcher, type FetchInit, type HttpHeaders, toRequestInit, UpstreamTransportError } from '@floway-dev/http';
 import { run, Secret, type Pipeline, type RunEvent } from '@floway-dev/pipeline';
 import { parseDecisionRequest } from '@floway-dev/protocols/decision';
 import type { OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
@@ -49,8 +49,13 @@ const input = <Op extends ProviderOperation>(
   [`request.${operation}`]: payload,
 }) as ProviderRequestFacts<Op, AzureUpstream>;
 
-const invoke = <I, O>(handle: Pipeline<I, O, ProviderServices>, facts: NoInfer<I>, fetcher: Fetcher, observe?: (event: RunEvent) => void) => {
-  const controller = new AbortController();
+const invoke = <I, O>(
+  handle: Pipeline<I, O, ProviderServices>,
+  facts: NoInfer<I>,
+  fetcher: Fetcher,
+  observe?: (event: RunEvent) => void,
+  controller = new AbortController(),
+) => {
   const running = run(handle, facts, {
     signal: controller.signal,
     waitUntil: () => { throw new Error('Azure should not schedule a detached worker'); },
@@ -299,6 +304,46 @@ test.each([
   } else {
     expect(result['response.decision']).toMatchObject({ kind: 'error', source: 'upstream' });
   }
+  await running.done;
+});
+
+test.each([true, false])('cancelled Embeddings omits usage model identity when pre-aborted=%s', async preAborted => {
+  const started = Promise.withResolvers<void>();
+  const controller = new AbortController();
+  const fetcher = vi.fn<Fetcher>((_url, { signal }) => {
+    if (signal == null) throw new Error('Expected the fetch signal');
+    if (signal.aborted) return Promise.reject(signal.reason);
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => { reject(signal.reason); }, { once: true });
+      started.resolve();
+    });
+  });
+  if (preAborted) controller.abort();
+  using running = invoke(azurePipelines.openaiEmbeddings, input('openaiEmbeddings', { model: 'public-model', input: 'example' }), fetcher, undefined, controller);
+  if (!preAborted) {
+    await started.promise;
+    controller.abort();
+  }
+  expect(await running.result).toEqual({
+    'response.http': null,
+    'response.openaiEmbeddings': {
+      kind: 'error', source: 'local', error: { error: { type: 'server_error', message: 'Upstream request cancelled' } },
+    },
+  });
+  expect(fetcher).toHaveBeenCalledTimes(preAborted ? 0 : 1);
+  await running.done;
+});
+
+test('Embeddings retains its deployment identity after a pre-header transport failure', async () => {
+  const fetcher: Fetcher = () => Promise.reject(new UpstreamTransportError(new Error('connection reset')));
+  using running = invoke(azurePipelines.openaiEmbeddings, input('openaiEmbeddings', { model: 'public-model', input: 'example' }), fetcher);
+  expect(await running.result).toEqual({
+    'response.http': null,
+    'response.usageModelKey': 'private-deployment',
+    'response.openaiEmbeddings': {
+      kind: 'error', source: 'upstream', error: { error: { type: 'server_error', message: 'connection reset' } },
+    },
+  });
   await running.done;
 });
 
