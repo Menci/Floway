@@ -39,7 +39,7 @@ const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsRequest
 let repo: InMemoryRepo;
 
 const defaultCandidates = vi.hoisted(() => () => [{
-  provider: {
+  upstream: {
     upstreamId: 'u',
     kind: 'custom',
     name: 'mock-image',

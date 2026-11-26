@@ -146,7 +146,7 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
       applySqlJsFile(db, filename);
     }
 
-    db.run(`INSERT INTO upstreams (id, kind, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json)
+    db.run(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json)
             VALUES
               ('up_clean', 'custom', 'Clean', 1, 0, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z',
                 json_object('baseUrl', 'https://a.example', 'apiKey', 'k', 'authStyle', 'bearer'), '{}', '[]', '[]'),
@@ -336,7 +336,7 @@ test('model pricing migrations materialize legacy semantics as base-unit metric 
         ],
       });
       db.run(
-        `INSERT INTO upstreams (id, kind, name, created_at, updated_at, config_json)
+        `INSERT INTO upstreams (id, provider, name, created_at, updated_at, config_json)
          VALUES ('up_pricing', 'custom', 'Pricing migration', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z', ${sqlString(configJson)})`,
       );
     }
