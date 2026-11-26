@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { decodeDump, DeferredReference, diffRequestFacts, RawNumber, SecretDescription, StreamReference, type DumpFacts } from '../src/browser.ts';
-import { createDumpEncoder } from '../src/index.ts';
+import { createDumpEncoder } from '../src/encoder.ts';
 import { Secret, type RunEvent } from '@floway-dev/pipeline';
 
 const archiveBody = (text: string): ReadableStream<Uint8Array> => {
