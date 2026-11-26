@@ -3,7 +3,7 @@ import { expect, test, vi } from 'vitest';
 import { kimiCodePipelines, toKimiCodeUpstream, type KimiCodeService, type KimiCodeServices } from '../../src/index.ts';
 import { config, record } from '../fixtures.ts';
 import { UpstreamTransportError, type ProviderFetcher } from '@floway-dev/http';
-import { run, type Pipeline } from '@floway-dev/pipeline';
+import { run, type Pipeline, type RunEvent } from '@floway-dev/pipeline';
 import { toProviderModelFact } from '@floway-dev/provider';
 import { stubProviderModel } from '@floway-dev/test-utils';
 
@@ -27,13 +27,16 @@ const entry = {
 const host = (fetch: ProviderFetcher, refreshProbes: KimiCodeService['refreshProbes'] = async () => {}) => {
   const pending: Promise<unknown>[] = [];
   const abort = new AbortController();
+  const events: RunEvent[] = [];
   return {
     pending,
     abort,
+    events,
     options: {
       signal: abort.signal,
       waitUntil: (work: Promise<unknown>) => { pending.push(work); },
       services: { fetcher: () => fetch, kimiCode: { refreshProbes } },
+      events: (event: RunEvent) => { events.push(event); },
     },
   };
 };
@@ -157,11 +160,11 @@ test('rejects unsupported Anthropic fast mode locally with HTTP 400', async () =
   });
 });
 
-test('preserves quota response details and completes the request before detached refresh settles', async () => {
+test('preserves the quota response and logs a later detached refresh rejection on its stage', async () => {
   const refresh = Promise.withResolvers<void>();
   const probes = vi.fn<KimiCodeService['refreshProbes']>(() => refresh.promise);
   const error = { error: { type: 'quota_exhausted', message: 'Weekly quota consumed' } };
-  const { options, pending, abort } = host(async () => ({
+  const { options, pending, abort, events } = host(async () => ({
     response: Response.json(error, { status: 429, headers: { 'retry-after': '5' } }),
   }), probes);
   const running = run(kimiCodePipelines.openaiResponses, {
@@ -177,6 +180,16 @@ test('preserves quota response details and completes the request before detached
     await running.done;
     expect(pending).toHaveLength(1);
     expect(probes).toHaveBeenCalledExactlyOnceWith(upstream.id, 4, expect.any(Function), true, expect.any(Function));
+    const refreshStageIds = events.flatMap(event => event.type === 'stage.entered' && event.name === 'kimi-code.refresh-probes' ? [event.stageId] : []);
+    expect(refreshStageIds).toHaveLength(1);
+    expect(events.some(event => event.type === 'log')).toBe(false);
+
+    abort.abort();
+    refresh.reject(new Error('quota endpoint unavailable'));
+    await Promise.all(pending);
+    const logs = events.filter(event => event.type === 'log');
+    expect(logs).toEqual([expect.objectContaining({ stageId: refreshStageIds[0] })]);
+    expect(JSON.stringify(logs[0])).toContain('quota endpoint unavailable');
   } finally {
     abort.abort();
     refresh.resolve();
