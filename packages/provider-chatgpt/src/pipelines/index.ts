@@ -13,8 +13,8 @@ import { stripOpenAIResponsesCompactUnsupportedFields, stripOpenAIResponsesUnsup
 import { normalizeDeepSeek } from './openai-responses/vendor-deepseek-normalize.ts';
 import { normalizeQwen } from './openai-responses/vendor-qwen-normalize.ts';
 import { chatgptJsonRequest, chatgptRequest, stringField, trimHeader } from './requests.ts';
-import { getHeader, type HttpHeaders } from '@floway-dev/http';
-import { isEventStreamMediaType, isJsonObject } from '@floway-dev/protocols/common';
+import type { HttpHeaders } from '@floway-dev/http';
+import { isJsonObject } from '@floway-dev/protocols/common';
 import { decodeOpenAIImagesEditsStream, decodeOpenAIImagesGenerationsStream } from '@floway-dev/protocols/openai-images';
 import { decodeOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx } from '@floway-dev/protocols/openai-responses';
 import { httpTerminal, parseHttpResponse, parseJsonBody, parseResultResponse, parseSseResponse, serializeOpenAIImagesEditsJsonBody, stripHeaders, type FormatProtocolError, type ProviderPipelines } from '@floway-dev/provider';
@@ -49,11 +49,6 @@ const parseCompact = (bytes: Uint8Array) => {
   return typeof id === 'string' && typeof object === 'string' && Array.isArray(output)
     ? { ok: true, value: parsed.value as unknown as OpenAIResponsesCompactionResultEx } as const
     : { ok: false, error: new TypeError('Expected a ChatGPT compaction response with id, object and output') } as const;
-};
-
-const imageResponseMode = (_payload: unknown, { headers }: { headers: HttpHeaders }) => {
-  const type = getHeader(headers, 'content-type');
-  return typeof type === 'string' && isEventStreamMediaType(type) ? 'stream' : 'result';
 };
 
 const imageHeaders = (headers: HttpHeaders): HttpHeaders => [
@@ -118,7 +113,12 @@ export const chatgptPipelines = Object.freeze({
     exit: ['response.http', 'response.openaiImagesGenerations'],
     stages: [
       stripHeaders('chatgpt.openaiImagesGenerations.strip-headers', keepImageHeader),
-      parseHttpResponse('openaiImagesGenerations', { select: imageResponseMode, stream: decodeOpenAIImagesGenerationsStream, result: parseObject, format: formatError }),
+      parseHttpResponse('openaiImagesGenerations', {
+        select: payload => payload.stream === true ? 'stream' : 'result',
+        stream: decodeOpenAIImagesGenerationsStream,
+        result: parseObject,
+        format: formatError,
+      }),
       dialOpenAIImagesGenerations(facts => {
         const { headers } = facts['request.http'];
         return chatgptJsonRequest(CHATGPT_OPENAI_IMAGES_GENERATIONS_PATH, 'application/json', imageHeaders(headers), {
@@ -133,7 +133,12 @@ export const chatgptPipelines = Object.freeze({
     exit: ['response.http', 'response.openaiImagesEdits'],
     stages: [
       stripHeaders('chatgpt.openaiImagesEdits.strip-headers', keepImageHeader),
-      parseHttpResponse('openaiImagesEdits', { select: imageResponseMode, stream: decodeOpenAIImagesEditsStream, result: parseObject, format: formatError }),
+      parseHttpResponse('openaiImagesEdits', {
+        select: payload => payload.parameters.stream === true || payload.parameters.stream === 'true' ? 'stream' : 'result',
+        stream: decodeOpenAIImagesEditsStream,
+        result: parseObject,
+        format: formatError,
+      }),
       dialOpenAIImagesEdits(async facts => {
         const { headers } = facts['request.http'];
         const { body, contentType } = await serializeOpenAIImagesEditsJsonBody(facts['request.openaiImagesEdits'], facts['provider.model'].id);

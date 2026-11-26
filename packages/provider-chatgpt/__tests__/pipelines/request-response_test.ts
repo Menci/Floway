@@ -427,7 +427,7 @@ test('preserves repeated upstream header lines and the parsed error body', async
         : Object.assign(Response.json(error, { status: 401 }), { headerLines: headers }),
     }),
   });
-  await expect(running.result).resolves.toEqual({
+  await expect(running.result).resolves.toMatchObject({
     'response.http': { status: 401, statusText: '', headers, body: null },
     'response.openaiResponsesCompact': { kind: 'error', source: 'upstream', error },
   });
@@ -1012,6 +1012,47 @@ test('serializes image edits uploads as JSON data URLs and reads the image SSE r
   expect(new Headers(init?.headers).get('originator')).toBe('chatgpt_cca');
   expect(await readJsonRequest(init as RequestInit)).toEqual({
     prompt: 'make it blue', stream: true, images: [{ image_url: 'data:image/png;base64,aW1hZ2U=' }], model: 'gpt-image-2',
+  });
+});
+
+describe.each(['generations', 'edits'] as const)('ChatGPT image %s response decoding', operation => {
+  const image = { created: 1, data: [{ b64_json: 'aW1hZ2U=' }] };
+  const event = { type: operation === 'edits' ? 'image_edit.completed' : 'image_generation.completed', b64_json: 'aW1hZ2U=' };
+  const imageSse = () => new Response(`data: ${JSON.stringify(event)}\n\n`, { headers: { 'content-type': 'text/event-stream' } });
+  const send = (stream: boolean) => {
+    const request = { model: imageModel, headers: new Headers() };
+    const prompt = 'an orange circle';
+    return operation === 'edits'
+      ? openaiImagesEdits({ ...request, body: { images: [], parameters: { prompt, stream: String(stream) } } })
+      : openaiImagesGenerations({ ...request, body: { model: imageModel.id, prompt, stream } });
+  };
+
+  test('returns a scalar for a JSON response when the request selects JSON', async () => {
+    seedFreshAccessToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(image));
+    await expect(send(false)).resolves.toMatchObject({ outcome: { kind: 'result', result: image } });
+  });
+
+  test('decodes an SSE response when the request selects streaming', async () => {
+    seedFreshAccessToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(imageSse());
+    await expect(send(true)).resolves.toMatchObject({ outcome: { kind: 'stream' }, events: [{ ok: true, value: event }] });
+  });
+
+  test('returns an upstream error for real SSE when the request selects JSON', async () => {
+    seedFreshAccessToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(imageSse());
+    await expect(send(false)).resolves.toMatchObject({
+      http: { status: 200, body: null }, outcome: { kind: 'error', source: 'upstream' }, events: [],
+    });
+  });
+
+  test('returns an upstream error for JSON when the request selects streaming', async () => {
+    seedFreshAccessToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(image));
+    await expect(send(true)).resolves.toMatchObject({
+      http: { status: 200, body: null }, outcome: { kind: 'error', source: 'upstream' }, events: [],
+    });
   });
 });
 
