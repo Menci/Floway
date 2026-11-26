@@ -1,3 +1,4 @@
+import type { Candidate } from '../../../pipeline/facts.ts';
 import {
   type AffinityCodec,
   type AffinityIdentity,
@@ -11,9 +12,8 @@ import {
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
 } from '../../shared/affinity/index.ts';
-import { isOpenAIResponsesCompactShimItem } from '../interceptors/compact-shim.ts';
-import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate } from '@floway-dev/provider';
+import { isOpenAIResponsesCompactShimItem } from '../compaction.ts';
+import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
 interface OpenAIResponsesBlobLocation {
   readonly itemIndex: number;
@@ -135,10 +135,10 @@ const analyzeOpenAIResponsesRequest = (
   return { requiredTargets, items: itemAnalyses };
 };
 
-const materializeOpenAIResponsesPayload = (
-  payload: CanonicalOpenAIResponsesPayload,
+const materializeOpenAIResponsesPayload = <Payload extends { input: CanonicalOpenAIResponsesInputItem[] }>(
+  payload: Payload,
   projectionsByItem: ReadonlyMap<number, readonly OpenAIResponsesBlobCandidateProjection[] | null>,
-): CanonicalOpenAIResponsesPayload => {
+): Payload => {
   if (projectionsByItem.size === 0) return payload;
   const input = payload.input.flatMap((item, itemIndex): CanonicalOpenAIResponsesInputItem[] => {
     const projections = projectionsByItem.get(itemIndex);
@@ -172,10 +172,10 @@ const materializeOpenAIResponsesPayload = (
   return { ...payload, input };
 };
 
-const evaluateOpenAIResponsesCandidate = (
-  payload: CanonicalOpenAIResponsesPayload,
+const evaluateOpenAIResponsesCandidate = <Payload extends { input: CanonicalOpenAIResponsesInputItem[] }>(
+  payload: Payload,
   analysis: OpenAIResponsesRequestAnalysis,
-  candidate: ModelCandidate,
+  candidate: Candidate,
 ) => {
   const unsatisfiedTargets: AffinityIdentity[] = [];
   const projectionsByItem = new Map<number, readonly OpenAIResponsesBlobCandidateProjection[] | null>();
@@ -216,7 +216,7 @@ const evaluateOpenAIResponsesCandidate = (
       if (item.inheritedRequiredTarget !== undefined) {
         const target = item.inheritedRequiredTarget;
         if (
-          candidate.provider.upstreamId !== target.upstreamId
+          candidate.upstream.id !== target.upstreamId
           || candidate.model.id !== target.modelId
         ) return false;
       }
@@ -226,10 +226,10 @@ const evaluateOpenAIResponsesCandidate = (
   };
 };
 
-export const analyzeOpenAIResponsesAffinity = async (
-  payload: CanonicalOpenAIResponsesPayload,
+export const analyzeOpenAIResponsesAffinity = async <Payload extends { input: CanonicalOpenAIResponsesInputItem[] }>(
+  payload: Payload,
   codec: AffinityCodec,
-): Promise<AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>> => {
+): Promise<AffinityRequestAnalysis<Payload>> => {
   const locations = await opaqueBlobLocations(payload.input, codec);
   const analysis = analyzeOpenAIResponsesRequest(payload.input, locations);
   return defineAffinityRequest(

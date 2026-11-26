@@ -3,7 +3,6 @@ import { expect, test } from 'vitest';
 import { serializeAnthropicMessagesStream, serializeOpenAIResponsesStream, shouldSerializeStreamItems } from '../../../../../src/data-plane/chat/shared/stream-compatibility/index.ts';
 import type { Result } from '@floway-dev/pipeline';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { FlagId, ProtocolStreamError } from '@floway-dev/provider';
 
@@ -86,12 +85,28 @@ test('an active block cannot buffer arbitrarily many later frames', async () => 
   await expect(collect(serializeAnthropicMessagesStream(source, true))).rejects.toThrow(/buffered frames/);
 });
 
+type ResponsesItem = Result<OpenAIResponsesStreamEventEx, ProtocolStreamError>;
+const responseItem = (type: string, output_index: number, sequence_number: number): ResponsesItem => ({
+  ok: true, value: { type, output_index, sequence_number } as OpenAIResponsesStreamEventEx,
+});
+
 test('Responses reorder whole item lifecycles and restamp sequence numbers in delivery order', async () => {
-  const event = (type: string, output_index: number, sequence_number: number) => eventFrame({ type, output_index, sequence_number } as OpenAIResponsesStreamEventEx);
-  const source = [event('response.output_item.added', 0, 0), event('response.output_item.added', 1, 1), event('response.output_text.delta', 1, 2), event('response.function_call_arguments.delta', 0, 3), event('response.output_item.done', 0, 4), event('response.output_item.done', 1, 5), doneFrame()];
+  const source = [
+    responseItem('response.output_item.added', 0, 0), responseItem('response.output_item.added', 1, 1),
+    responseItem('response.output_text.delta', 1, 2), responseItem('response.function_call_arguments.delta', 0, 3),
+    responseItem('response.output_item.done', 0, 4), responseItem('response.output_item.done', 1, 5),
+  ];
   const output = await collect(serializeOpenAIResponsesStream(frames(source), true));
-  expect(output.filter(frame => frame.type === 'event').map(frame => frame.event.type)).toEqual(['response.output_item.added', 'response.function_call_arguments.delta', 'response.output_item.done', 'response.output_item.added', 'response.output_text.delta', 'response.output_item.done']);
-  expect(output.filter(frame => frame.type === 'event').map(frame => frame.event.sequence_number)).toEqual([0, 1, 2, 3, 4, 5]);
-  expect(output.at(-1)).toEqual(doneFrame());
-  expect(source[1]).toEqual(event('response.output_item.added', 1, 1));
+  expect(output.filter(frame => frame.ok).map(frame => frame.value.type)).toEqual(['response.output_item.added', 'response.function_call_arguments.delta', 'response.output_item.done', 'response.output_item.added', 'response.output_text.delta', 'response.output_item.done']);
+  expect(output.filter(frame => frame.ok).map(frame => frame.value.sequence_number)).toEqual([0, 1, 2, 3, 4, 5]);
+  expect(source[1]).toEqual(responseItem('response.output_item.added', 1, 1));
+});
+
+test('Responses serialization forwards an ordinary transport failure while another item is buffered', async () => {
+  const first = responseItem('response.output_item.added', 0, 0);
+  const other = responseItem('response.output_item.added', 1, 1);
+  const error: ResponsesItem = { ok: false, error: { kind: 'transport', cause: new Error('upstream disconnected') } };
+  const output = await collect(serializeOpenAIResponsesStream(frames([first, other, error]), true));
+  expect(output).toEqual([first, error]);
+  expect(output.at(-1)).toBe(error);
 });

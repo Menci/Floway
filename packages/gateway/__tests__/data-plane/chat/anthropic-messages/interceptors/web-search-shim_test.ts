@@ -519,7 +519,7 @@ const runStreamingShim = (
     ),
   );
 
-const runHostedSearch = async (provider: ConfiguredWebSearchProvider) => {
+const runHostedSearch = async (provider: ConfiguredWebSearchProvider, controller = new AbortController()) => {
   initRepo(new InMemoryRepo());
   const stageRequests: AnthropicMessagesPayload[] = [];
   const stages: Array<Extract<RunEvent, { type: 'stage.entered' }>> = [];
@@ -556,20 +556,21 @@ const runHostedSearch = async (provider: ConfiguredWebSearchProvider) => {
     },
   }, {
     services: { localWebSearch } as GatewayServices,
-    signal: new AbortController().signal,
+    signal: controller.signal,
     waitUntil: () => {},
     events: event => { if (event.type === 'stage.entered') stages.push(event); },
   });
   const response = await running.result;
   const outcome = response['response.anthropicMessages'];
-  const events = outcome.kind === 'stream' ? await collectStreamEvents(running.read(outcome.stream)) : [];
+  const items = outcome.kind === 'stream' ? await collect(running.read(outcome.stream)) : [];
+  const events = items.filter(item => item.ok).map(item => item.value);
   await running.done;
-  return { response, outcome, events, stageRequests, stages };
+  return { response, outcome, items, events, stageRequests, stages };
 };
 
 test('hosted search runs one independent provider query and preserves native result metadata', async () => {
   const queries: Array<Parameters<WebSearchProvider['search']>[0]> = [];
-  const { response, events, stageRequests, stages } = await runHostedSearch({
+  const { response, events, items, stageRequests, stages } = await runHostedSearch({
     type: 'enabled',
     provider: 'tavily',
     impl: searchOnlyProvider(async request => {
@@ -578,6 +579,7 @@ test('hosted search runs one independent provider query and preserves native res
     }),
   });
   expect(response['response.http']?.status).toBe(200);
+  expect(items.every(item => item.ok)).toBe(true);
   expect(queries).toHaveLength(1);
   expect(queries[0]).toMatchObject({ query: 'query', allowedDomains: ['example.com'] });
   expect(queries[0].signal).toBeInstanceOf(AbortSignal);
@@ -593,6 +595,28 @@ test('hosted search runs one independent provider query and preserves native res
     }),
   }));
   expect(events).toContainEqual(expect.objectContaining({ type: 'message_delta', delta: expect.objectContaining({ stop_reason: 'pause_turn' }) }));
+});
+
+test('hosted Anthropic search forwards a confirmed child cancellation as a stream outcome', async () => {
+  const controller = new AbortController();
+  const started = Promise.withResolvers<void>();
+  const reason = new Error('cancel hosted Anthropic search');
+  const pending = runHostedSearch({
+    type: 'enabled',
+    provider: 'tavily',
+    impl: searchOnlyProvider(async ({ signal }) => {
+      if (signal === undefined) throw new TypeError('Expected the search operation signal');
+      started.resolve();
+      return await new Promise((_, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('backend aborted', { cause: signal.reason })), { once: true });
+      });
+    }),
+  }, controller);
+  await started.promise;
+  controller.abort(reason);
+  const { items, events } = await pending;
+  expect(items.at(-1)).toEqual({ ok: false, error: { kind: 'abort', cause: reason } });
+  expect(events).not.toContainEqual(expect.objectContaining({ type: 'message_stop' }));
 });
 
 test('a configured-disabled local search answers without entering generation', async () => {

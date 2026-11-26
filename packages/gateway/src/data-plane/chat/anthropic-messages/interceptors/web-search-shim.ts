@@ -68,7 +68,7 @@ interface ReplayAwareAnthropicMessagesWebSearchShimState {
   requestSearchResultOwnership: SearchResultOwnership[];
 }
 
-type Search = (request: WebSearchProviderRequest) => Promise<WebSearchProviderResult>;
+type Search = (request: WebSearchProviderRequest) => Promise<WebSearchProviderResult | { kind: 'abort'; cause: unknown }>;
 type StreamItem = Result<AnthropicMessagesStreamEventEx, ProtocolStreamError>;
 type WebSearchPayload = Pick<AnthropicMessagesPayload, 'messages' | 'tools'>;
 
@@ -681,8 +681,14 @@ const runWebSearchStopHandler = async function* (
       blockedDomains: state.blockedDomains,
       userLocation: state.userLocation,
     });
+    if ('kind' in result) return result;
     return buildNativeWebSearchResultBlockFromProviderResult(result, block.upstreamToolUseId);
   })();
+
+  if ('kind' in resultBlock) {
+    yield { ok: false, error: resultBlock };
+    return;
+  }
 
   yield eventFrame({
     type: 'content_block_start',
@@ -924,10 +930,14 @@ export const anthropicMessagesWebSearch = defineStage({
           'request.auth.apiKeyId': facts['request.auth.apiKeyId'],
           'request.webSearch': { kind: 'provider', query },
         });
-        const result = (await call)['response.webSearch'];
-        producer.abort(call);
-        if (result.kind !== 'provider') throw new Error('Expected a local provider search result');
-        return result.result;
+        try {
+          const result = (await call)['response.webSearch'];
+          if (result.kind === 'abort') return result;
+          if (result.kind !== 'provider') throw new Error('Expected a local provider search result');
+          return result.result;
+        } finally {
+          producer.abort(call);
+        }
       };
       const cursor = producer.read(inner);
       let held = true;

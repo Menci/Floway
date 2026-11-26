@@ -1,5 +1,7 @@
+import { openAIResponsesFailureEvents } from './stream-error.ts';
+import { chatTokenUsage } from '../shared/usage.ts';
 import { billableServiceTier, splitInclusiveInputTokens, type BillableUsage } from '@floway-dev/protocols/common';
-import { openaiResponsesResultFromStreamEvent, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesTerminalEvent, openaiResponsesResultFromStreamEvent, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 // service_tier reports the tier actually served and therefore selects the
 // matching pricing entry rather than the tier originally requested.
@@ -33,3 +35,9 @@ export const billableUsageFromOpenAIResponsesEvent = (event: OpenAIResponsesStre
   const response = openaiResponsesResultFromStreamEvent(event);
   return response === null ? null : billableUsageFromOpenAIResponsesResult(response);
 };
+
+export const openAIResponsesUsage = chatTokenUsage(
+  () => billableUsageFromOpenAIResponsesEvent,
+  isOpenAIResponsesTerminalEvent,
+  error => openAIResponsesFailureEvents(error).failed,
+);

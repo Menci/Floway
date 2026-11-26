@@ -201,12 +201,24 @@ export const completeResponseResource = (
   };
 };
 
-// The client-facing egress stage: every resource-bearing event carries the
-// complete resource, so a streamed response validates frame by frame and the
-// non-streaming body — which is the terminal frame's resource verbatim —
-// validates too. The narrowed yield type propagates the guarantee, so a stage
-// inserted between this one and a client-facing exit must preserve it or fail
-// to compile.
+export const completeOpenAIResponsesEvent = (
+  event: OpenAIResponsesStreamEventEx,
+  sources: ResponseResourceSources,
+): ClientOpenAIResponsesStreamEvent => {
+  switch (event.type) {
+  case 'response.queued':
+  case 'response.created':
+  case 'response.in_progress':
+    return { ...event, response: completeResponseResource(event.response, sources, false) };
+  case 'response.completed':
+  case 'response.incomplete':
+  case 'response.failed':
+    return { ...event, response: completeResponseResource(event.response, sources, true) };
+  default:
+    return event;
+  }
+};
+
 export const wrapResponseResourceCompletion = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   sources: ResponseResourceSources,
@@ -216,20 +228,6 @@ export const wrapResponseResourceCompletion = async function* (
       yield frame;
       continue;
     }
-    const event = frame.event;
-    switch (event.type) {
-    case 'response.queued':
-    case 'response.created':
-    case 'response.in_progress':
-      yield eventFrame({ ...event, response: completeResponseResource(event.response, sources, false) });
-      continue;
-    case 'response.completed':
-    case 'response.incomplete':
-    case 'response.failed':
-      yield eventFrame({ ...event, response: completeResponseResource(event.response, sources, true) });
-      continue;
-    default:
-      yield eventFrame(event);
-    }
+    yield eventFrame(completeOpenAIResponsesEvent(frame.event, sources));
   }
 };

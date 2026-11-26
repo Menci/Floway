@@ -10,7 +10,6 @@ import { runWebSearchAndRecordUsage } from './search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from './types.ts';
 import { truncatePreservingCodePoints } from '../../shared/text.ts';
 import type { OpenAIResponsesWebSearchAction, OpenAIResponsesWebSearchTextResult } from '@floway-dev/protocols/openai-responses';
-import { isAbortError } from '@floway-dev/provider';
 
 // Search-context-size → result-count mapping. Approximates the ~40 results
 // native hosted web_search returns regardless of search_context_size;
@@ -622,58 +621,52 @@ const runOneSearchQuery = async (
   session: WebSearchExecutionSession,
   active: { provider: WebSearchProvider; providerName: WebSearchProviderName },
 ): Promise<SearchQueryOutcome> => {
-  try {
-    const allowedDomains = intersectAllowedDomains(session.filters.allowedDomains, op.domains);
-    // Every provider treats an empty allow-list as "no filter". An empty
-    // intersection therefore has to short-circuit: letting it through would
-    // discard both the caller's query-level domains and the operator policy.
-    // The upstream answers an unsatisfiable domain filter with a normal empty
-    // result set, so mirror that rather than inventing an error string.
-    if (allowedDomains?.length === 0) {
-      return { results: [] };
-    }
-    const searchRequest = {
-      query: op.query,
-      maxResults: session.responseLength !== undefined
-        ? maxResultsForResponseLength(session.responseLength)
-        : session.filters.maxResults,
-      allowedDomains,
-      blockedDomains: session.filters.blockedDomains,
-      userLocation: session.filters.userLocation,
-      ...(op.recencyDays !== undefined ? { recencyDays: op.recencyDays } : {}),
-      ...(session.signal !== undefined ? { signal: session.signal } : {}),
-    };
-    const result = await runWebSearchAndRecordUsage({
-      provider: active.provider,
-      providerName: active.providerName,
-      keyId: session.apiKeyId,
-      request: searchRequest,
-    });
+  const allowedDomains = intersectAllowedDomains(session.filters.allowedDomains, op.domains);
+  // Every provider treats an empty allow-list as "no filter". An empty
+  // intersection therefore has to short-circuit: letting it through would
+  // discard both the caller's query-level domains and the operator policy.
+  // The upstream answers an unsatisfiable domain filter with a normal empty
+  // result set, so mirror that rather than inventing an error string.
+  if (allowedDomains?.length === 0) {
+    return { results: [] };
+  }
+  const searchRequest = {
+    query: op.query,
+    maxResults: session.responseLength !== undefined
+      ? maxResultsForResponseLength(session.responseLength)
+      : session.filters.maxResults,
+    allowedDomains,
+    blockedDomains: session.filters.blockedDomains,
+    userLocation: session.filters.userLocation,
+    ...(op.recencyDays !== undefined ? { recencyDays: op.recencyDays } : {}),
+    ...(session.signal !== undefined ? { signal: session.signal } : {}),
+  };
+  const result = await runWebSearchAndRecordUsage({
+    provider: active.provider,
+    providerName: active.providerName,
+    keyId: session.apiKeyId,
+    request: searchRequest,
+  });
 
-    if (result.type === 'error') {
-      const msg = result.message ?? result.errorCode;
-      return { results: [errorSnippet('Search error', searchFailedText(msg))] };
-    }
-
-    const results: OpenAIResponsesWebSearchTextResult[] = result.results.map(r => ({
-      type: 'text_result' as const,
-      url: r.source,
-      title: r.title,
-      snippet: truncateString(r.content.map(c => c.text).join('\n'), MAX_SEARCH_SNIPPET_CHARS),
-    }));
-    // Native gates `action.sources` on `include:
-    // ["web_search_call.action.sources"]`; build the list only when the
-    // caller opted in. The shape mirrors openai-python `ActionSearch.sources[]`
-    // (`{type:'url', url}`).
-    const sources = session.includeSearchActionSources
-      ? result.results.map(r => ({ type: 'url' as const, url: r.source }))
-      : undefined;
-    return sources !== undefined ? { results, sources } : { results };
-  } catch (e) {
-    if (isAbortError(e)) throw e;
-    const msg = e instanceof Error ? e.message : String(e);
+  if (result.type === 'error') {
+    const msg = result.message ?? result.errorCode;
     return { results: [errorSnippet('Search error', searchFailedText(msg))] };
   }
+
+  const results: OpenAIResponsesWebSearchTextResult[] = result.results.map(r => ({
+    type: 'text_result' as const,
+    url: r.source,
+    title: r.title,
+    snippet: truncateString(r.content.map(c => c.text).join('\n'), MAX_SEARCH_SNIPPET_CHARS),
+  }));
+  // Native gates `action.sources` on `include:
+  // ["web_search_call.action.sources"]`; build the list only when the
+  // caller opted in. The shape mirrors openai-python `ActionSearch.sources[]`
+  // (`{type:'url', url}`).
+  const sources = session.includeSearchActionSources
+    ? result.results.map(r => ({ type: 'url' as const, url: r.source }))
+    : undefined;
+  return sources !== undefined ? { results, sources } : { results };
 };
 
 const runBackendSearch = async (
@@ -761,91 +754,82 @@ const runBatchFetch = async (
     }
     return perUrl;
   }
-  try {
-    const fetchRequest = {
-      urls: needFetch,
-      ...(session.signal !== undefined ? { signal: session.signal } : {}),
-    };
-    const result = await fetchPageAndRecordUsage({
-      provider: active.provider,
-      providerName: active.providerName,
-      keyId: session.apiKeyId,
-      request: fetchRequest,
-    });
+  const fetchRequest = {
+    urls: needFetch,
+    ...(session.signal !== undefined ? { signal: session.signal } : {}),
+  };
+  const result = await fetchPageAndRecordUsage({
+    provider: active.provider,
+    providerName: active.providerName,
+    keyId: session.apiKeyId,
+    request: fetchRequest,
+  });
 
-    if (result.type === 'error') {
-      const msg = result.message ?? result.errorCode;
-      for (const url of needFetch) {
-        perUrl.set(url, { ok: false, output: openFailedText(url, msg) });
-      }
-      return perUrl;
-    }
-
-    type ProviderOutcome =
-      | { type: 'failure'; value: typeof result.failures[number] }
-      | { type: 'page'; value: typeof result.pages[number] };
-    const outcomes = new Map<string, ProviderOutcome>();
-    const unmatchedUrls: string[] = [];
-    const claimedFailures = new Set<number>();
-    const claimedPages = new Set<number>();
-
-    for (const url of needFetch) {
-      const failure = claimFetchOutcome(result.failures, claimedFailures, url);
-      if (failure !== undefined) {
-        outcomes.set(url, { type: 'failure', value: failure });
-        continue;
-      }
-      const page = claimFetchOutcome(result.pages, claimedPages, url);
-      if (page !== undefined) {
-        outcomes.set(url, { type: 'page', value: page });
-        continue;
-      }
-      unmatchedUrls.push(url);
-    }
-
-    // A provider may report the post-redirect URL rather than the URL it was
-    // asked to fetch. Pair it only when the remaining request and outcome are
-    // unique; guessing across multiple redirects could attach the wrong page.
-    const remainingFailures = result.failures.filter((_, index) => !claimedFailures.has(index));
-    const remainingPages = result.pages.filter((_, index) => !claimedPages.has(index));
-    if (unmatchedUrls.length === 1 && remainingFailures.length + remainingPages.length === 1) {
-      const url = unmatchedUrls.pop()!;
-      if (remainingFailures.length === 1) outcomes.set(url, { type: 'failure', value: remainingFailures[0] });
-      else outcomes.set(url, { type: 'page', value: remainingPages[0] });
-    }
-
-    for (const url of needFetch) {
-      const outcome = outcomes.get(url);
-      if (outcome?.type === 'failure') {
-        const failure = outcome.value;
-        perUrl.set(url, { ok: false, output: openFailedText(url, failure.message ?? failure.errorCode) });
-        continue;
-      }
-      if (outcome?.type !== 'page') {
-        // URL silently dropped by the provider — surface as explicit error
-        // so the model doesn't see a phantom empty page.
-        perUrl.set(url, { ok: false, output: openFailedText(url, 'No page returned') });
-        continue;
-      }
-      const page = outcome.value;
-      const entry: PageCacheEntry = {
-        content: page.content,
-        truncated: page.truncated,
-        fullContentBytes: page.fullContentBytes,
-        ...(page.title === undefined ? {} : { title: page.title }),
-      };
-      session.pageCache.set(url, entry);
-      perUrl.set(url, { ok: true, cached: entry });
-    }
-    return perUrl;
-  } catch (e) {
-    if (isAbortError(e)) throw e;
-    const msg = e instanceof Error ? e.message : String(e);
+  if (result.type === 'error') {
+    const msg = result.message ?? result.errorCode;
     for (const url of needFetch) {
       perUrl.set(url, { ok: false, output: openFailedText(url, msg) });
     }
     return perUrl;
   }
+
+  type ProviderOutcome =
+    | { type: 'failure'; value: typeof result.failures[number] }
+    | { type: 'page'; value: typeof result.pages[number] };
+  const outcomes = new Map<string, ProviderOutcome>();
+  const unmatchedUrls: string[] = [];
+  const claimedFailures = new Set<number>();
+  const claimedPages = new Set<number>();
+
+  for (const url of needFetch) {
+    const failure = claimFetchOutcome(result.failures, claimedFailures, url);
+    if (failure !== undefined) {
+      outcomes.set(url, { type: 'failure', value: failure });
+      continue;
+    }
+    const page = claimFetchOutcome(result.pages, claimedPages, url);
+    if (page !== undefined) {
+      outcomes.set(url, { type: 'page', value: page });
+      continue;
+    }
+    unmatchedUrls.push(url);
+  }
+
+  // A provider may report the post-redirect URL rather than the URL it was
+  // asked to fetch. Pair it only when the remaining request and outcome are
+  // unique; guessing across multiple redirects could attach the wrong page.
+  const remainingFailures = result.failures.filter((_, index) => !claimedFailures.has(index));
+  const remainingPages = result.pages.filter((_, index) => !claimedPages.has(index));
+  if (unmatchedUrls.length === 1 && remainingFailures.length + remainingPages.length === 1) {
+    const url = unmatchedUrls.pop()!;
+    if (remainingFailures.length === 1) outcomes.set(url, { type: 'failure', value: remainingFailures[0] });
+    else outcomes.set(url, { type: 'page', value: remainingPages[0] });
+  }
+
+  for (const url of needFetch) {
+    const outcome = outcomes.get(url);
+    if (outcome?.type === 'failure') {
+      const failure = outcome.value;
+      perUrl.set(url, { ok: false, output: openFailedText(url, failure.message ?? failure.errorCode) });
+      continue;
+    }
+    if (outcome?.type !== 'page') {
+      // URL silently dropped by the provider — surface as explicit error
+      // so the model doesn't see a phantom empty page.
+      perUrl.set(url, { ok: false, output: openFailedText(url, 'No page returned') });
+      continue;
+    }
+    const page = outcome.value;
+    const entry: PageCacheEntry = {
+      content: page.content,
+      truncated: page.truncated,
+      fullContentBytes: page.fullContentBytes,
+      ...(page.title === undefined ? {} : { title: page.title }),
+    };
+    session.pageCache.set(url, entry);
+    perUrl.set(url, { ok: true, cached: entry });
+  }
+  return perUrl;
 };
 
 // Intra-call batching: collect every URL the open[]/find[] sub-arrays

@@ -1,6 +1,5 @@
 import type { Result } from '@floway-dev/pipeline';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { FlagId, ProtocolStreamError } from '@floway-dev/provider';
 
@@ -99,24 +98,25 @@ export const serializeAnthropicMessagesStream = (frames: AsyncIterable<Anthropic
     }, item => !item.ok, () => ({ ok: false, error: { kind: 'protocol', cause: new Error(incompleteMessage) } }))
   : frames;
 
-export const serializeOpenAIResponsesStream = (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, enabled: boolean): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> => {
+type ResponsesItem = Result<OpenAIResponsesStreamEventEx, ProtocolStreamError>;
+
+export const serializeOpenAIResponsesStream = (frames: AsyncIterable<ResponsesItem>, enabled: boolean): AsyncIterable<ResponsesItem> => {
   if (!enabled) return frames;
-  const ordered = serialize(frames, frame => {
-    if (frame.type === 'done') return undefined;
-    const event = frame.event;
+  const ordered = serialize<ResponsesItem>(frames, item => {
+    if (!item.ok) return undefined;
+    const event = item.value;
     if (!('output_index' in event)) return undefined;
     return { index: event.output_index, kind: event.type === 'response.output_item.added' ? 'start' : event.type === 'response.output_item.done' ? 'end' : 'delta' };
-  }, frame => frame.type === 'event' && (frame.event.type === 'error' || frame.event.type === 'response.failed'), () => {
-    throw new Error(incompleteMessage);
-  });
-  return (async function* () {
+  }, item => !item.ok, () => ({ ok: false, error: { kind: 'protocol', cause: new Error(incompleteMessage) } }));
+  return (async function* (): AsyncGenerator<ResponsesItem> {
     let sequence = 0;
-    for await (const frame of ordered) {
-      if (frame.type === 'done') yield frame;
-      else {
-        yield frame.event.sequence_number === sequence ? frame : eventFrame({ ...frame.event, sequence_number: sequence });
-        sequence++;
+    for await (const item of ordered) {
+      if (!item.ok) {
+        yield item;
+        return;
       }
+      yield item.value.sequence_number === sequence ? item : { ok: true, value: { ...item.value, sequence_number: sequence } };
+      sequence++;
     }
   })();
 };

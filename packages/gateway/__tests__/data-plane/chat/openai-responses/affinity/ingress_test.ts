@@ -1,11 +1,10 @@
 import { expect, test } from 'vitest';
 
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
-import { AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, compatibilityIdentityForCandidate, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
+import { AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, compatibilityIdentityForCandidate, selectAffinityTargets } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import type { Candidate } from '../../../../../src/data-plane/pipeline/facts.ts';
+import { acceptedAffinityEvaluation, stubChatCandidate } from '../../shared/affinity/helpers.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
 
 const codec = new AffinityCodec('22'.repeat(32));
 const canonicalItemType = (itemType: string): string => itemType === 'compaction' || itemType === 'compaction_summary' || itemType === 'context_compaction' ? 'compaction' : itemType;
@@ -15,26 +14,12 @@ const candidate = (
   upstream: string,
   model = 'model',
   scope: { bindToUpstream: boolean; key?: string } = { bindToUpstream: true },
-): ModelCandidate => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    provider: { ...base.provider, upstreamId: upstream },
-    model: {
-      id: model,
-      opaqueBlobCompatibilityScope: scope,
-      providerModels: {
-        [upstream]: stubProviderModel({
-          id: model,
-          upstreamModelId: model,
-          opaqueBlobCompatibilityScope: scope,
-        }),
-      },
-    },
-  });
+): Candidate => {
+  return stubChatCandidate({ upstream: { id: upstream }, model: { id: model, upstreamModelId: model, opaqueBlobCompatibilityScope: scope } });
 };
 
-const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
+const targetFor = (value: Candidate): AffinityIdentity => ({
+  upstreamId: value.upstream.id,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
   opaqueBlobCompatibilityIdentity: compatibilityIdentityForCandidate(value),
@@ -44,11 +29,11 @@ const candidateA = candidate('upstream-a');
 const candidateB = candidate('upstream-b');
 
 const select = (
-  candidates: readonly ModelCandidate[],
+  candidates: readonly Candidate[],
   analysis: AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>,
 ) => {
-  const selection = selectAffinityCandidates(candidates, analysis);
-  if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
+  const selection = selectAffinityTargets(candidates, analysis);
+  if (selection.kind !== 'selected') throw new Error(`Expected affinity selection, received ${selection.kind}`);
   return selection;
 };
 
@@ -79,7 +64,7 @@ test('restores an owned blob within its compatibility scope and still prefers it
   expect(projectionA.degrades).toBe(false);
   expect(projectionB.degrades).toBe(true);
   expect(mismatchedProjection.degrades).toBe(false);
-  expect(select([candidateB, mismatchedRules, compatibleModel, candidateA], prepared).candidates).toEqual([
+  expect(select([candidateB, mismatchedRules, compatibleModel, candidateA], prepared).targets.map(({ candidate }) => candidate)).toEqual([
     candidateA, mismatchedRules, compatibleModel, candidateB,
   ]);
 });
@@ -207,13 +192,13 @@ test('derives force routing from blob-less program state after the turn carrier'
   expect(prepared.requiredTargets).toEqual([targetFor(lastRoutedVariant)]);
   expect(prepared.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
   const selection = select([firstVariant, lastRoutedVariant, candidateB], prepared);
-  expect(selection.candidates).toEqual([
+  expect(selection.targets.map(({ candidate }) => candidate)).toEqual([
     firstVariant,
     lastRoutedVariant,
   ]);
   const firstEvaluation = acceptedAffinityEvaluation(prepared, firstVariant);
   expect(firstEvaluation.degrades).toBe(false);
-  expect(selection.payloadFor(firstVariant).input).toEqual([{
+  expect(selection.targets.find(({ candidate }) => candidate === firstVariant)?.payload.input).toEqual([{
     type: 'program_output',
     id: 'prog_out_client',
     call_id: 'call_1',

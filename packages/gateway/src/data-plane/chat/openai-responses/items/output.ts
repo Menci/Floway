@@ -2,7 +2,12 @@ import { hashOpenAIResponsesItem, openaiResponsesItemId } from './identity.ts';
 import type { OpenAIResponsesStatefulStore } from './store.ts';
 import type { StoredOpenAIResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesCompactionItem, isOpenAIResponsesTerminalEvent, openaiResponsesResultToEvents, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+
+interface OpenAIResponsesOutput {
+  readonly store: OpenAIResponsesStatefulStore;
+  readonly responseId: string;
+}
 
 // Complete output items become reusable at their first done frame, so each row
 // commits before that frame is yielded. Later done frames remain
@@ -14,14 +19,7 @@ import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type Op
 // runtime. The caller mints its envelope id once, and this wrapper applies it
 // to every queued/created/in-progress and terminal response envelope without
 // changing any output item.
-export const wrapOpenAIResponsesClientOutput = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
-  args: {
-    readonly store: OpenAIResponsesStatefulStore;
-    readonly responseId: string;
-  },
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-  const { store, responseId } = args;
+export const openAIResponsesClientEvent = ({ store, responseId }: OpenAIResponsesOutput) => {
   const finalizedOutputIds = new Map<number, string>();
   let sawCompactionItem = false;
 
@@ -56,22 +54,14 @@ export const wrapOpenAIResponsesClientOutput = async function* (
     id: responseId,
   });
 
-  for await (const frame of frames) {
-    if (frame.type !== 'event') {
-      yield frame;
-      continue;
-    }
-    const event = frame.event;
-
+  return async (event: OpenAIResponsesStreamEventEx): Promise<OpenAIResponsesStreamEventEx> => {
     if (event.type === 'response.queued' || event.type === 'response.created' || event.type === 'response.in_progress') {
-      yield eventFrame({ ...event, response: clientEnvelope(event.response) });
-      continue;
+      return { ...event, response: clientEnvelope(event.response) };
     }
 
     if (event.type === 'response.output_item.added') {
       requireMessageId(event.item);
-      yield frame;
-      continue;
+      return event;
     }
 
     if (event.type === 'response.output_item.done') {
@@ -80,8 +70,7 @@ export const wrapOpenAIResponsesClientOutput = async function* (
         if (isOpenAIResponsesCompactionItem(event.item)) sawCompactionItem = true;
         await persistFinalizedItem(event.item, event.output_index);
       }
-      yield frame;
-      continue;
+      return event;
     }
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
@@ -101,15 +90,29 @@ export const wrapOpenAIResponsesClientOutput = async function* (
           .map(([, id]) => id);
         await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append', orderedOutputIds);
       }
-      yield eventFrame({ ...event, response: clientEnvelope(event.response) });
-      return;
+      return { ...event, response: clientEnvelope(event.response) };
     }
 
     if (event.type === 'response.failed') {
-      yield eventFrame({ ...event, response: clientEnvelope(event.response) });
-      return;
+      return { ...event, response: clientEnvelope(event.response) };
     }
-    yield frame;
+    return event;
+  };
+};
+
+export const wrapOpenAIResponsesClientOutput = async function* (
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  args: OpenAIResponsesOutput,
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  const toClient = openAIResponsesClientEvent(args);
+  for await (const frame of frames) {
+    if (frame.type !== 'event') {
+      yield frame;
+      continue;
+    }
+    const event = await toClient(frame.event);
+    yield event === frame.event ? frame : eventFrame(event);
+    if (isOpenAIResponsesTerminalEvent(event)) return;
   }
 };
 

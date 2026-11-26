@@ -3,7 +3,6 @@ import { expect, onTestFinished, test, vi } from 'vitest';
 
 import { app } from '../../../../src/app.ts';
 import { hashOpenAIResponsesItem } from '../../../../src/data-plane/chat/openai-responses/items/identity.ts';
-import { openaiResponsesServe } from '../../../../src/data-plane/chat/openai-responses/serve.ts';
 import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/openai-responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
@@ -11,7 +10,7 @@ import { initBackgroundSchedulerResolver } from '../../../../src/runtime/backgro
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { buildChatGPTUpstreamRecord, chatgptModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseOpenAIResponsesResponse, warmModelsForTest } from '../../../test-utils/app.ts';
+import { buildChatGPTUpstreamRecord, chatgptModels, copilotModels, setupAppTest, sseResponse, sseOpenAIResponsesResponse, warmModelsForTest } from '../../../test-utils/app.ts';
 import { trackBackground } from '../../../test-utils/background-tracker.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -1014,9 +1013,9 @@ test('OpenAI Responses WebSocket evicts a continuation that failed through a str
         },
       }));
       const failedMessages = await failedTurn;
-      assertEquals(failedMessages.map(message => message.type), ['response.created', 'error', 'response.in_progress', 'response.failed']);
+      assertEquals(failedMessages.map(message => message.type), ['response.created', 'error', 'response.failed']);
       assertEquals(failedMessages[1], { ...upstreamError, event_id: 'evt_streamed_failure' });
-      assertEquals(failedMessages.map(message => message.sequence_number), [0, 1, 2, 3]);
+      assertEquals(failedMessages.map(message => message.sequence_number), [0, 1, 2]);
       assert(failedMessages.every(message => message.event_id === 'evt_streamed_failure'));
       assertEquals(failedMessages.at(-1)?.type, 'response.failed');
 
@@ -1087,9 +1086,11 @@ test.each([
         const messages = await received;
         assertEquals(messages.map(message => message.type), announced ? ['response.created', 'error'] : ['error']);
         assertEquals(messages.at(-1), { ...nativeError, event_id: 'evt_standalone' });
-        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+        await vi.waitFor(() => assertEquals(dumps.published.length, 1));
         assertEquals(raw.messages.map(message => JSON.parse(message)), messages);
-        assertEquals(dumps.stored[0]?.record.meta.responseBytes, raw.messages.reduce((total, message) => total + new TextEncoder().encode(message).byteLength, 0));
+        assertEquals(dumps.published[0]?.meta.responseBytes, raw.messages.reduce((total, message) => total + new TextEncoder().encode(message).byteLength, 0));
+        assertEquals(dumps.published[0]?.meta.error, { kind: 'upstream' });
+        assertEquals(dumps.published[0]?.meta.model, 'gpt-direct-responses');
         const nextTurn = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
         if (announced) {
           const created = messages[0] as { response: { id: string } };
@@ -1282,84 +1283,12 @@ test('OpenAI Responses WebSocket holds the session lifetime open until a turn th
       // Sampled at the instant the runtime would be free to drop the isolate,
       // deliberately without flushing background work first: the interrupted
       // turn's dump has to be stored by then, not merely scheduled.
-      assertEquals(dumps.stored.length, 1);
+      assertEquals(dumps.published.length, 1);
+      const completion = dumps.published[0];
+      assertExists(completion);
+      assertExists(await dumps.store.getArchive(completion.keyId, completion.meta.id));
     }),
   );
-});
-
-// The four chat HTTP transports render a mid-attempt throw (interceptor
-// bug, translation error, provider-layer JS exception not represented as a ChatServeFailure) through an
-// `internalErrorResult(..., ctx.attempt.telemetry)` envelope,
-// which internally reaches `recordFailedRequest` and lands an error row
-// attributed to the throwing candidate. The WS transport's outer catch
-// must do the same: alongside its sendError / dump.failed / dump.finalize,
-// it calls `recordFailedRequest(ctx, ctx.attempt.telemetry)` so
-// the failure shows up in performance_summary.
-test('OpenAI Responses WebSocket outer catch records a failed perf sample attributed to the throwing candidate', async () => {
-  const { apiKey, repo } = await setupAppTest();
-
-  // Mirror what openaiResponsesServe.generate would have stamped before failing
-  // — telemetry set for the throwing candidate — then throw.
-  const generateSpy = vi.spyOn(openaiResponsesServe, 'generate').mockImplementation(async ({ ctx }) => {
-    ctx.attempt.telemetry = {
-      keyId: apiKey.id,
-      model: 'gpt-direct-responses',
-      upstream: 'up_throwing',
-      operation: 'chat',
-      runtimeLocation: 'TEST',
-    };
-    const failure = new Error('simulated mid-attempt provider throw'); delete failure.stack; throw failure;
-  });
-
-  try {
-    await withMockedFetch(
-      async request => {
-        const url = new URL(request.url);
-        if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-        if (url.pathname === '/copilot_internal/v2/token') {
-          return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-        }
-        if (url.pathname === '/models') {
-          return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
-        }
-        throw new Error(`Unhandled fetch ${request.url}`);
-      },
-      async () => await withWorkerWebSocketRuntime(async () => {
-        const client = await connectOpenAIResponsesWebSocket(apiKey.key);
-        const received = waitForMessages(client, messages => messages.length === 1);
-        client.send(JSON.stringify({
-          type: 'response.create',
-          event_id: 'evt_throw',
-          response: { model: 'gpt-direct-responses', input: 'hello' },
-        }));
-
-        const [errorMessage] = await received;
-        assertExists(errorMessage);
-        assertEquals(errorMessage.type, 'error');
-        assertEquals(errorMessage.status, 500);
-        assertEquals(errorMessage.event_id, 'evt_throw');
-        assertEquals(errorMessage.error, { type: 'internal_error', code: 'internal_error', message: 'simulated mid-attempt provider throw', provider_specific_fields: { name: 'Error' } });
-      }),
-    );
-
-    await flushAsyncWork();
-
-    // Filter to the throwing upstream: earlier WS tests in the same file
-    // schedule background recordFailedRequest calls through the session
-    // scheduler, and the shared `getRepo()` global resolves them against
-    // whichever repo `setupAppTest` last installed — so cross-test rows can
-    // land here. Only the row from the mocked generate is load-bearing for
-    // this fix.
-    const perfRows = (await repo.performance.listAll()).filter(row => row.upstream === 'up_throwing');
-    assertEquals(perfRows.length, 1);
-    assertEquals(perfRows[0]?.upstream, 'up_throwing');
-    assertEquals(perfRows[0]?.model, 'gpt-direct-responses');
-    assertEquals(perfRows[0]?.operation, 'chat');
-    assertEquals(perfRows[0]?.errorsNoOutput, 1);
-    assertEquals(perfRows[0]?.requests, 1);
-  } finally {
-    generateSpy.mockRestore();
-  }
 });
 
 test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata blob that turn carried', async () => {

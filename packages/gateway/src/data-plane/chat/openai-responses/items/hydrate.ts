@@ -1,7 +1,7 @@
 import { openaiResponsesItemId } from './identity.ts';
 import type { OpenAIResponsesStatefulStore } from './store.ts';
 import { throwChatServeFailure } from '../../shared/errors.ts';
-import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
 const hydrateItem = (item: CanonicalOpenAIResponsesInputItem, store: OpenAIResponsesStatefulStore): CanonicalOpenAIResponsesInputItem => {
   const id = openaiResponsesItemId(item);
@@ -14,7 +14,15 @@ const hydrateItem = (item: CanonicalOpenAIResponsesInputItem, store: OpenAIRespo
   return stored.payload.item as CanonicalOpenAIResponsesInputItem;
 };
 
-export const hydrateOpenAIResponsesPayload = (
-  payload: CanonicalOpenAIResponsesPayload,
+export const hydrateOpenAIResponsesPayload = <Payload extends { input: CanonicalOpenAIResponsesInputItem[] }>(
+  payload: Payload,
   store: OpenAIResponsesStatefulStore,
-): CanonicalOpenAIResponsesPayload => ({ ...payload, input: payload.input.map(item => hydrateItem(item, store)) });
+): Payload => {
+  let changed = false;
+  const input = payload.input.map(item => {
+    const hydrated = hydrateItem(item, store);
+    changed ||= hydrated !== item;
+    return hydrated;
+  });
+  return changed ? { ...payload, input } : payload;
+};
