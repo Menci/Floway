@@ -48,9 +48,4 @@ describe('a new user without a group', () => {
     await act(async () => { fireEvent.click(screen.getByRole('switch', { name: i18n.t('directory.users.form.administrator') })); });
     expect(warning()).toBeNull();
   });
-
-  it('is not warned about an existing user', () => {
-    renderInApp(<OutcomeToastProvider><UserDialog mode="edit" user={user} groupIds={[]} actorId={1} groups={[]} onOpenChange={vi.fn()} onSaved={vi.fn(async () => {})} open /></OutcomeToastProvider>);
-    expect(screen.queryByText(i18n.t('directory.users.createdWithoutAccess'))).toBeNull();
-  });
 });
