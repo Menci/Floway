@@ -5,7 +5,6 @@ import { MODELS_REFRESH_BACKOFF_DELAYS_MS } from './models-refresh-backoff.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { runStatements } from './sql-batch.ts';
 import type {
-  CatalogModelEntry,
   CatalogUpstreamRow,
   DueModelsRefreshCandidate,
   ModelsRefreshFailureInput,
@@ -931,12 +930,12 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
 
   async listCatalog(filter: UpstreamCatalogFilter | null): Promise<{
     readonly upstreams: CatalogUpstreamRow[];
-    readonly models: CatalogModelEntry[];
+    readonly modelsByUpstream: Map<string, ProviderModel[]>;
   }> {
     const include = filter?.include;
     const exclude = filter?.exclude;
     if (include?.length === 0) {
-      return { upstreams: [], models: [] };
+      return { upstreams: [], modelsByUpstream: new Map() };
     }
     const filterClauses: string[] = [];
     const filterBinds: SqlBindValue[] = [];
@@ -995,50 +994,30 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
       upstreams.sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
     }
 
-    // Keep the SQL query free of an ORDER BY temp B-tree while guaranteeing
-    // deterministic `kind` precedence whenever one upstream exposes multiple
-    // kinds under the same `model_id`.
-    const models: CatalogModelEntry[] = [];
-    const firstIndexByUpstream = new Map<string, Map<string, number>>();
-    let collisionGroups: Map<string, number[]> | undefined;
+    // Keep the SQL query free of an ORDER BY temp B-tree; only sort an
+    // upstream's slice by `kind` in the rare case it has duplicate `model.id`s.
+    const modelsByUpstream = new Map<string, ProviderModel[]>();
+    const seenIdsByUpstream = new Map<string, Set<string>>();
+    const upstreamsToSort = new Set<string>();
     for (const row of modelsRes.results) {
-      const entry: CatalogModelEntry = {
-        upstreamId: row.upstream_id,
-        model: decodeUpstreamModel(row.model_json, row.upstream_id),
-      };
-      const index = models.length;
-      models.push(entry);
-      let seen = firstIndexByUpstream.get(row.upstream_id);
-      if (seen === undefined) {
-        seen = new Map();
-        firstIndexByUpstream.set(row.upstream_id, seen);
+      const model = decodeUpstreamModel(row.model_json, row.upstream_id);
+      let list = modelsByUpstream.get(row.upstream_id);
+      let seen = seenIdsByUpstream.get(row.upstream_id);
+      if (list === undefined) {
+        list = [];
+        seen = new Set();
+        modelsByUpstream.set(row.upstream_id, list);
+        seenIdsByUpstream.set(row.upstream_id, seen);
       }
-      const firstIndex = seen.get(entry.model.id);
-      if (firstIndex === undefined) {
-        seen.set(entry.model.id, index);
-      } else {
-        collisionGroups ??= new Map();
-        const collisionKey = `${row.upstream_id}\0${entry.model.id}`;
-        let indices = collisionGroups.get(collisionKey);
-        if (indices === undefined) {
-          indices = [firstIndex];
-          collisionGroups.set(collisionKey, indices);
-        }
-        indices.push(index);
-      }
+      if (seen!.has(model.id)) upstreamsToSort.add(row.upstream_id);
+      else seen!.add(model.id);
+      list.push(model);
     }
-    if (collisionGroups !== undefined) {
-      for (const indices of collisionGroups.values()) {
-        const sorted = indices
-          .map(idx => models[idx]!)
-          .sort((a, b) => (a.model.kind < b.model.kind ? -1 : a.model.kind > b.model.kind ? 1 : 0));
-        for (let i = 0; i < indices.length; i++) {
-          models[indices[i]!] = sorted[i]!;
-        }
-      }
+    for (const upstreamId of upstreamsToSort) {
+      modelsByUpstream.get(upstreamId)!.sort((a, b) => (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0));
     }
 
-    return { upstreams, models };
+    return { upstreams, modelsByUpstream };
   }
 
   async listAddressableIdsForUpstreams(upstreamIds: readonly string[]): Promise<{

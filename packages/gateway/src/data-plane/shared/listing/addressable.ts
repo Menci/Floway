@@ -10,7 +10,6 @@ import type { AccessResolver, ModelUsePlan } from '../../../access-control/resol
 import type { AccessEvaluation } from '../../../access-control/types.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type {
-  CatalogModelEntry,
   CatalogUpstreamRow,
   ModelAliasRecord,
   ResolvedUpstreamModelMatch,
@@ -115,19 +114,9 @@ const catalogFilterForModelUse = (
 
 const assembleAddressableEntries = (
   upstreams: readonly CatalogUpstreamRow[],
-  models: readonly CatalogModelEntry[],
+  modelsByUpstream: ReadonlyMap<string, readonly ProviderModel[]>,
   auth: ModelUseAuthContext | null,
 ): AddressableIdEntry[] => {
-  const modelsByUpstream = new Map<string, ProviderModel[]>();
-  for (const { upstreamId, model } of models) {
-    let list = modelsByUpstream.get(upstreamId);
-    if (list === undefined) {
-      list = [];
-      modelsByUpstream.set(upstreamId, list);
-    }
-    list.push(model);
-  }
-
   const acc = createCatalogAccumulator();
   const listedIds = new Set<string>();
   const requirement = { permission: 'Model.Use' as const };
@@ -215,11 +204,11 @@ export const loadAddressableSurfaces = async (
 }> => {
   const repo = getRepo();
   if (subject.isAdmin && upstreamFilter === null) {
-    const [{ upstreams, models }, aliases] = await Promise.all([
+    const [{ upstreams, modelsByUpstream }, aliases] = await Promise.all([
       repo.upstreamModels.listCatalog(null),
       aliasesPromise,
     ]);
-    const entries = assembleAddressableEntries(upstreams, models, null);
+    const entries = assembleAddressableEntries(upstreams, modelsByUpstream, null);
     return { callerAddressable: entries, gatewayAddressable: entries, aliases };
   }
 
@@ -229,7 +218,7 @@ export const loadAddressableSurfaces = async (
   }
 
   if (subject.isAdmin) {
-    const [{ upstreams, models }, { aliases, resolvedAliasTargets }] = await Promise.all([
+    const [{ upstreams, modelsByUpstream }, { aliases, resolvedAliasTargets }] = await Promise.all([
       repo.upstreamModels.listCatalog({
         include: upstreamFilter!,
         preserveIncludeOrder: true,
@@ -243,7 +232,7 @@ export const loadAddressableSurfaces = async (
       }),
     ]);
     return {
-      callerAddressable: assembleAddressableEntries(upstreams, models, null),
+      callerAddressable: assembleAddressableEntries(upstreams, modelsByUpstream, null),
       gatewayAddressable: assembleResolvedMatches(resolvedAliasTargets),
       aliases,
     };
@@ -261,7 +250,7 @@ export const loadAddressableSurfaces = async (
   }
 
   const aliasTargetIds = collectVisibleAliasTargetIds(aliases);
-  const [{ upstreams, models }, resolvedAliasTargets] = await Promise.all([
+  const [{ upstreams, modelsByUpstream }, resolvedAliasTargets] = await Promise.all([
     repo.upstreamModels.listCatalog(filter),
     aliasTargetIds.length > 0
       ? repo.upstreamModels.resolve({ modelIds: aliasTargetIds, upstreamIds: null })
@@ -269,7 +258,7 @@ export const loadAddressableSurfaces = async (
   ]);
 
   return {
-    callerAddressable: assembleAddressableEntries(upstreams, models, { resolver, plan, evaluation }),
+    callerAddressable: assembleAddressableEntries(upstreams, modelsByUpstream, { resolver, plan, evaluation }),
     gatewayAddressable: assembleResolvedMatches(resolvedAliasTargets),
     aliases,
   };

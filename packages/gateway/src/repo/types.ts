@@ -562,11 +562,6 @@ export interface CatalogUpstreamRow {
   readonly modelPrefix: ModelPrefixConfig | null;
 }
 
-export interface CatalogModelEntry {
-  readonly upstreamId: string;
-  readonly model: ProviderModel;
-}
-
 export interface UpstreamCatalogFilter {
   readonly include?: readonly string[];
   readonly exclude?: readonly string[];
@@ -580,7 +575,7 @@ export interface UpstreamModelsRepo {
   }): Promise<ResolvedUpstreamModelMatch[]>;
   listCatalog(filter: UpstreamCatalogFilter | null): Promise<{
     readonly upstreams: CatalogUpstreamRow[];
-    readonly models: CatalogModelEntry[];
+    readonly modelsByUpstream: Map<string, ProviderModel[]>;
   }>;
   listAddressableIdsForUpstreams(upstreamIds: readonly string[]): Promise<{
     readonly upstreamId: string;

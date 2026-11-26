@@ -43,7 +43,6 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  CatalogModelEntry,
   CatalogUpstreamRow,
   DueModelsRefreshCandidate,
   Group,
@@ -1410,11 +1409,11 @@ class MemoryUpstreamModelsRepo implements UpstreamModelsRepo {
 
   listCatalog(filter: UpstreamCatalogFilter | null): Promise<{
     readonly upstreams: CatalogUpstreamRow[];
-    readonly models: CatalogModelEntry[];
+    readonly modelsByUpstream: Map<string, ProviderModel[]>;
   }> {
     const include = filter?.include;
     const exclude = filter?.exclude;
-    if (include?.length === 0) return Promise.resolve({ upstreams: [], models: [] });
+    if (include?.length === 0) return Promise.resolve({ upstreams: [], modelsByUpstream: new Map() });
     let orderedUpstreams = include !== undefined && filter?.preserveIncludeOrder === true
       ? this.sortedUpstreams(include)
       : this.sortedUpstreams(null);
@@ -1433,15 +1432,15 @@ class MemoryUpstreamModelsRepo implements UpstreamModelsRepo {
       hue: u.hue,
       modelPrefix: structuredClone(u.modelPrefix),
     }));
-    const models: CatalogModelEntry[] = [];
+    const modelsByUpstream = new Map<string, ProviderModel[]>();
     for (const u of orderedUpstreams) {
       const disabled = new Set(u.disabledPublicModelIds);
-      for (const entry of this.shared.models.get(u.id) ?? []) {
-        if (disabled.has(entry.model.id)) continue;
-        models.push({ upstreamId: u.id, model: structuredClone(entry.model) });
-      }
+      const active = (this.shared.models.get(u.id) ?? [])
+        .filter(entry => !disabled.has(entry.model.id))
+        .map(entry => structuredClone(entry.model));
+      if (active.length > 0) modelsByUpstream.set(u.id, active);
     }
-    return Promise.resolve({ upstreams, models });
+    return Promise.resolve({ upstreams, modelsByUpstream });
   }
 
   listAddressableIdsForUpstreams(upstreamIds: readonly string[]): Promise<{

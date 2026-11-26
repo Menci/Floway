@@ -188,7 +188,7 @@ describe.each(factories)('%s upstream models repository', (_name, createRepo) =>
     ]);
 
     const catalog = await repo.upstreamModels.listCatalog(null);
-    expect(catalog.models.map(m => [m.model.id, m.model.kind])).toEqual([
+    expect((catalog.modelsByUpstream.get('up_dual_kind') ?? []).map(m => [m.id, m.kind])).toEqual([
       ['shared-id', 'chat'],
       ['shared-id', 'embedding'],
     ]);
