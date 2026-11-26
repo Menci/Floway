@@ -13,7 +13,6 @@ import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderMode
 interface QueuedResolution {
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
-  readonly failedUpstreams: readonly string[];
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastResolveCall: { model?: string } = {};
@@ -42,7 +41,6 @@ const queueResolution = (
   resolutionsQueue.push({
     candidates: rules !== undefined ? candidates.map(c => ({ ...c, rules })) : candidates,
     sawModel: extra.sawModel ?? candidates.length > 0,
-    failedUpstreams: [],
   });
 };
 
@@ -121,7 +119,7 @@ const makeCandidate = (overrides: {
   return {
     provider: {
       upstreamId: upstream, kind, name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
+      instance: provider,
     },
     model: stubInternalModel({
       id: modelId,

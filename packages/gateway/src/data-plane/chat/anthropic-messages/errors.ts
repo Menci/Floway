@@ -1,4 +1,3 @@
-import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import { inputErrorFields, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
 import { generateAnthropicId, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -46,8 +45,8 @@ export const renderAnthropicMessagesFailure = (
   case 'routing-unavailable':
     return anthropicErrorResult(400, 'invalid_request_error', failure.message);
   case 'model-missing':
-    return anthropicErrorResult(404, 'not_found_error', appendFailedUpstreams(`Model ${failure.model} is not available on any configured upstream.`, failure.failedUpstreams));
+    return anthropicErrorResult(404, 'not_found_error', `Model ${failure.model} is not available on any configured upstream.`);
   case 'model-unsupported':
-    return anthropicErrorResult(400, 'invalid_request_error', appendFailedUpstreams(`Model ${failure.model} does not support the ${endpointPath} endpoint.`, failure.failedUpstreams));
+    return anthropicErrorResult(400, 'invalid_request_error', `Model ${failure.model} does not support the ${endpointPath} endpoint.`);
   }
 };

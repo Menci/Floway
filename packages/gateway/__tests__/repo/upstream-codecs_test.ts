@@ -1,41 +1,34 @@
 import { expect, test } from 'vitest';
 
-import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
-import { decodeUpstreamModelsCache, encodeUpstreamModelsCache } from '../../src/repo/upstream-codecs.ts';
-import type { UpstreamModelsCache } from '@floway-dev/provider';
+import {
+  decodeCustomDiscoveredModels,
+  decodeUpstreamModel,
+  encodeCustomDiscoveredModels,
+  encodeUpstreamModel,
+} from '../../src/repo/upstream-codecs.ts';
+import type { ProviderModel, UpstreamModelConfig } from '@floway-dev/provider';
 
-test('stored model cache preserves Custom editor discovery outside the routable catalog', () => {
-  const cache: UpstreamModelsCache = {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 100,
-    models: [],
-    discovered: [{
-      upstreamModelId: 'rerank-only',
-      publicModelId: 'rerank-only',
-      kind: 'rerank',
-      endpoints: { rerank: {} },
-      opaqueBlobCompatibilityScope: { bindToUpstream: true },
-    }],
-    lastError: null,
-  };
-  expect(decodeUpstreamModelsCache(encodeUpstreamModelsCache(cache), 'up_custom')).toEqual(cache);
+test('custom discovered codec preserves Custom editor discovery outside the routable catalog', () => {
+  const discovered: UpstreamModelConfig[] = [{
+    upstreamModelId: 'rerank-only',
+    publicModelId: 'rerank-only',
+    kind: 'rerank',
+    endpoints: { rerank: {} },
+    opaqueBlobCompatibilityScope: { bindToUpstream: true },
+  }];
+  expect(decodeCustomDiscoveredModels(encodeCustomDiscoveredModels(discovered), 'up_custom')).toEqual(discovered);
 });
 
-test('stored model cache round-trips a decision target', () => {
-  const cache: UpstreamModelsCache = {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 100,
-    models: [{
-      id: 'decision-1',
-      upstreamModelId: 'decision-1',
-      kind: 'decision',
-      limits: {},
-      endpoints: { decision: {} },
-      opaqueBlobCompatibilityScope: { bindToUpstream: true },
-      enabledFlags: new Set(),
-      decisionTarget: { protocol: 'typesafe-systemone', path: '/providers/microsoft/v1/systemone' },
-    }],
-    lastError: null,
+test('stored model codec round-trips a decision target and enabledFlags Set', () => {
+  const model: ProviderModel = {
+    id: 'decision-1',
+    upstreamModelId: 'decision-1',
+    kind: 'decision',
+    limits: {},
+    endpoints: { decision: {} },
+    opaqueBlobCompatibilityScope: { bindToUpstream: true },
+    enabledFlags: new Set(['vendor-kimi'] as const),
+    decisionTarget: { protocol: 'typesafe-systemone', path: '/providers/microsoft/v1/systemone' },
   };
-  expect(decodeUpstreamModelsCache(encodeUpstreamModelsCache(cache), 'up_azure')).toEqual(cache);
+  expect(decodeUpstreamModel(encodeUpstreamModel(model), 'up_azure')).toEqual(model);
 });

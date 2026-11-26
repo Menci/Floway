@@ -17,14 +17,14 @@ import { USERNAME_PATTERN } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, parseUserPreferences, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
-import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamHue, normalizeUpstreamMetricIdentity, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
-import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
+import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamHue, normalizeUpstreamMetricIdentity, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamModelConfig, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { assertAzureUpstreamRecord, validateAzureManualModels } from '@floway-dev/provider-azure';
 import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/provider-chatgpt';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { parseCopilotUpstreamConfig } from '@floway-dev/provider-copilot';
-import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
+import { assertCustomUpstreamRecord, validateCustomManualModels } from '@floway-dev/provider-custom';
 import { assertKimiCodeUpstreamRecord } from '@floway-dev/provider-kimi-code';
-import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
+import { assertOllamaUpstreamRecord, validateOllamaManualModels } from '@floway-dev/provider-ollama';
 import { parseProxyUri } from '@floway-dev/proxy';
 
 export interface SerializedProxy {
@@ -40,7 +40,7 @@ export interface ParsedImportData {
   groups: Array<Group & { memberIds: number[] }>;
   accessRecords: AccessRecordInput[];
   apiKeys: ApiKey[];
-  upstreams: UpstreamRecord[];
+  upstreams: ImportedUpstream[];
   proxies: SerializedProxy[];
   usage: UsageRecord[];
   searchUsage: WebSearchUsageRecord[];
@@ -147,7 +147,12 @@ const upstreamKindSchema = z.enum(ALL_PROVIDER_KINDS, { error: `kind must be one
 const finiteSortOrderSchema = z.number({ error: 'sort_order must be a finite number' })
   .finite({ error: 'sort_order must be a finite number' });
 
-const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
+export interface ImportedUpstream {
+  readonly record: UpstreamRecord;
+  readonly manualModels?: UpstreamModelConfig[];
+}
+
+const upstreamWireSchema = parsedBy((value): ImportedUpstream => {
   const wire = parseRecord(value, 'record must be an object');
   if (hasOwn(wire, 'enabled_fixes')) {
     throw new Error("legacy 'enabled_fixes' field is no longer supported; re-export with current code");
@@ -158,6 +163,19 @@ const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
   const id = parseValue(nonEmptyStringSchema('id'), wire.id);
   if (isLegacyUpstreamIdentity(id)) {
     throw new Error('id must use a raw upstream id, not a legacy provider-prefixed identity');
+  }
+
+  let rawConfig = wire.config;
+  let manualModels: UpstreamModelConfig[] | undefined;
+  if (kind === 'custom' || kind === 'azure' || kind === 'ollama') {
+    if (!isRecord(rawConfig)) throw new Error(`Malformed ${kind} upstream config: config must be an object`);
+    const { models, ...rest } = rawConfig;
+    rawConfig = rest;
+    manualModels = kind === 'azure'
+      ? validateAzureManualModels(models)
+      : kind === 'custom'
+        ? validateCustomManualModels(models)
+        : validateOllamaManualModels(models);
   }
 
   const record: UpstreamRecord = {
@@ -174,11 +192,13 @@ const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
     proxyFallbackList: parseValue(proxyFallbackListSchema, wire.proxy_fallback_list),
     modelPrefix: parseValue(parsedBy(normalizeModelPrefix).optional().default(null), wire.model_prefix),
     hue: parseValue(parsedBy(normalizeUpstreamHue), wire.hue),
-    config: wire.config,
+    config: rawConfig,
     state: normalizeUpstreamState(kind, wire.state),
-    modelsCache: null,
   };
-  return { ...record, config: normalizeUpstreamConfig(record) };
+  return {
+    record: { ...record, config: normalizeUpstreamConfig(record) },
+    ...(manualModels !== undefined ? { manualModels } : {}),
+  };
 });
 
 const proxySchema = parsedBy((value): SerializedProxy => {
@@ -575,11 +595,12 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
   if (upstreams.type === 'invalid') return upstreams;
   const upstreamIds = new Map<string, number>();
   for (let index = 0; index < upstreams.records.length; index++) {
-    const prior = upstreamIds.get(upstreams.records[index].id);
+    const id = upstreams.records[index].record.id;
+    const prior = upstreamIds.get(id);
     if (prior !== undefined) {
-      return { type: 'invalid', error: `invalid upstreams: duplicate upstream id ${upstreams.records[index].id} at indexes ${prior} and ${index}` };
+      return { type: 'invalid', error: `invalid upstreams: duplicate upstream id ${id} at indexes ${prior} and ${index}` };
     }
-    upstreamIds.set(upstreams.records[index].id, index);
+    upstreamIds.set(id, index);
   }
   const proxies = parseCollection('proxies', proxySchema, value.proxies, { arrayError: 'proxies must be an array', optional: true });
   if (proxies.type === 'invalid') return proxies;

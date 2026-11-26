@@ -36,7 +36,6 @@ export const resolveAlphaSearchDispatcher = async ({
     randomizeUpstreams: false,
     model: config.model,
     kind: 'chat',
-    scheduler,
     runtimeLocation,
   });
   const candidate = candidates.find(value => value.provider.upstreamId === config.upstreamId);

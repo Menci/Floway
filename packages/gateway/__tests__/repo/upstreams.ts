@@ -1,10 +1,27 @@
-import type { UpstreamRepo } from '../../src/repo/types.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamModelsWritePayload, UpstreamRepo } from '../../src/repo/types.ts';
+import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 
-export const saveUpstreamForTest = async (repo: UpstreamRepo, upstream: UpstreamRecord): Promise<void> => {
+export const saveUpstreamForTest = async (
+  repo: UpstreamRepo,
+  upstream: UpstreamRecord,
+  options: {
+    readonly manualModels?: readonly UpstreamModelConfig[];
+    readonly modelsWrite?: UpstreamModelsWritePayload;
+    readonly bumpConfigVersion?: boolean;
+  } = {},
+): Promise<void> => {
   const previous = await repo.getById(upstream.id);
+  const optional = {
+    ...(options.manualModels !== undefined ? { manualModels: options.manualModels } : {}),
+    ...(options.modelsWrite !== undefined ? { modelsWrite: options.modelsWrite } : {}),
+  };
   const saved = previous === null
-    ? await repo.insertForModels(upstream)
-    : await repo.replaceForModels({ previous, upstream });
+    ? await repo.insert({ upstream, ...optional })
+    : await repo.replace({
+        previous,
+        upstream,
+        bumpConfigVersion: options.bumpConfigVersion ?? true,
+        ...optional,
+      });
   if (saved === null) throw new Error(`Failed to save test upstream ${upstream.id}`);
 };

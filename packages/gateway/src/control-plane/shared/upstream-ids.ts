@@ -22,7 +22,7 @@ export const parseUpstreamIdsValue = (raw: unknown): ParseUpstreamIdsResult => {
 };
 
 export const loadKnownUpstreamIds = async (): Promise<ReadonlySet<string>> =>
-  new Set((await getRepo().upstreams.list()).map(upstream => upstream.id));
+  new Set(await getRepo().upstreams.listIds());
 
 export const unknownUpstreamIdsError = (ids: readonly string[] | null, known: ReadonlySet<string>): string | null => {
   if (ids === null) return null;

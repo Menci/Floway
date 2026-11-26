@@ -23,16 +23,17 @@ const saveRerankUpstream = async (
       apiKey: 'sk-rerank',
       endpoints: {},
       modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{
-        upstreamModelId: 'raw-reranker',
-        publicModelId: 'public-reranker',
-        kind: 'rerank',
-        endpoints: { rerank: {} },
-        rerankTarget: target,
-        ...(pricing === undefined ? {} : { pricing }),
-      }],
     },
-  }));
+  }), {
+    manualModels: [{
+      upstreamModelId: 'raw-reranker',
+      publicModelId: 'public-reranker',
+      kind: 'rerank',
+      endpoints: { rerank: {} },
+      rerankTarget: target,
+      ...(pricing === undefined ? {} : { pricing }),
+    }],
+  });
 };
 
 const requestHeaders = (apiKey: string) => ({

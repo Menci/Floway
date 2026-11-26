@@ -4,7 +4,6 @@ import type { User } from '../../../../../repo/types.ts';
 import { sleep } from '../../../../../shared/sleep.ts';
 import { enumerateModelCandidates } from '../../../../providers/resolution.ts';
 import { stampUpstreamCallStart } from '../../../../shared/attempt-timing.ts';
-import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import type { AttemptState } from '../../../../shared/gateway-ctx.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromOpenAIImagesBody } from '../../../../shared/telemetry/usage.ts';
@@ -1001,7 +1000,6 @@ const resolveImageCandidate = async (
       randomizeUpstreams: state.randomizeUpstreams,
       model: state.config.model,
       kind: 'image',
-      scheduler: state.backgroundScheduler,
       runtimeLocation: state.runtimeLocation,
     });
   } catch (e) {
@@ -1011,20 +1009,12 @@ const resolveImageCandidate = async (
   if (match !== undefined) {
     return { ok: true, candidate: match };
   }
-  // Split on the resolver's `sawModel` signal the same way serve-prep.ts
-  // does for chat: an unknown model id ("model_not_found", 404-shaped) vs
-  // a model that exists under some catalog but cannot serve this op
-  // ("model_not_supported"). The latter splits further on whether the
-  // resolver's kind filter rejected the id (sawModel=true, candidates=[]:
-  // id exists but not as an image model) or the per-endpoint key did
-  // (candidates non-empty: image-kind upstreams exist but none expose the
-  // requested edits/generations endpoint).
   if (!resolution.sawModel) {
     return {
       ok: false,
       error: {
         type: 'image_generation_error',
-        message: appendFailedUpstreams(`No upstream provides model '${state.config.model}'.`, resolution.failedUpstreams),
+        message: `No upstream provides model '${state.config.model}'.`,
         code: 'model_not_found',
         retryable: false,
       },
@@ -1037,7 +1027,7 @@ const resolveImageCandidate = async (
     ok: false,
     error: {
       type: 'image_generation_error',
-      message: appendFailedUpstreams(message, resolution.failedUpstreams),
+      message,
       code: 'model_not_supported',
       retryable: false,
     },

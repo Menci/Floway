@@ -12,7 +12,7 @@ import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/ope
 import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
+const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean }[] = [];
 vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
   return {
@@ -30,7 +30,7 @@ const { geminiGenerateContentHttp } = await import('../../../../src/data-plane/c
 const API_KEY_ID = 'key_gemini_http_test';
 
 const queueCandidates = (candidates: readonly ModelCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
+  candidatesQueue.push({ candidates, sawModel });
 };
 
 const installRepo = (): InMemoryRepo => {
@@ -125,7 +125,7 @@ const makeCandidate = (overrides: {
   return {
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
+      instance: provider,
     },
     model: stubInternalModel({ endpoints }, upstream),
     fetcher: directFetcher,

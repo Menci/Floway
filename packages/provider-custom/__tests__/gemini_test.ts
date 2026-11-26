@@ -1,9 +1,13 @@
 import { test } from 'vitest';
 
 import { createCustomProvider } from '../src/provider.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
 import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+
+const defaultGeminiModels: UpstreamModelConfig[] = [
+  { upstreamModelId: 'gemini-3-flash', kind: 'chat', endpoints: { geminiGenerateContent: {} } },
+];
 
 const buildUpstream = (baseUrl = 'https://generativelanguage.googleapis.com'): UpstreamRecord => ({
   id: 'up_gemini',
@@ -19,7 +23,6 @@ const buildUpstream = (baseUrl = 'https://generativelanguage.googleapis.com'): U
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
   config: {
     baseUrl,
@@ -27,7 +30,6 @@ const buildUpstream = (baseUrl = 'https://generativelanguage.googleapis.com'): U
     endpoints: { geminiGenerateContent: {} },
     ingressHeadersRules: [],
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models: [{ upstreamModelId: 'gemini-3-flash', kind: 'chat', endpoints: { geminiGenerateContent: {} } }],
   },
 });
 
@@ -41,7 +43,7 @@ test('Gemini generation posts to the model action path with alt=sse and the x-go
       return sseResponse();
     },
     async () => {
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const [model] = await provider.instance.getProvidedModels(directFetcher, defaultGeminiModels);
       await provider.instance.callGeminiGenerateContent(
         model,
         { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] },
@@ -64,13 +66,7 @@ test('baseUrl places the generation root, and a stored models/ prefix is strippe
   // The root itself is fixed; a deployment that serves the API under a prefix
   // states it once in baseUrl, which the catalog fetch shares.
   const record = buildUpstream('https://gemini-proxy.example.com/api/gemini');
-  const provider = createCustomProvider({
-    ...record,
-    config: {
-      ...(record.config as Record<string, unknown>),
-      models: [{ upstreamModelId: 'models/gemini-3-flash', kind: 'chat', endpoints: { geminiGenerateContent: {} } }],
-    },
-  });
+  const provider = createCustomProvider(record);
   let request: Request | undefined;
 
   await withMockedFetch(
@@ -79,7 +75,9 @@ test('baseUrl places the generation root, and a stored models/ prefix is strippe
       return sseResponse();
     },
     async () => {
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const [model] = await provider.instance.getProvidedModels(directFetcher, [
+        { upstreamModelId: 'models/gemini-3-flash', kind: 'chat', endpoints: { geminiGenerateContent: {} } },
+      ]);
       await provider.instance.callGeminiGenerateContent(model, { contents: [] }, undefined, noopUpstreamCallOptions());
     },
   );
@@ -98,7 +96,7 @@ test('countTokens posts the generate payload inside the generateContentRequest e
       return jsonResponse({ totalTokens: 12 });
     },
     async () => {
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const [model] = await provider.instance.getProvidedModels(directFetcher, defaultGeminiModels);
       const { http: response } = await provider.instance.callGeminiGenerateContentCountTokens(
         model,
         { contents: [{ role: 'user', parts: [{ text: 'hello' }] }], systemInstruction: { parts: [{ text: 'be brief' }] } },

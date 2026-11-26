@@ -19,7 +19,6 @@ const config: OllamaUpstreamConfig = assertOllamaUpstreamRecord({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
 }).config;
 

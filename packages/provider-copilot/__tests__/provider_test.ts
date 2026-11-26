@@ -27,7 +27,6 @@ const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): Upstream
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     ...rest,
     config: overrideConfig ?? {

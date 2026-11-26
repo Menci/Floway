@@ -1,7 +1,7 @@
 import { trackBackground } from './background-tracker.ts';
 import { app } from '../../src/app.ts';
 import type { WebSearchConfig } from '../../src/data-plane/tools/web-search/types.ts';
-import { modelsRefreshTarget, refreshModels } from '../../src/execution/models-refresh.ts';
+import { refreshModels } from '../../src/execution/models-refresh.ts';
 import { getRepo, initRepo } from '../../src/repo/index.ts';
 import type { ApiKey, User } from '../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../src/runtime/background.ts';
@@ -91,7 +91,6 @@ export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture,
     disabledPublicModelIds: [],
     proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     ...rest,
     config: overrideConfig ?? config,
@@ -129,7 +128,6 @@ export const buildChatGPTUpstreamRecord = (overrides: Partial<UpstreamRecord> = 
     disabledPublicModelIds: [],
     proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     ...rest,
     config: overrideConfig ?? config,
@@ -171,7 +169,6 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
     disabledPublicModelIds: [],
     proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     ...rest,
     config: overrideConfig ?? config,
@@ -388,7 +385,7 @@ export const requestAppWithWarmModels = async (path: string, init: RequestInit):
 export const warmModelsForTest = async (): Promise<void> => {
   const upstreams = await getRepo().upstreams.list();
   await Promise.allSettled(upstreams.map(async upstream =>
-    await refreshModels(modelsRefreshTarget(upstream), 'TEST')));
+    await refreshModels({ upstreamId: upstream.id, configVersion: upstream.configVersion }, 'TEST')));
 };
 
 export function parseSSEText(text: string): Array<{ event: string; data: string }> {

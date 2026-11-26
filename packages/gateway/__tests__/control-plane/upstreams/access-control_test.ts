@@ -1,11 +1,16 @@
 import { expect, test } from 'vitest';
 
 import { MODEL_CATALOG_REVISION } from '../../../src/repo/models-cache-contract.ts';
-import { seedModelsCache, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
+import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import type { UpstreamModelConfig } from '@floway-dev/provider';
 import { projectCustomModels } from '@floway-dev/provider-custom';
 import { assertEquals } from '@floway-dev/test-utils';
+
+const customManualModels: UpstreamModelConfig[] = [
+  { upstreamModelId: 'gpt-5', kind: 'chat', endpoints: { openaiChatCompletions: {} } },
+];
 
 const customRecord = () => buildCustomUpstreamRecord({
   id: 'up_restricted',
@@ -18,7 +23,6 @@ const customRecord = () => buildCustomUpstreamRecord({
     ingressHeadersRules: [{ key: 'x-secret', value: 'value' }],
     pathOverrides: { '/chat/completions': '/private/chat' },
     modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/private/models' },
-    models: [{ upstreamModelId: 'gpt-5', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
   },
 });
 
@@ -237,13 +241,14 @@ test('provider credential actions require Full and keep create drafts admin-only
 test('upstream options apply key, audit, and all view predicates', async () => {
   const { repo, apiKey } = await setupAppTest();
   const upstream = customRecord();
-  await saveUpstreamForTest(repo.upstreams, upstream);
+  await saveUpstreamForTest(repo.upstreams, upstream, { manualModels: customManualModels });
   const stored = await repo.upstreams.getById(upstream.id);
   if (!stored) throw new Error('upstream missing');
-  await seedModelsCache(repo.upstreams, upstream.id, await storedModelsRefreshIdentity(repo.upstreams, upstream.id), {
+  await seedModelsCache(repo.upstreams, upstream.id, {
+    configVersion: stored.configVersion,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
-    models: projectCustomModels(stored),
+    models: projectCustomModels(stored, customManualModels),
   });
   await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });
   await repo.accessRecords.save({

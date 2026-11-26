@@ -31,7 +31,6 @@ const upstream: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
   config: {
     githubHost: 'github.com',
@@ -85,9 +84,6 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       kind: 'custom',
       name: 'Other',
       inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      modelsCache: null,
       instance: stubProvider(),
     },
     model: { id: 'gpt-test', endpoints: { openaiResponses: {} } },

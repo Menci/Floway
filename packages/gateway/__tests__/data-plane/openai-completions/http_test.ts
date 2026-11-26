@@ -24,12 +24,14 @@ const registerOpenAICompletionsUpstream = async (repo: Awaited<ReturnType<typeof
       apiKey: 'sk-passthrough',
       endpoints: {},
       modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{
-        upstreamModelId: 'davinci-002',
-        endpoints: { openaiCompletions: {} },
-      }],
     },
-  }));
+  }), {
+    manualModels: [{
+      upstreamModelId: 'davinci-002',
+      kind: 'chat',
+      endpoints: { openaiCompletions: {} },
+    }],
+  });
 };
 
 const completionStream = (): Response => {

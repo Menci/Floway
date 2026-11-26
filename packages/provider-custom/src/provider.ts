@@ -101,22 +101,17 @@ const finalizeCustomModels = (
   return models;
 };
 
-export const projectCustomModels = (
+export const projectCustomManualModels = (
   record: UpstreamRecord,
-  response?: CustomModelsResponse,
+  manualModels: readonly UpstreamModelConfig[],
+  inheritedPricing?: ReadonlyMap<string, NonNullable<ProviderModel['pricing']>>,
 ): ProviderModel[] => {
-  const { config } = assertCustomUpstreamRecord(record);
-  const configuredEndpoints = config.endpoints;
-  // Only the upstream layer applies to auto models (no per-model override
-  // layer). Manual models layer their own flag overrides on top.
-  const upstreamFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides]);
-
-  // Manual models always emit.
-  const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
-  const manualModels: ProviderModel[] = config.models.map(model => {
+  assertCustomUpstreamRecord(record);
+  return manualModels.map(model => {
     const enabledFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides, model.flagOverrides]);
     const endpoints = model.endpoints;
     const kind = kindForEndpoints(endpoints);
+    const pricing = model.pricing ?? inheritedPricing?.get(model.upstreamModelId);
     const internal: ProviderModel = {
       id: publicModelId(model),
       upstreamModelId: model.upstreamModelId,
@@ -130,20 +125,70 @@ export const projectCustomModels = (
       ...(model.decisionTarget ? { decisionTarget: model.decisionTarget } : {}),
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
-    if (model.pricing) internal.pricing = model.pricing;
+    if (pricing) internal.pricing = pricing;
     if (kind === 'chat' && model.chat) internal.chat = model.chat;
     return internal;
   });
-  if (!config.modelsFetch.enabled || response === undefined) return manualModels;
+};
 
+export const projectCustomModelsFromDiscovered = (
+  record: UpstreamRecord,
+  manualModels: readonly UpstreamModelConfig[],
+  discovered: readonly UpstreamModelConfig[],
+): { readonly manual: ProviderModel[]; readonly auto: ProviderModel[] } => {
+  const { config } = assertCustomUpstreamRecord(record);
+  const fetchedPricing = new Map(
+    discovered.flatMap(model => model.pricing ? [[model.upstreamModelId, model.pricing] as const] : []),
+  );
+  const manual = projectCustomManualModels(record, manualModels, config.modelsFetch.enabled ? fetchedPricing : undefined);
+  if (!config.modelsFetch.enabled) return { manual, auto: [] };
+
+  const overriddenIds = new Set(manualModels.map(model => model.upstreamModelId));
+  const upstreamFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides]);
+  const auto: ProviderModel[] = [];
+  for (const model of discovered) {
+    if (!model.upstreamModelId || overriddenIds.has(model.upstreamModelId)) continue;
+    if (model.kind === 'rerank' || model.kind === 'decision') continue;
+    const endpoints = model.kind === 'chat' ? config.endpoints : model.endpoints;
+    const kind = kindForEndpoints(endpoints);
+    const projected: ProviderModel = {
+      id: publicModelId(model),
+      upstreamModelId: model.upstreamModelId,
+      limits: { ...(model.limits ?? {}) },
+      kind,
+      endpoints,
+      providerData: model.upstreamModelId,
+      enabledFlags: upstreamFlags,
+      opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
+    };
+    if (model.display_name !== undefined) projected.display_name = model.display_name;
+    if (model.pricing) projected.pricing = model.pricing;
+    if (kind === 'chat' && model.chat) projected.chat = model.chat;
+    auto.push(projected);
+  }
+  return { manual, auto };
+};
+
+export const projectCustomModels = (
+  record: UpstreamRecord,
+  manualModels: readonly UpstreamModelConfig[],
+  response?: CustomModelsResponse,
+): ProviderModel[] => {
+  const { config } = assertCustomUpstreamRecord(record);
+  const configuredEndpoints = config.endpoints;
+  // Only the upstream layer applies to auto models (no per-model override
+  // layer). Manual models layer their own flag overrides on top.
+  const upstreamFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides]);
+
+  if (!config.modelsFetch.enabled || response === undefined) {
+    return projectCustomManualModels(record, manualModels);
+  }
+
+  const overriddenIds = new Set(manualModels.map(m => m.upstreamModelId));
   const fetchedPricing = new Map(
     response.data.flatMap(model => model.pricing ? [[model.id, model.pricing] as const] : []),
   );
-  const effectiveManualModels = manualModels.map(model => {
-    if (model.pricing !== undefined) return model;
-    const pricing = fetchedPricing.get(rawModelIdOf(model));
-    return pricing === undefined ? model : { ...model, pricing };
-  });
+  const effectiveManualModels = projectCustomManualModels(record, manualModels, fetchedPricing);
   // Drop any auto-fetched model whose id is pinned by a manual override so
   // the manual copy is the only one emitted for that id.
   const filtered: CustomModelsResponse = { data: response.data.filter(raw => !overriddenIds.has(raw.id)) };
@@ -222,10 +267,10 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
 
   const instance: ProviderInstance = {
     runScheduledTask: async () => {},
-    getProvidedModels: async fetcher => {
-      if (!config.modelsFetch.enabled) return projectCustomModels(record);
+    getProvidedModels: async (fetcher, manualModels = []) => {
+      if (!config.modelsFetch.enabled) return projectCustomModels(record, manualModels);
       const response = await fetchCustomModels(config, fetcher);
-      return projectCustomModels(record, response);
+      return projectCustomModels(record, manualModels, response);
     },
     callAlphaSearch: (model, body, signal, opts) => call(customFetchAlphaSearch, model, body, signal, headersForCall(opts.headers), opts),
     callOpenAICompletions: (model, body, signal, opts) => call(customFetchOpenAICompletions, model, body, signal, headersForCall(opts.headers), opts),
@@ -328,9 +373,6 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     // client. A rule with a configured value supplies its own value inside
     // this provider, so the client's copy is neither needed nor forwarded.
     inboundHeaderAllowlist: config.ingressHeadersRules.flatMap(rule => rule.value === null ? [rule.key] : []),
-    disabledPublicModelIds: record.disabledPublicModelIds,
-    modelPrefix: record.modelPrefix,
-    modelsCache: record.modelsCache,
     instance,
   };
 };

@@ -23,16 +23,17 @@ const saveDecisionUpstream = async (
       apiKey: 'sk-decision',
       endpoints: {},
       modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{
-        upstreamModelId: 'raw-decision',
-        publicModelId: 'public-decision',
-        kind: 'decision',
-        endpoints: { decision: {} },
-        decisionTarget: target,
-        ...(pricing === undefined ? {} : { pricing }),
-      }],
     },
-  }));
+  }), {
+    manualModels: [{
+      upstreamModelId: 'raw-decision',
+      publicModelId: 'public-decision',
+      kind: 'decision',
+      endpoints: { decision: {} },
+      decisionTarget: target,
+      ...(pricing === undefined ? {} : { pricing }),
+    }],
+  });
 };
 
 const requestHeaders = (apiKey: string) => ({

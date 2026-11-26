@@ -16,7 +16,6 @@
 
 import { resolveCodexCatalog, type CatalogModel, type CodexCatalog, type CodexCatalogCapabilities, type CodexServiceTier } from './catalog.ts';
 import { synthesizeCatalogEntry } from './synthesize.ts';
-import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { User } from '../../repo/types.ts';
 import { loadModelListingCatalog } from '../models/load.ts';
@@ -65,8 +64,8 @@ export const assembleCodexCatalog = (
       continue;
     }
     const candidates = entry.upstreams.map(upstream => {
-      const providerModel = entry.model.providerModels?.[upstream.upstreamId];
-      if (providerModel === undefined) throw new Error(`Codex catalog model ${entry.id} has no provider model for ${upstream.upstreamId}`);
+      const providerModel = entry.model.providerModels?.[upstream.id];
+      if (providerModel === undefined) throw new Error(`Codex catalog model ${entry.id} has no provider model for ${upstream.id}`);
       return { providerModel, metadata: upstream.kind === 'chatgpt' ? chatgptCodexModelMetadata(providerModel) : undefined };
     });
     // A ChatGPT rate is not an entitlement. Only advertise tiers usable on every fallback.
@@ -86,11 +85,10 @@ export const loadCodexCatalog = async (
   subject: User,
   userAgent: string | undefined,
   upstreamIds: readonly string[] | null,
-  scheduleRefresh: ModelsRefreshScheduler,
 ): Promise<CodexCatalog> => {
   const [resolution, listing] = await Promise.all([
     resolveCodexCatalog(userAgent),
-    loadModelListingCatalog(subject, upstreamIds, scheduleRefresh, getRepo().modelAliases),
+    loadModelListingCatalog(subject, upstreamIds, getRepo().modelAliases),
   ]);
   const merged = mergeAliasesIntoModels({
     realModels: listing.realModels,

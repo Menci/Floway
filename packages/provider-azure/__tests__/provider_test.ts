@@ -1,28 +1,31 @@
 import { test } from 'vitest';
 
 import { createAzureProvider } from '../src/provider.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
 import { assertEquals, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+
+const defaultAzureModels: UpstreamModelConfig[] = [
+  {
+    upstreamModelId: 'gpt-prod',
+    publicModelId: 'gpt-public',
+    kind: 'chat',
+    endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
+    display_name: 'GPT Public',
+    limits: { max_context_window_tokens: 128000 },
+  },
+  {
+    upstreamModelId: 'gpt-small',
+    publicModelId: ' ',
+    kind: 'chat',
+    endpoints: { openaiChatCompletions: {} },
+  },
+];
 
 const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
     endpoint: 'https://example.openai.azure.com',
     apiKey: 'az-key',
-    models: [
-      {
-        upstreamModelId: 'gpt-prod',
-        publicModelId: 'gpt-public',
-        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
-        display_name: 'GPT Public',
-        limits: { max_context_window_tokens: 128000 },
-      },
-      {
-        upstreamModelId: 'gpt-small',
-        publicModelId: ' ',
-        endpoints: { openaiChatCompletions: {} },
-      },
-    ],
   };
   const { config: overrideConfig, ...rest } = overrides;
 
@@ -40,7 +43,6 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     ...rest,
     config: overrideConfig ?? config,
@@ -49,7 +51,7 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
 
 test('createAzureProvider projects configured models into upstream models', async () => {
   const instance = createAzureProvider(azureRecord({ flagOverrides: { 'vendor-kimi': true } }));
-  const models = await instance.instance.getProvidedModels(directFetcher);
+  const models = await instance.instance.getProvidedModels(directFetcher, defaultAzureModels);
 
   assertEquals(models[0]?.enabledFlags.has('vendor-kimi'), true);
   assertEquals(
@@ -78,7 +80,7 @@ test('createAzureProvider projects configured models into upstream models', asyn
 
 test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodies and model keys', async () => {
   const instance = createAzureProvider(azureRecord());
-  const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
+  const [providerModel] = await instance.instance.getProvidedModels(directFetcher, defaultAzureModels);
   const seen: Array<{ url: string; body: Record<string, unknown> }> = [];
 
   await withMockedFetch(
@@ -127,7 +129,7 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
 
 test.each(['compact'] as const)('createAzureProvider preserves %s upstream errors through the OpenAI Responses boundary', async action => {
   const instance = createAzureProvider(azureRecord());
-  const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
+  const [providerModel] = await instance.instance.getProvidedModels(directFetcher, defaultAzureModels);
   const upstreamResponse = new Response('{"error":"upstream rejected the request"}', {
     status: 418,
     headers: { 'content-type': 'application/json', 'x-upstream-error': action },
@@ -161,17 +163,17 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
       config: {
         endpoint: 'https://example.services.ai.azure.com/anthropic/v1',
         apiKey: 'az-key',
-        models: [
-          {
-            upstreamModelId: 'claude-prod',
-            publicModelId: 'claude-public',
-            endpoints: { anthropicMessages: {} },
-          },
-        ],
       },
     }),
   );
-  const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
+  const [providerModel] = await instance.instance.getProvidedModels(directFetcher, [
+    {
+      upstreamModelId: 'claude-prod',
+      publicModelId: 'claude-public',
+      kind: 'chat',
+      endpoints: { anthropicMessages: {} },
+    },
+  ]);
   const seen: Array<{ url: string; xApiKey: string | null; version: string | null; body: Record<string, unknown>; beta: string | null }> = [];
 
   assertEquals(providerModel.id, 'claude-public');
@@ -228,15 +230,10 @@ test('createAzureProvider callOpenAIImagesEdits posts multipart with model repla
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'azkey',
-      models: [{
-        upstreamModelId: 'gpt-image-2',
-        endpoints: { openaiImagesEdits: {} },
-      }],
     },
     state: null,
   };
@@ -251,7 +248,11 @@ test('createAzureProvider callOpenAIImagesEdits posts multipart with model repla
     },
     async () => {
       const provider = createAzureProvider(record);
-      const models = await provider.instance.getProvidedModels(directFetcher);
+      const models = await provider.instance.getProvidedModels(directFetcher, [{
+        upstreamModelId: 'gpt-image-2',
+        kind: 'image',
+        endpoints: { openaiImagesEdits: {} },
+      }]);
       const result = await provider.instance.callOpenAIImagesEdits(models[0], {
         parameters: { prompt: 'replace sky' },
         images: [{

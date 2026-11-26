@@ -12,7 +12,6 @@ import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import type { PassthroughServeApiName } from './api-names.ts';
-import { appendFailedUpstreams } from './failed-upstreams.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { iterateCandidates } from './iterate-candidates.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
@@ -92,35 +91,25 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // flattened list. Passthrough endpoints never consult that overlay, so
     // whatever rules a target carries are inert here — the alias flow only
     // changes which id the gateway addresses upstream.
-    const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+    const { candidates, sawModel } = await enumerateModelCandidates({
       subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       randomizeUpstreams: ctx.randomizeUpstreams,
       model,
       kind,
-      scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
     if (candidates.length === 0) {
       ctx.dump?.error('gateway');
-      // `sawModel` includes only Model.Use-permitted catalogs. With no candidates,
-      // false keeps hidden/missing ids at 404; true identifies wrong-kind matches
-      // (400), like the empty-viable case below.
       return sawModel
-        ? passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400)
-        : passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);
+        ? passthroughApiError(c, `Model ${model} does not support the ${sourceApi} endpoint.`, 400)
+        : passthroughApiError(c, `Model ${model} is not available on any configured upstream.`, 404);
     }
 
-    // Endpoint-level pre-filter: drop candidates whose upstream model
-    // exists for the requested kind but doesn't expose this endpoint's
-    // specific capability (e.g. an embedding-kind model on an upstream
-    // that only exposes chat). An empty viable set is the same "model
-    // exists but no upstream serves this endpoint" 400 the empty-candidate
-    // branch above surfaces.
     const viable = candidates.filter(c => modelServesEndpoint(c.model));
     if (viable.length === 0) {
       ctx.dump?.error('gateway');
-      return passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400);
+      return passthroughApiError(c, `Model ${model} does not support the ${sourceApi} endpoint.`, 400);
     }
 
     // Iterate the viable list. Each candidate's attempt runs the upstream

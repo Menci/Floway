@@ -36,7 +36,6 @@ export interface OllamaUpstreamConfig {
   // private daemon may sit behind one that looks like anything. So the operator
   // states it, and the dashboard offers the answer for the endpoint they typed.
   cloudUsage: boolean;
-  models: UpstreamModelConfig[];
 }
 
 export type OllamaUpstreamRecord = UpstreamRecord & {
@@ -70,6 +69,19 @@ const apiKeyField = (value: unknown): string | undefined => {
   return value;
 };
 
+export const validateOllamaManualModels = (value: unknown): UpstreamModelConfig[] => {
+  const models = modelsField(value ?? [], 'ollama');
+  if (models.some(model => model.kind === 'rerank')) {
+    throw new Error('Malformed ollama upstream config: rerank models require a custom upstream');
+  }
+  // Ollama serves decision models over System One, a fixed dialect, so an
+  // operator-supplied target could only contradict the provider.
+  if (models.some(model => model.kind === 'decision' && model.decisionTarget !== undefined)) {
+    throw new Error('Malformed ollama upstream config: decision target is not configurable on this upstream');
+  }
+  return models;
+};
+
 // Parses an upstream's stored/draft config object. Exported because the
 // control plane's usage-probe action receives a config on its own — from an
 // edit form that has not been saved yet — and needs the same validation the
@@ -78,21 +90,11 @@ export const parseOllamaUpstreamConfig = (config: unknown): OllamaUpstreamConfig
   if (!isRecord(config)) throw new Error('Malformed ollama upstream config: config must be an object');
 
   const apiKey = apiKeyField(config.apiKey);
-  const models = modelsField(config.models ?? [], 'ollama');
-  if (models.some(model => model.kind === 'rerank')) {
-    throw new Error('Malformed ollama upstream config: rerank models require a custom upstream');
-  }
-  // Ollama serves decision models over System One, a fixed dialect, so a
-  // operator-supplied target could only contradict the provider.
-  if (models.some(model => model.kind === 'decision' && model.decisionTarget !== undefined)) {
-    throw new Error('Malformed ollama upstream config: decision target is not configurable on this upstream');
-  }
 
   return {
     baseUrl: baseUrlField(config.baseUrl),
     ...(apiKey !== undefined ? { apiKey } : {}),
     cloudUsage: cloudUsageField(config.cloudUsage),
-    models,
   };
 };
 

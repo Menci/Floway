@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { assertAzureUpstreamRecord } from '../src/config.ts';
+import { assertAzureUpstreamRecord, validateAzureManualModels } from '../src/config.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertThrows } from '@floway-dev/test-utils';
 
@@ -16,19 +16,12 @@ const baseRecord: UpstreamRecord = {
   config: {
     endpoint: 'https://example.openai.azure.com/',
     apiKey: 'az-key',
-    models: [
-      {
-        upstreamModelId: 'gpt-prod',
-        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
-      },
-    ],
   },
   state: null,
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
 };
 
@@ -80,20 +73,14 @@ test('assertAzureUpstreamRecord validates Azure opaque config strictly', () => {
 
 });
 
-test('assertAzureUpstreamRecord rejects rerank models', () => {
+test('validateAzureManualModels rejects rerank models', () => {
   assertThrows(
-    () => assertAzureUpstreamRecord({
-      ...baseRecord,
-      config: {
-        ...(baseRecord.config as Record<string, unknown>),
-        models: [{
-          upstreamModelId: 'reranker',
-          kind: 'rerank',
-          endpoints: { rerank: {} },
-          rerankTarget: { protocol: 'cohere-v2' },
-        }],
-      },
-    }),
+    () => validateAzureManualModels([{
+      upstreamModelId: 'reranker',
+      kind: 'rerank',
+      endpoints: { rerank: {} },
+      rerankTarget: { protocol: 'cohere-v2' },
+    }]),
     Error,
   );
 });

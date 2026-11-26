@@ -1,44 +1,31 @@
-// One enumeration per `upstreamIds` set of every inbound model id the
-// gateway accepts — the union of the listed catalog surface and the
-// addressable-but-not-listed surface contributed by `modelPrefix.addressable`
-// alternates. Listing-side availability checks (this module's alias helper,
-// codex catalog) must see the same set the request-time resolver routes
-// through (the per-upstream walk inside `enumerateRealModelCandidates`);
-// recomputing it once here gives every consumer one consistent answer.
-//
-// Each entry carries the merged `InternalModel` the addressable id will
-// route to, so consumers (alias intersection, codex catalog, control-plane
-// DTO) read `limits` / `chat` / `endpoints` directly off the entry without
-// a second registry round trip.
+// One enumeration of every inbound model id the gateway accepts — the union of
+// the listed catalog surface and the addressable-but-not-listed surface
+// contributed by `modelPrefix.addressable` alternates. Listing-side
+// availability checks (alias helper, Codex catalog, control-plane DTO) read
+// directly from the `upstream_models` table plus lightweight upstream metadata
+// without loading `config_json` / `state_json` or instantiating `Provider`s.
 
 import { checkMany } from '../../../access-control/check.ts';
-import type { ModelsRefreshScheduler } from '../../../execution/models-refresh.ts';
-import type { StoredUpstreamRecord, User } from '../../../repo/types.ts';
-import { compareModelIds, getModelsFromProviders, mergeIntoCatalog } from '../../providers/catalog.ts';
-import { MODEL_CATALOG_REVISION } from '../../providers/models-cache.ts';
-import { listModelProviders } from '../../providers/registry.ts';
-import type { InternalModel, Provider } from '@floway-dev/provider';
+import { getRepo } from '../../../repo/index.ts';
+import type { CatalogModelEntry, CatalogUpstreamRow, User } from '../../../repo/types.ts';
+import { compareModelIds, createCatalogAccumulator, mergeIntoCatalog, type CatalogUpstreamMeta } from '../../providers/catalog.ts';
+import type { InternalModel, ProviderModel } from '@floway-dev/provider';
 
 export interface AddressableIdEntry {
   // The inbound model id the data plane will accept verbatim.
   readonly id: string;
-  // Absent on default-listed entries (the public-id surface the listing
-  // already emits); present-and-`true` on entries that are only reachable
-  // through `modelPrefix.addressable` alternates. The negative carry pairs
-  // with the `PublicModel.unlisted?: true` wire shape so a listed entry's
-  // wire bytes stay byte-identical.
+  // Absent on default-listed entries; `true` on entries only reachable through
+  // `modelPrefix.addressable` alternates.
   readonly unlisted: true | undefined;
-  // Real catalog row this id routes to. For multi-provider models this is
-  // the same `InternalModel` instance `getModelsFromProviders` returns (one row per
-  // public-listed id, with the union-merged endpoints already applied).
+  // Real catalog row this id routes to, with union-merged endpoints across all
+  // contributing upstreams.
   readonly model: InternalModel;
-  // Every upstream instance that surfaces this addressable id in its
-  // catalog, in enumeration order. Mirrors `upstreamsByPublicId` for the
-  // canonical listed row the addressable id resolves to — addressable-only
-  // alternates inherit the same list (the prefix-stripped id resolves
-  // through the same upstream). Lets the control-plane DTO render per-
-  // model upstream chips without re-walking the catalog.
-  readonly upstreams: readonly Provider[];
+  // Every upstream that surfaces this addressable id, in enumeration order.
+  readonly upstreams: readonly CatalogUpstreamMeta[];
+}
+
+interface RawAddressableEntry extends AddressableIdEntry {
+  readonly contributions: ReadonlyMap<string, readonly ProviderModel[]>;
 }
 
 // Project the listed (real-catalog) `InternalModel`s out of an addressable
@@ -47,55 +34,75 @@ export interface AddressableIdEntry {
 export const listedRealModels = (entries: readonly AddressableIdEntry[]): readonly InternalModel[] =>
   entries.filter(entry => entry.unlisted === undefined).map(entry => entry.model);
 
-// Enumerate every inbound id the data plane accepts under `upstreamFilter`,
-// tagged with whether the id participates in the default `/v1/models`
-// listing. Fans out persisted snapshot reads the same way
-// `collectProviderModels` does; repeated stale access may submit or join the
-// same separate background refresh trigger.
-export const enumerateAddressableModelIds = async (
-  subject: User,
-  upstreamFilter: readonly string[] | null,
-  scheduleRefresh: ModelsRefreshScheduler,
-  preFetchedUpstreams?: readonly StoredUpstreamRecord[],
-): Promise<readonly AddressableIdEntry[]> => {
-  // Resolve providers once and thread them into the catalog assembly so
-  // the upstreams.list() round-trip and provider-instantiation cost is
-  // paid once per call. An empty provider selection yields an empty
-  // addressable surface. `preFetchedUpstreams` avoids an additional
-  // round-trip when the caller has the list already.
-  const providers = await listModelProviders(upstreamFilter, preFetchedUpstreams);
-  if (providers.length === 0 && upstreamFilter !== null) return [];
-  const { models: realModels, upstreamsByPublicId } = getModelsFromProviders(providers, scheduleRefresh);
-  const byId = new Map(realModels.map(model => [model.id, model] as const));
+const toUpstreamMeta = (row: CatalogUpstreamRow): CatalogUpstreamMeta => ({
+  id: row.id,
+  kind: row.kind,
+  name: row.name,
+  hue: row.hue,
+});
 
-  const entries: AddressableIdEntry[] = [];
-  const unlistedOnlyModels = new Map<string, InternalModel>();
-  const unlistedOnlyUpstreams = new Map<string, Provider[]>();
+const assembleRawAddressableEntries = (
+  upstreams: readonly CatalogUpstreamRow[],
+  models: readonly CatalogModelEntry[],
+): RawAddressableEntry[] => {
+  const modelsByUpstream = new Map<string, ProviderModel[]>();
+  for (const { upstreamId, model } of models) {
+    let list = modelsByUpstream.get(upstreamId);
+    if (list === undefined) {
+      list = [];
+      modelsByUpstream.set(upstreamId, list);
+    }
+    list.push(model);
+  }
+
+  const listedAcc = createCatalogAccumulator();
+  for (const upstream of upstreams) {
+    const meta = toUpstreamMeta(upstream);
+    const disabled = new Set(upstream.disabledPublicModelIds);
+    const upstreamModels = modelsByUpstream.get(upstream.id) ?? [];
+    for (const providerModel of upstreamModels) {
+      if (!providerModel.id || disabled.has(providerModel.id)) continue;
+      const cfg = upstream.modelPrefix;
+      if (cfg !== null) {
+        for (const form of cfg.listed) {
+          const publicId = form === 'prefixed' ? `${cfg.prefix}${providerModel.id}` : providerModel.id;
+          const surfacedModel: ProviderModel = form === 'prefixed'
+            ? { ...providerModel, id: publicId, display_name: `${upstream.name}: ${providerModel.display_name ?? providerModel.id}` }
+            : providerModel;
+          mergeIntoCatalog(listedAcc, meta, surfacedModel, publicId);
+        }
+      } else {
+        mergeIntoCatalog(listedAcc, meta, providerModel, providerModel.id);
+      }
+    }
+  }
+
+  const entries: RawAddressableEntry[] = [];
+  const unlistedAcc = createCatalogAccumulator();
   const seen = new Set<string>();
-  const push = (entry: AddressableIdEntry): void => {
+  const push = (entry: RawAddressableEntry): void => {
     if (seen.has(entry.id)) return;
     seen.add(entry.id);
     entries.push(entry);
   };
 
-  for (const model of realModels) {
-    const upstreams = upstreamsByPublicId.get(model.id);
-    if (upstreams === undefined) throw new Error(`Listed model ${model.id} has no upstream index`);
-    push({ id: model.id, unlisted: undefined, model, upstreams });
+  for (const model of listedAcc.byId.values()) {
+    const contributing = listedAcc.upstreamsByPublicId.get(model.id);
+    const contributions = listedAcc.contributionsByPublicId.get(model.id);
+    if (contributing === undefined || contributions === undefined) {
+      throw new Error(`Listed model ${model.id} has no upstream index`);
+    }
+    push({ id: model.id, unlisted: undefined, model, upstreams: contributing, contributions });
   }
 
-  // Prefix alternates reuse the provider snapshots read by the listed surface.
-  for (const provider of providers) {
-    const cfg = provider.modelPrefix;
+  for (const upstream of upstreams) {
+    const cfg = upstream.modelPrefix;
     const addressableOnly = cfg !== null ? cfg.addressable.filter(form => !cfg.listed.includes(form)) : [];
     if (cfg === null || addressableOnly.length === 0) continue;
 
-    const upstreamModels = provider.modelsCache?.revision === MODEL_CATALOG_REVISION ? provider.modelsCache.models : [];
-    const disabled = new Set(provider.disabledPublicModelIds);
-
-    // The canonical listed form for this upstream — the row the listing
-    // surface emitted, and the row an addressable-only prefix alternate
-    // resolves back into so consumers find one consistent `InternalModel`.
+    const meta = toUpstreamMeta(upstream);
+    const disabled = new Set(upstream.disabledPublicModelIds);
+    const upstreamModels = modelsByUpstream.get(upstream.id) ?? [];
     const canonicalForm = cfg.listed.includes('prefixed') ? 'prefixed' : 'unprefixed';
 
     for (const upstreamModel of upstreamModels) {
@@ -103,40 +110,66 @@ export const enumerateAddressableModelIds = async (
       if (cfg.listed.length === 0) {
         for (const form of addressableOnly) {
           const id = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
-          mergeIntoCatalog(unlistedOnlyModels, unlistedOnlyUpstreams, provider, upstreamModel, id);
+          mergeIntoCatalog(unlistedAcc, meta, upstreamModel, id);
         }
         continue;
       }
       const canonicalPublicId = canonicalForm === 'prefixed'
         ? `${cfg.prefix}${upstreamModel.id}`
         : upstreamModel.id;
-      const canonical = byId.get(canonicalPublicId);
-      if (canonical === undefined) throw new Error(`Addressable model ${canonicalPublicId} is missing from the listed catalog`);
-      const canonicalUpstreams = upstreamsByPublicId.get(canonicalPublicId);
-      if (canonicalUpstreams === undefined) throw new Error(`Addressable model ${canonicalPublicId} has no upstream index`);
+      const canonical = listedAcc.byId.get(canonicalPublicId);
+      const canonicalUpstreams = listedAcc.upstreamsByPublicId.get(canonicalPublicId);
+      const canonicalContributions = listedAcc.contributionsByPublicId.get(canonicalPublicId);
+      if (canonical === undefined || canonicalUpstreams === undefined || canonicalContributions === undefined) {
+        throw new Error(`Addressable model ${canonicalPublicId} is missing from the listed catalog`);
+      }
       for (const form of addressableOnly) {
         const id = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
-        push({ id, unlisted: true, model: canonical, upstreams: canonicalUpstreams });
+        push({
+          id,
+          unlisted: true,
+          model: canonical,
+          upstreams: canonicalUpstreams,
+          contributions: canonicalContributions,
+        });
       }
     }
   }
 
-  for (const [id, model] of unlistedOnlyModels) {
-    push({ id, unlisted: true, model, upstreams: unlistedOnlyUpstreams.get(id)! });
+  for (const [id, model] of unlistedAcc.byId) {
+    push({
+      id,
+      unlisted: true,
+      model,
+      upstreams: unlistedAcc.upstreamsByPublicId.get(id)!,
+      contributions: unlistedAcc.contributionsByPublicId.get(id)!,
+    });
   }
 
-  // Stable id ordering matches the listed surface so consumers can rely on
-  // a single comparator across both halves.
+  return entries;
+};
+
+const filterAuthorizedEntries = async (
+  subject: User,
+  entries: readonly RawAddressableEntry[],
+): Promise<readonly AddressableIdEntry[]> => {
+  if (entries.length === 0) return [];
+  if (subject.isAdmin) {
+    return entries
+      .map(({ contributions: _contributions, ...entry }) => entry)
+      .sort((a, b) => compareModelIds(a.id, b.id));
+  }
+
   const checks = entries.flatMap(entry => entry.upstreams.map(upstream => ({
     entry,
     upstream,
     check: {
-      target: { kind: 'upstreamModel' as const, upstreamId: upstream.upstreamId, model: { kind: 'exact' as const, value: entry.id } },
+      target: { kind: 'upstreamModel' as const, upstreamId: upstream.id, model: { kind: 'exact' as const, value: entry.id } },
       requirement: { permission: 'Model.Use' as const },
     },
   })));
   const allowed = await checkMany(subject, checks.map(item => item.check));
-  const allowedByEntry = new Map<AddressableIdEntry, Provider[]>();
+  const allowedByEntry = new Map<RawAddressableEntry, CatalogUpstreamMeta[]>();
   for (let index = 0; index < checks.length; index++) {
     if (!allowed[index]) continue;
     const item = checks[index]!;
@@ -148,16 +181,74 @@ export const enumerateAddressableModelIds = async (
   return entries.flatMap(entry => {
     const allowedUpstreams = allowedByEntry.get(entry);
     if (!allowedUpstreams?.length) return [];
-    if (entry.model.providerModels === undefined) throw new Error(`Addressable real model ${entry.id} has no providerModels`);
-    const rebuilt = new Map<string, InternalModel>();
-    const rebuiltUpstreams = new Map<string, Provider[]>();
+    const rebuilt = createCatalogAccumulator();
     for (const upstream of allowedUpstreams) {
-      const providerModel = entry.model.providerModels[upstream.upstreamId];
-      if (providerModel === undefined) throw new Error(`Addressable model ${entry.id} is missing provider data for ${upstream.upstreamId}`);
-      mergeIntoCatalog(rebuilt, rebuiltUpstreams, upstream, providerModel, entry.model.id);
+      const contributed = entry.contributions.get(upstream.id);
+      if (contributed === undefined || contributed.length === 0) {
+        throw new Error(`Addressable model ${entry.id} is missing provider data for ${upstream.id}`);
+      }
+      for (const providerModel of contributed) {
+        mergeIntoCatalog(rebuilt, upstream, providerModel, entry.model.id);
+      }
     }
-    const model = rebuilt.get(entry.model.id);
+    const model = rebuilt.byId.get(entry.model.id);
     if (model === undefined) throw new Error(`Failed to rebuild authorized model ${entry.id}`);
-    return [{ ...entry, model, upstreams: allowedUpstreams }];
+    return [{
+      id: entry.id,
+      unlisted: entry.unlisted,
+      model,
+      upstreams: allowedUpstreams,
+    }];
   }).sort((a, b) => compareModelIds(a.id, b.id));
+};
+
+// Load both caller-scoped and gateway-wide addressable surfaces from one DB
+// catalog read. When the caller is an unrestricted admin, both surfaces are the
+// same array.
+export const loadAddressableSurfaces = async (
+  subject: User,
+  upstreamFilter: readonly string[] | null,
+): Promise<{
+  readonly callerAddressable: readonly AddressableIdEntry[];
+  readonly gatewayAddressable: readonly AddressableIdEntry[];
+}> => {
+  const { upstreams: allUpstreams, models: allModels } = await getRepo().upstreamModels.listCatalog(null);
+  const gatewayRaw = assembleRawAddressableEntries(allUpstreams, allModels);
+  if (subject.isAdmin && upstreamFilter === null) {
+    const sorted = gatewayRaw
+      .map(({ contributions: _contributions, ...entry }) => entry)
+      .sort((a, b) => compareModelIds(a.id, b.id));
+    return { callerAddressable: sorted, gatewayAddressable: sorted };
+  }
+
+  let callerRaw: readonly RawAddressableEntry[];
+  if (upstreamFilter === null) {
+    callerRaw = gatewayRaw;
+  } else if (upstreamFilter.length === 0) {
+    callerRaw = [];
+  } else {
+    const byId = new Map(allUpstreams.map(u => [u.id, u] as const));
+    const scopedUpstreams = upstreamFilter
+      .map(id => byId.get(id))
+      .filter((u): u is CatalogUpstreamRow => u !== undefined);
+    const scopedIds = new Set(scopedUpstreams.map(u => u.id));
+    const scopedModels = allModels.filter(m => scopedIds.has(m.upstreamId));
+    callerRaw = assembleRawAddressableEntries(scopedUpstreams, scopedModels);
+  }
+
+  const gatewayAddressable = gatewayRaw
+    .map(({ contributions: _contributions, ...entry }) => entry)
+    .sort((a, b) => compareModelIds(a.id, b.id));
+  const callerAddressable = await filterAuthorizedEntries(subject, callerRaw);
+  return { callerAddressable, gatewayAddressable };
+};
+
+export const enumerateAddressableModelIds = async (
+  subject: User,
+  upstreamFilter: readonly string[] | null,
+): Promise<readonly AddressableIdEntry[]> => {
+  const { upstreams, models } = await getRepo().upstreamModels.listCatalog(upstreamFilter);
+  if (upstreams.length === 0 && upstreamFilter !== null) return [];
+  const raw = assembleRawAddressableEntries(upstreams, models);
+  return await filterAuthorizedEntries(subject, raw);
 };

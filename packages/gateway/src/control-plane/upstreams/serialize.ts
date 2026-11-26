@@ -4,7 +4,7 @@ import type {
   RedactedSerializedUpstreamRecord,
 } from './types.ts';
 import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
-import type { FlagOverrides, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { FlagOverrides, ProxyFallbackEntry, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/provider-chatgpt';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
@@ -43,7 +43,10 @@ const stateless = (upstream: UpstreamRecord): null => {
   return null;
 };
 
-export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializedUpstreamRecord => {
+export const upstreamRecordToJson = (
+  upstream: UpstreamRecord,
+  manualModels: readonly UpstreamModelConfig[] = [],
+): RedactedSerializedUpstreamRecord => {
   const base = serializeBase(upstream);
   switch (upstream.kind) {
   case 'custom': {
@@ -57,7 +60,7 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
         ...(config.pathOverrides !== undefined ? { pathOverrides: clone(config.pathOverrides) } : {}),
         ingressHeadersRules: clone(config.ingressHeadersRules),
         modelsFetch: clone(config.modelsFetch),
-        models: clone(config.models),
+        models: clone([...manualModels]),
         apiKeySet: hasSecret(config.apiKey),
       },
       state: stateless(upstream),
@@ -68,7 +71,7 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     return {
       ...base,
       kind: 'azure',
-      config: { endpoint: config.endpoint, models: clone(config.models), apiKeySet: hasSecret(config.apiKey) },
+      config: { endpoint: config.endpoint, models: clone([...manualModels]), apiKeySet: hasSecret(config.apiKey) },
       state: stateless(upstream),
     };
   }
@@ -143,7 +146,7 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     return {
       ...base,
       kind: 'ollama',
-      config: { baseUrl: config.baseUrl, cloudUsage: config.cloudUsage, models: clone(config.models), apiKeySet: hasSecret(config.apiKey) },
+      config: { baseUrl: config.baseUrl, cloudUsage: config.cloudUsage, models: clone([...manualModels]), apiKeySet: hasSecret(config.apiKey) },
       // The usage probe holds upstream-owned windows and counters with no
       // secret in them, so the slot crosses whole.
       state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state),
@@ -152,16 +155,19 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
   }
 };
 
-export const upstreamRecordToFullJson = (upstream: UpstreamRecord): FullSerializedUpstreamRecord => {
+export const upstreamRecordToFullJson = (
+  upstream: UpstreamRecord,
+  manualModels: readonly UpstreamModelConfig[] = [],
+): FullSerializedUpstreamRecord => {
   const base = serializeBase(upstream);
   switch (upstream.kind) {
   case 'custom': {
     const record = assertCustomUpstreamRecord(upstream);
-    return { ...base, kind: 'custom', config: clone(record.config), state: stateless(upstream) };
+    return { ...base, kind: 'custom', config: { ...clone(record.config), models: clone([...manualModels]) }, state: stateless(upstream) };
   }
   case 'azure': {
     const record = assertAzureUpstreamRecord(upstream);
-    return { ...base, kind: 'azure', config: clone(record.config), state: stateless(upstream) };
+    return { ...base, kind: 'azure', config: { ...clone(record.config), models: clone([...manualModels]) }, state: stateless(upstream) };
   }
   case 'copilot': {
     const record = assertCopilotUpstreamRecord(upstream);
@@ -184,7 +190,7 @@ export const upstreamRecordToFullJson = (upstream: UpstreamRecord): FullSerializ
   }
   case 'ollama': {
     const record = assertOllamaUpstreamRecord(upstream);
-    return { ...base, kind: 'ollama', config: clone(record.config), state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state) };
+    return { ...base, kind: 'ollama', config: { ...clone(record.config), models: clone([...manualModels]) }, state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state) };
   }
   }
 };

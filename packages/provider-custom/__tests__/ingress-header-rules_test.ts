@@ -8,7 +8,7 @@ import { assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstream
 
 const HEADER = 'x-route';
 
-const buildCustomUpstream = (ingressHeadersRules: CustomIngressHeaderRule[], models: UpstreamModelConfig[]): UpstreamRecord => ({
+const buildCustomUpstream = (ingressHeadersRules: CustomIngressHeaderRule[]): UpstreamRecord => ({
   id: 'up_custom',
   kind: 'custom',
   name: 'Custom Provider',
@@ -22,7 +22,6 @@ const buildCustomUpstream = (ingressHeadersRules: CustomIngressHeaderRule[], mod
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
   config: {
     baseUrl: 'https://custom.example.com',
@@ -30,7 +29,6 @@ const buildCustomUpstream = (ingressHeadersRules: CustomIngressHeaderRule[], mod
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules,
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models,
   },
 });
 
@@ -81,14 +79,14 @@ const admittedBag = (allowlist: readonly unknown[], admitted: string | null): He
 // what these cases read — a `Request`'s `Headers` would merge a repeated name
 // back into one value and hide exactly what is under test.
 const upstreamLines = async (rules: CustomIngressHeaderRule[], admitted: string | null): Promise<[string, string][]> => {
-  const provider = createCustomProvider(buildCustomUpstream(rules, CHAT_MODEL));
+  const provider = createCustomProvider(buildCustomUpstream(rules));
   let observed: [string, string][] | undefined;
   const fetcher: Fetcher = (_url, init) => {
     observed = init.headers as [string, string][];
     return Promise.resolve(sseResponse());
   };
 
-  const [model] = await provider.instance.getProvidedModels(directFetcher);
+  const [model] = await provider.instance.getProvidedModels(directFetcher, CHAT_MODEL);
   assertExists(model);
   await provider.instance.callOpenAIChatCompletions(
     model,
@@ -121,7 +119,7 @@ test('a name is admitted once however many values it sends', () => {
     { key: HEADER, value: 'one' },
     { key: 'x-configured', value: 'two' },
     { key: 'x-configured', value: 'three' },
-  ], CHAT_MODEL));
+  ]));
 
   assertEquals([...provider.inboundHeaderAllowlist], [HEADER]);
 });
@@ -131,7 +129,7 @@ test('every endpoint resolves the same rules', async () => {
     { key: HEADER, value: null },
     { key: HEADER, value: 'appended' },
   ];
-  const provider = createCustomProvider(buildCustomUpstream(rules, [
+  const allEndpointModels: UpstreamModelConfig[] = [
     {
       upstreamModelId: 'chat', kind: 'chat', endpoints: {
         openaiAudioTranscriptions: {},
@@ -145,7 +143,8 @@ test('every endpoint resolves the same rules', async () => {
       },
     },
     { upstreamModelId: 'reranker', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
-  ]));
+  ];
+  const provider = createCustomProvider(buildCustomUpstream(rules));
   const observed: Record<string, string | null> = {};
 
   await withMockedFetch(
@@ -156,7 +155,7 @@ test('every endpoint resolves the same rules', async () => {
       return jsonResponse({});
     },
     async () => {
-      const models = await provider.instance.getProvidedModels(directFetcher);
+      const models = await provider.instance.getProvidedModels(directFetcher, allEndpointModels);
       const model = models.find(candidate => candidate.kind !== 'rerank');
       const rerankModel = models.find(candidate => candidate.kind === 'rerank');
       assertExists(model);

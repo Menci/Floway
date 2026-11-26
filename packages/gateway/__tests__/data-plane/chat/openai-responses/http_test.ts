@@ -18,7 +18,6 @@ import { assert, assertEquals, assertStringIncludes, stubProvider, stubInternalM
 interface QueuedResolution {
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
-  readonly failedUpstreams: readonly string[];
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastSeenModel: { value: string | null } = { value: null };
@@ -46,7 +45,6 @@ const queueResolution = (
   resolutionsQueue.push({
     candidates: aliasRules !== undefined ? candidates.map(c => ({ ...c, rules: aliasRules })) : candidates,
     sawModel: candidates.length > 0,
-    failedUpstreams: [],
   });
 };
 
@@ -134,9 +132,6 @@ const makeCandidate = (overrides: {
       kind: 'custom',
       name: upstream,
       inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      modelsCache: null,
       instance: provider,
     },
     model: stubInternalModel({

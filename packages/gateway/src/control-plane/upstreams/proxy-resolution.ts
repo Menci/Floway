@@ -1,4 +1,5 @@
 import { createDetachedFetcher, createPerRequestFetcher } from '../../dial/per-request.ts';
+import { getRepo } from '../../repo/index.ts';
 import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
 
 // Fetcher resolution for control-plane operations that fire from the
@@ -15,7 +16,8 @@ export const resolveControlPlaneFetcher = async (opts: {
 }): Promise<Fetcher> => {
   if (opts.override !== undefined) return await createDetachedFetcher(opts.override, opts.runtimeLocation);
   if (opts.upstreamId !== undefined) {
-    return (await createPerRequestFetcher(opts.runtimeLocation))(opts.upstreamId);
+    const upstream = await getRepo().upstreams.getById(opts.upstreamId);
+    return (await createPerRequestFetcher(opts.runtimeLocation, upstream ? [upstream] : []))(opts.upstreamId);
   }
   // Neither an in-progress edit nor a persisted row to read a policy from.
   // That is the same "no policy" state an empty list expresses, so route it

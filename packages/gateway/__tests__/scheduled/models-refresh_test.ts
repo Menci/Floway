@@ -24,7 +24,6 @@ const custom = (id: string, enabled: boolean): UpstreamRecord => ({
     ingressHeadersRules: [],
   },
   state: null,
-  modelsCache: null,
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [{ id: 'direct_fetch' }],
@@ -51,15 +50,16 @@ test('scheduled maintenance submits enabled refreshes without waiting for model 
 
       expect(background).toHaveLength(1);
       await vi.waitFor(() => expect(requested).toEqual(['enabled.example.com']));
-      expect((await repo.upstreams.getById('enabled'))?.modelsCache).toBeNull();
+      expect((await repo.upstreams.getById('enabled'))?.modelsCache.fetchedAt).toBeNull();
 
       resolveFetch!(Response.json({ data: [{ id: 'enabled-public' }] }));
       await background[0];
       expect((await repo.upstreams.getById('enabled'))?.modelsCache).toMatchObject({
         revision: MODEL_CATALOG_REVISION,
-        models: [{ id: 'enabled-public' }],
+        lastError: null,
       });
-      expect((await repo.upstreams.getById('disabled'))?.modelsCache).toBeNull();
+      expect((await repo.upstreamModels.listByUpstream('enabled')).map(entry => entry.model.id)).toEqual(['enabled-public']);
+      expect((await repo.upstreams.getById('disabled'))?.modelsCache.fetchedAt).toBeNull();
     },
   );
 });
@@ -88,7 +88,7 @@ test('one malformed upstream does not prevent later refreshes from being schedul
     error.mockRestore();
   }
 
-  expect((await repo.upstreams.getById('healthy'))?.modelsCache?.models).toMatchObject([{ id: 'healthy-model' }]);
+  expect((await repo.upstreamModels.listByUpstream('healthy')).map(entry => entry.model)).toMatchObject([{ id: 'healthy-model' }]);
 });
 
 test('locationless scheduled events skip colo-scoped-only egress policies', async () => {
@@ -118,5 +118,5 @@ test('locationless scheduled events skip colo-scoped-only egress policies', asyn
   );
 
   expect(requested).toEqual(['global.example.com']);
-  expect((await repo.upstreams.getById('scoped'))?.modelsCache).toBeNull();
+  expect((await repo.upstreams.getById('scoped'))?.modelsCache.fetchedAt).toBeNull();
 });

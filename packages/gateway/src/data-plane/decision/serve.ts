@@ -5,7 +5,6 @@ import { decisionAttempt, type DecisionAttemptResult } from './attempt.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
-import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { iterateCandidates } from '../shared/iterate-candidates.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
@@ -77,13 +76,12 @@ export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context)
   let measuredUsage: { inputTokens?: number } | undefined;
   let usageSettled = false;
   try {
-    const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+    const { candidates, sawModel } = await enumerateModelCandidates({
       subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       randomizeUpstreams: ctx.randomizeUpstreams,
       model,
       kind: 'decision',
-      scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
     if (candidates.length === 0) {
@@ -91,7 +89,7 @@ export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context)
       const message = sawModel
         ? unsupportedMessage(model)
         : `Model ${model} is not available on any configured upstream.`;
-      return finalizeGatewayResponse(ctx, apiError(c, appendFailedUpstreams(message, failedUpstreams), sawModel ? 400 : 404));
+      return finalizeGatewayResponse(ctx, apiError(c, message, sawModel ? 400 : 404));
     }
 
     const routable = candidates.flatMap(candidate => {
@@ -102,7 +100,7 @@ export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context)
     });
     if (routable.length === 0) {
       ctx.dump?.error('gateway');
-      return finalizeGatewayResponse(ctx, apiError(c, appendFailedUpstreams(unsupportedMessage(model), failedUpstreams), 400));
+      return finalizeGatewayResponse(ctx, apiError(c, unsupportedMessage(model), 400));
     }
     terminal = await iterateCandidates(
       routable.map(({ candidate }) => candidate),

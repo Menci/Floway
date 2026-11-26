@@ -1,8 +1,6 @@
 import { DurableObject } from 'cloudflare:workers';
 
 export class ExecutionDO extends DurableObject {
-  private execution: Promise<Response> | null = null;
-
   constructor(ctx: DurableObjectState, env: unknown) {
     super(ctx, env);
   }
@@ -12,7 +10,7 @@ export class ExecutionDO extends DurableObject {
     if (url.pathname === '/broadcast' && request.method === 'GET') return this.subscribe(request);
     if (url.pathname === '/broadcast' && request.method === 'POST') return await this.broadcast(request);
     if (url.pathname === '/broadcast/close' && request.method === 'POST') return await this.closeAll(request);
-    return await this.execute(request);
+    return new Response('Not found', { status: 404 });
   }
 
   private subscribe(request: Request): Response {
@@ -34,17 +32,6 @@ export class ExecutionDO extends DurableObject {
     const reason = await request.text();
     for (const ws of this.ctx.getWebSockets()) ws.close(1000, reason);
     return new Response(null, { status: 204 });
-  }
-
-  private async execute(request: Request): Promise<Response> {
-    if (this.execution === null) {
-      const operation = this.ctx.exports.ExecutionOperationEntrypoint.fetch(request);
-      this.execution = operation;
-      const clear = (): void => { this.execution = null; };
-      void operation.then(clear, clear);
-      void operation.catch(error => console.error('ExecutionDO operation failed', error));
-    }
-    return (await this.execution).clone();
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string, _wasClean: boolean): Promise<void> {

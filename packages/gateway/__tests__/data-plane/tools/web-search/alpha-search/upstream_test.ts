@@ -11,7 +11,6 @@ vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOri
     enumerateModelCandidates: vi.fn(async () => ({
       candidates: resolvedCandidate === undefined ? [] : [resolvedCandidate],
       sawModel: resolvedCandidate !== undefined,
-      failedUpstreams: [],
     })),
   };
 });

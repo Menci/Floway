@@ -1,19 +1,12 @@
 import { unionEndpoints } from './endpoint-union.ts';
-import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } from './models-cache.ts';
-import type { GatewayProvider } from './registry.ts';
-import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { kindForEndpoints, type OpaqueBlobCompatibilityScope } from '@floway-dev/protocols/common';
-import type { InternalModel, Provider, ProviderModel, UpstreamChatModelConfig, UpstreamRecord } from '@floway-dev/provider';
+import type { InternalModel, ProviderModel, UpstreamChatModelConfig, UpstreamProviderKind } from '@floway-dev/provider';
 
-interface ProviderModelsResult {
-  models: InternalModel[];
-  // Reverse index: every upstream instance that emitted an entry under the
-  // given public id, in enumeration order. The control-plane catalog
-  // endpoint reads this to render `upstreams: [{kind, id, name}]` per row;
-  // the alias listing reads it to project per-target upstream chips.
-  upstreamsByPublicId: Map<string, Provider[]>;
-  // Upstreams carrying a persisted catalog-refresh error, in provider order.
-  failedUpstreams: string[];
+export interface CatalogUpstreamMeta {
+  readonly id: string;
+  readonly kind: UpstreamProviderKind;
+  readonly name: string;
+  readonly hue: number;
 }
 
 const mergedOpaqueBlobCompatibilityScope = (
@@ -33,9 +26,9 @@ const mergedOpaqueBlobCompatibilityScope = (
 // retains the catalog's established first-provider-wins behavior.
 const mergedChatMetadata = (
   first: UpstreamChatModelConfig | undefined,
-  providerModels: Readonly<Record<string, ProviderModel>>,
+  models: readonly ProviderModel[],
 ): UpstreamChatModelConfig | undefined => {
-  const chatModels = Object.values(providerModels).filter(model => model.kind === 'chat');
+  const chatModels = models.filter(model => model.kind === 'chat');
   if (chatModels.length === 0) return first;
   return {
     ...(first ?? {}),
@@ -50,7 +43,7 @@ const mergedChatMetadata = (
 export const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
   const { providerData, upstreamModelId: _upstreamModelId, enabledFlags, flagOverrides, rerankTarget: _rerankTarget, decisionTarget: _decisionTarget, endpoints, ...metadata } = providerModel;
   const providerModels = { [upstreamId]: providerModel };
-  const chat = mergedChatMetadata(providerModel.chat, providerModels);
+  const chat = mergedChatMetadata(providerModel.chat, [providerModel]);
   return {
     ...metadata,
     ...(chat === undefined ? {} : { chat }),
@@ -59,158 +52,87 @@ export const internalModelFromProviderModel = (providerModel: ProviderModel, ups
   };
 };
 
-// When multiple upstreams expose the same surfaced model id, the first wins
-// for metadata and later ones union-merge their endpoint capability map — the
-// merged `endpoints` is the gateway-wide reach for that id.
-// `chat.image_detail_original` is the safety exception: it is true only when
-// every chat provider behind the id explicitly accepts it.
-// `kind` is recomputed from the union so a chat-only id that later acquires
-// an embedding-capable upstream gets correctly reclassified. Each contribution
-// adds its own entry to `providerModels` keyed on the contributing upstream id
-// with the emitted `ProviderModel` stored verbatim, so the same id
-// carrying data from N upstreams ends up with N entries. The reverse index
-// `upstreamsByPublicId` accumulates every upstream that surfaced the id, in
-// enumeration order, so the control plane can render its per-model upstream
-// chips without re-walking the catalog.
+export interface CatalogAccumulator {
+  readonly byId: Map<string, InternalModel>;
+  readonly upstreamsByPublicId: Map<string, CatalogUpstreamMeta[]>;
+  readonly contributionsByPublicId: Map<string, Map<string, ProviderModel[]>>;
+}
+
+export const createCatalogAccumulator = (): CatalogAccumulator => ({
+  byId: new Map(),
+  upstreamsByPublicId: new Map(),
+  contributionsByPublicId: new Map(),
+});
+
+// When multiple upstreams (or multiple kinds on one upstream) expose the same
+// surfaced model id, the first wins for metadata and later ones union-merge
+// their endpoint capability map. `chat.image_detail_original` is the safety
+// exception: it is true only when every chat contribution explicitly accepts it.
+// `kind` is recomputed from the union so a chat-only id that later acquires an
+// embedding-capable contribution gets correctly reclassified. When one upstream
+// contributes several kinds under the same public id, `providerModels[id]` keeps
+// the chat contribution ahead of non-chat ones (so Codex synthesis sees the chat
+// row) while `contributionsByPublicId` retains every contribution for rebuilding
+// authorized subsets.
 export const mergeIntoCatalog = (
-  byId: Map<string, InternalModel>,
-  upstreamsByPublicId: Map<string, Provider[]>,
-  instance: Provider,
+  acc: CatalogAccumulator,
+  upstream: CatalogUpstreamMeta,
   surfacedModel: ProviderModel,
   publicId: string,
 ): void => {
-  const existing = byId.get(publicId);
+  const existing = acc.byId.get(publicId);
   if (!existing) {
-    byId.set(publicId, internalModelFromProviderModel(surfacedModel, instance.upstreamId));
-    upstreamsByPublicId.set(publicId, [instance]);
+    acc.byId.set(publicId, internalModelFromProviderModel(surfacedModel, upstream.id));
+    acc.upstreamsByPublicId.set(publicId, [upstream]);
+    acc.contributionsByPublicId.set(publicId, new Map([[upstream.id, [surfacedModel]]]));
     return;
   }
-  // The catalog only stores real (upstream-backed) rows; alias-synthesized
-  // rows join the caller-facing catalog downstream via `mergeAliasesIntoModels`.
-  // Narrow off the discriminated union so the merge below sees a concrete
-  // `providerModels` map.
   if (existing.providerModels === undefined) {
     throw new Error(`mergeIntoCatalog: catalog row for '${publicId}' unexpectedly carries aliasedFrom instead of providerModels`);
   }
+  const byUpstream = acc.contributionsByPublicId.get(publicId);
+  if (byUpstream === undefined) throw new Error(`invariant broken: contributionsByPublicId missing ${publicId}`);
+  const upstreamList = byUpstream.get(upstream.id);
+  if (upstreamList === undefined) {
+    byUpstream.set(upstream.id, [surfacedModel]);
+  } else {
+    upstreamList.push(surfacedModel);
+  }
+
+  const allModels = [...byUpstream.values()].flat();
   const endpoints = unionEndpoints([existing.endpoints, surfacedModel.endpoints]);
+  const currentSlot = existing.providerModels[upstream.id];
+  const preferredSlot = currentSlot?.kind === 'chat' && surfacedModel.kind !== 'chat'
+    ? currentSlot
+    : surfacedModel;
   const providerModels = {
     ...existing.providerModels,
-    [instance.upstreamId]: surfacedModel,
+    [upstream.id]: preferredSlot,
   };
-  const chat = mergedChatMetadata(existing.chat, providerModels);
-  byId.set(publicId, {
+  const chat = mergedChatMetadata(existing.chat ?? surfacedModel.chat, allModels);
+  acc.byId.set(publicId, {
     ...existing,
     ...(chat === undefined ? {} : { chat }),
-    opaqueBlobCompatibilityScope: mergedOpaqueBlobCompatibilityScope(Object.values(providerModels)),
+    opaqueBlobCompatibilityScope: mergedOpaqueBlobCompatibilityScope(allModels),
     endpoints,
     kind: kindForEndpoints(endpoints),
     providerModels,
   });
-  // We're on the merge branch (`existing !== undefined`), so the parallel
-  // `upstreamsByPublicId` entry was populated by the earlier insertion branch
-  // and must exist.
-  const instances = upstreamsByPublicId.get(publicId);
-  if (instances === undefined) throw new Error(`invariant broken: upstreamsByPublicId missing ${publicId}`);
-  instances.push(instance);
-};
 
-const collectProviderModels = (
-  providers: readonly GatewayProvider[],
-  scheduleRefresh: ModelsRefreshScheduler,
-): ProviderModelsResult => {
-  const byId = new Map<string, InternalModel>();
-  const upstreamsByPublicId = new Map<string, Provider[]>();
-  const failedUpstreams: string[] = [];
-
-  // Catalog reads never await upstream I/O. Each result is the persisted
-  // snapshot carried by the provider; a cold or stale snapshot separately
-  // triggers background refresh through the supplied scheduler.
-  for (const instance of providers) {
-    const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(instance, scheduleRefresh);
-    const { models: providedModels, lastError: cachedError } = snapshot;
-    if (cachedError) {
-      failedUpstreams.push(instance.name);
-    }
-    // Operator-disabled public model ids vanish entirely for this upstream:
-    // dropped before they reach the catalog map, so they appear in no /models
-    // listing and resolve to nothing for routing. The disable is per-upstream,
-    // so the same id can still surface from another upstream that allows it.
-    // The disable matches the pre-prefix public id — the id the provider's
-    // own catalog projection publishes, before this loop surfaces it in each
-    // listed form — so a disabled `gpt-4o` hides both `gpt-4o` and
-    // `<prefix>gpt-4o` from this upstream's contribution.
-    const disabled = new Set(instance.disabledPublicModelIds);
-    for (const providerModel of providedModels) {
-      if (!providerModel.id) continue;
-      if (disabled.has(providerModel.id)) continue;
-
-      // Each surface form the upstream chose to list becomes its own catalog
-      // entry. The unprefixed surface keeps the original ProviderModel; the
-      // prefixed surface uses a shallow clone with the rewritten id and a
-      // synthesized display_name that prepends the upstream name (so the
-      // dashboard tells the operator at a glance which upstream a prefixed
-      // model came from). `providerData` (where the per-provider call reads
-      // the real upstream model id) is untouched by the clone.
-      const cfg = instance.modelPrefix;
-      if (cfg !== null) {
-        for (const form of cfg.listed) {
-          const publicId = form === 'prefixed' ? `${cfg.prefix}${providerModel.id}` : providerModel.id;
-          const surfacedModel: ProviderModel = form === 'prefixed'
-            ? { ...providerModel, id: publicId, display_name: `${instance.name}: ${providerModel.display_name ?? providerModel.id}` }
-            : providerModel;
-          mergeIntoCatalog(byId, upstreamsByPublicId, instance, surfacedModel, publicId);
-        }
-      } else {
-        mergeIntoCatalog(byId, upstreamsByPublicId, instance, providerModel, providerModel.id);
-      }
-    }
+  const upstreams = acc.upstreamsByPublicId.get(publicId);
+  if (upstreams === undefined) throw new Error(`invariant broken: upstreamsByPublicId missing ${publicId}`);
+  if (!upstreams.some(item => item.id === upstream.id)) {
+    upstreams.push(upstream);
   }
-
-  return { models: [...byId.values()], upstreamsByPublicId, failedUpstreams };
-};
-
-// How many catalog entries this upstream's stored catalog would surface, under
-// the surfacing rules the loop above applies: an operator-disabled id
-// contributes nothing, and a prefix policy contributes one entry per listed
-// form. Null when the row holds no catalog written under the current revision.
-//
-// The registry builds providers from enabled upstreams only, so a disabled
-// upstream contributes nothing to the live catalog and the dashboard cannot
-// count it from there. This is the count it had while it was on, which is the
-// last one that was ever true for it.
-export const storedCatalogSize = (record: UpstreamRecord): number | null => {
-  const cache = record.modelsCache;
-  if (cache?.revision !== MODEL_CATALOG_REVISION) return null;
-  const disabled = new Set(record.disabledPublicModelIds);
-  const surfacedForms = record.modelPrefix?.listed.length ?? 1;
-  return cache.models.filter(model => model.id && !disabled.has(model.id)).length * surfacedForms;
 };
 
 // Public-facing model-id ordering, applied to the real-model slice of the
 // lists that cross a gateway boundary (the data-plane model listing on
 // /v1/models, /models, and /v1beta/models, plus the control-plane /api/models
-// that backs the dashboard models page). It orders that slice only: visible aliases are appended
-// afterwards in alias `sortOrder`, and `/api/models?include_unlisted=true`
-// appends the unlisted rows after the listed ones.
-// Provider upstreams return models in arbitrary order; sorting here gives the
-// dashboard and downstream clients a stable, family-grouped view.
-//
-// Sort keys, evaluated in order:
-//   0. Whether the id contains a '/'. Slashed ids (Microsoft Foundry router
-//      model ids like "accounts/msft/routers/x") are pushed to the tail so
-//      the typical flat ids stay on top.
-//   1. Leading [a-zA-Z]+ prefix, case-insensitive, ascending. Groups model
-//      families: "claude-haiku-4-5" -> "claude", "deepseek-v4-pro" ->
-//      "deepseek".
-//   2. Array of isolated single digits (a digit surrounded on both sides by a
-//      non-digit, with start/end of string counting as non-digit), compared
-//      element by element as integers, DESCENDING — newer/larger versions
-//      first: "claude-opus-4-7" -> [4, 7] beats "claude-opus-4-5" -> [4, 5];
-//      "gpt-5.5" -> [5, 5] beats "gpt-4o" -> [4]. Multi-digit runs (dates,
-//      "20300101") are intentionally not counted as version parts.
-//   3. Full string lex order, DESCENDING, case-folded first then raw — keeps
-//      "GPT-4o" and "gpt-4o" adjacent while giving longer/later suffixes
-//      priority within an otherwise tied group.
+// that backs the dashboard models page). It orders that slice only: visible
+// aliases are appended afterwards in alias `sortOrder`, and
+// `/api/models?include_unlisted=true` appends the unlisted rows after the
+// listed ones.
 export const compareModelIds = (a: string, b: string): number => {
   const cmp = <T>(x: T, y: T, dir = 1) => (x < y ? -dir : x > y ? dir : 0);
   const prefix = (s: string) => /^[a-zA-Z]+/.exec(s)?.[0].toLowerCase() ?? '';
@@ -221,24 +143,4 @@ export const compareModelIds = (a: string, b: string): number => {
     || (da.slice(0, Math.min(da.length, db.length)).map((v, i) => db[i] - v).find(d => d !== 0) ?? db.length - da.length)
     || cmp(a.toLowerCase(), b.toLowerCase(), -1)
     || cmp(a, b, -1);
-};
-
-// Catalog assembly against an already-resolved provider list. Callers that
-// already paid the `listModelProviders` round-trip — the alias prelude
-// shares its provider list across the alias resolver and the candidate
-// walk — pass providers through to avoid the duplicate upstreams.list()
-// DB query.
-export const getModelsFromProviders = (
-  providers: readonly GatewayProvider[],
-  scheduleRefresh: ModelsRefreshScheduler,
-): { models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] } => {
-  // An empty provider set is a normal state: a fresh gateway, a principal
-  // whose upstream cap resolved to nothing, or every upstream disabled. The
-  // catalog it yields is empty, and every listing surface reports that as an
-  // empty list rather than a failure.
-  const { models, upstreamsByPublicId, failedUpstreams } = collectProviderModels(providers, scheduleRefresh);
-
-  // TODO: surface `failedUpstreams` on each listing endpoint's wire response
-  // so partial-listing failures reach clients.
-  return { models: models.sort((a, b) => compareModelIds(a.id, b.id)), upstreamsByPublicId, failedUpstreams };
 };

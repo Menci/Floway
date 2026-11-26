@@ -37,7 +37,7 @@ export type {
   InternalModel,
   ProviderModel,
   ProxyFallbackEntry,
-  UpstreamModelsCache,
+  UpstreamModelSource,
   UpstreamProviderKind,
   UpstreamRecord,
 } from './model.ts';

@@ -1,6 +1,3 @@
-import { getRepo } from '../../repo/index.ts';
-import { modelsRefreshInputHash } from '../../repo/models-refresh-inputs.ts';
-import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
 import { chatgptProviderModule } from '@floway-dev/provider-chatgpt';
@@ -20,55 +17,8 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
   ollama: ollamaProviderModule,
 };
 
-export type GatewayProvider = Provider & {
-  readonly configVersion: number;
-  readonly modelsRefreshInputHash: string;
-};
-
-export const createProvider = (
-  record: StoredUpstreamRecord,
-): GatewayProvider => {
-  const provider = providersByKind[record.kind].create(record);
-  return {
-    ...provider,
-    configVersion: record.configVersion,
-    modelsRefreshInputHash: modelsRefreshInputHash(record),
-  };
-};
-
-export const createPreviewProvider = (record: UpstreamRecord): Provider =>
+export const createProvider = (record: UpstreamRecord): Provider =>
   providersByKind[record.kind].create(record);
 
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;
-
-// The upstream scope is a required argument across the catalog-assembly chain
-// (this, `enumerateAddressableModelIds`, `enumerateModelCandidates`) so a
-// caller can never omit it and silently receive the full, unscoped catalog —
-// a missing scope is a compile error, not a runtime leak. Pass `null` to
-// deliberately request every enabled upstream.
-//
-// `preFetchedUpstreams` lets a caller reuse a list it already loaded on
-// this request instead of paying a second `upstreams.list()` round-trip.
-export const listModelProviders = async (
-  upstreamFilter: readonly string[] | null,
-  preFetchedUpstreams?: readonly StoredUpstreamRecord[],
-): Promise<GatewayProvider[]> => {
-  const upstreams = preFetchedUpstreams ?? await getRepo().upstreams.list();
-  const enabledById = new Map<string, StoredUpstreamRecord>();
-  for (const upstream of upstreams) {
-    if (upstream.enabled) enabledById.set(upstream.id, upstream);
-  }
-
-  // The filter is the intersection of the per-user and per-api-key caps, both
-  // of which reference upstreams by id. Deleting or disabling an upstream does
-  // not prune those lists, so an id that no longer resolves is inert rather
-  // than fatal: it narrows the scope and drops out on the next write to the
-  // user or key. The principal keeps serving on the rest of its cap; a
-  // selection emptied this way is an empty catalog, not an error.
-  const selection = upstreamFilter
-    ? upstreamFilter.map(id => enabledById.get(id)).filter((u): u is StoredUpstreamRecord => u !== undefined)
-    : [...enabledById.values()];
-
-  return selection.map(record => createProvider(record));
-};

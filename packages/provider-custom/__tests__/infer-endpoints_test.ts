@@ -40,7 +40,6 @@ test('Custom dashboard projection shares endpoint inference and preserves unrout
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
   };
   const models = projectCustomDiscoveredModels(record, {

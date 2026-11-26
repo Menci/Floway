@@ -64,6 +64,8 @@ const USER_BOB: User = {
   deletedAt: null,
 };
 
+const EMPTY_MODELS_CACHE = { revision: null, fetchedAt: null, lastError: null };
+
 const CUSTOM_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_custom_a',
   kind: 'custom',
@@ -77,8 +79,9 @@ const CUSTOM_UPSTREAM: StoredUpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  rowVersion: 1,
   configVersion: 1,
-  modelsCache: null,
+  modelsCache: EMPTY_MODELS_CACHE,
   hue: 210,
   config: {
     baseUrl: 'https://custom.example.com',
@@ -106,8 +109,9 @@ const COPILOT_UPSTREAM: StoredUpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  rowVersion: 1,
   configVersion: 1,
-  modelsCache: null,
+  modelsCache: EMPTY_MODELS_CACHE,
   hue: 210,
   config: {
     githubHost: 'github.com',
@@ -122,6 +126,20 @@ const COPILOT_UPSTREAM: StoredUpstreamRecord = {
   state: null,
 };
 
+const AZURE_MANUAL_MODELS = [
+  {
+    upstreamModelId: 'gpt-prod',
+    publicModelId: 'gpt-public',
+    kind: 'chat' as const,
+    endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
+  },
+  {
+    upstreamModelId: 'deepseek-prod',
+    kind: 'chat' as const,
+    endpoints: { openaiChatCompletions: {} },
+  },
+];
+
 const AZURE_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_azure_a',
   kind: 'azure',
@@ -135,25 +153,13 @@ const AZURE_UPSTREAM: StoredUpstreamRecord = {
   disabledPublicModelIds: ['gpt-public'],
   proxyFallbackList: [],
   modelPrefix: null,
+  rowVersion: 1,
   configVersion: 1,
-  modelsCache: null,
+  modelsCache: EMPTY_MODELS_CACHE,
   hue: 210,
   config: {
     endpoint: 'https://example.openai.azure.com',
     apiKey: 'az-key',
-    models: [
-      {
-        upstreamModelId: 'gpt-prod',
-        publicModelId: 'gpt-public',
-        kind: 'chat',
-        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
-      },
-      {
-        upstreamModelId: 'deepseek-prod',
-        kind: 'chat',
-        endpoints: { openaiChatCompletions: {} },
-      },
-    ],
   },
   state: null,
 };
@@ -171,8 +177,9 @@ const CHATGPT_UPSTREAM: StoredUpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  rowVersion: 1,
   configVersion: 1,
-  modelsCache: null,
+  modelsCache: EMPTY_MODELS_CACHE,
   hue: 210,
   config: {
     accounts: [{
@@ -400,7 +407,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
     ...EMPTY_ACCESS_TRANSFER,
     users: [SEED_ADMIN],
     apiKeys: [KEY_B],
-    upstreams: [upstreamRecordToFullJson(AZURE_UPSTREAM)],
+    upstreams: [upstreamRecordToFullJson(AZURE_UPSTREAM, AZURE_MANUAL_MODELS)],
     usage: [USAGE_2],
     searchUsage: [WEB_SEARCH_USAGE_2],
     upstreamMetrics: [],
@@ -420,7 +427,12 @@ test('import replace writes upstreams and clears replaced collections', async ()
   const restoredKey = await repo.apiKeys.findByRawKey(KEY_B.key);
   if (restoredKey === null) throw new Error('restored key missing');
   assertEquals(restoredKey, KEY_B);
-  assertEquals(await repo.upstreams.list(), [{ ...AZURE_UPSTREAM, sortOrder: 0 }]);
+  const restoredUpstreams = await repo.upstreams.list();
+  assertEquals(restoredUpstreams.map(({ modelsCache: _modelsCache, ...rest }) => rest), [
+    (({ modelsCache: _modelsCache, ...rest }) => ({ ...rest, sortOrder: 0 }))(AZURE_UPSTREAM),
+  ]);
+  assertEquals(typeof restoredUpstreams[0]?.modelsCache.fetchedAt, 'number');
+  assertEquals(await repo.upstreamModels.listManualModels(AZURE_UPSTREAM.id), AZURE_MANUAL_MODELS);
   assertEquals(await repo.usage.listAll(), [USAGE_2]);
   assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_2]);
   assertEquals(await repo.openaiResponsesItems.lookupMany('key-a', [STORED_OPENAI_RESPONSES_ITEM.id], 0), []);
@@ -437,7 +449,7 @@ test('import merge upserts by repository key without clearing unrelated rows', a
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
-  await saveUpstreamForTest(repo.upstreams, AZURE_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, AZURE_UPSTREAM, { manualModels: AZURE_MANUAL_MODELS });
   await repo.usage.set({ ...USAGE_1, requests: 10 });
   await repo.webSearchUsage.set({ ...WEB_SEARCH_USAGE_1, requests: 10 });
 
@@ -798,7 +810,7 @@ test('a full v25 export re-imports verbatim — the export→import round trip i
   await repo.apiKeys.save({ ...KEY_B, userId: USER_BOB.id });
   await saveUpstreamForTest(repo.upstreams, COPILOT_UPSTREAM);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
-  await saveUpstreamForTest(repo.upstreams, AZURE_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, AZURE_UPSTREAM, { manualModels: AZURE_MANUAL_MODELS });
   await saveUpstreamForTest(repo.upstreams, CHATGPT_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.usage.set(USAGE_2);

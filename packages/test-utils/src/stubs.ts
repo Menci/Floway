@@ -116,9 +116,6 @@ export const stubModelCandidate = (overrides: {
     kind: 'custom',
     name: 'Test Upstream',
     inboundHeaderAllowlist: [],
-    disabledPublicModelIds: [],
-    modelPrefix: null,
-    modelsCache: null,
     instance: stubProvider(),
   };
   const modelOverrides = overrides.model ?? {};

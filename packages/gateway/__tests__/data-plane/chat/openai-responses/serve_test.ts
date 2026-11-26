@@ -20,7 +20,6 @@ import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-
 interface QueuedResolution {
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
-  readonly failedUpstreams: readonly string[];
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastResolveCall: { model?: string } = {};
@@ -48,7 +47,6 @@ const queueResolution = (
   resolutionsQueue.push({
     candidates: aliasRules !== undefined ? candidates.map(c => ({ ...c, rules: aliasRules })) : candidates,
     sawModel: candidates.length > 0,
-    failedUpstreams: [],
   });
 };
 
@@ -118,9 +116,6 @@ const makeCandidate = (overrides: {
       kind: 'custom',
       name: upstream,
       inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      modelsCache: null,
       instance: provider,
     },
     // Default keeps stubInternalModel's three-endpoint map intact; tests that

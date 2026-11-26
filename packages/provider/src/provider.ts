@@ -1,8 +1,8 @@
 import type { OpenAIAudioTranscriptionRequest } from './audio.ts';
 import type { FlagDefaults } from './flags.ts';
 import type { OpenAIImagesEditsRequest } from './images.ts';
-import type { ModelPrefixConfig } from './model-prefix.ts';
-import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from './model.ts';
+import type { UpstreamModelConfig } from './model-config.ts';
+import type { ProviderModel, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { HttpHead } from './result.ts';
 import type { ProviderScheduledOptions } from './scheduled.ts';
@@ -38,14 +38,6 @@ export interface Provider {
   // ASCII-case-insensitive names; regular expressions run against normalized
   // lowercase names. The gateway applies this at the candidate boundary.
   inboundHeaderAllowlist: readonly InboundHeaderMatcher[];
-  disabledPublicModelIds: readonly string[];
-  // Per-upstream model name prefix policy mirrored from the source upstream
-  // record so registry helpers — routing and listing — read it from the
-  // instance instead of re-fetching the row. `null` keeps the bare-id behavior.
-  modelPrefix: ModelPrefixConfig | null;
-  // The row's persisted catalog snapshot, mirrored so resolution does not pay
-  // a second round trip after the row has already been loaded.
-  modelsCache: UpstreamModelsCache | null;
   instance: ProviderInstance;
 }
 
@@ -140,7 +132,7 @@ export interface ProviderInstance {
   // Catalog refresh fetches a single resource and never enters the per-request
   // latency budget, so it takes the per-upstream fetcher directly instead of
   // the broader `UpstreamCallOptions` bag the data-plane `call*` methods use.
-  getProvidedModels(fetcher: Fetcher): Promise<readonly ProviderModel[]>;
+  getProvidedModels(fetcher: Fetcher, manualModels?: readonly UpstreamModelConfig[]): Promise<readonly ProviderModel[]>;
   callAlphaSearch(model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // /v1/completions text completions. Passthrough. Providers whose
   // upstream doesn't expose /v1/completions set `endpoints.openaiCompletions`

@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { seedModelsCache, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
+import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCopilotUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, assertStringIncludes, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
@@ -164,7 +164,9 @@ test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identit
   const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_switch_identity' });
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, existing);
-  await seedModelsCache(repo.upstreams, existing.id, await storedModelsRefreshIdentity(repo.upstreams, existing.id), {
+  const storedBefore = (await repo.upstreams.getById(existing.id))!;
+  await seedModelsCache(repo.upstreams, existing.id, {
+    configVersion: storedBefore.configVersion,
     revision: 1,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'old-tenant-model' })],
@@ -198,5 +200,6 @@ test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identit
     },
   );
 
-  assertEquals((await repo.upstreams.getById(existing.id))?.modelsCache, null);
+  assertEquals((await repo.upstreams.getById(existing.id))?.modelsCache, { revision: null, fetchedAt: null, lastError: null });
+  assertEquals(await repo.upstreamModels.listByUpstream(existing.id), []);
 });

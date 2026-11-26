@@ -370,12 +370,13 @@ test('/v1/models keeps the configured public endpoint when OMP connects through 
     config: {
       baseUrl: 'https://upstream.example', apiKey: 'upstream-key', ingressHeadersRules: [],
       endpoints: {}, modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [
-        { upstreamModelId: 'response-model', kind: 'chat', endpoints: { openaiResponses: {} }, chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } } },
-        { upstreamModelId: 'budget-model', kind: 'chat', endpoints: { anthropicMessages: {} }, chat: { reasoning: { budget_tokens: { min: 1024 } } } },
-      ],
     },
-  }));
+  }), {
+    manualModels: [
+      { upstreamModelId: 'response-model', kind: 'chat', endpoints: { openaiResponses: {} }, chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } } },
+      { upstreamModelId: 'budget-model', kind: 'chat', endpoints: { anthropicMessages: {} }, chat: { reasoning: { budget_tokens: { min: 1024 } } } },
+    ],
+  });
   await withMockedFetch(() => { throw new Error('configured models require no upstream fetch'); }, async () => {
     const endpoint = 'https://public.example/gateway';
     const response = await requestAppWithWarmModels(`http://internal:8788/v1/models?endpoint=${encodeURIComponent(endpoint)}`, {
@@ -418,39 +419,40 @@ test('/v1/models serves omp-tailored catalog to omp/* callers and preserves prec
       apiKey: 'sk-omp-test',
       endpoints: {},
       modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [
-        {
-          upstreamModelId: 'test-chat',
-          publicModelId: 'test-chat',
-          kind: 'chat',
-          endpoints: { openaiChatCompletions: {} },
-          limits: { max_context_window_tokens: 128_000, max_prompt_tokens: 100_000, max_output_tokens: 4_096 },
-          chat: { modalities: { input: ['text', 'image'], output: ['text'] } },
-        },
-        {
-          upstreamModelId: 'test-embed',
-          publicModelId: 'test-embed',
-          kind: 'embedding',
-          endpoints: { openaiEmbeddings: {} },
-          limits: { max_context_window_tokens: 8_192 },
-        },
-        {
-          upstreamModelId: 'test-image',
-          publicModelId: 'test-image',
-          kind: 'image',
-          endpoints: { openaiImagesGenerations: {} },
-        },
-        {
-          upstreamModelId: 'test-rerank',
-          publicModelId: 'test-rerank',
-          kind: 'rerank',
-          endpoints: { rerank: {} },
-          rerankTarget: { protocol: 'cohere-v1' },
-          limits: { max_context_window_tokens: 4_096 },
-        },
-      ],
     },
-  }));
+  }), {
+    manualModels: [
+      {
+        upstreamModelId: 'test-chat',
+        publicModelId: 'test-chat',
+        kind: 'chat',
+        endpoints: { openaiChatCompletions: {} },
+        limits: { max_context_window_tokens: 128_000, max_prompt_tokens: 100_000, max_output_tokens: 4_096 },
+        chat: { modalities: { input: ['text', 'image'], output: ['text'] } },
+      },
+      {
+        upstreamModelId: 'test-embed',
+        publicModelId: 'test-embed',
+        kind: 'embedding',
+        endpoints: { openaiEmbeddings: {} },
+        limits: { max_context_window_tokens: 8_192 },
+      },
+      {
+        upstreamModelId: 'test-image',
+        publicModelId: 'test-image',
+        kind: 'image',
+        endpoints: { openaiImagesGenerations: {} },
+      },
+      {
+        upstreamModelId: 'test-rerank',
+        publicModelId: 'test-rerank',
+        kind: 'rerank',
+        endpoints: { rerank: {} },
+        rerankTarget: { protocol: 'cohere-v1' },
+        limits: { max_context_window_tokens: 4_096 },
+      },
+    ],
+  });
 
   await withMockedFetch(
     request => {
@@ -490,15 +492,16 @@ test('the TypeSafe SDK user agent receives the { models } catalog its parsers re
       apiKey: 'sk-decision',
       endpoints: {},
       modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{
-        upstreamModelId: 'jev-1.13',
-        publicModelId: 'jev-1.13',
-        kind: 'decision',
-        endpoints: { decision: {} },
-        decisionTarget: { protocol: 'typesafe-systemone' },
-      }],
     },
-  }));
+  }), {
+    manualModels: [{
+      upstreamModelId: 'jev-1.13',
+      publicModelId: 'jev-1.13',
+      kind: 'decision',
+      endpoints: { decision: {} },
+      decisionTarget: { protocol: 'typesafe-systemone' },
+    }],
+  });
 
   // The warm helper only runs under an installed fetch mock.
   await withMockedFetch(

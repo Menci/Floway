@@ -29,7 +29,6 @@ const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
   ...overrides,
 });
@@ -85,22 +84,16 @@ test('getProvidedModels projects chat and embedding models from their capabiliti
 });
 
 test('getProvidedModels merges manual overrides in front of auto-fetched models and drops the auto duplicate', async () => {
-  const instance = createOllamaProvider(buildRecord({
-    config: {
-      baseUrl: 'https://ollama.com',
-      apiKey: 'ollama_test',
-      models: [{
-        upstreamModelId: 'gpt-oss:120b',
-        kind: 'chat',
-        endpoints: { openaiChatCompletions: {} },
-        display_name: 'Pinned 120B',
-        chat: { image_detail_original: true },
-        pricing: { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] },
-      }],
-    },
-  }));
+  const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(testFetcher);
+    const models = await instance.instance.getProvidedModels(testFetcher, [{
+      upstreamModelId: 'gpt-oss:120b',
+      kind: 'chat',
+      endpoints: { openaiChatCompletions: {} },
+      display_name: 'Pinned 120B',
+      chat: { image_detail_original: true },
+      pricing: { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] },
+    }]);
     // Manual entry appears first; the auto duplicate is filtered out so the
     // public id resolves to the manual entry's narrower endpoints map.
     assertEquals(models[0].id, 'gpt-oss:120b');
@@ -115,13 +108,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
 });
 
 test('manual transcription models call Ollama without auto-advertising the endpoint', async () => {
-  const instance = createOllamaProvider(buildRecord({
-    config: {
-      baseUrl: 'https://ollama.com',
-      apiKey: 'ollama_test',
-      models: [{ upstreamModelId: 'qwen-audio:latest', kind: 'chat', endpoints: { openaiAudioTranscriptions: {} }, chat: { image_detail_original: true } }],
-    },
-  }));
+  const instance = createOllamaProvider(buildRecord());
   let transcription: Request | undefined;
   await withMockedFetch(
     async request => {
@@ -134,7 +121,7 @@ test('manual transcription models call Ollama without auto-advertising the endpo
       throw new Error(`unexpected request ${request.url}`);
     },
     async () => {
-      const models = await instance.instance.getProvidedModels(testFetcher);
+      const models = await instance.instance.getProvidedModels(testFetcher, [{ upstreamModelId: 'qwen-audio:latest', kind: 'chat', endpoints: { openaiAudioTranscriptions: {} }, chat: { image_detail_original: true } }]);
       assertEquals(models.map(model => model.kind), ['transcription']);
       assertEquals(models[0]?.chat, undefined);
       await instance.instance.callOpenAIAudioTranscriptions(models[0], {

@@ -98,32 +98,22 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
     updatedAt: '2026-08-05T00:00:00.000Z',
     config: { opaque: { value: true } },
     state: { cursor: ['a', 1] },
-    modelsCache: null,
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
     hue: 210,
   };
-  const inserted = await repo.upstreams.insertForModels(upstreamRecord);
+  const inserted = await repo.upstreams.insert({ upstream: upstreamRecord });
   if (inserted === null) throw new Error('expected upstream fixture insert');
   const storedUpstream = await repo.upstreams.getById(upstreamRecord.id);
   if (storedUpstream === null) throw new Error('expected stored upstream fixture');
   await repo.upstreams.publishModelsRefresh({
     id: 'up_node',
     configVersion: storedUpstream.configVersion,
-    cacheEpoch: 0,
-    refreshInputs: {
-      provider: storedUpstream.kind,
-      configJson: JSON.stringify(storedUpstream.config),
-      flagOverridesJson: '{}',
-      proxyFallbackListJson: '[]',
-    },
-    cache: {
-      revision: MODEL_CATALOG_REVISION,
-      fetchedAt: 1_786_000_000_000,
-      models: [stubProviderModel({ id: 'node-model', enabledFlags: new Set(['vendor-kimi'] as const) })],
-    },
+    revision: MODEL_CATALOG_REVISION,
+    fetchedAt: 1_786_000_000_000,
+    models: [{ source: 'auto', model: stubProviderModel({ id: 'node-model', enabledFlags: new Set(['vendor-kimi'] as const) }) }],
   });
   await repo.modelAliases.insert({
     id: 'alias_node',
@@ -146,10 +136,11 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
   });
 
   const upstream = await repo.upstreams.getById('up_node');
+  const cachedModels = await repo.upstreamModels.listByUpstream('up_node');
   assertEquals(upstream?.config, { opaque: { value: true } });
   assertEquals(upstream?.state, { cursor: ['a', 1] });
-  assertEquals(upstream?.modelsCache?.models[0].id, 'node-model');
-  assertEquals(upstream?.modelsCache?.models[0].enabledFlags instanceof Set, true);
+  assertEquals(cachedModels[0]?.model.id, 'node-model');
+  assertEquals(cachedModels[0]?.model.enabledFlags instanceof Set, true);
   assertEquals((await repo.modelAliases.getById('alias_node'))?.announcedMetadata, { limits: { max_output_tokens: 4096 } });
   assertEquals((await repo.openaiResponsesSnapshots.lookup('key_node', 'resp_node', 0))?.itemIds, ['msg-a', 'msg-b']);
 }));

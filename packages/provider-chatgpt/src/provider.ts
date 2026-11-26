@@ -171,9 +171,6 @@ export const createChatGPTProvider = (record: UpstreamRecord): Provider => {
     kind: 'chatgpt',
     name: record.name,
     inboundHeaderAllowlist: INBOUND_HEADER_ALLOWLIST,
-    disabledPublicModelIds: record.disabledPublicModelIds,
-    modelPrefix: record.modelPrefix,
-    modelsCache: record.modelsCache,
     instance,
   };
 };
