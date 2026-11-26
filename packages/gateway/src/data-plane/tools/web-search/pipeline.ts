@@ -33,7 +33,7 @@ class BoundedPageCache extends Map<string, Page> {
 }
 
 export interface LocalWebSearchService {
-  configuration(): Promise<WebSearchConfig>;
+  passthroughConfiguration(): Promise<Readonly<WebSearchConfig['passthroughOpenAiSearch']>>;
   getProvider(): Promise<ConfiguredWebSearchProvider>;
   pageCache: PageCache;
 }
@@ -43,7 +43,7 @@ export const createLocalWebSearchService = (): LocalWebSearchService => {
   let provider: Promise<ConfiguredWebSearchProvider> | undefined;
   const configuration = () => config ??= loadWebSearchConfig();
   return {
-    configuration,
+    passthroughConfiguration: async () => (await configuration()).passthroughOpenAiSearch,
     getProvider: () => provider ??= configuration().then(resolveConfiguredWebSearchProvider),
     pageCache: new BoundedPageCache(),
   };

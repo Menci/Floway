@@ -36,7 +36,7 @@ const services = {
   affinity: new AffinityCodec('99'.repeat(32)),
   sidecarCodec: createSidecarCodecFactory('99'.repeat(32)),
   localWebSearch: {
-    configuration: async () => DEFAULT_WEB_SEARCH_CONFIG,
+    passthroughConfiguration: async () => DEFAULT_WEB_SEARCH_CONFIG.passthroughOpenAiSearch,
     getProvider: async () => ({ type: 'disabled' }),
     pageCache: new Map(),
   },

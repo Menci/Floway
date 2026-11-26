@@ -707,7 +707,7 @@ export const webSearchServerTool: ServerToolRegistration = async (facts, scope) 
   }
 
   const { filters } = prepared;
-  const config = await scope.services.localWebSearch.configuration();
+  const passthrough = await scope.services.localWebSearch.passthroughConfiguration();
   const includes = Array.isArray(payload.include) ? payload.include : [];
   const sessionId = crypto.randomUUID();
   const hosted = tools.filter(isHostedWebSearchTool).at(-1);
@@ -716,7 +716,7 @@ export const webSearchServerTool: ServerToolRegistration = async (facts, scope) 
     filters,
     includeSearchResults: includes.includes('web_search_call.results'),
     includeSearchActionSources: includes.includes('web_search_call.action.sources'),
-    ...(config.passthroughOpenAiSearch.enabled
+    ...(passthrough.enabled
       ? { executeAlpha: async (commands, action, context) => await runAlphaSearch(sessionId, commands, settings, action, context) }
       : {}),
   };

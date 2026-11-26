@@ -27,8 +27,7 @@ export const routeAlphaSearch = defineStage({
   },
   return: { provides: ['response.http', 'response.alphaSearch'] },
   async execute(facts, scope) {
-    const config = await scope.services.localWebSearch.configuration();
-    const upstreamSearch = config.passthroughOpenAiSearch;
+    const upstreamSearch = await scope.services.localWebSearch.passthroughConfiguration();
     if (!upstreamSearch.enabled) {
       const request: AlphaSearchRequest = facts['request.alphaSearch'];
       const prepared = prepareLocalAlphaSearch(request);

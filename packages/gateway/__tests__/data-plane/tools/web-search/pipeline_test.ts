@@ -12,6 +12,31 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { UpstreamTransportError } from '@floway-dev/http';
 import { run } from '@floway-dev/pipeline';
 
+test('search routing exposes a credential-free projection and shares the lazy configuration read', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const passthroughOpenAiSearch = { enabled: true, upstreamId: 'fixture-upstream', model: 'fixture-model' };
+  await repo.webSearchConfig.save({
+    ...DEFAULT_WEB_SEARCH_CONFIG,
+    passthroughOpenAiSearch,
+    provider: 'tavily',
+    tavily: { apiKey: 'fixture-secret' },
+  });
+  const read = vi.spyOn(repo.webSearchConfig, 'get');
+  const service = createLocalWebSearchService();
+  expect(read).not.toHaveBeenCalled();
+
+  const [routing, provider, repeatedProvider] = await Promise.all([
+    service.passthroughConfiguration(),
+    service.getProvider(),
+    service.getProvider(),
+  ]);
+  expect(routing).toEqual(passthroughOpenAiSearch);
+  expect(provider).toMatchObject({ type: 'enabled', provider: 'tavily' });
+  expect(repeatedProvider).toBe(provider);
+  expect(read).toHaveBeenCalledTimes(1);
+});
+
 test.each([
   ['Jina', createJinaWebSearchProvider],
   ['Microsoft Web IQ', createMicrosoftWebIqWebSearchProvider],
@@ -122,7 +147,7 @@ test('local search preserves provider result fields and binds the child signal',
   };
   const search = vi.fn<WebSearchProvider['search']>().mockResolvedValue(result);
   const localWebSearchService: LocalWebSearchService = {
-    configuration: async () => DEFAULT_WEB_SEARCH_CONFIG,
+    passthroughConfiguration: async () => DEFAULT_WEB_SEARCH_CONFIG.passthroughOpenAiSearch,
     getProvider: async () => ({
       type: 'enabled', provider: 'tavily', impl: {
         search,
