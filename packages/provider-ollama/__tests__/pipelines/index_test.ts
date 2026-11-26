@@ -172,6 +172,42 @@ test('counts messages with the protocol header and no Ollama probe', async () =>
   });
 });
 
+test.each([
+  { status: 204, body: null, kind: 'result' },
+  { status: 205, body: null, kind: 'result' },
+  { status: 200, body: null, kind: 'error' },
+  { status: 200, body: '', kind: 'error' },
+  { status: 200, body: 'null', kind: 'error' },
+] as const)('handles HTTP $status with count body $body', async ({ status, body, kind }) => {
+  const fetch = vi.fn<ProviderFetcher>(async () => ({
+    response: new Response(body, {
+      status,
+      statusText: 'Upstream count response',
+      headers: { 'content-type': 'application/json', 'x-upstream': 'kept' },
+    }),
+  }));
+  await withRun(ollamaPipelines.anthropicMessagesCountTokens, {
+    ...entry,
+    'request.anthropicMessagesCountTokens': { model: 'public-model', messages: [] },
+  }, fetch, async running => {
+    const answer = await running.result;
+    expect(answer['response.http']).toMatchObject({
+      status,
+      statusText: 'Upstream count response',
+      headers: [['content-type', 'application/json'], ['x-upstream', 'kept']],
+      body: null,
+    });
+    expect(answer['response.usageModelKey']).toBe('native-model');
+    const outcome = answer['response.anthropicMessagesCountTokens'];
+    if (kind === 'result') {
+      expect(outcome).toEqual({ kind: 'result', result: null });
+    } else {
+      expect(outcome).toMatchObject({ kind: 'error', source: 'upstream' });
+    }
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+});
+
 test('self-hosted Ollama requests omit authorization and account probing', async () => {
   const fetch = vi.fn<ProviderFetcher>(async (_url, init) => {
     expect(new Headers(init.headers).has('authorization')).toBe(false);
