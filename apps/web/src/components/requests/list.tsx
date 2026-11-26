@@ -15,6 +15,7 @@ import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 import { BatchExport } from './batch-export';
 import { RequestFilters } from './filters';
 import { errorLabel, requestSeverity, totalTokens } from './format';
+import { RequestKeyChip } from './key-chip';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -40,6 +41,9 @@ const ROW_HEIGHT = 84;
 // A phone's width, where the page inset steps down in ../../global.css: the
 // toolbar folds behind a toggle and each row keeps only what fits one line.
 const COMPACT_QUERY = '(max-width: 680px)';
+// A generated key id cannot contain a NUL, and the key dropdown needs one
+// string to stand for the merged scope beside the real ids.
+const ALL_KEYS_OPTION = '\u0000all';
 
 const useStyles = makeStyles({
   keySelector: {
@@ -175,8 +179,9 @@ interface RequestListProps {
   /** Where the record a row opens is read, so the row can be opened in a second tab. */
   addressOfRecord: (recordId: string) => string;
   apiKeys: ApiKey[];
-  selectedKeyId: string;
-  onKeyChange: (keyId: string) => void;
+  /** `null` is the merged all-keys log. */
+  selectedKeyId: string | null;
+  onKeyChange: (keyId: string | null) => void;
   records: DumpMetadata[];
   selectedRecordId: string | null;
   onRecordChange: (recordId: string) => void;
@@ -191,6 +196,8 @@ interface RowProps {
   compact: boolean;
   /** Whether the export checkbox leads the row. */
   exportable: boolean;
+  /** Whether every row names the key that captured it. */
+  showSourceKey: boolean;
   exportIds: Set<string>;
   onToggleExport: (id: string) => void;
   addressOfRecord: (recordId: string) => string;
@@ -207,7 +214,7 @@ function RequestRow({ index, records, style, ...rest }: RowComponentProps<RowPro
   return <RequestRowContent {...rest} index={index} record={record} records={records} style={style} />;
 }
 
-function RequestRowContent({ compact, exportable, exportIds, onToggleExport, addressOfRecord, index, now, onSelect, record, records, selectByIndex, selectedId, style }: RowProps & {
+function RequestRowContent({ compact, exportable, showSourceKey, exportIds, onToggleExport, addressOfRecord, index, now, onSelect, record, records, selectByIndex, selectedId, style }: RowProps & {
   index: number;
   record: DumpMetadata;
   style: CSSProperties;
@@ -250,9 +257,13 @@ function RequestRowContent({ compact, exportable, exportIds, onToggleExport, add
         <div className="flex items-center gap-2 min-w-0">
           <StatusIcon aria-hidden="true" className={`${s[severity]} block flex-none`} fontSize={22} />
           <span className="sr-only">{t(`requests.status.${severity}`)}</span>
-          <Text size={300} className="min-w-0 font-mono" truncate wrap={false}>
+          <Text size={300} className="min-w-0 flex-1 font-mono" truncate wrap={false}>
             {record.model ?? t('requests.unknownModel')}
           </Text>
+          {/* The merged log names the key each row came from; a single key's
+              log already says so in the selector above it. Compact, the name
+              gives way to the timestamp rather than folding the row. */}
+          {showSourceKey && !compact && <RequestKeyChip apiKey={record.key} className="flex-none max-w-40" />}
           {/* These triggers stay unfocusable: the row is an `option` under a
             roving tabindex, and a focusable descendant breaks that stop. */}
           <Tooltip content={dateTime(record.startedAt, locale)} relationship="description">
@@ -269,6 +280,9 @@ function RequestRowContent({ compact, exportable, exportIds, onToggleExport, add
               {record.path}
             </Text>
           </Tooltip>
+          {/* Compact has no room on the model line, so the source key takes the
+              end of the path line instead of disappearing. */}
+          {showSourceKey && compact && <RequestKeyChip apiKey={record.key} className="flex-none max-w-24" />}
           {/* Compact, the upstream chip gives way to the path rather than overflowing. */}
           {record.upstream && <span className={compact ? 'flex min-w-0 shrink' : 'contents'}><ProviderBadge
             upstream={record.upstream}
@@ -330,7 +344,12 @@ export function RequestListPanel(props: RequestListProps) {
   // A selection already made keeps its checkboxes and its export control in
   // view, so folding the toolbar never hides what it would act on.
   const exportable = toolsShown || exportIds.size > 0;
-  const selectedKey = props.apiKeys.find(key => key.id === props.selectedKeyId)!;
+  const allKeys = props.selectedKeyId === null;
+  const selectedKey = allKeys ? null : props.apiKeys.find(key => key.id === props.selectedKeyId)!;
+  const selectedValue = allKeys ? ALL_KEYS_OPTION : props.selectedKeyId!;
+  const selectedLabel = selectedKey === null
+    ? t('requests.allKeys')
+    : `${selectedKey.name} (${selectedKey.key.slice(-4)})`;
 
   const { onRecordChange, records } = props;
   const selectByIndex = useCallback((index: number) => {
@@ -343,6 +362,7 @@ export function RequestListPanel(props: RequestListProps) {
 
   const rowProps = useMemo<RowProps>(() => ({
     compact, exportable,
+    showSourceKey: allKeys,
     exportIds, onToggleExport,
     addressOfRecord: props.addressOfRecord,
     now,
@@ -350,17 +370,21 @@ export function RequestListPanel(props: RequestListProps) {
     records,
     selectedId: props.selectedRecordId,
     selectByIndex,
-  }), [compact, exportable, exportIds, onToggleExport, now, onRecordChange, props.addressOfRecord, records, props.selectedRecordId, selectByIndex]);
+  }), [allKeys, compact, exportable, exportIds, onToggleExport, now, onRecordChange, props.addressOfRecord, records, props.selectedRecordId, selectByIndex]);
 
   return (
     <div className="h-full min-h-0 flex flex-col">
       <Dropdown
         aria-label={t('requests.apiKey')}
         className={s.keySelector}
-        selectedOptions={[props.selectedKeyId]}
-        value={`${selectedKey.name} (${selectedKey.key.slice(-4)})`}
-        onOptionSelect={(_, data) => data.optionValue !== undefined && props.onKeyChange(data.optionValue)}
+        selectedOptions={[selectedValue]}
+        value={selectedLabel}
+        onOptionSelect={(_, data) => {
+          if (data.optionValue === undefined) return;
+          props.onKeyChange(data.optionValue === ALL_KEYS_OPTION ? null : data.optionValue);
+        }}
       >
+        <Option text={t('requests.allKeys')} value={ALL_KEYS_OPTION}>{t('requests.allKeys')}</Option>
         {props.apiKeys.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
       </Dropdown>
       <div className={mergeClasses(PANEL_INSET_CLASS, 'flex flex-col gap-2', s.toolbar)}>
@@ -379,7 +403,7 @@ export function RequestListPanel(props: RequestListProps) {
           failures={props.failures ?? false}
           onChange={props.onFilterChange}
         />}
-        {exportable && <BatchExport keyId={props.selectedKeyId} selected={exportIds} loadedIds={records.map(record => record.id)} onChange={setExportIds} />}
+        {exportable && <BatchExport selected={exportIds} loadedIds={records.map(record => record.id)} onChange={setExportIds} />}
       </div>
       {props.error && <OutcomeMessageBar className="!m-2" onDismiss={props.onDismissError}>{props.error}</OutcomeMessageBar>}
       {props.records.length === 0 ? (

@@ -10,7 +10,7 @@ import type { DumpRecord } from '@floway-dev/gateway/browser';
 
 const { Button, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger } = fluentComponents;
 
-export function BatchExport({ keyId, selected, loadedIds, onChange }: { keyId: string; selected: Set<string>; loadedIds: string[]; onChange: (ids: Set<string>) => void }) {
+export function BatchExport({ selected, loadedIds, onChange }: { selected: Set<string>; loadedIds: string[]; onChange: (ids: Set<string>) => void }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
@@ -19,8 +19,10 @@ export function BatchExport({ keyId, selected, loadedIds, onChange }: { keyId: s
     setError(false);
     try {
       const records: DumpRecord[] = [];
+      // A selection can span keys, so each record is read by id from the
+      // owner-wide endpoint rather than through the key whose page opened it.
       for (const recordId of selected) {
-        const result = await callApi(() => api.api.dump.keys[':keyId'].records[':recordId'].$get({ param: { keyId, recordId } }));
+        const result = await callApi(() => api.api.dump.records[':recordId'].$get({ param: { recordId } }));
         if (result.error) throw result.error;
         records.push(result.data);
       }

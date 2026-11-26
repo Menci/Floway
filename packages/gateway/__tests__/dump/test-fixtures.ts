@@ -9,6 +9,7 @@ export const fakeMeta = (overrides: Partial<DumpMetadata> = {}): DumpMetadata =>
   method: 'POST',
   path: '/v1/x',
   status: 200,
+  key: { id: 'test-key', name: 'Test key', suffix: '-key' },
   upstream: null,
   model: null,
   inputTokens: null,
@@ -25,6 +26,18 @@ export const fakeRecord = (overrides: Partial<DumpMetadata> = {}): StoredDumpRec
   request: { method: 'POST', path: '/v1/x', headers: [], body: new Uint8Array() },
   response: { status: 200, headers: [], body: { type: 'none' } },
 });
+
+// The stub mirrors the store's own list filters: what the SQL page removed
+// must not reappear through the fixture.
+const matchesList = (meta: DumpMetadata, opts: { q?: string | undefined; failures?: boolean | undefined }): boolean => {
+  if (opts.failures && meta.error === null && (meta.status ?? 0) < 400) return false;
+  if (!opts.q) return true;
+  const haystack = [
+    meta.id, meta.path, meta.model, meta.upstream?.name, meta.key.name,
+    meta.status, meta.error?.kind === 'failed' ? meta.error.reason : meta.error?.kind,
+  ].join(' ').toLowerCase();
+  return haystack.includes(opts.q.toLowerCase());
+};
 
 type DumpStubFailMethod =
   | 'put'
@@ -72,7 +85,7 @@ export const installDumpStubs = (
     },
     async list(keyId, opts) {
       if (throws.list) throw throws.list;
-      const list = records.get(keyId) ?? [];
+      const list = (records.get(keyId) ?? []).filter(r => matchesList(r.meta, opts));
       let start = 0;
       if (opts.before) {
         const idx = list.findIndex(r => r.meta.id === opts.before);
@@ -80,9 +93,31 @@ export const installDumpStubs = (
       }
       return list.slice(start, start + opts.limit).map(r => r.meta);
     },
+    async listAll(keyIds, opts) {
+      if (throws.list) throw throws.list;
+      // The stub keeps each key's list insertion-ordered; merging by id keeps
+      // the newest-first order the real store's cursor relies on.
+      const merged = keyIds.flatMap(keyId => records.get(keyId) ?? []).filter(r => matchesList(r.meta, opts));
+      const ordered = [...merged].sort((a, b) => a.meta.id < b.meta.id ? 1 : a.meta.id > b.meta.id ? -1 : 0);
+      let start = 0;
+      if (opts.before) {
+        const idx = ordered.findIndex(r => r.meta.id === opts.before);
+        if (idx < 0) return [];
+        start = idx + 1;
+      }
+      return ordered.slice(start, start + opts.limit).map(r => r.meta);
+    },
     async get(keyId, id) {
       if (throws.get) throw throws.get;
       return (records.get(keyId) ?? []).find(r => r.meta.id === id) ?? null;
+    },
+    async getAny(keyIds, id) {
+      if (throws.get) throw throws.get;
+      for (const keyId of keyIds) {
+        const found = (records.get(keyId) ?? []).find(r => r.meta.id === id);
+        if (found) return found;
+      }
+      return null;
     },
     async deleteExpiredBatch() { return 0; },
     async findOldestCreatedAt() { return null; },

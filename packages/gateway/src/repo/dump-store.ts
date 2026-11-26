@@ -14,6 +14,7 @@ import {
 import type { DumpBodyDescriptor } from '../dump/storage-codec.ts';
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
 import type {
+  DumpKeyRef,
   DumpMetadata,
   DumpRecordId,
   DumpUpstreamRef,
@@ -38,6 +39,10 @@ const HOUR_MS = 60 * 60 * 1000;
 
 interface DumpRow {
   id: string;
+  created_at: number;
+  key_id: string;
+  key_name: string;
+  key_suffix: string;
   upstream_id: string | null;
   upstream_name: string | null;
   upstream_kind: string | null;
@@ -67,6 +72,42 @@ const hydrateUpstream = (row: Pick<DumpRow, 'upstream_id' | 'upstream_name' | 'u
     hue: parseUpstreamHue(row.upstream_id, row.upstream_hue),
   };
 };
+
+const hydrateKey = (row: Pick<DumpRow, 'key_id' | 'key_name' | 'key_suffix'>): DumpKeyRef => ({
+  id: row.key_id,
+  name: row.key_name,
+  suffix: row.key_suffix,
+});
+
+// Decoding a row is where a list page's cost actually is: the metadata JSON
+// goes back through its zod schema. The merged page sorts up to one page per
+// key and returns only `limit`, so it decodes after the cut.
+const hydrateListedDumpRow = (row: DumpRow): DumpMetadata => ({
+  ...decodePersistedDumpMetadata(row.meta_json, `dump record ${row.id} metadata`),
+  key: hydrateKey(row),
+  upstream: hydrateUpstream(row),
+});
+
+// The request log's one search box covers identity, route, model, upstream and key
+// name. The key name is joined in, so a merged row can be narrowed without
+// knowing which key captured it; the live stream applies the same field.
+// https://www.sqlite.org/lang_corefunc.html#instr
+const SEARCH_EXPRESSION = `instr(lower(d.id || ' ' || coalesce(json_extract(d.meta_json, '$.path'), '') || ' ' || coalesce(json_extract(d.meta_json, '$.model'), '') || ' ' || coalesce(u.name, '') || ' ' || coalesce(k.name, '') || ' ' || coalesce(json_extract(d.meta_json, '$.status'), '') || ' ' || coalesce(json_extract(d.meta_json, '$.error.reason'), json_extract(d.meta_json, '$.error.kind'), '')), lower(?)) > 0`;
+
+const keyIdList = (keyIds: readonly string[]): string => JSON.stringify(keyIds);
+
+// A retired key's rows are unreadable even before its physical sweep: the same
+// join the single-key reads already relied on.
+const recordJoins = 'LEFT JOIN upstreams u ON u.id = d.upstream_id '
+  + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL';
+
+const retentionCondition = 'd.created_at >= ? - k.dump_retention_seconds * 1000';
+
+const failureCondition = "(json_type(d.meta_json, '$.error') != 'null' OR json_extract(d.meta_json, '$.status') >= 400)";
+
+// The key segment of a list row; `substr` cuts the display tail in SQL so the
+// raw key column is never read out.
+const recordSelect = `SELECT d.id, d.key_id, k.name AS key_name, substr(k.key, -4) AS key_suffix, d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue, d.created_at FROM dump_records d ${recordJoins}`;
 
 const hourBucket = (ms: number): string => {
   const date = new Date(Math.floor(ms / HOUR_MS) * HOUR_MS);
@@ -229,53 +270,81 @@ export class FileDumpStore implements DumpStore {
   }
 
   async list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]> {
-    const beforeId = opts.before ?? null;
-    const beforeRow = beforeId !== null
-      ? await this.db.prepare(
-          'SELECT created_at FROM dump_records WHERE key_id = ? AND id = ?',
-        ).bind(keyId, beforeId).first<{ created_at: number }>()
-      : null;
-    if (beforeId !== null && beforeRow === null) return [];
-    const beforeTs = beforeRow?.created_at ?? null;
+    const beforeTs = opts.before === undefined ? null : await this.beforeTimestamp([keyId], opts.before);
+    if (opts.before !== undefined && beforeTs === null) return [];
+    return (await this.listKeyPage(keyId, opts, beforeTs)).map(row => hydrateListedDumpRow(row));
+  }
 
+  // One page per key, merged in memory. `dump_records` is indexed by
+  // `(key_id, created_at DESC)`, so a single `key_id IN (...)` scan reads every
+  // retained row of every key before it can sort and cut — linear in the
+  // retention window rather than in the page size. Each key's own index seek
+  // touches at most `limit` rows.
+  async listAll(keyIds: readonly string[], opts: DumpListOptions): Promise<DumpMetadata[]> {
+    if (keyIds.length === 0) return [];
+    // The cursor is global, so it is resolved once across the whole scope and
+    // every key's query takes the same (created_at, id) bound. A cursor that
+    // names a record outside the scope cannot order this page.
+    const beforeTs = opts.before === undefined ? null : await this.beforeTimestamp(keyIds, opts.before);
+    if (opts.before !== undefined && beforeTs === null) return [];
+    const pages = await Promise.all(keyIds.map(keyId => this.listKeyPage(keyId, opts, beforeTs)));
+    // Ordering happens on the raw rows: the merged candidate set is up to K
+    // pages, and only `limit` of them are ever decoded.
+    return pages
+      .flat()
+      .sort((a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+      .slice(0, opts.limit)
+      .map(row => hydrateListedDumpRow(row));
+  }
+
+  private async beforeTimestamp(keyIds: readonly string[], before: DumpRecordId): Promise<number | null> {
+    const row = await this.db.prepare(
+      'SELECT created_at FROM dump_records WHERE id = ? AND key_id IN (SELECT CAST(value AS TEXT) FROM json_each(?))',
+    ).bind(before, keyIdList(keyIds)).first<{ created_at: number }>();
+    return row?.created_at ?? null;
+  }
+
+  private async listKeyPage(keyId: string, opts: DumpListOptions, beforeTs: number | null): Promise<DumpRow[]> {
     // Newest-first with a compound (created_at, id) cursor so rows sharing a
     // millisecond still page deterministically — ULID lex order matches
     // creation order within the ms.
-    const select
-      = 'SELECT d.id, d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue '
-      + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
-      + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL ';
-    const conditions = ['d.key_id = ?', 'd.created_at >= ? - k.dump_retention_seconds * 1000'];
+    const conditions = ['d.key_id = ?', retentionCondition];
     const parameters: (string | number)[] = [keyId, Date.now()];
     if (beforeTs !== null) {
       conditions.push('(d.created_at < ? OR (d.created_at = ? AND d.id < ?))');
-      parameters.push(beforeTs, beforeTs, beforeId!);
+      parameters.push(beforeTs, beforeTs, opts.before!);
     }
-    if (opts.failures) conditions.push("(json_type(d.meta_json, '$.error') != 'null' OR json_extract(d.meta_json, '$.status') >= 400)");
+    if (opts.failures) conditions.push(failureCondition);
     if (opts.q) {
-      conditions.push(`instr(lower(d.id || ' ' || coalesce(json_extract(d.meta_json, '$.path'), '') || ' ' || coalesce(json_extract(d.meta_json, '$.model'), '') || ' ' || coalesce(u.name, '') || ' ' || coalesce(json_extract(d.meta_json, '$.status'), '') || ' ' || coalesce(json_extract(d.meta_json, '$.error.reason'), json_extract(d.meta_json, '$.error.kind'), '')), lower(?)) > 0`);
+      conditions.push(SEARCH_EXPRESSION);
       parameters.push(opts.q);
     }
-    const stmt = this.db.prepare(`${select} WHERE ${conditions.join(' AND ')} ORDER BY d.created_at DESC, d.id DESC LIMIT ?`).bind(...parameters, opts.limit);
-    const { results } = await stmt.all<Pick<DumpRow, 'id' | 'meta_json' | 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_hue'>>();
-    return results.map(row => ({
-      ...decodePersistedDumpMetadata(row.meta_json, `dump record ${row.id} metadata`),
-      upstream: hydrateUpstream(row),
-    }));
+    const stmt = this.db.prepare(`${recordSelect} WHERE ${conditions.join(' AND ')} ORDER BY d.created_at DESC, d.id DESC LIMIT ?`).bind(...parameters, opts.limit);
+    const { results } = await stmt.all<DumpRow>();
+    return results;
   }
 
   async get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
+    return await this.getWhere([keyId], recordId);
+  }
+
+  async getAny(keyIds: readonly string[], recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
+    return await this.getWhere(keyIds, recordId);
+  }
+
+  private async getWhere(keyIds: readonly string[], recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
+    if (keyIds.length === 0) return null;
     const row = await this.db.prepare(
-      'SELECT d.id, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue, '
+      'SELECT d.id, d.key_id, k.name AS key_name, substr(k.key, -4) AS key_suffix, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue, '
       + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor, d.response_upstream_body_descriptor '
-      + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
-      + 'JOIN api_keys k ON k.id = d.key_id AND k.deleted_at IS NULL AND k.dump_retention_seconds IS NOT NULL '
-      + 'WHERE d.key_id = ? AND d.id = ? AND d.created_at >= ? - k.dump_retention_seconds * 1000',
-    ).bind(keyId, recordId, Date.now()).first<DumpRow>();
+      + `FROM dump_records d ${recordJoins} `
+      + `WHERE d.id = ? AND d.key_id IN (SELECT CAST(value AS TEXT) FROM json_each(?)) AND ${retentionCondition}`,
+    ).bind(recordId, keyIdList(keyIds), Date.now()).first<DumpRow>();
     if (!row) return null;
 
     const meta: DumpMetadata = {
       ...decodePersistedDumpMetadata(row.meta_json, `dump record ${recordId} metadata`),
+      key: hydrateKey(row),
       upstream: hydrateUpstream(row),
     };
     const requestHeaders = decodeDumpHeaders(row.request_headers_json, `dump record ${recordId} request headers`);

@@ -1480,6 +1480,7 @@ const zhHansCN = {
       title: '请求记录',
       description: '查看请求记录、状态、路由结果和错误详情',
       apiKey: '请求列表使用的 API 密钥',
+      allKeys: '全部密钥',
       listLabel: '已捕获的请求',
       empty: '尚未记录任何请求',
       streamDisconnected: '请求流已断开。',

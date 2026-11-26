@@ -294,6 +294,11 @@ export class DumpAccumulator {
       method: this.requestSnapshot.method,
       path: this.requestSnapshot.path,
       status: response.status,
+      key: {
+        id: this.apiKey.id,
+        name: this.apiKey.name,
+        suffix: this.apiKey.key.slice(-4),
+      },
       upstream: await resolveUpstreamRef(this.upstreamId ?? this.http.exchanges.at(-1)?.upstreamId ?? null),
       model: this.model,
       inputTokens: this.inputTokens,

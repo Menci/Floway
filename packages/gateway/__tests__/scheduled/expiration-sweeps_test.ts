@@ -45,6 +45,7 @@ const dumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
     method: 'POST',
     path: '/v1/responses',
     status: 200,
+    key: { id: 'key-a', name: 'Key A', suffix: 'key-a' },
     upstream: null,
     model: 'gpt-test',
     inputTokens: null,

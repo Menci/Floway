@@ -14,6 +14,15 @@ export const dumpUpstreamRefSchema = z.object({
   hue: z.number(),
 }).strict();
 
+// The key a record was captured under. The suffix is the display tail of the
+// raw key, never the key itself: a captured record is served to every reader
+// of the owner's request log, and the raw key is a credential.
+export const dumpKeyRefSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  suffix: z.string(),
+}).strict();
+
 export const dumpMetadataSchema = z.object({
   id: z.string(),
   startedAt: z.number(),
@@ -21,6 +30,8 @@ export const dumpMetadataSchema = z.object({
   method: z.string(),
   path: z.string(),
   status: z.number().nullable(),
+  // Hydrated from the owning row on read, so it is absent from `meta_json`.
+  key: dumpKeyRefSchema,
   upstream: dumpUpstreamRefSchema.nullable(),
   model: z.string().nullable(),
   inputTokens: z.number().nullable(),
@@ -39,7 +50,7 @@ export const dumpMetadataSchema = z.object({
   targetApi: z.enum(['anthropicMessages', 'geminiGenerateContent', 'openaiResponses', 'openaiChatCompletions']).nullish(),
 }).strict();
 
-export const persistedDumpMetadataSchema = dumpMetadataSchema.omit({ upstream: true });
+export const persistedDumpMetadataSchema = dumpMetadataSchema.omit({ upstream: true, key: true });
 
 export const dumpHeadersSchema = z.array(z.tuple([z.string(), z.string()]));
 

@@ -34,7 +34,7 @@ const createSelection = (initial: Selection) => {
 
 const Harness = ({ commits, selection }: { commits: Commit[]; selection: ReturnType<typeof createSelection> }) => {
   const { keyId, seed } = useSyncExternalStore(selection.subscribe, selection.read);
-  const subscription = useDumpSubscription(keyId, seed);
+  const subscription = useDumpSubscription({ keyId, keyIds: keyId === null ? [] : [keyId] }, seed);
   const ids = subscription.records.map(entry => entry.id);
   // Logging from a layout effect rather than from the render body is what makes
   // the render-phase reset observable: a render React throws away never

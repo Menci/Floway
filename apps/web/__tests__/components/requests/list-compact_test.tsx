@@ -28,6 +28,7 @@ const record: DumpMetadata = {
   method: 'POST',
   path: '/v1/chat/completions',
   status: 200,
+  key: { id: 'key-1', name: 'Default Key', suffix: '1234' },
   model: 'gpt-4o',
   inputTokens: 10,
   outputTokens: 20,

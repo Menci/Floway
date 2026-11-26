@@ -6,7 +6,7 @@ import { renderInApp } from '../../render';
 
 it('keeps export actions in a menu and preserves selections outside the loaded filter', () => {
   const onChange = vi.fn();
-  renderInApp(<BatchExport keyId="key" selected={new Set(['loaded', 'outside'])} loadedIds={['loaded']} onChange={onChange} />);
+  renderInApp(<BatchExport selected={new Set(['loaded', 'outside'])} loadedIds={['loaded']} onChange={onChange} />);
   expect(screen.queryByRole('menuitem', { name: 'Combined JSON' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Export 2 selected' }));
   expect(screen.getByRole('menuitem', { name: 'Combined JSON' })).toBeTruthy();

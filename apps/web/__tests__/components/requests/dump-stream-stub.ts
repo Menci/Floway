@@ -10,6 +10,7 @@ export const record = (id: string): DumpMetadata => ({
   method: 'POST',
   path: `/v1/${id}`,
   status: 200,
+  key: { id: 'key-a', name: 'Key A', suffix: 'key-a' },
   upstream: null,
   model: null,
   inputTokens: null,

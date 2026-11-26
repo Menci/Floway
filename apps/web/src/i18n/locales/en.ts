@@ -1497,6 +1497,7 @@ const en = {
       title: 'Requests',
       description: 'Inspect request records, status, routing results, and error details',
       apiKey: 'API key for the request list',
+      allKeys: 'All keys',
       listLabel: 'Captured requests',
       empty: 'No requests recorded yet',
       streamDisconnected: 'The request stream disconnected.',

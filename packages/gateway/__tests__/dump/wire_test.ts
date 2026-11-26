@@ -12,6 +12,7 @@ const baseStored = (overrides: Partial<StoredDumpRecord> = {}): StoredDumpRecord
     method: 'POST',
     path: '/v1/x',
     status: 200,
+    key: { id: 'key-a', name: 'Key A', suffix: 'key-a' },
     upstream: null,
     model: null,
     inputTokens: null,
