@@ -77,15 +77,9 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     dumpRetentionSeconds: null,
     openaiResponsesRetentionSeconds: 0,
   };
-  await Promise.all([
-    repo.apiKeys.save(defaultKey),
-    repo.accessRecords.save({
-      principal: { kind: 'user', id: user.id },
-      scope: { kind: 'upstreams' },
-      sortOrder: 0,
-      values: { 'Model.Use': true },
-    }),
-  ]);
+  // A new user holds no rule of their own: access comes from the groups picked
+  // below and rules an operator writes, never from a grant nobody chose.
+  await repo.apiKeys.save(defaultKey);
   if (body.groupIds !== undefined) await repo.groups.replaceUserGroups(user.id, body.groupIds);
 
   return c.json({

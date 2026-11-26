@@ -177,6 +177,11 @@ export function UserDialog(props: UserDialogProps) {
       {mode === 'create' && (
         <MessageBar intent="info"><MessageBarBody>{t('directory.users.createdDefaultKey')}</MessageBarBody></MessageBar>
       )}
+      {/* A new user holds no rule of their own, so without a group a
+          non-administrator starts with no upstream at all. */}
+      {mode === 'create' && !values.isAdmin && values.groupIds.length === 0 && (
+        <MessageBar intent="warning"><MessageBarBody>{t('directory.users.createdWithoutAccess')}</MessageBarBody></MessageBar>
+      )}
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     </DialogShell></>
   );
