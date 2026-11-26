@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
-import { createUsageHistoryLoader, USAGE_HISTORY_START } from '../../../../src/components/usage/heatmap/data';
+import { createUsageHistoryLoader, summarizeUsageHistory, usageHistoryStart } from '../../../../src/components/usage/heatmap/data';
 import { stubLocalStorage } from '../../../local-storage-stub';
 import { primeDefaultSession } from '../../../test-session';
 import { telemetryDayOrdinal } from '@floway-dev/protocols/browser';
 
 stubLocalStorage();
 beforeEach(() => { primeDefaultSession(); });
-afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 const NOW = Date.parse('2026-11-23T03:20:00Z');
 
@@ -16,10 +16,11 @@ const row = (group: string, requests: number, input: string, output: string) => 
   metrics: [{ metric: 'input_tokens', quantity: input }, { metric: 'output_tokens', quantity: output }],
 });
 type Row = ReturnType<typeof row>;
-// The overview reports the day that holds its resume hours hour by hour, so
-// one calendar day can arrive as several buckets.
-const bucket = (day: string, start: string, end: string, rows: Row[]) => ({
-  bucket: day, start, end,
+// Each bucket is keyed by the start hour of its 24-hour span. The overview
+// reports the span that holds its resume hours hour by hour, so one day can
+// arrive as several buckets under the same key.
+const bucket = (span: string, start: string, end: string, rows: Row[]) => ({
+  bucket: span, start, end,
   axes: {
     none: rows.map(entry => ({ ...entry, group: 'all' })),
     model: rows,
@@ -50,9 +51,9 @@ const stubOverview = (responses: Array<(query: URLSearchParams) => unknown>) => 
 const firstSnapshot = (query: URLSearchParams) => overview({
   cursor: '2026-11-23T02', reset: true, start: query.get('start')!, end: query.get('end')!,
   buckets: [
-    bucket('2026-11-21', '2026-11-21T00', '2026-11-22T00', [row('gpt-5', 2, '100', '50'), row('claude-opus', 1, '300', '0')]),
-    bucket('2026-11-23', '2026-11-23T01', '2026-11-23T02', [row('gpt-5', 1, '10', '5')]),
-    bucket('2026-11-23', '2026-11-23T02', '2026-11-23T03', [row('gpt-5', 1, '20', '5')]),
+    bucket('2026-11-21T00', '2026-11-21T00', '2026-11-22T00', [row('gpt-5', 2, '100', '50'), row('claude-opus', 1, '300', '0')]),
+    bucket('2026-11-23T00', '2026-11-23T01', '2026-11-23T02', [row('gpt-5', 1, '10', '5')]),
+    bucket('2026-11-23T00', '2026-11-23T02', '2026-11-23T03', [row('gpt-5', 1, '20', '5')]),
   ],
 });
 
@@ -64,9 +65,10 @@ it('reads the whole history in local days and sums each day across its buckets',
 
   expect(queries).toHaveLength(1);
   expect(Object.fromEntries(queries[0]!)).toMatchObject({
-    start: USAGE_HISTORY_START, end: '2026-11-23T04', format: 'buckets', bucket: 'day', group_by: 'model', timezone: 'UTC',
+    start: '1970-01-01T00', end: '2026-11-23T04', format: 'fixed-buckets', bucket: 'day', group_by: 'model',
   });
   expect(queries[0]!.has('cursor')).toBe(false);
+  expect(queries[0]!.has('timezone')).toBe(false);
   const { days, tokens, requests, models } = result.data;
   expect(days.get(telemetryDayOrdinal('2026-11-21'))).toEqual({
     ordinal: telemetryDayOrdinal('2026-11-21'), date: '2026-11-21', tokens: '450', requests: 3, topModel: 'claude-opus',
@@ -83,8 +85,8 @@ it('resumes from the cursor and replaces only the hours it rescanned', async () 
     query => overview({
       cursor: '2026-11-23T03', reset: false, start: query.get('cursor')!, end: query.get('end')!,
       buckets: [
-        bucket('2026-11-23', '2026-11-23T02', '2026-11-23T03', [row('gpt-5', 2, '60', '5')]),
-        bucket('2026-11-23', '2026-11-23T03', '2026-11-23T04', [row('gpt-5', 1, '1', '1')]),
+        bucket('2026-11-23T00', '2026-11-23T02', '2026-11-23T03', [row('gpt-5', 2, '60', '5')]),
+        bucket('2026-11-23T00', '2026-11-23T03', '2026-11-23T04', [row('gpt-5', 1, '1', '1')]),
       ],
     }),
   ]);
@@ -121,4 +123,30 @@ it('hands back the request failure', async () => {
   const result = await createUsageHistoryLoader()(NOW, new AbortController().signal);
 
   expect(result.error?.status).toBe(503);
+});
+
+it('starts the spans at local midnight and names each by the local date at its midpoint', () => {
+  vi.stubEnv('TZ', 'America/New_York');
+  const summer = Date.parse('2026-07-15T12:00:00Z');
+  // Local midnight in EDT is 04:00 UTC.
+  expect(usageHistoryStart(summer)).toBe('1970-01-01T04');
+  const winter = Date.parse('2026-01-15T12:00:00Z');
+  expect(usageHistoryStart(winter)).toBe('1970-01-01T05');
+
+  // With a summer start, a January span runs from 23:00 EST the evening
+  // before; it still belongs to the day it mostly covers.
+  const { days } = summarizeUsageHistory(overview({
+    cursor: '2026-07-15T12', reset: true, start: '1970-01-01T04', end: '2026-07-15T13',
+    buckets: [
+      bucket('2026-01-10T04', '2026-01-10T04', '2026-01-11T04', [row('gpt-5', 1, '10', '0')]),
+      bucket('2026-07-14T04', '2026-07-14T04', '2026-07-15T04', [row('gpt-5', 1, '20', '0')]),
+    ],
+  }) as Parameters<typeof summarizeUsageHistory>[0]);
+  expect([...days.values()].map(day => [day.date, day.tokens])).toEqual([['2026-01-10', '10'], ['2026-07-14', '20']]);
+});
+
+it('rounds a local midnight that falls inside a UTC hour up to the next hour', () => {
+  vi.stubEnv('TZ', 'Asia/Kolkata');
+  // Local midnight in IST is 18:30 UTC the day before.
+  expect(usageHistoryStart(Date.parse('2026-11-23T03:20:00Z'))).toBe('1970-01-01T19');
 });

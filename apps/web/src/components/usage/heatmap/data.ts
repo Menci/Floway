@@ -1,13 +1,29 @@
 import { api, callApi, type ApiResult } from '../../../api/client';
+import { calendarDate } from '../../../lib/calendar-date';
 import { decimalStringToPlottableNumber } from '../../../lib/decimal-display';
-import { mergeUsageOverview, usageOverviewCursor, usageOverviewForDisplay } from '../overview';
+import { canContinueTelemetrySnapshot, mergeTelemetrySnapshot, sameTelemetryScope } from '../../telemetry/snapshot';
+import { usageOverviewForDisplay } from '../overview';
 import { summarizeUsage } from '../plot';
 import type { DisplayUsageRecord } from '../types';
 import type { TokenUsageOverviewResponse } from '@floway-dev/gateway/browser';
-import { TELEMETRY_HOUR_MS, telemetryDayOrdinal, telemetryHourKey, type DecimalString } from '@floway-dev/protocols/browser';
+import { parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryDayOrdinal, telemetryHourKey, type DecimalString } from '@floway-dev/protocols/browser';
 
-// Every recorded hour is later than this, so one window covers the whole history.
-export const USAGE_HISTORY_START = '1970-01-01T00';
+const DAY_MS = 24 * TELEMETRY_HOUR_MS;
+
+// The overview's day buckets are fixed 24-hour spans counted from `start`. A
+// start on the first day of 1970 at the hour of today's local midnight (rounded
+// up to the hour, like the page's own ranges) covers every recorded hour and
+// makes each span one local day at the current UTC offset.
+export const usageHistoryStart = (nowMs: number): string => {
+  const midnight = new Date(nowMs);
+  midnight.setHours(0, 0, 0, 0);
+  const origin = Math.ceil(midnight.getTime() / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS;
+  return telemetryHourKey((origin % DAY_MS + DAY_MS) % DAY_MS);
+};
+
+// A span is named by the local date at its midpoint, which stays on the
+// intended day when a daylight-saving change shifts the span by an hour.
+const spanDate = (bucket: string): string => calendarDate(new Date(parseTelemetryHour(bucket) + DAY_MS / 2));
 
 export interface UsageDay {
   // Days since 1970-01-01 of the local calendar date; consecutive days differ by one.
@@ -29,7 +45,7 @@ const tokensOf = (records: DisplayUsageRecord[]): DecimalString => summarizeUsag
 
 export const summarizeUsageHistory = (snapshot: TokenUsageOverviewResponse): UsageHistory => {
   const display = usageOverviewForDisplay(snapshot, 'model');
-  const recordsByDate = Map.groupBy(display.series, record => record.bucket);
+  const recordsByDate = Map.groupBy(display.series, record => spanDate(record.bucket));
   const days = new Map<number, UsageDay>();
   for (const [date, records] of recordsByDate) {
     const summary = summarizeUsage(records);
@@ -60,33 +76,32 @@ export const summarizeUsageHistory = (snapshot: TokenUsageOverviewResponse): Usa
 export type UsageHistoryLoader = (nowMs: number, signal: AbortSignal) => Promise<ApiResult<UsageHistory>>;
 
 // Daily buckets from the overview endpoint, resumed from its cursor so a poll
-// rescans the last two hours instead of the whole history.
+// rescans the last two hours instead of the whole history. A changed start
+// (the viewer's UTC offset moved) reads the history again.
 export const createUsageHistoryLoader = (): UsageHistoryLoader => {
-  let latest: { timezone: string; snapshot: TokenUsageOverviewResponse } | undefined;
+  let latest: { start: string; snapshot: TokenUsageOverviewResponse } | undefined;
   return async (nowMs, signal) => {
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const start = usageHistoryStart(nowMs);
     const end = telemetryHourKey(Math.floor(nowMs / TELEMETRY_HOUR_MS) * TELEMETRY_HOUR_MS + TELEMETRY_HOUR_MS);
     const query = {
-      start: USAGE_HISTORY_START,
+      start,
       end,
-      format: 'buckets' as const,
+      format: 'fixed-buckets' as const,
       bucket: 'day' as const,
       group_by: 'model' as const,
-      timezone,
-      timezone_offset_minutes: String(new Date(nowMs).getTimezoneOffset()),
     };
     const load = (cursor: string | undefined) => callApi(() => api.api['token-usage'].overview.$get({ query: cursor === undefined ? query : { ...query, cursor } }, { init: { signal } }));
-    let previous = latest?.timezone === timezone ? latest.snapshot : undefined;
-    let result = await load(usageOverviewCursor(previous, USAGE_HISTORY_START, end));
+    let previous = latest?.start === start ? latest.snapshot : undefined;
+    let result = await load(canContinueTelemetrySnapshot(previous, query) ? previous.cursor : undefined);
     if (result.error) return result;
-    if (previous && !result.data.reset && JSON.stringify(previous.scope) !== JSON.stringify(result.data.scope)) {
+    if (previous && !result.data.reset && !sameTelemetryScope(previous.scope, result.data.scope)) {
       previous = undefined;
       if (!signal.aborted) latest = undefined;
       result = await load(undefined);
       if (result.error) return result;
     }
-    const snapshot = mergeUsageOverview(previous, result.data, USAGE_HISTORY_START);
-    if (!signal.aborted) latest = { timezone, snapshot };
+    const snapshot = mergeTelemetrySnapshot(previous, result.data, start);
+    if (!signal.aborted) latest = { start, snapshot };
     return { data: summarizeUsageHistory(snapshot) };
   };
 };

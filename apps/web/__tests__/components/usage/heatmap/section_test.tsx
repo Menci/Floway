@@ -16,7 +16,7 @@ const NOW = Date.parse('2026-11-23T03:20:00Z');
 const dayBucket = (day: string, model: string, requests: number, input: string) => {
   const row = { group: model, requests, cost: null, metrics: [{ metric: 'input_tokens', quantity: input }] };
   return {
-    bucket: day, start: `${day}T00`, end: `${day}T23`,
+    bucket: `${day}T00`, start: `${day}T00`, end: `${day}T23`,
     axes: { none: [{ ...row, group: 'all' }], model: [row], upstream: [], userId: [], keyId: [] },
     dimensionValues: { models: [model], upstreams: [], userIds: [], keyIds: [] },
   };
