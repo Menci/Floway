@@ -1,6 +1,5 @@
-import { unionEndpoints } from './endpoint-union.ts';
-import { kindForEndpoints, type OpaqueBlobCompatibilityScope } from '@floway-dev/protocols/common';
-import type { InternalModel, ProviderModel, UpstreamChatModelConfig, UpstreamProviderKind } from '@floway-dev/provider';
+import { kindForEndpoints, type ModelEndpointKey, type OpaqueBlobCompatibilityScope } from '@floway-dev/protocols/common';
+import type { InternalModel, ProviderModel, UpstreamProviderKind } from '@floway-dev/provider';
 
 export interface CatalogUpstreamMeta {
   readonly id: string;
@@ -14,61 +13,43 @@ export interface ModelContribution {
   readonly model: ProviderModel;
 }
 
-const mergedOpaqueBlobCompatibilityScope = (
-  models: readonly ProviderModel[],
-): OpaqueBlobCompatibilityScope => {
-  const [first, ...rest] = models;
-  if (first !== undefined && rest.every(model =>
-    model.opaqueBlobCompatibilityScope.bindToUpstream === first.opaqueBlobCompatibilityScope.bindToUpstream
-    && model.opaqueBlobCompatibilityScope.key === first.opaqueBlobCompatibilityScope.key)) {
-    return first.opaqueBlobCompatibilityScope;
-  }
-  return { bindToUpstream: true };
-};
-
-// A public id may route to any chat provider behind it, so this safety
-// capability is the conjunction of their explicit answers. Other chat metadata
-// retains the catalog's established first-provider-wins behavior.
-const mergedChatMetadata = (
-  first: UpstreamChatModelConfig | undefined,
-  models: readonly ProviderModel[],
-): UpstreamChatModelConfig | undefined => {
-  const chatModels = models.filter(model => model.kind === 'chat');
-  if (chatModels.length === 0) return first;
-  return {
-    ...(first ?? {}),
-    image_detail_original: chatModels.every(model => model.chat?.image_detail_original === true),
-  };
-};
+interface MergeTrackState {
+  hasChat: boolean;
+  allChatImageDetailOriginal: boolean;
+  readonly firstScope: OpaqueBlobCompatibilityScope;
+  scopeConsistent: boolean;
+}
 
 const internalModelFromSingle = (providerModel: ProviderModel, publicId: string): InternalModel => {
-  const {
-    providerData: _providerData,
-    upstreamModelId: _upstreamModelId,
-    enabledFlags: _enabledFlags,
-    flagOverrides: _flagOverrides,
-    rerankTarget: _rerankTarget,
-    decisionTarget: _decisionTarget,
-    endpoints,
-    ...metadata
-  } = providerModel;
-  const chat = mergedChatMetadata(providerModel.chat, [providerModel]);
-  return {
-    ...metadata,
+  const isChat = providerModel.kind === 'chat';
+  const chat = isChat
+    ? { ...providerModel.chat, image_detail_original: providerModel.chat?.image_detail_original === true }
+    : providerModel.chat;
+  const model: InternalModel = {
     id: publicId,
-    ...(chat === undefined ? {} : { chat }),
-    endpoints: { ...endpoints },
+    limits: providerModel.limits,
+    kind: providerModel.kind,
+    endpoints: { ...providerModel.endpoints },
+    opaqueBlobCompatibilityScope: providerModel.opaqueBlobCompatibilityScope,
   };
+  if (providerModel.display_name !== undefined) model.display_name = providerModel.display_name;
+  if (providerModel.owned_by !== undefined) model.owned_by = providerModel.owned_by;
+  if (providerModel.created !== undefined) model.created = providerModel.created;
+  if (providerModel.pricing !== undefined) model.pricing = providerModel.pricing;
+  if (chat !== undefined) model.chat = chat;
+  return model;
 };
 
 export interface CatalogAccumulator {
   readonly byId: Map<string, InternalModel>;
   readonly contributionsById: Map<string, ModelContribution[]>;
+  readonly stateById: Map<string, MergeTrackState>;
 }
 
 export const createCatalogAccumulator = (): CatalogAccumulator => ({
   byId: new Map(),
   contributionsById: new Map(),
+  stateById: new Map(),
 });
 
 // When multiple upstreams (or multiple kinds on one upstream) expose the same
@@ -85,28 +66,57 @@ export const mergeIntoCatalog = (
 ): void => {
   const existing = acc.byId.get(publicId);
   if (!existing) {
+    const isChat = surfacedModel.kind === 'chat';
     acc.byId.set(publicId, internalModelFromSingle(surfacedModel, publicId));
     acc.contributionsById.set(publicId, [{ upstream, model: surfacedModel }]);
+    acc.stateById.set(publicId, {
+      hasChat: isChat,
+      allChatImageDetailOriginal: isChat ? surfacedModel.chat?.image_detail_original === true : true,
+      firstScope: surfacedModel.opaqueBlobCompatibilityScope,
+      scopeConsistent: true,
+    });
     return;
   }
-  const contributions = acc.contributionsById.get(publicId)!;
-  contributions.push({ upstream, model: surfacedModel });
+  acc.contributionsById.get(publicId)!.push({ upstream, model: surfacedModel });
+  const state = acc.stateById.get(publicId)!;
 
-  const allModels = contributions.map(entry => entry.model);
-  const endpoints = unionEndpoints([existing.endpoints, surfacedModel.endpoints]);
-  const chat = mergedChatMetadata(existing.chat ?? surfacedModel.chat, allModels);
-  acc.byId.set(publicId, {
-    ...existing,
-    ...(chat === undefined ? {} : { chat }),
-    opaqueBlobCompatibilityScope: mergedOpaqueBlobCompatibilityScope(allModels),
-    endpoints,
-    kind: kindForEndpoints(endpoints),
-  });
+  const targetEndpoints = existing.endpoints;
+  for (const key of Object.keys(surfacedModel.endpoints) as ModelEndpointKey[]) {
+    const incoming = surfacedModel.endpoints[key];
+    if (incoming === undefined) continue;
+    const prior = targetEndpoints[key];
+    targetEndpoints[key] = prior === undefined ? { ...incoming } : { ...prior, ...incoming };
+  }
+  existing.kind = kindForEndpoints(targetEndpoints);
+
+  if (existing.chat === undefined && surfacedModel.chat !== undefined) {
+    existing.chat = surfacedModel.chat;
+  }
+  if (surfacedModel.kind === 'chat') {
+    const incomingOriginal = surfacedModel.chat?.image_detail_original === true;
+    if (!state.hasChat) {
+      state.hasChat = true;
+      state.allChatImageDetailOriginal = incomingOriginal;
+      existing.chat = { ...existing.chat, image_detail_original: incomingOriginal };
+    } else if (state.allChatImageDetailOriginal && !incomingOriginal) {
+      state.allChatImageDetailOriginal = false;
+      existing.chat = { ...existing.chat, image_detail_original: false };
+    }
+  }
+
+  if (state.scopeConsistent) {
+    const incoming = surfacedModel.opaqueBlobCompatibilityScope;
+    if (incoming.bindToUpstream !== state.firstScope.bindToUpstream || incoming.key !== state.firstScope.key) {
+      state.scopeConsistent = false;
+      existing.opaqueBlobCompatibilityScope = { bindToUpstream: true };
+    }
+  }
 };
 
 export const distinctUpstreamsFromContributions = (
   contributions: readonly ModelContribution[],
 ): CatalogUpstreamMeta[] => {
+  if (contributions.length === 1) return [contributions[0]!.upstream];
   const seen = new Set<string>();
   const out: CatalogUpstreamMeta[] = [];
   for (const { upstream } of contributions) {

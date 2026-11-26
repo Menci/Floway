@@ -219,14 +219,13 @@ const commonOpaqueBlobCompatibilityScope = (
 // can render the full configured target list, including unavailable targets.
 const buildAliasedFrom = (
   alias: ModelAliasRecord,
-  addressableModelIds: readonly AddressableIdEntry[],
+  callerSet: ReadonlySet<string>,
   narrowTargets: boolean,
 ): InternalAliasedFrom => {
   if (!narrowTargets) {
     return { selection: alias.selection, targets: alias.targets };
   }
-  const addressableSet = new Set(addressableModelIds.map(entry => entry.id));
-  const targets = alias.targets.filter(t => addressableSet.has(t.target_model_id));
+  const targets = alias.targets.filter(t => callerSet.has(t.target_model_id));
   return { selection: alias.selection, targets };
 };
 
@@ -273,14 +272,13 @@ const mergeWithOverride = (
 // Callers (`synthesizeListedAliases`) filter the nulls out.
 const synthesizeOne = (
   alias: ModelAliasRecord,
-  gatewayAddressableModelIds: readonly AddressableIdEntry[],
-  callerAddressableModelIds: readonly AddressableIdEntry[],
+  gatewayById: ReadonlyMap<string, InternalModel>,
+  callerSet: ReadonlySet<string>,
   narrowTargets: boolean,
 ): InternalModel | null => {
   // Gateway-wide kind-matched targets — the basis for stable metadata.
   // A target reachable only through a prefix-addressable alternate still
   // counts.
-  const gatewayById = new Map(gatewayAddressableModelIds.map(entry => [entry.id, entry.model] as const));
   const gatewayAvailable = alias.targets
     .map(target => ({ target, real: gatewayById.get(target.target_model_id) }))
     .filter((entry): entry is { target: AliasTarget; real: InternalModel } => entry.real !== undefined && entry.real.kind === alias.kind);
@@ -288,7 +286,6 @@ const synthesizeOne = (
 
   // Caller-scope visibility: the alias appears only if at least one
   // gateway-available target sits inside the caller's addressable cap.
-  const callerSet = new Set(callerAddressableModelIds.map(entry => entry.id));
   const callerHasAny = gatewayAvailable.some(e => callerSet.has(e.target.target_model_id));
   if (!callerHasAny) return null;
 
@@ -327,7 +324,7 @@ const synthesizeOne = (
     kind: alias.kind,
     endpoints,
     opaqueBlobCompatibilityScope: commonOpaqueBlobCompatibilityScope(gatewayAvailable.map(({ real }) => real)),
-    aliasedFrom: buildAliasedFrom(alias, callerAddressableModelIds, narrowTargets),
+    aliasedFrom: buildAliasedFrom(alias, callerSet, narrowTargets),
     ...(chat !== undefined ? { chat } : {}),
     ...(singleTargetPricing !== undefined ? { pricing: singleTargetPricing } : {}),
   };
@@ -337,16 +334,27 @@ const synthesizeOne = (
 const sortAliases = (aliases: readonly ModelAliasRecord[]): ModelAliasRecord[] =>
   [...aliases].sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name));
 
-export const synthesizeListedAliases = (input: ListedAliasInputs): InternalModel[] =>
-  sortAliases(input.aliases)
-    // `visibleInModelsList` is a LISTING flag only — the request-time
-    // resolver in `providers/resolution.ts` does not consult it, so a hidden
-    // alias stays reachable at dispatch. This lets an operator ship a
-    // gateway id (e.g. a legacy client hardcodes it) without cluttering
-    // the public catalog.
-    .filter(alias => alias.visibleInModelsList)
-    .map(alias => synthesizeOne(alias, input.gatewayAddressableModelIds, input.callerAddressableModelIds, input.narrowTargets))
-    .filter((entry): entry is InternalModel => entry !== null);
+export const synthesizeListedAliases = (input: ListedAliasInputs): InternalModel[] => {
+  // `visibleInModelsList` is a LISTING flag only — the request-time
+  // resolver in `providers/resolution.ts` does not consult it, so a hidden
+  // alias stays reachable at dispatch. This lets an operator ship a
+  // gateway id (e.g. a legacy client hardcodes it) without cluttering
+  // the public catalog.
+  const visible = sortAliases(input.aliases.filter(alias => alias.visibleInModelsList));
+  if (visible.length === 0) return [];
+
+  const gatewayById = new Map<string, InternalModel>();
+  for (const entry of input.gatewayAddressableModelIds) gatewayById.set(entry.id, entry.model);
+  const callerSet = new Set<string>();
+  for (const entry of input.callerAddressableModelIds) callerSet.add(entry.id);
+
+  const out: InternalModel[] = [];
+  for (const alias of visible) {
+    const synthesized = synthesizeOne(alias, gatewayById, callerSet, input.narrowTargets);
+    if (synthesized !== null) out.push(synthesized);
+  }
+  return out;
+};
 
 // Compose real-model rows with visible alias rows into a single `InternalModel[]`.
 // Shared merge point across the alias-aware listing endpoints (the OpenAI and
@@ -370,6 +378,7 @@ export const mergeAliasesIntoModels = (input: {
     callerAddressableModelIds,
     narrowTargets,
   });
+  if (aliasEntries.length === 0) return [...realModels];
   const aliasIds = new Set(aliasEntries.map(entry => entry.id));
   return [
     ...realModels.filter(model => !aliasIds.has(model.id)),

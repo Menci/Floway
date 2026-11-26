@@ -33,8 +33,15 @@ export const assembleCodexCatalog = (
   capabilities: CodexCatalogCapabilities = {},
 ): CodexCatalog => {
   const catalogBySlug = new Map<string, CatalogModel>();
-  for (const model of catalog.models) catalogBySlug.set(model.slug.toLowerCase(), model);
-  const catalogServiceTiers: CodexServiceTier[] = catalog.models.flatMap(model => model.service_tiers ?? []);
+  const catalogTierById = new Map<string, CodexServiceTier>();
+  for (const model of catalog.models) {
+    catalogBySlug.set(model.slug.toLowerCase(), model);
+    if (model.service_tiers !== undefined) {
+      for (const tier of model.service_tiers) {
+        if (!catalogTierById.has(tier.id)) catalogTierById.set(tier.id, tier);
+      }
+    }
+  }
 
   // Match against the client catalog by walking segments from the trailing leaf back
   // toward the prefix, so a publicId like `openrouter/gpt-5.5/gpt-5.4`
@@ -59,25 +66,38 @@ export const assembleCodexCatalog = (
     if (entry.unlisted !== undefined) continue;
     if (entry.model.kind !== 'chat') continue;
     if (entry.model.aliasedFrom !== undefined) {
-      const model = synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers);
+      const model = synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogTierById);
       if ((model.input_modalities?.length ?? 0) > 0) models.push(model);
       continue;
     }
-    const chatContributions = entry.contributions.filter(contribution => contribution.model.kind === 'chat');
-    const candidates = chatContributions.map(({ upstream, model: providerModel }) => ({
-      providerModel,
-      metadata: upstream.kind === 'chatgpt' ? chatgptCodexModelMetadata(providerModel) : undefined,
-    }));
-    // A ChatGPT rate is not an entitlement. Only advertise tiers usable on every fallback.
-    const chatgpt = candidates.find(candidate => candidate.metadata !== undefined)?.metadata;
-    const serviceTiers = chatgpt === undefined ? undefined : (chatgpt.service_tiers ?? []).filter(tier => candidates.every(({ providerModel, metadata }) => {
-      if (metadata !== undefined) return metadata.service_tiers?.some(other => other.id === tier.id);
-      return providerModel.endpoints.openaiResponses !== undefined && providerModel.pricing?.entries.some(rate => rate.selector?.serviceTier === tier.id);
-    }));
-    const model = synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers, {
-      metadata: candidates[0]?.metadata,
+    const chatProviderModels: typeof entry.contributions[number]['model'][] = [];
+    let hasChatGPT = false;
+    for (const contribution of entry.contributions) {
+      if (contribution.model.kind !== 'chat') continue;
+      chatProviderModels.push(contribution.model);
+      if (contribution.upstream.kind === 'chatgpt') hasChatGPT = true;
+    }
+    let metadata: ReturnType<typeof chatgptCodexModelMetadata> | undefined;
+    let serviceTiers: CodexServiceTier[] | undefined;
+    if (hasChatGPT) {
+      const candidates = entry.contributions
+        .filter(contribution => contribution.model.kind === 'chat')
+        .map(({ upstream, model: providerModel }) => ({
+          providerModel,
+          metadata: upstream.kind === 'chatgpt' ? chatgptCodexModelMetadata(providerModel) : undefined,
+        }));
+      // A ChatGPT rate is not an entitlement. Only advertise tiers usable on every fallback.
+      const chatgpt = candidates.find(candidate => candidate.metadata !== undefined)?.metadata;
+      metadata = candidates[0]?.metadata;
+      serviceTiers = chatgpt === undefined ? undefined : (chatgpt.service_tiers ?? []).filter(tier => candidates.every(({ providerModel, metadata: candidateMeta }) => {
+        if (candidateMeta !== undefined) return candidateMeta.service_tiers?.some(other => other.id === tier.id);
+        return providerModel.endpoints.openaiResponses !== undefined && providerModel.pricing?.entries.some(rate => rate.selector?.serviceTier === tier.id);
+      }));
+    }
+    const model = synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogTierById, {
+      metadata,
       serviceTiers,
-      chatProviderModels: chatContributions.map(c => c.model),
+      chatProviderModels,
     });
     if (model.input_modalities?.length === 0) continue;
     models.push(model);

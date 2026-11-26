@@ -326,6 +326,16 @@ test('SQLite resolve queries use indexes without scanning upstream_models', asyn
        AND u.id IN (SELECT CAST(value AS TEXT) FROM json_each(?))`,
   ).bind(JSON.stringify(['up_0', 'up_1'])).all<{ detail: string }>();
   expect(planAddressableIds.results.some(row => row.detail.includes('COVERING INDEX idx_upstream_models_upstream_active'))).toBe(true);
+
+  const planCatalogModels = await db.prepare(
+    `EXPLAIN QUERY PLAN
+     SELECT m.upstream_id, m.model_json
+     FROM upstream_models m
+     JOIN upstreams u ON u.id = m.upstream_id
+     WHERE u.enabled = 1
+       AND m.disabled = 0`,
+  ).all<{ detail: string }>();
+  expect(planCatalogModels.results.some(row => row.detail.includes('TEMP B-TREE'))).toBe(false);
 });
 
 test('SQLite publishModelsRefresh writes zero upstream_models changes when unchanged and only diffs on mutation', async () => {

@@ -989,8 +989,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
            FROM upstream_models m
            JOIN upstreams u ON u.id = m.upstream_id
            WHERE u.enabled = 1
-             AND m.disabled = 0${filterSql}
-           ORDER BY u.sort_order, u.created_at, u.id, m.kind, m.model_id`,
+             AND m.disabled = 0${filterSql}`,
         )
         .bind(...filterBinds)
         .all<{ upstream_id: string; model_json: string }>(),

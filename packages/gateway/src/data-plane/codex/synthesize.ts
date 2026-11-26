@@ -60,13 +60,27 @@ const BASELINE = {
 const deriveServiceTiers = (
   model: InternalModel,
   modelTiers: readonly CodexServiceTier[],
-  catalogTiers: readonly CodexServiceTier[],
+  catalogTiers: readonly CodexServiceTier[] | ReadonlyMap<string, CodexServiceTier>,
 ): CodexServiceTier[] => {
-  const ids = new Set(model.pricing?.entries.flatMap(entry => typeof entry.selector?.serviceTier === 'string' ? [entry.selector.serviceTier] : []) ?? []);
-  const modelTierById = new Map(modelTiers.map(tier => [tier.id, tier]));
-  const catalogTierById = new Map<string, CodexServiceTier>();
-  for (const tier of catalogTiers) {
-    if (!catalogTierById.has(tier.id)) catalogTierById.set(tier.id, tier);
+  const entries = model.pricing?.entries;
+  if (entries === undefined || entries.length === 0) return [];
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    const tier = entry.selector?.serviceTier;
+    if (typeof tier === 'string') ids.add(tier);
+  }
+  if (ids.size === 0) return [];
+  const modelTierById = new Map<string, CodexServiceTier>();
+  for (const tier of modelTiers) modelTierById.set(tier.id, tier);
+  let catalogTierById: ReadonlyMap<string, CodexServiceTier>;
+  if (Array.isArray(catalogTiers)) {
+    const map = new Map<string, CodexServiceTier>();
+    for (const tier of catalogTiers) {
+      if (!map.has(tier.id)) map.set(tier.id, tier);
+    }
+    catalogTierById = map;
+  } else {
+    catalogTierById = catalogTiers as ReadonlyMap<string, CodexServiceTier>;
   }
   return [...ids].map(id => modelTierById.get(id) ?? catalogTierById.get(id) ?? { id, name: id, description: '' });
 };
@@ -75,7 +89,7 @@ export const synthesizeCatalogEntry = (
   model: InternalModel,
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
-  catalogServiceTiers: readonly CodexServiceTier[] = [],
+  catalogServiceTiers: readonly CodexServiceTier[] | ReadonlyMap<string, CodexServiceTier> = [],
   { metadata: codexMetadata, serviceTiers, chatProviderModels }: {
     metadata?: ChatGPTCodexModelMetadata | undefined;
     serviceTiers?: CodexServiceTier[] | undefined;
