@@ -106,6 +106,7 @@ test('Chat Completions uses the deployment id, redacts the API key, and normaliz
     model: 'public-model', messages: [assistant], reasoning_effort: 'none',
   }, upstream, [['authorization', 'client-key'], ['content-length', '999'], ['x-trace-id', 'client']]), fetcher, event => events.push(event));
   const result = await running.result;
+  expect(result['response.usageModelKey']).toBe('private-deployment');
   const outcome = result['response.openaiChatCompletions'];
   expect(result['response.http']).toMatchObject({ status: 200, body: null });
   if (outcome.kind !== 'stream') throw new Error('Expected Chat Completions stream');
@@ -221,7 +222,10 @@ test.each([
       { name: 'timestamp_granularities[]', value: 'word' }, { name: 'timestamp_granularities[]', value: 'segment' },
     ],
   }, record(endpoint)), fetcher);
-  expect((await running.result)['response.openaiAudioTranscriptions']).toEqual({ kind: 'result', result: new TextEncoder().encode('hello') });
+  expect(await running.result).toMatchObject({
+    'response.usageModelKey': 'private-deployment',
+    'response.openaiAudioTranscriptions': { kind: 'result', result: new TextEncoder().encode('hello') },
+  });
   await running.done;
 });
 

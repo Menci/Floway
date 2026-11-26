@@ -11,8 +11,8 @@ export const openaiImagesGenerations = azureOperation('openaiImagesGenerations',
     result: parseJsonObject,
     format: openAIError,
   }),
-  prepare: (payload, model, endpoint) => ({
+  prepare: (payload, modelId, endpoint) => ({
     url: azureOpenAIImagesUrl(endpoint, '/images/generations'),
-    ...jsonBody({ ...payload, model: model.upstreamModelId }),
+    ...jsonBody({ ...payload, model: modelId }),
   }),
 });

@@ -11,8 +11,8 @@ export const openaiImagesEdits = azureOperation('openaiImagesEdits', {
     result: parseJsonObject,
     format: openAIError,
   }),
-  prepare: async (payload, model, endpoint) => ({
+  prepare: async (payload, modelId, endpoint) => ({
     url: azureOpenAIImagesUrl(endpoint, '/images/edits'),
-    ...await serializeOpenAIImagesEditsBody(payload, model.upstreamModelId),
+    ...await serializeOpenAIImagesEditsBody(payload, modelId),
   }),
 });

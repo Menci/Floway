@@ -20,8 +20,8 @@ export const decision = azureOperation('decision', {
         : decoded;
     },
   }),
-  prepare: (payload, model, endpoint) => ({
+  prepare: (payload, modelId, endpoint) => ({
     url: joinBaseAndPath(azureResourceRootUrl(endpoint), DEFAULT_DECISION_PATHS[protocol]),
-    ...jsonBody(serializeDecisionRequest(protocol, model.upstreamModelId, payload)),
+    ...jsonBody(serializeDecisionRequest(protocol, modelId, payload)),
   }),
 });

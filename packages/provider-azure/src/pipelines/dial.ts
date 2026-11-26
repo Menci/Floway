@@ -4,7 +4,7 @@ import { stripAzureAnthropicMessagesHeaders, stripAzureHeaders } from './strip-h
 import { getHeader, setHeader, type HttpResponseFact } from '@floway-dev/http';
 import { factSpace } from '@floway-dev/pipeline';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
-import { httpDialError, httpTerminal, joinBaseAndPath, type FormatProtocolError, type GatewayFacts, type ProviderModelFact, type ProviderOperation, type ProviderOperationFacts, type ProviderServices } from '@floway-dev/provider';
+import { httpDialError, httpTerminal, joinBaseAndPath, type FormatProtocolError, type GatewayFacts, type ProviderOperation, type ProviderOperationFacts, type ProviderServices } from '@floway-dev/provider';
 
 const { compose, defineStage } = factSpace<ProviderOperationFacts<ProviderOperation, AzureUpstream>, ProviderServices>();
 type Stage = Parameters<typeof compose>[1]['stages'][number];
@@ -23,7 +23,7 @@ interface DialRequest extends SerializedBody {
 }
 
 type Payload<Op extends ProviderOperation> = GatewayFacts[`request.${Op}`];
-type Prepare<Op extends ProviderOperation> = (payload: Payload<Op>, model: ProviderModelFact, endpoint: string) => DialRequest | Promise<DialRequest>;
+type Prepare<Op extends ProviderOperation> = (payload: Payload<Op>, modelId: string, endpoint: string) => DialRequest | Promise<DialRequest>;
 
 export const openAIError: FormatProtocolError = (status, message) => ({
   error: { type: status !== null && status >= 400 && status < 500 ? 'invalid_request_error' : 'server_error', message },
@@ -43,7 +43,7 @@ const azureDial = <Op extends ProviderOperation>(
   const payload: RequestKey = `request.${operation}`;
   const outcome: ResponseKey = `response.${operation}`;
   const requestNeeds: readonly ['request.http', 'provider.upstream', 'provider.model', RequestKey] = ['request.http', 'provider.upstream', 'provider.model', payload];
-  const responseProvides: readonly [`${ResponseKey}?`] = [`${outcome}?`];
+  const responseProvides: readonly [`${ResponseKey}?`, 'response.usageModelKey?'] = [`${outcome}?`, 'response.usageModelKey?'];
   return defineStage({
     name: `azure.${operation}.dial`,
     through: {
@@ -53,15 +53,17 @@ const azureDial = <Op extends ProviderOperation>(
     async execute(facts, scope) {
       const request = facts['request.http'];
       const { apiKey, endpoint } = facts['provider.upstream'].config;
-      const { url, contentType, body } = await prepare(facts[payload] as Payload<Op>, facts['provider.model'], endpoint);
+      const { upstreamModelId: modelId } = facts['provider.model'];
+      const { url, contentType, body } = await prepare(facts[payload] as Payload<Op>, modelId, endpoint);
       // https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/model-router-apis
       let headers = setHeader(request.headers, surface === 'openai' ? 'api-key' : 'x-api-key', apiKey);
       if (surface === 'anthropicMessages') headers = setHeader(headers, 'anthropic-version', '2023-06-01');
       headers = setHeader(headers, 'content-type', contentType);
-      const { 'response.http.error': error, ...answer } = await scope.next({
+      const { 'response.http.error': error, ...response } = await scope.next({
         ...facts,
         'request.http': { ...request, method: 'POST', url, headers, body },
       });
+      const answer = { ...response, 'response.usageModelKey': modelId };
       return error === undefined ? answer : { ...answer, [outcome]: httpDialError(error, format) };
     },
   });
@@ -82,7 +84,7 @@ export const azureOperation = <Op extends ProviderOperation>(
   const format = surface === 'openai' ? openAIError : anthropicMessagesError;
   return compose(`azure.${operation}`, {
     entry: ['request.http', 'provider.upstream', 'provider.model', `request.${operation}`] as const,
-    exit: ['response.http', `response.${operation}`] as const,
+    exit: ['response.http', `response.${operation}`, 'response.usageModelKey?'] as const,
     stages: [filter, ...stages, parse, azureDial(operation, surface, prepare, format)],
     ending: httpTerminal,
   });

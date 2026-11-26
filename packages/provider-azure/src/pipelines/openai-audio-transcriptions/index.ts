@@ -24,8 +24,8 @@ export const openaiAudioTranscriptions = azureOperation('openaiAudioTranscriptio
     result: bytes => ({ ok: true, value: bytes }),
     format: openAIError,
   }),
-  prepare: async (payload, model, endpoint) => ({
-    url: azureOpenAIAudioTranscriptionUrl(endpoint, model.upstreamModelId),
+  prepare: async (payload, modelId, endpoint) => ({
+    url: azureOpenAIAudioTranscriptionUrl(endpoint, modelId),
     ...await formBody(transcriptionForm(payload)),
   }),
 });

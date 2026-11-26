@@ -4,8 +4,8 @@ import { parseResultResponse } from '@floway-dev/provider';
 
 export const openaiEmbeddings = azureOperation('openaiEmbeddings', {
   parse: parseResultResponse('openaiEmbeddings', parseJsonObject, openAIError),
-  prepare: (payload, model, endpoint) => ({
+  prepare: (payload, modelId, endpoint) => ({
     url: azureOpenAIUrl(endpoint, '/embeddings'),
-    ...jsonBody({ ...payload, model: model.upstreamModelId }),
+    ...jsonBody({ ...payload, model: modelId }),
   }),
 });

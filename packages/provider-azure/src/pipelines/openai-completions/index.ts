@@ -12,8 +12,8 @@ export const openaiCompletions = azureOperation('openaiCompletions', {
     },
     format: openAIError,
   }),
-  prepare: (payload, model, endpoint) => ({
+  prepare: (payload, modelId, endpoint) => ({
     url: azureOpenAIUrl(endpoint, '/completions'),
-    ...jsonBody({ ...payload, model: model.upstreamModelId }),
+    ...jsonBody({ ...payload, model: modelId }),
   }),
 });
