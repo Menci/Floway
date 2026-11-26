@@ -81,7 +81,7 @@ test('Usage keeps a baseline across metadata and display changes and replaces it
   const cursors: Array<string | null> = [];
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
-    expect(url.searchParams.get('format')).toBe('buckets');
+    expect(url.searchParams.get('format')).toBe('fixed-buckets');
     cursors.push(url.searchParams.get('cursor'));
     const response = responses.shift();
     if (!response) throw new Error('Unexpected Usage request');
