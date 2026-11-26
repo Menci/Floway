@@ -126,9 +126,8 @@ export class DumpAccumulator {
     private readonly timing?: AttemptTiming,
   ) {
     this.preparedRequestBody = getDumpStore().prepareRequestBody(requestBody);
-    // Preparation starts eagerly and is awaited at terminal persistence. Mark
-    // a rejection handled immediately so a long upstream wait cannot surface
-    // it as an unhandled promise before `write()` records the dump failure.
+    // Preparation starts eagerly. Observe rejection until finalization awaits
+    // the original promise through the background scheduler.
     void this.preparedRequestBody.catch(() => {});
   }
 
@@ -328,37 +327,33 @@ export class DumpAccumulator {
     };
 
     // Commit the row before publishing so subscribers fetching detail off the meta frame find it.
-    try {
-      const record: DumpWriteRecord = {
-        capture: {
-          exchanges: this.http.exchanges,
-          ...(response.rawCaptured ? {
-            response: {
-              body: encodeBodyForWire(response.bytes, response.headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? ''),
-              complete: response.streamError === null,
-              error: response.streamError,
-            },
-          } : {}),
-        },
-        meta,
-        request: {
-          method: this.requestSnapshot.method,
-          path: this.requestSnapshot.path,
-          headers: this.requestSnapshot.headers.map(([k, v]) => [k, v]),
-          body: await this.preparedRequestBody,
-        },
-        response: {
-          status: response.status,
-          headers: response.headers.map(([k, v]) => [k, v]),
-          body: responseBody,
-          ...(upstream !== undefined ? { upstream } : {}),
-        },
-      };
-      await getDumpStore().put(this.apiKey.id, record);
-      await getDumpBroker().publish(this.apiKey.id, meta);
-    } catch (err) {
-      console.error(`[dump] write failed for key=${this.apiKey.id} record=${recordId}`, oneLineError(err));
-    }
+    const record: DumpWriteRecord = {
+      capture: {
+        exchanges: this.http.exchanges,
+        ...(response.rawCaptured ? {
+          response: {
+            body: encodeBodyForWire(response.bytes, response.headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? ''),
+            complete: response.streamError === null,
+            error: response.streamError,
+          },
+        } : {}),
+      },
+      meta,
+      request: {
+        method: this.requestSnapshot.method,
+        path: this.requestSnapshot.path,
+        headers: this.requestSnapshot.headers.map(([k, v]) => [k, v]),
+        body: await this.preparedRequestBody,
+      },
+      response: {
+        status: response.status,
+        headers: response.headers.map(([k, v]) => [k, v]),
+        body: responseBody,
+        ...(upstream !== undefined ? { upstream } : {}),
+      },
+    };
+    await getDumpStore().put(this.apiKey.id, record);
+    await getDumpBroker().publish(this.apiKey.id, meta);
   }
 }
 

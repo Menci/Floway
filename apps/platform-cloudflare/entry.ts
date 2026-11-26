@@ -13,7 +13,9 @@ import {
 // target resolve the class by its Worker-module export name.
 export { ExecutionDO } from './src/execution-do.ts';
 
-initBackgroundSchedulerResolver(c => promise => c.executionCtx.waitUntil(promise));
+initBackgroundSchedulerResolver(c => promise => {
+  c.executionCtx.waitUntil(promise.catch(error => console.error('[background]', error)));
+});
 
 export default {
   fetch(req: Request, env: CloudflareEnv, ctx: ExecutionContext) {

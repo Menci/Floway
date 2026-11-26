@@ -73,3 +73,21 @@ test('DumpAccumulator leaves TTFT absent on a non-streaming record', async () =>
   expect(stubs.stored).toHaveLength(1);
   expect(stubs.stored[0]!.record.meta.ttftMs).toBeNull();
 });
+
+test.each(['put', 'publish'] as const)('reports an archive %s failure through the scheduler after delivering the response', async method => {
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const failure = new Error('archive failed', { cause: new Error('underlying storage failure') });
+  stubs.failOn(method, failure);
+  const tasks: Promise<unknown>[] = [];
+  const dump = new DumpAccumulator(buildApiKey(), makeSnapshot(), new Uint8Array([123, 125]), Date.now(), work => { tasks.push(work); });
+
+  const response = dump.finalize(new Response('delivered', { status: 201 }));
+  expect(response.status).toBe(201);
+  expect(tasks).toHaveLength(1);
+  await Promise.all([
+    expect(response.text()).resolves.toBe('delivered'),
+    expect(tasks[0]).rejects.toBe(failure),
+  ]);
+  expect(stubs.stored).toHaveLength(method === 'publish' ? 1 : 0);
+  expect(stubs.published).toHaveLength(0);
+});
