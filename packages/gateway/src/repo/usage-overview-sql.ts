@@ -169,9 +169,11 @@ facet_rows AS (
     NULL AS requests_text,
     NULL AS metric, NULL AS quantity, NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order,
     MIN(authorized.hour) AS first_hour, MAX(authorized.hour) AS last_hour
-  FROM authorized
+  -- Keep the hour lookup outside the facet loops to avoid scanning the map per fact and axis.
+  -- https://sqlite.org/optoverview.html#manual_control_of_query_plans_using_cross_join
+  FROM bucket_map
+  CROSS JOIN authorized ON authorized.hour = bucket_map.hour
   CROSS JOIN axes
-  JOIN bucket_map ON bucket_map.hour = authorized.hour
   WHERE axes.axis <> 'none'
     AND (axes.owned_only = 0 OR authorized.owned = 1)
   GROUP BY bucket_map.bucket, dimension, facet_value

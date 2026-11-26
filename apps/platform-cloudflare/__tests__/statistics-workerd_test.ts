@@ -7,7 +7,7 @@ import { getPlatformProxy, type PlatformProxy, unstable_splitSqlQuery as splitSq
 
 import { SqlRepo } from '@floway-dev/gateway';
 import { migrationsDir } from '@floway-dev/gateway/migrations-dir';
-import type { SqlDatabase } from '@floway-dev/platform';
+import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 
 let directory: string;
 let platform: PlatformProxy<{ DB: SqlDatabase }> | undefined;
@@ -100,4 +100,64 @@ test.each([
       operations: ['chat'], runtimeLocations: ['HKG'],
     },
   })).toEqual(performance);
+});
+
+test('D1 Usage overview reads a long window without revisiting the hour map for every facet', async () => {
+  const db = platform!.env.DB;
+  const hours = 30 * 24;
+  const slotsPerHour = 8;
+  const seed = `WITH RECURSIVE hours(i) AS (
+    VALUES (0) UNION ALL SELECT i + 1 FROM hours WHERE i + 1 < ${hours}
+  ), slots(i) AS (
+    VALUES (0) UNION ALL SELECT i + 1 FROM slots WHERE i + 1 < ${slotsPerHour}
+  )
+  INSERT INTO usage_requests (key_id, model, model_key, hour, requests)
+  SELECT 'statistics-key', 'long-window-model', 'slot-' || slots.i,
+    strftime('%Y-%m-%dT%H', '2026-11-02', '+' || hours.i || ' hours'), 1
+  FROM hours CROSS JOIN slots`;
+  await db.prepare(seed).run();
+  await db.prepare(`INSERT INTO usage (key_id, model, model_key, hour, metric, quantity, unit_price)
+    SELECT key_id, model, model_key, hour, metric, '2', '0.5'
+    FROM usage_requests CROSS JOIN (
+      SELECT 'input_tokens' AS metric UNION ALL SELECT 'output_tokens' UNION ALL SELECT 'input_cache_read_tokens'
+    ) WHERE model = 'long-window-model'`).run();
+
+  const rowsRead: number[] = [];
+  const measure = (statement: SqlPreparedStatement): SqlPreparedStatement => ({
+    bind: (...values) => measure(statement.bind(...values)),
+    first: () => statement.first(),
+    run: () => statement.run(),
+    all: async <T>() => {
+      const result = await statement.all<T>();
+      const meta = result.meta;
+      if (!('rows_read' in meta) || typeof meta.rows_read !== 'number') throw new Error('D1 did not report rows read');
+      rowsRead.push(meta.rows_read);
+      return result;
+    },
+  });
+  const measured = new SqlRepo({
+    prepare: sql => {
+      const statement = db.prepare(sql);
+      return sql.startsWith('/* usage-overview */') ? measure(statement) : statement;
+    },
+    exec: sql => db.exec(sql),
+  });
+  const buckets = await measured.usage.queryOverview({
+    actorUserId: 1, isAdmin: true, visibleUserIds: [1], visibleUpstreams: [],
+    start: '2026-11-02T00', end: '2026-12-02T00', ownedKeysOnly: false,
+    filters: { models: [], upstreams: [], userIds: [], keyIds: [] },
+    bucketForHour: hour => hour.slice(0, 10),
+  });
+
+  expect(buckets).toHaveLength(30);
+  expect(buckets[0]).toMatchObject({
+    firstHour: '2026-11-02T00',
+    lastHour: '2026-11-02T23',
+    axes: { none: [{ requests: 24 * slotsPerHour, cost: String(24 * slotsPerHour * 3) }] },
+    dimensionValues: { models: ['long-window-model'] },
+  });
+  expect(rowsRead).toHaveLength(1);
+  const factCount = hours * slotsPerHour * 4;
+  expect(rowsRead[0]).toBeGreaterThanOrEqual(factCount);
+  expect(rowsRead[0]).toBeLessThan(factCount * 100);
 });
