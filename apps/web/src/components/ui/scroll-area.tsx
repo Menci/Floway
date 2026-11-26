@@ -10,7 +10,10 @@ const { mergeClasses } = fluentComponents;
 OverlayScrollbars.plugin(ClickScrollPlugin);
 
 export type ScrollAxes = 'both' | 'horizontal' | 'vertical';
-const SCROLL_AREA_HOST_CLASS = 'floway-scroll-area relative overflow-hidden';
+// `isolate` scopes descendants' stacking indices (such as Fluent's `z-index: 1`
+// focus outlines) to the scroll region so scrolled controls cannot paint over
+// sibling sticky headers or toolbars outside it.
+const SCROLL_AREA_HOST_CLASS = 'floway-scroll-area relative isolate overflow-hidden';
 
 interface ScrollAreaProps extends PropsWithChildren {
   axes: ScrollAxes;

@@ -343,6 +343,7 @@ const zhHansCN = {
         },
         tabs: {
           label: '上游分区',
+          config: '上游配置',
           models: '模型列表',
           flags: '上游特性开关',
         },
@@ -1530,6 +1531,8 @@ const zhHansCN = {
       exportRecord: '导出记录',
       search: '搜索 ID、模型、路径、上游、状态或错误',
       failuresOnly: '仅看失败',
+      tools: '筛选',
+      toolsActive: '筛选（{{active}}）',
       applyFilters: '搜索历史记录',
       selectExport: '选择导出记录',
       exportCombined: '合并为 JSON',
