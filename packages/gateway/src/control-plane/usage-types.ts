@@ -22,6 +22,7 @@ export interface TokenUsageByUserResponse {
 }
 
 export interface TokenUsageOverviewBucket extends Omit<UsageOverviewResult, 'firstHour' | 'lastHour'> {
+  bucket: string;
   start: string;
   end: string;
 }

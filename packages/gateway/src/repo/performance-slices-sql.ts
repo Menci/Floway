@@ -1,5 +1,5 @@
 import { overviewGroupSql, performanceCoordinateSql, performanceFiltersSql, performanceRangeBinds, performanceVisibilitySql, scopedRange } from './performance-overview-sql.ts';
-import { overviewBucketBinds, overviewBucketSql } from './telemetry-bucket-sql.ts';
+import { overviewBucketBinds, overviewBucketSql, type OverviewBucketId } from './telemetry-bucket-sql.ts';
 import type { PerformanceQuerySlice, PerformanceSliceQuery } from './types.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
 import { parsePerformanceOperation } from '@floway-dev/provider';
@@ -77,7 +77,7 @@ ORDER BY kind DESC, bucket, axis, group_value`;
 
 type SliceRow = { kind: 'orphan' } | ({
   axis: string;
-  bucket: string;
+  bucket: OverviewBucketId;
   group_value: string;
 } & ({ kind: 'histogram'; payload: string } | {
   first_hour: string;
@@ -93,7 +93,7 @@ const safeCount = (value: string): number => {
 };
 
 const finishSlices = (rows: readonly SliceRow[], dimension: PerformanceSliceQuery['dimension']): PerformanceQuerySlice[] => {
-  const slices = new Map<string, PerformanceQuerySlice>();
+  const slices = new Map<OverviewBucketId, PerformanceQuerySlice>();
   const items = new Map<string, PerformanceQuerySlice['rows'][number]>();
   const bounds = new Map<string, number | null>();
   for (const row of rows) {

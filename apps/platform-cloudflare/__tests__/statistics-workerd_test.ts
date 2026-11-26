@@ -158,15 +158,20 @@ test('D1 Usage overview reads a long window in one bounded query', async () => {
     start: '2026-11-02T00', end: '2026-12-02T00', ownedKeysOnly: false,
     filters: { models: [], upstreams: [], userIds: [], keyIds: [] },
     bucket: { origin: '2026-11-02T00', hours: 24 },
-    hourlyBuckets: [],
+    hourlyBuckets: [29],
   });
 
-  expect(buckets).toHaveLength(30);
+  expect(buckets).toHaveLength(29 + 24);
   expect(buckets[0]).toMatchObject({
     firstHour: '2026-11-02T00',
     lastHour: '2026-11-02T23',
     axes: { none: [{ requests: 24 * slotsPerHour, cost: String(24 * slotsPerHour * 3) }] },
     dimensionValues: { models: ['long-window-model'] },
+  });
+  expect(buckets.at(-1)).toMatchObject({
+    firstHour: '2026-12-01T23',
+    lastHour: '2026-12-01T23',
+    axes: { none: [{ requests: slotsPerHour, cost: String(slotsPerHour * 3) }] },
   });
   expect(rowsRead).toHaveLength(1);
   const factCount = hours * slotsPerHour * 4;

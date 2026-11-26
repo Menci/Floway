@@ -4,7 +4,7 @@ import type { TelemetryOverviewSnapshot } from './telemetry-overview-types.ts';
 import { checkMany } from '../../access-control/check.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
-import { overviewBucketKey, type OverviewBucket } from '../../repo/telemetry-bucket-sql.ts';
+import { overviewBucketId, type OverviewBucket } from '../../repo/telemetry-bucket-sql.ts';
 import type { ApiKey, StoredUpstreamRecord, User } from '../../repo/types.ts';
 import { parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryHourKey, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 
@@ -44,7 +44,7 @@ export const planTelemetrySlices = (
   const hourlyBoundaries = resume ? [resumeFrom, nowHour, scanStart] : [resumeFrom, nowHour];
   const hourlyBuckets = [...new Set(hourlyBoundaries
     .filter(hour => hour >= scanStart && hour < windowEnd)
-    .map(hour => overviewBucketKey(bucket, hour)))];
+    .map(hour => overviewBucketId(bucket, hour)))];
   return { scanStart, windowEnd, cursor, reset: !resume, hourlyBuckets };
 };
 
