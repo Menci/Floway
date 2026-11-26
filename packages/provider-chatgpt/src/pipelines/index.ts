@@ -58,7 +58,7 @@ const imageHeaders = (headers: HttpHeaders): HttpHeaders => [
 export const chatgptPipelines = Object.freeze({
   openaiResponses: compose('chatgpt.openaiResponses', {
     entry: ['request.http', 'provider.upstream', 'provider.model', 'request.openaiResponses'],
-    exit: ['response.http', 'response.openaiResponses'],
+    exit: ['response.http', 'response.openaiResponses', 'response.usageModelKey?'],
     stages: [
       stripHeaders('chatgpt.openaiResponses.strip-headers', keepResponsesHeader),
       normalizeDeepSeek,
@@ -68,23 +68,23 @@ export const chatgptPipelines = Object.freeze({
       openaiResponsesLite,
       normalizeOpenAIResponsesOutput,
       parseSseResponse('openaiResponses', decodeOpenAIResponsesStream, formatError),
-      dialOpenAIResponses((facts, installationId) => codexResponsesRequest(
-        facts['request.openaiResponses'], facts['request.chatgptResponsesIdentity'], facts['provider.model'].id, installationId, false, chatgptModelUsesResponsesLite(facts['provider.model']),
+      dialOpenAIResponses((facts, modelId, installationId) => codexResponsesRequest(
+        facts['request.openaiResponses'], facts['request.chatgptResponsesIdentity'], modelId, installationId, false, chatgptModelUsesResponsesLite(facts['provider.model']),
       ), formatError),
     ],
     ending: httpTerminal,
   }),
   openaiResponsesCompact: compose('chatgpt.openaiResponsesCompact', {
     entry: ['request.http', 'provider.upstream', 'provider.model', 'request.openaiResponsesCompact'],
-    exit: ['response.http', 'response.openaiResponsesCompact'],
+    exit: ['response.http', 'response.openaiResponsesCompact', 'response.usageModelKey?'],
     stages: [
       stripHeaders('chatgpt.openaiResponsesCompact.strip-headers', keepResponsesHeader),
       injectOpenAIResponsesCompactDefaultInstructions,
       stripOpenAIResponsesCompactUnsupportedFields,
       openaiResponsesCompactLite,
       parseResultResponse('openaiResponsesCompact', parseCompact, formatError),
-      dialOpenAIResponsesCompact((facts, installationId) => codexResponsesRequest(
-        facts['request.openaiResponsesCompact'], facts['request.chatgptResponsesIdentity'], facts['provider.model'].id, installationId, true, chatgptModelUsesResponsesLite(facts['provider.model']),
+      dialOpenAIResponsesCompact((facts, modelId, installationId) => codexResponsesRequest(
+        facts['request.openaiResponsesCompact'], facts['request.chatgptResponsesIdentity'], modelId, installationId, true, chatgptModelUsesResponsesLite(facts['provider.model']),
       ), formatError),
     ],
     ending: httpTerminal,
@@ -110,7 +110,7 @@ export const chatgptPipelines = Object.freeze({
   }),
   openaiImagesGenerations: compose('chatgpt.openaiImagesGenerations', {
     entry: ['request.http', 'provider.upstream', 'provider.model', 'request.openaiImagesGenerations'],
-    exit: ['response.http', 'response.openaiImagesGenerations'],
+    exit: ['response.http', 'response.openaiImagesGenerations', 'response.usageModelKey?'],
     stages: [
       stripHeaders('chatgpt.openaiImagesGenerations.strip-headers', keepImageHeader),
       parseHttpResponse('openaiImagesGenerations', {
@@ -119,10 +119,10 @@ export const chatgptPipelines = Object.freeze({
         result: parseObject,
         format: formatError,
       }),
-      dialOpenAIImagesGenerations(facts => {
+      dialOpenAIImagesGenerations((facts, modelId) => {
         const { headers } = facts['request.http'];
         return chatgptJsonRequest(CHATGPT_OPENAI_IMAGES_GENERATIONS_PATH, 'application/json', imageHeaders(headers), {
-          ...facts['request.openaiImagesGenerations'], model: facts['provider.model'].id,
+          ...facts['request.openaiImagesGenerations'], model: modelId,
         }, trimHeader(headers, 'originator') ?? undefined);
       }, formatError),
     ],
@@ -130,7 +130,7 @@ export const chatgptPipelines = Object.freeze({
   }),
   openaiImagesEdits: compose('chatgpt.openaiImagesEdits', {
     entry: ['request.http', 'provider.upstream', 'provider.model', 'request.openaiImagesEdits'],
-    exit: ['response.http', 'response.openaiImagesEdits'],
+    exit: ['response.http', 'response.openaiImagesEdits', 'response.usageModelKey?'],
     stages: [
       stripHeaders('chatgpt.openaiImagesEdits.strip-headers', keepImageHeader),
       parseHttpResponse('openaiImagesEdits', {
@@ -139,9 +139,9 @@ export const chatgptPipelines = Object.freeze({
         result: parseObject,
         format: formatError,
       }),
-      dialOpenAIImagesEdits(async facts => {
+      dialOpenAIImagesEdits(async (facts, modelId) => {
         const { headers } = facts['request.http'];
-        const { body, contentType } = await serializeOpenAIImagesEditsJsonBody(facts['request.openaiImagesEdits'], facts['provider.model'].id);
+        const { body, contentType } = await serializeOpenAIImagesEditsJsonBody(facts['request.openaiImagesEdits'], modelId);
         return chatgptRequest(CHATGPT_OPENAI_IMAGES_EDITS_PATH, 'application/json', imageHeaders(headers), body, contentType, trimHeader(headers, 'originator') ?? undefined);
       }, formatError),
     ],

@@ -15,6 +15,7 @@ const responsesNeeds = [...commonNeeds, 'request.chatgptResponsesIdentity'] as c
 const requestProvides = ['request.http'] as const;
 const consumesIdentity = ['request.chatgptResponsesIdentity'] as const;
 const responseSide = { needs: ['response.http', 'response.http.error?'], consumes: ['response.http.error'] } as const;
+const modelResponse = ['response.http', 'response.usageModelKey?'] as const;
 
 type DialRequest<Operation extends 'openaiResponses' | 'openaiResponsesCompact'> = Pick<ChatGPTFacts, typeof responsesNeeds[number] | `request.${Operation}`>;
 type OtherRequest<Operation extends 'alphaSearch' | 'openaiImagesGenerations' | 'openaiImagesEdits'> = Pick<ChatGPTFacts, typeof commonNeeds[number] | `request.${Operation}`>;
@@ -32,36 +33,38 @@ interface DialScope {
   detach(worker: (scope: { log: { withError(cause: unknown): Pick<ChatGPTAccessTokenLog, 'warn'> } }) => Promise<void>): void;
 }
 
-export const dialOpenAIResponses = (prepare: (facts: DialRequest<'openaiResponses'>, installationId: string) => HttpRequestFact, format: FormatProtocolError) => defineStage({
+export const dialOpenAIResponses = (prepare: (facts: DialRequest<'openaiResponses'>, modelId: string, installationId: string) => HttpRequestFact, format: FormatProtocolError) => defineStage({
   name: 'chatgpt.openaiResponses.dial',
   through: {
     request: { needs: [...responsesNeeds, 'request.openaiResponses'], provides: requestProvides, consumes: consumesIdentity },
-    response: { ...responseSide, provides: ['response.http', 'response.openaiResponses?'] },
+    response: { ...responseSide, provides: [...modelResponse, 'response.openaiResponses?'] },
   },
   return: { provides: ['response.http', 'response.openaiResponses'] },
   async execute(facts, scope) {
     const { 'request.chatgptResponsesIdentity': identity, ...down } = facts;
+    const modelId = facts['provider.model'].id;
     return await dial(scope, {
-      upstream: facts['provider.upstream'], format, responsesStream: true, installationId: identity.installationId,
-      prepare: installationId => prepare(facts, installationId),
+      upstream: facts['provider.upstream'], format, modelId, responsesStream: true, installationId: identity.installationId,
+      prepare: installationId => prepare(facts, modelId, installationId),
       next: request => scope.next({ ...down, 'request.http': request }),
       error: error => ({ 'response.openaiResponses': error }),
     });
   },
 });
 
-export const dialOpenAIResponsesCompact = (prepare: (facts: DialRequest<'openaiResponsesCompact'>, installationId: string) => HttpRequestFact, format: FormatProtocolError) => defineStage({
+export const dialOpenAIResponsesCompact = (prepare: (facts: DialRequest<'openaiResponsesCompact'>, modelId: string, installationId: string) => HttpRequestFact, format: FormatProtocolError) => defineStage({
   name: 'chatgpt.openaiResponsesCompact.dial',
   through: {
     request: { needs: [...responsesNeeds, 'request.openaiResponsesCompact'], provides: requestProvides, consumes: consumesIdentity },
-    response: { ...responseSide, provides: ['response.http', 'response.openaiResponsesCompact?'] },
+    response: { ...responseSide, provides: [...modelResponse, 'response.openaiResponsesCompact?'] },
   },
   return: { provides: ['response.http', 'response.openaiResponsesCompact'] },
   async execute(facts, scope) {
     const { 'request.chatgptResponsesIdentity': identity, ...down } = facts;
+    const modelId = facts['provider.model'].id;
     return await dial(scope, {
-      upstream: facts['provider.upstream'], format, installationId: identity.installationId,
-      prepare: installationId => prepare(facts, installationId),
+      upstream: facts['provider.upstream'], format, modelId, installationId: identity.installationId,
+      prepare: installationId => prepare(facts, modelId, installationId),
       next: request => scope.next({ ...down, 'request.http': request }),
       error: error => ({ 'response.openaiResponsesCompact': error }),
     });
@@ -85,34 +88,36 @@ export const dialAlphaSearch = (prepare: (facts: OtherRequest<'alphaSearch'>) =>
   },
 });
 
-export const dialOpenAIImagesGenerations = (prepare: (facts: OtherRequest<'openaiImagesGenerations'>) => HttpRequestFact, format: FormatProtocolError) => defineStage({
+export const dialOpenAIImagesGenerations = (prepare: (facts: OtherRequest<'openaiImagesGenerations'>, modelId: string) => HttpRequestFact, format: FormatProtocolError) => defineStage({
   name: 'chatgpt.openaiImagesGenerations.dial',
   through: {
     request: { needs: [...commonNeeds, 'request.openaiImagesGenerations'], provides: requestProvides, consumes: [] },
-    response: { ...responseSide, provides: ['response.http', 'response.openaiImagesGenerations?'] },
+    response: { ...responseSide, provides: [...modelResponse, 'response.openaiImagesGenerations?'] },
   },
   return: { provides: ['response.http', 'response.openaiImagesGenerations'] },
   async execute(facts, scope) {
+    const modelId = facts['provider.model'].id;
     return await dial(scope, {
-      upstream: facts['provider.upstream'], format, images: true,
-      prepare: () => prepare(facts),
+      upstream: facts['provider.upstream'], format, modelId, images: true,
+      prepare: () => prepare(facts, modelId),
       next: request => scope.next({ ...facts, 'request.http': request }),
       error: error => ({ 'response.openaiImagesGenerations': error }),
     });
   },
 });
 
-export const dialOpenAIImagesEdits = (prepare: (facts: OtherRequest<'openaiImagesEdits'>) => Promise<HttpRequestFact>, format: FormatProtocolError) => defineStage({
+export const dialOpenAIImagesEdits = (prepare: (facts: OtherRequest<'openaiImagesEdits'>, modelId: string) => Promise<HttpRequestFact>, format: FormatProtocolError) => defineStage({
   name: 'chatgpt.openaiImagesEdits.dial',
   through: {
     request: { needs: [...commonNeeds, 'request.openaiImagesEdits'], provides: requestProvides, consumes: [] },
-    response: { ...responseSide, provides: ['response.http', 'response.openaiImagesEdits?'] },
+    response: { ...responseSide, provides: [...modelResponse, 'response.openaiImagesEdits?'] },
   },
   return: { provides: ['response.http', 'response.openaiImagesEdits'] },
   async execute(facts, scope) {
+    const modelId = facts['provider.model'].id;
     return await dial(scope, {
-      upstream: facts['provider.upstream'], format, images: true,
-      prepare: () => prepare(facts),
+      upstream: facts['provider.upstream'], format, modelId, images: true,
+      prepare: () => prepare(facts, modelId),
       next: request => scope.next({ ...facts, 'request.http': request }),
       error: error => ({ 'response.openaiImagesEdits': error }),
     });
@@ -122,6 +127,7 @@ export const dialOpenAIImagesEdits = (prepare: (facts: OtherRequest<'openaiImage
 interface DialOptions<ProtocolFacts> {
   upstream: ChatGPTUpstream;
   format: FormatProtocolError;
+  modelId?: string;
   images?: true;
   responsesStream?: true;
   installationId?: string | null;
@@ -131,7 +137,7 @@ interface DialOptions<ProtocolFacts> {
 }
 
 const dial = async <ProtocolFacts>(scope: DialScope, options: DialOptions<ProtocolFacts>) => {
-  const { upstream, images = false, responsesStream = false, format, installationId = null } = options;
+  const { upstream, images = false, responsesStream = false, format, installationId = null, modelId } = options;
   const localFailure = ({ status, type, message }: ChatGPTAccessError) => ({
     'response.http': { status, statusText: '', headers: [['content-type', 'application/json']], body: null } satisfies HttpResponseFact,
     ...options.error({ kind: 'error', source: 'local', error: { error: { type, message } } }),
@@ -145,7 +151,8 @@ const dial = async <ProtocolFacts>(scope: DialScope, options: DialOptions<Protoc
   let retried = false;
   while (true) {
     const child = options.next(authorizeRequest(request, access, accountId));
-    const { 'response.http.error': error, ...answer } = await child;
+    const { 'response.http.error': error, ...dispatched } = await child;
+    const answer = modelId === undefined ? dispatched : { ...dispatched, 'response.usageModelKey': modelId };
     if (error !== undefined) return { ...answer, ...options.error(httpDialError(error, format)) };
     const http = answer['response.http'];
     if (http === null) throw new Error('ChatGPT HTTP terminal returned neither a response nor a dial error');

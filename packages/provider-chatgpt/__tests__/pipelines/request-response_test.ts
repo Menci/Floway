@@ -9,7 +9,7 @@ import type { ChatGPTResponsesBody } from '../../src/pipelines/openai-responses/
 import { MAX_CHATGPT_OUTPUT_INDICES } from '../../src/pipelines/openai-responses/responses-output.ts';
 import { createChatGPTService, type ChatGPTService } from '../../src/service.ts';
 import type { ChatGPTAccessTokenEntry, ChatGPTAccountCredential, ChatGPTQuotaSnapshotEntryMap, ChatGPTUpstreamState } from '../../src/state.ts';
-import { getHeader, type HttpRequestFact } from '@floway-dev/http';
+import { getHeader, UpstreamTransportError, type HttpRequestFact, type ProviderFetcher } from '@floway-dev/http';
 import { Secret } from '@floway-dev/pipeline';
 import type { OpenAIResponsesCompactionItemEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { initProviderRepo, toProviderModelFact, type FlagId, type UpstreamRecord } from '@floway-dev/provider';
@@ -384,7 +384,10 @@ test('publishes the wire credential only as a Secret and completes before quota 
   });
   await started.promise;
   try {
-    await expect(running.result).resolves.toMatchObject({ 'response.openaiResponsesCompact': { kind: 'result' } });
+    await expect(running.result).resolves.toMatchObject({
+      'response.openaiResponsesCompact': { kind: 'result' },
+      'response.usageModelKey': model.id,
+    });
     await running.done;
     expect(terminalFacts).toBeDefined();
     expect(terminalFacts).not.toHaveProperty('request.chatgptResponsesIdentity');
@@ -430,6 +433,7 @@ test('preserves repeated upstream header lines and the parsed error body', async
   await expect(running.result).resolves.toMatchObject({
     'response.http': { status: 401, statusText: '', headers, body: null },
     'response.openaiResponsesCompact': { kind: 'error', source: 'upstream', error },
+    'response.usageModelKey': model.id,
   });
   await running.done;
 });
@@ -1118,5 +1122,88 @@ describe('alphaSearch', () => {
       model: 'gpt-5.4',
       commands: { search_query: [{ q: 'Floway' }] },
     });
+  });
+});
+
+describe('ChatGPT usage model identity', () => {
+  const wireId = 'gpt-wire-model';
+  const callerId = 'caller-model';
+  const requestFacts = () => ({
+    'provider.upstream': toChatGPTUpstream(currentRecord),
+    'provider.model': toProviderModelFact(stubProviderModel({ id: wireId, upstreamModelId: 'catalog-model' })),
+    'request.http': { url: 'https://floway.test', method: 'POST', headers: [], body: null },
+  });
+
+  test('uses the exact serialized id for each dispatched model operation', async () => {
+    seedFreshAccessToken();
+    const fetcher = vi.fn<ProviderFetcher>(async (_url, init) => {
+      expect(await readJsonRequest(init as RequestInit)).toMatchObject({ model: wireId });
+      return { response: errorJson(400, { error: { message: 'Rejected' } }) };
+    });
+    const common = requestFacts();
+    const runs = [
+      runChatGPTPipeline(chatgptPipelines.openaiResponses, { ...common, 'request.openaiResponses': { model: callerId, input: [] } }, service, { fetcher }),
+      runChatGPTPipeline(chatgptPipelines.openaiResponsesCompact, { ...common, 'request.openaiResponsesCompact': { model: callerId, input: [] } }, service, { fetcher }),
+      runChatGPTPipeline(chatgptPipelines.openaiImagesGenerations, { ...common, 'request.openaiImagesGenerations': { model: callerId, prompt: 'A circle' } }, service, { fetcher }),
+      runChatGPTPipeline(chatgptPipelines.openaiImagesEdits, { ...common, 'request.openaiImagesEdits': { images: [], parameters: { model: callerId, prompt: 'A circle' } } }, service, { fetcher }),
+    ];
+    for (const { running } of runs) {
+      await expect(running.result).resolves.toMatchObject({ 'response.http': { status: 400 }, 'response.usageModelKey': wireId });
+      await running.done;
+    }
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
+  test('retains the wire id when a dispatched request fails before response headers', async () => {
+    seedFreshAccessToken();
+    const fetcher = vi.fn<ProviderFetcher>().mockRejectedValue(new UpstreamTransportError(new Error('Connection reset')));
+    const { running } = runChatGPTPipeline(chatgptPipelines.openaiResponsesCompact, {
+      ...requestFacts(), 'request.openaiResponsesCompact': { model: callerId, input: [] },
+    }, service, { fetcher });
+    await expect(running.result).resolves.toMatchObject({
+      'response.http': null,
+      'response.openaiResponsesCompact': { kind: 'error', source: 'upstream' },
+      'response.usageModelKey': wireId,
+    });
+    await running.done;
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  test('omits the key when local account health blocks dispatch', async () => {
+    seedAccountState({ state: 'session_terminated' });
+    const fetcher = vi.fn<ProviderFetcher>();
+    const { running } = runChatGPTPipeline(chatgptPipelines.openaiResponsesCompact, {
+      ...requestFacts(), 'request.openaiResponsesCompact': { model: callerId, input: [] },
+    }, service, { fetcher });
+    const answer = await running.result;
+    expect(answer).toMatchObject({ 'response.http': { status: 503 }, 'response.openaiResponsesCompact': { kind: 'error', source: 'local' } });
+    expect(Object.hasOwn(answer, 'response.usageModelKey')).toBe(false);
+    await running.done;
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  test('omits the key when a renewed token makes images locally unavailable', async () => {
+    seedFreshAccessToken();
+    const fetcher = vi.fn<ProviderFetcher>().mockResolvedValueOnce({ response: errorJson(401, { error: { code: 'expired_token' } }) })
+      .mockResolvedValueOnce({ response: Response.json({ access_token: 'fresh', refresh_token: 'rotated', expires_in: 600, id_token: idToken('free') }) });
+    const { running } = runChatGPTPipeline(chatgptPipelines.openaiImagesGenerations, {
+      ...requestFacts(), 'request.openaiImagesGenerations': { model: callerId, prompt: 'A circle' },
+    }, service, { fetcher });
+    const answer = await running.result;
+    expect(answer).toMatchObject({ 'response.http': { status: 403 }, 'response.openaiImagesGenerations': { kind: 'error', source: 'local' } });
+    expect(Object.hasOwn(answer, 'response.usageModelKey')).toBe(false);
+    await running.done;
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  test('leaves Alpha Search on non-model usage coordinates', async () => {
+    seedFreshAccessToken();
+    const { running } = runChatGPTPipeline(chatgptPipelines.alphaSearch, {
+      ...requestFacts(), 'request.alphaSearch': { id: 'search-session' },
+    }, service, { fetcher: async () => ({ response: Response.json([]) }) });
+    const answer = await running.result;
+    expect(answer['response.alphaSearch'].kind).toBe('result');
+    expect(Object.hasOwn(answer, 'response.usageModelKey')).toBe(false);
+    await running.done;
   });
 });
