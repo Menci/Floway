@@ -42,8 +42,13 @@ const input = <Op extends ProviderOperation>(
   [`request.${operation}`]: payload,
 }) as ProviderRequestFacts<Op, CustomUpstream>;
 
-const invoke = <I, O>(handle: Pipeline<I, O, ProviderServices>, facts: NoInfer<I>, fetcher: Fetcher, observe?: (event: RunEvent) => void) => {
-  const controller = new AbortController();
+const invoke = <I, O>(
+  handle: Pipeline<I, O, ProviderServices>,
+  facts: NoInfer<I>,
+  fetcher: Fetcher,
+  observe?: (event: RunEvent) => void,
+  controller = new AbortController(),
+) => {
   const running = run(handle, facts, {
     signal: controller.signal,
     waitUntil: () => { throw new Error('Custom should not schedule a detached worker'); },
@@ -334,6 +339,33 @@ test('Images Edits JSON fallback encodes byte uploads alongside file references'
     parameters: { prompt: 'example' },
   }), fetcher);
   expect((await running.result)['response.openaiImagesEdits']).toEqual({ kind: 'result', result: { data: [] } });
+  await running.done;
+});
+
+test.each([true, false])('cancelled Embeddings omits usage model identity when pre-aborted=%s', async preAborted => {
+  const started = Promise.withResolvers<void>();
+  const controller = new AbortController();
+  const fetcher = vi.fn<Fetcher>((_url, { signal }) => {
+    if (signal == null) throw new Error('Expected the fetch signal');
+    if (signal.aborted) return Promise.reject(signal.reason);
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => { reject(signal.reason); }, { once: true });
+      started.resolve();
+    });
+  });
+  if (preAborted) controller.abort();
+  using running = invoke(customPipelines.openaiEmbeddings, input('openaiEmbeddings', { model: 'public-model', input: 'example' }), fetcher, undefined, controller);
+  if (!preAborted) {
+    await started.promise;
+    controller.abort();
+  }
+  expect(await running.result).toEqual({
+    'response.http': null,
+    'response.openaiEmbeddings': {
+      kind: 'error', source: 'local', error: { error: { type: 'server_error', message: 'Upstream request cancelled' } },
+    },
+  });
+  expect(fetcher).toHaveBeenCalledTimes(preAborted ? 0 : 1);
   await running.done;
 });
 

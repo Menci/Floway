@@ -95,7 +95,9 @@ const customDial = <Op extends ProviderOperation>(
         ...facts,
         'request.http': { ...request, method: 'POST', url, headers, body },
       });
-      const answer = usageModelOutput.length === 0 ? response : { ...response, 'response.usageModelKey': modelId };
+      const answer = usageModelOutput.length === 0 || error?.kind === 'abort'
+        ? response
+        : { ...response, 'response.usageModelKey': modelId };
       return error === undefined ? answer : { ...answer, [outcome]: httpDialError(error, errorFormats[auth]) };
     },
   });
