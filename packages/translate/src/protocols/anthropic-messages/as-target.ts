@@ -1,5 +1,6 @@
 import { readAnthropicMessagesEvents } from './as-target/events.ts';
 import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';
+import { envelopeAnthropicMessagesRootToolSchemas } from './as-target/tool-schema-envelope.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
 import type { RestoredAssistantTurn } from '../../composition/reading.ts';
 import { assignCallIds, type PendingCall } from '../../composition/request/call-ids.ts';
@@ -16,7 +17,7 @@ const callsOf = (turn: Extract<AnthropicMessagesMessage, { role: 'assistant' }>)
     : [];
 
 export const anthropicMessagesTargetProtocol: TargetProtocol<
-  'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, ToolNameContext
+  'anthropicMessages', AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesTargetContext
 > = {
   name: 'anthropicMessages',
   write: (request: IRInputRequestHeader, turns: readonly (IRInputTurn | RestoredAssistantTurn<InputAssistantTurnFor<'anthropicMessages'>>)[], options: TranslateOptions) => {
@@ -24,14 +25,19 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
     // declaration and call is stated under the flat spelling it computes.
     const assigned = assignCallIds(turns, callsOf);
     const flattened = allocateToolNames(request, assigned);
+    const enveloped = envelopeAnthropicMessagesRootToolSchemas(flattened.request, flattened.turns);
     return {
-      payload: anthropicMessagesPayloadFromSegments(flattened.request, flattened.turns, {
+      payload: anthropicMessagesPayloadFromSegments(enveloped.request, enveloped.turns, {
         fallbackMaxOutputTokens: options.fallbackMaxOutputTokens,
       }),
       // Both facts come from the same flattening that produced the request, so
       // the reader sees exactly the names the upstream was asked with.
-      context: flattened.context,
+      context: { ...flattened.context, envelopedFunctionToolNames: enveloped.names },
     };
   },
   readEvents: (frames, context, roundTripReader) => readAnthropicMessagesEvents(frames, { ...context, roundTrip: roundTripReader }),
 };
+
+interface AnthropicMessagesTargetContext extends ToolNameContext {
+  readonly envelopedFunctionToolNames: ReadonlySet<string>;
+}

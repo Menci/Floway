@@ -226,3 +226,32 @@ test('Chat source custom identity renames native Messages calls independently fr
   expect(calls.map(call => call.input)).toEqual([{ input: 'raw' }, { input: 'later' }]);
   expect(replay.target.messages[0].content).toContainEqual({ type: 'thinking', thinking: 'native reasoning', signature: 'native signature' });
 });
+
+test('Responses round-trips an enveloped Anthropic tool call without double wrapping', async () => {
+  const options = { sidecarCodec: createTestSidecarCodec() };
+  const tool: OpenAIResponsesTool = {
+    type: 'function', name: 'update', strict: true,
+    parameters: { type: 'object', oneOf: [{ type: 'object', properties: { mode: { const: 'delete' } }, required: ['mode'] }] },
+  };
+  const first = expectTrip(await routeOpenAIResponsesViaAnthropicMessages({
+    model: 'm', stream: true, input: 'start', tools: [tool],
+  }, options));
+  expect(first.target.tools?.[0]).toMatchObject({
+    name: 'update', input_schema: { properties: { arguments: { oneOf: expect.any(Array) } }, required: ['arguments'] },
+  });
+
+  const result = await collectOpenAIResponsesProtocolEventsToResult(first.events(iterate(messagesFrames('update', '{"arguments":{"mode":"delete"}}'))));
+  const call = result.output.find(item => item.type === 'function_call');
+  expect(call).toMatchObject({ type: 'function_call', name: 'update', arguments: '{"mode":"delete"}' });
+  if (call?.type !== 'function_call') throw new Error('expected function call');
+
+  const replay = expectTrip(await routeOpenAIResponsesViaAnthropicMessages({
+    model: 'm', stream: true, tools: [tool],
+    input: [...toOpenAIResponsesInputItems(result.output), { type: 'function_call_output', call_id: call.call_id, output: 'done' }],
+  }, options));
+  const restored = replay.target.messages.flatMap(message => message.role === 'assistant' && Array.isArray(message.content)
+    ? message.content.flatMap(block => block.type === 'tool_use' ? [block] : [])
+    : []);
+  expect(restored).toHaveLength(1);
+  expect(restored[0]?.input).toEqual({ arguments: { mode: 'delete' } });
+});
