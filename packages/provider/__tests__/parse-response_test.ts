@@ -68,6 +68,31 @@ const scalar = compose('alpha-search.provider', {
   ending: httpTerminal,
 });
 
+const meteredScalar = compose('embeddings.provider', {
+  entry,
+  exit: ['response.http', 'response.openaiEmbeddings', 'response.usageModelKey?'],
+  stages: [
+    parseResultResponse('openaiEmbeddings', () => ({ ok: true, value: {} }), format),
+    defineStage({
+      name: 'prepare-embedding-dial',
+      through: {
+        request: { needs: [], provides: [], consumes: [] },
+        response: {
+          needs: ['response.http', 'response.http.error?'],
+          provides: ['response.openaiEmbeddings?', 'response.usageModelKey?'],
+          consumes: ['response.http.error'],
+        },
+      },
+      async execute(facts, scope) {
+        const { 'response.http.error': failure, ...answer } = await scope.next(facts);
+        if (failure !== undefined) return { ...answer, 'response.openaiEmbeddings': httpDialError(failure, format) };
+        return { ...answer, 'response.usageModelKey': 'wire-model' };
+      },
+    }),
+  ],
+  ending: httpTerminal,
+});
+
 const anthropic = compose('anthropic-messages.provider', {
   entry,
   exit: ['response.http', 'response.anthropicMessages'],
@@ -124,6 +149,38 @@ const speech = compose('openai-audio-speech.provider', {
 });
 
 describe('provider HTTP return path', () => {
+  it.each([200, 400])('omits the dispatch model key when body I/O aborts after HTTP %s headers', async status => {
+    const reading = Promise.withResolvers<void>();
+    const controller = new AbortController();
+    const running = run(meteredScalar, request, host((_url, { signal }) => Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+      start(body) {
+        signal!.addEventListener('abort', () => body.error(signal!.reason), { once: true });
+      },
+      pull() { reading.resolve(); },
+    }, { highWaterMark: 0 }), { status, headers: { 'x-upstream': 'kept' } })), controller.signal));
+    await reading.promise;
+    controller.abort();
+    const answer = await running.result;
+    expect(answer).toMatchObject({
+      'response.http': { status, body: null, headers: [['x-upstream', 'kept']] },
+      'response.openaiEmbeddings': { kind: 'error', source: 'local' },
+    });
+    expect(answer).not.toHaveProperty(['response.usageModelKey']);
+    await running.done;
+  });
+
+  it('keeps the dispatch model key when body I/O fails upstream after headers', async () => {
+    const failure = new UpstreamTransportError(new Error('socket reset'));
+    const running = run(meteredScalar, request, host(() => Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+      pull(body) { body.error(failure); },
+    }), { status: 200 }))));
+    await expect(running.result).resolves.toMatchObject({
+      'response.openaiEmbeddings': { kind: 'error', source: 'upstream' },
+      'response.usageModelKey': 'wire-model',
+    });
+    await running.done;
+  });
+
   it('types the optional dispatch model key and restricts no-content results to nullable operations', () => {
     expectTypeOf<Pick<GatewayFacts, 'response.usageModelKey'>>().toEqualTypeOf<{ 'response.usageModelKey'?: string }>();
     expectTypeOf<Pick<ProviderResponseFacts<'openaiChatCompletions'>, 'response.usageModelKey'>>().toEqualTypeOf<{ 'response.usageModelKey'?: string }>();

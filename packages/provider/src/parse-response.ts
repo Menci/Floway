@@ -213,17 +213,23 @@ const responseParser = <Op extends ProviderOperation, Needs extends RequestNeeds
   const payload = `request.${operation}` as const;
   const outcome = `response.${operation}` as const;
   const requestNeeds: readonly string[] = parser.kind === 'select' ? [...new Set([payload, ...parser.needs])] : parser.needs;
-  const responseNeeds: readonly string[] = ['response.http', 'response.http.error?', `${outcome}?`];
+  const responseNeeds: readonly string[] = ['response.http', 'response.http.error?', 'response.usageModelKey?', `${outcome}?`];
   const responseProvides: readonly string[] = ['response.http', outcome];
   const through = {
     request: { needs: requestNeeds, provides: [], consumes: [] },
     response: { needs: responseNeeds, provides: responseProvides, consumes: [] },
   } as const;
-  const answer = (http: HttpAnswer, parsed: ParsedOutcome<Op>) => ({ ...http, [outcome]: parsed });
+  const answer = (http: HttpAnswer, parsed: ParsedOutcome<Op>) => {
+    if (parsed.kind === 'error' && parsed.source === 'local' && Object.hasOwn(http, 'response.usageModelKey')) {
+      return { 'response.http': http['response.http'], [outcome]: parsed };
+    }
+    return { ...http, [outcome]: parsed };
+  };
 
   return defineStage({
     name: `${operation}.parse-response`,
     through,
+    return: { provides: responseProvides },
     async execute(facts, scope) {
       const requestFacts = requestedFacts(parser.needs, facts);
       const back = await scope.next(facts);
