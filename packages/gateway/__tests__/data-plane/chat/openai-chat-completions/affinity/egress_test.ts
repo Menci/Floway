@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import { wrapOpenAIChatCompletionsAffinityEgress } from '../../../../../src/data-plane/chat/openai-chat-completions/affinity/egress.ts';
-import { affinityOutput } from '../../../../../src/data-plane/chat/shared/affinity/attempt-targets.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { affinityOutput } from '../../../../../src/data-plane/chat/shared/affinity/output.ts';
 import { compose, defineStage } from '../../../../../src/data-plane/pipeline/facts.ts';
 import type { GatewayServices } from '../../../../../src/data-plane/pipeline/services.ts';
 import { stubChatCandidate } from '../../shared/affinity/helpers.ts';

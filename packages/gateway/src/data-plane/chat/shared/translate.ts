@@ -1,4 +1,4 @@
-import { chatBodyEntry, chatBodyExit, chatEgressEntry, chatEgressExit, type ChatOperation, type ChatOutcome, type ChatPayload } from './pipeline.ts';
+import { chatBodyEntry, chatBodyExit, chatEgressEntry, chatEgressExit, passthrough, type ChatOperation, type ChatOutcome, type ChatPayload } from './pipeline.ts';
 import { SidecarDomain } from './sidecar-codec.ts';
 import { defineOperationStage, type OperationEvent } from '../../pipeline/facts.ts';
 import { openAIResponsesFailureEvents } from '../openai-responses/stream-error.ts';
@@ -62,20 +62,6 @@ const translations = {
     [Target in keyof typeof chatTargets[Source] & ChatOperation]: Translation<Source, Target>;
   };
 };
-
-const passthrough = (request: readonly string[], response: readonly string[]) => ({
-  request: { needs: request, provides: [], consumes: [] },
-  response: { needs: response, provides: [], consumes: [] },
-});
-
-export const enterChatProtocol = (operation: ChatOperation) => defineOperationStage({
-  name: `${operation}.enter-body`,
-  request: { needs: chatBodyEntry(operation) },
-  into: { body: passthrough(chatBodyEntry(operation), chatBodyExit(operation)) },
-  async execute(facts, scope) {
-    return await scope.into.body(facts);
-  },
-});
 
 interface FrameReader {
   read<Event>(stream: ManagedStream<Event, ProtocolStreamError>): AsyncIterableIterator<Result<Event, ProtocolStreamError>>;

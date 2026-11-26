@@ -41,11 +41,27 @@ const bodyOptions = <Op extends ChatOperation>(operation: Op, visited: ChatOpera
     native: composeChat(`${operation} egress fixture`, {
       entry: chatEgressEntry(operation),
       exit: chatEgressExit(operation),
-      stages: [parse[operation]],
+      stages: [
+        defineOperationStage({
+          name: `${operation} measurements fixture`,
+          through: {
+            request: { needs: [], provides: [], consumes: [] },
+            response: { needs: [], provides: ['response.usage', 'response.performance'], consumes: [] },
+          },
+          async execute(facts, scope) {
+            return {
+              ...await scope.next(facts),
+              'response.usage': scope.createDeferred(async () => ({ kind: 'local' })),
+              'response.performance': scope.createDeferred(async () => ({ ttftMs: null })),
+            };
+          },
+        }),
+        parse[operation],
+      ],
       ending: defineOperationStage({
         name: `${operation} provider fixture`,
         request: { needs: chatEgressEntry(operation) },
-        return: { provides: ['response.http', 'response.usage', 'response.performance'] },
+        return: { provides: ['response.http'] },
         async execute(facts, scope) {
           observed.push(facts);
           return {
@@ -53,8 +69,6 @@ const bodyOptions = <Op extends ChatOperation>(operation: Op, visited: ChatOpera
               ...upstreamHead,
               body: scope.createStream(async function* () { yield { ok: true, value: new TextEncoder().encode(body) }; }),
             },
-            'response.usage': scope.createDeferred(async () => ({ kind: 'local' })),
-            'response.performance': scope.createDeferred(async () => ({ ttftMs: null })),
           };
         },
       }),

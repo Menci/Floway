@@ -76,3 +76,8 @@ export const chatBodyEntry = <Op extends ChatOperation>(operation: Op) => [
 
 export const chatEgressExit = <Op extends ChatOperation>(operation: Op) => ['response.http', `response.${operation}`, 'response.usage', 'response.performance'] as const;
 export const chatBodyExit = <Op extends ChatOperation>(operation: Op) => ['response.http', `response.${operation}`, 'response.usage?', 'response.performance?'] as const;
+
+export const passthrough = (request: readonly string[], response: readonly string[]) => ({
+  request: { needs: request, provides: [], consumes: [] },
+  response: { needs: response, provides: [], consumes: [] },
+});
