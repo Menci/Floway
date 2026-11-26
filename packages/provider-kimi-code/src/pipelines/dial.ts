@@ -23,22 +23,24 @@ export const kimiCodeDial = (
     name: `kimi-code.${operation}.dial`,
     through: {
       request: { needs: ['request.http', 'provider.upstream', payload], provides: ['request.http'], consumes: [] },
-      response: { needs: ['response.http', 'response.http.error?'], provides: [`${outcome}?`], consumes: ['response.http.error'] },
+      response: { needs: ['response.http', 'response.http.error?'], provides: [`${outcome}?`, 'response.usageModelKey'], consumes: ['response.http.error'] },
     },
     async execute(facts, scope) {
       const request = facts['request.http'];
+      const body = facts[payload];
       const { config } = facts['provider.upstream'];
       const headers = setHeader(setHeader(request.headers, 'content-type', 'application/json'), 'authorization', config.apiKey.map(value => `Bearer ${value}`));
-      const { 'response.http.error': failure, ...answer } = await scope.next({
+      const { 'response.http.error': failure, ...response } = await scope.next({
         ...facts,
         'request.http': {
           ...request,
           url: kimiCodeUrl(config.region, path),
           method: 'POST',
           headers,
-          body: new TextEncoder().encode(JSON.stringify(facts[payload])),
+          body: new TextEncoder().encode(JSON.stringify(body)),
         },
       });
+      const answer = { ...response, 'response.usageModelKey': body.model };
       return failure === undefined ? answer : { ...answer, [outcome]: httpDialError(failure, format) };
     },
   });

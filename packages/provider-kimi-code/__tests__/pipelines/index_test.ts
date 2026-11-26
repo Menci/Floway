@@ -76,6 +76,7 @@ test('writes the selected wire model and priority tier, then exposes that tier o
   }, fetch, async running => {
     const answer = await running.result;
     expect(answer['response.http']).toMatchObject({ status: 200, body: null });
+    expect(answer['response.usageModelKey']).toBe('fast-model');
     const outcome = answer['response.openaiChatCompletions'];
     if (outcome.kind !== 'stream') throw new Error('Expected chat frames');
     expect(await Array.fromAsync(running.read(outcome.stream))).toEqual([{
@@ -171,6 +172,7 @@ test('preserves quota response details and completes the request before detached
     expect(await running.result).toEqual({
       'response.http': expect.objectContaining({ status: 429, headers: expect.arrayContaining([['retry-after', '5']]), body: null }),
       'response.openaiResponses': { kind: 'error', source: 'upstream', error },
+      'response.usageModelKey': 'standard-model',
     });
     await running.done;
     expect(pending).toHaveLength(1);
@@ -193,6 +195,7 @@ test('turns a pre-header transport failure into a protocol error and skips activ
       'response.openaiChatCompletions': {
         kind: 'error', source: 'upstream', error: { error: { type: 'api_error', message: 'connection reset' } },
       },
+      'response.usageModelKey': 'standard-model',
     });
     expect(pending).toHaveLength(0);
   });
@@ -208,7 +211,9 @@ test('counts with the requested Kimi lane and forwards Anthropic beta without sc
     ...entry,
     'request.anthropicMessagesCountTokens': { model: 'public-model', messages: [], speed: 'fast' },
   }, fetch, async (running, pending) => {
-    expect((await running.result)['response.anthropicMessagesCountTokens']).toEqual({ kind: 'result', result: { input_tokens: 7 } });
+    const answer = await running.result;
+    expect(answer['response.anthropicMessagesCountTokens']).toEqual({ kind: 'result', result: { input_tokens: 7 } });
+    expect(answer['response.usageModelKey']).toBe('fast-model');
     expect(fetch).toHaveBeenCalledExactlyOnceWith('https://api.kimi.com/coding/v1/messages/count_tokens', expect.anything());
     expect(pending).toHaveLength(0);
   });
@@ -223,6 +228,7 @@ test('a fast-only model rejects standard Chat Completions and Messages token cou
   }, fetch, async running => {
     const answer = await running.result;
     expect(answer['response.http']?.status).toBe(400);
+    expect(answer).not.toHaveProperty(['response.usageModelKey']);
     expect(answer['response.openaiChatCompletions']).toMatchObject({
       kind: 'error', source: 'local', error: { error: { type: 'invalid_request_error', message: expect.stringContaining('only available with fast mode selected') } },
     });
@@ -233,6 +239,7 @@ test('a fast-only model rejects standard Chat Completions and Messages token cou
   }, fetch, async running => {
     const answer = await running.result;
     expect(answer['response.http']?.status).toBe(400);
+    expect(answer).not.toHaveProperty(['response.usageModelKey']);
     expect(answer['response.anthropicMessagesCountTokens']).toMatchObject({
       kind: 'error', source: 'local', error: { type: 'error', error: { type: 'invalid_request_error', message: expect.stringContaining('only available with fast mode selected') } },
     });

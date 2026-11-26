@@ -26,7 +26,7 @@ const commonEntry = ['request.http', 'provider.upstream', 'provider.model'] as c
 export const kimiCodePipelines = Object.freeze({
   openaiChatCompletions: compose('kimi-code.openaiChatCompletions', {
     entry: [...commonEntry, 'request.openaiChatCompletions'],
-    exit: ['response.http', 'response.openaiChatCompletions'],
+    exit: ['response.http', 'response.openaiChatCompletions', 'response.usageModelKey?'],
     stages: [
       stripOpenAIHeaders,
       selectOpenAIChatCompletionsModel,
@@ -41,7 +41,7 @@ export const kimiCodePipelines = Object.freeze({
   }),
   openaiResponses: compose('kimi-code.openaiResponses', {
     entry: [...commonEntry, 'request.openaiResponses'],
-    exit: ['response.http', 'response.openaiResponses'],
+    exit: ['response.http', 'response.openaiResponses', 'response.usageModelKey?'],
     stages: [
       stripOpenAIHeaders,
       selectOpenAIResponsesModel,
@@ -55,7 +55,7 @@ export const kimiCodePipelines = Object.freeze({
   }),
   anthropicMessages: compose('kimi-code.anthropicMessages', {
     entry: [...commonEntry, 'request.anthropicMessages'],
-    exit: ['response.http', 'response.anthropicMessages'],
+    exit: ['response.http', 'response.anthropicMessages', 'response.usageModelKey?'],
     stages: [
       stripAnthropicMessagesHeaders,
       selectAnthropicMessagesModel,
@@ -67,7 +67,7 @@ export const kimiCodePipelines = Object.freeze({
   }),
   anthropicMessagesCountTokens: compose('kimi-code.anthropicMessagesCountTokens', {
     entry: [...commonEntry, 'request.anthropicMessagesCountTokens'],
-    exit: ['response.http', 'response.anthropicMessagesCountTokens'],
+    exit: ['response.http', 'response.anthropicMessagesCountTokens', 'response.usageModelKey?'],
     stages: [
       stripAnthropicMessagesHeaders,
       selectAnthropicMessagesCountTokensModel,
