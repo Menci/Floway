@@ -1,8 +1,8 @@
-import { applyAnthropicMessagesRoleCompatibility } from '../chat/anthropic-messages/interceptors/apply-role-compatibility.ts';
-import { disableAnthropicMessagesReasoningOnForcedToolChoice } from '../chat/anthropic-messages/interceptors/disable-reasoning-on-forced-tool-choice.ts';
-import { normalizeAnthropicMessagesEmptyToolsToolChoice } from '../chat/anthropic-messages/interceptors/normalize-empty-tools-tool-choice.ts';
-import { normalizeAnthropicMessagesBeta, stripAnthropicMessagesBillingAttribution } from '../chat/anthropic-messages/interceptors/strip-billing-attribution.ts';
-import { anthropicMessagesWebSearchInvalidRequestBody, prepareAnthropicMessagesWebSearchShimRequest } from '../chat/anthropic-messages/interceptors/web-search-shim.ts';
+import { applyAnthropicMessagesRoleCompatibility } from '../chat/anthropic-messages/stages/apply-role-compatibility.ts';
+import { disableAnthropicMessagesReasoningOnForcedToolChoice } from '../chat/anthropic-messages/stages/disable-reasoning-on-forced-tool-choice.ts';
+import { normalizeAnthropicMessagesEmptyToolsToolChoice } from '../chat/anthropic-messages/stages/normalize-empty-tools-tool-choice.ts';
+import { normalizeAnthropicMessagesBeta, stripAnthropicMessagesBillingAttribution } from '../chat/anthropic-messages/stages/strip-billing-attribution.ts';
+import { anthropicMessagesWebSearchInvalidRequestBody, prepareAnthropicMessagesWebSearchShimRequest } from '../chat/anthropic-messages/stages/web-search-shim.ts';
 import { applyRulesToUpstreamAnthropicMessages } from '../chat/shared/alias-rules.ts';
 import { localResponseHead } from '../pipeline/encode.ts';
 import { defineStage } from '../pipeline/facts.ts';

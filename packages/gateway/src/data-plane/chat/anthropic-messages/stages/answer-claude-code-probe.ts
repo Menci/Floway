@@ -31,12 +31,9 @@ import type { ProtocolStreamError } from '@floway-dev/provider';
 // integer below minimum value. Expected a value >= 16, but got 1 instead.",
 // "code":"invalid_request_body"}}`.
 //
-// The gateway answers the probe itself instead. That is honest for what the
-// probe actually asks: by the time this interceptor runs, model resolution has
-// already picked a real candidate for the requested id, so an id no upstream
-// serves still fails at the serve layer with a 404 and the CLI still reports
-// it not found. What we suppress is only the pointless one-token generation
-// behind it — no upstream call, and no tokens to bill.
+// By the time this stage answers the probe, candidate discovery has confirmed
+// that an upstream serves the requested model. An unavailable model still
+// produces a 404. Answering the probe avoids a one-token upstream call.
 const CLAUDE_CODE_USER_AGENT = /^claude-cli\/\d+\.\d+\.\d+/i;
 
 // The probes we can answer truthfully, written exactly as 2.1.226 sends them:

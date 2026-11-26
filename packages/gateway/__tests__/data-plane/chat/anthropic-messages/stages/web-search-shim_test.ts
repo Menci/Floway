@@ -9,7 +9,7 @@ import {
   type AnthropicMessagesWebSearchShimState,
   prepareAnthropicMessagesWebSearchShimRequest,
   rewriteAnthropicMessagesWebSearchEventsToNative,
-} from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/web-search-shim.ts';
+} from '../../../../../src/data-plane/chat/anthropic-messages/stages/web-search-shim.ts';
 import { localResponseHead } from '../../../../../src/data-plane/pipeline/encode.ts';
 import { compose, defineStage } from '../../../../../src/data-plane/pipeline/facts.ts';
 import type { GatewayServices } from '../../../../../src/data-plane/pipeline/services.ts';

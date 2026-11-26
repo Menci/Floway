@@ -1,11 +1,11 @@
 import { expect, test } from 'vitest';
 
 import { collectGeminiGenerateContent, collectGeminiGenerateContentStreamError, encodeGeminiGenerateContent } from '../../../../src/data-plane/chat/gemini-generate-content/encode.ts';
-import { stripSafetySettings } from '../../../../src/data-plane/chat/gemini-generate-content/interceptors/strip-safety-settings.ts';
-import { stripUnsupportedPartFields } from '../../../../src/data-plane/chat/gemini-generate-content/interceptors/strip-unsupported-part-fields.ts';
-import { stripUnsupportedTools } from '../../../../src/data-plane/chat/gemini-generate-content/interceptors/strip-unsupported-tools.ts';
-import { suppressThoughtParts } from '../../../../src/data-plane/chat/gemini-generate-content/interceptors/suppress-thought-parts.ts';
 import { parseGeminiGenerateContent, type GeminiGenerateContentDelivery } from '../../../../src/data-plane/chat/gemini-generate-content/parse.ts';
+import { stripSafetySettings } from '../../../../src/data-plane/chat/gemini-generate-content/stages/strip-safety-settings.ts';
+import { stripUnsupportedPartFields } from '../../../../src/data-plane/chat/gemini-generate-content/stages/strip-unsupported-part-fields.ts';
+import { stripUnsupportedTools } from '../../../../src/data-plane/chat/gemini-generate-content/stages/strip-unsupported-tools.ts';
+import { suppressThoughtParts } from '../../../../src/data-plane/chat/gemini-generate-content/stages/suppress-thought-parts.ts';
 import { collectChat } from '../../../../src/data-plane/chat/shared/collect.ts';
 import { localResponseHead } from '../../../../src/data-plane/pipeline/encode.ts';
 import type { GatewayPipelineFacts } from '../../../../src/data-plane/pipeline/facts.ts';

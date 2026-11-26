@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { stripAnthropicMessagesBillingAttribution } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/strip-billing-attribution.ts';
+import { stripAnthropicMessagesBillingAttribution } from '../../../../../src/data-plane/chat/anthropic-messages/stages/strip-billing-attribution.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { assertEquals } from '@floway-dev/test-utils';
 

@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { disableAnthropicMessagesReasoningOnForcedToolChoice } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/disable-reasoning-on-forced-tool-choice.ts';
+import { disableAnthropicMessagesReasoningOnForcedToolChoice } from '../../../../../src/data-plane/chat/anthropic-messages/stages/disable-reasoning-on-forced-tool-choice.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { assertEquals } from '@floway-dev/test-utils';
 

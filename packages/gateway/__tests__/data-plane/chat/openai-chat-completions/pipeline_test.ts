@@ -1,14 +1,14 @@
 import { expect, test } from 'vitest';
 
 import { collectOpenAIChatCompletions, collectOpenAIChatCompletionsStreamError, encodeOpenAIChatCompletions } from '../../../../src/data-plane/chat/openai-chat-completions/encode.ts';
-import { applyRoleCompatibility } from '../../../../src/data-plane/chat/openai-chat-completions/interceptors/apply-role-compatibility.ts';
-import { disableReasoningOnForcedToolChoice } from '../../../../src/data-plane/chat/openai-chat-completions/interceptors/disable-reasoning-on-forced-tool-choice.ts';
-import { includeUsageStreamOptions } from '../../../../src/data-plane/chat/openai-chat-completions/interceptors/include-usage-stream-options.ts';
-import { normalizeEmptyToolsToolChoice } from '../../../../src/data-plane/chat/openai-chat-completions/interceptors/normalize-empty-tools-tool-choice.ts';
-import { normalizeExclusiveCachedTokens } from '../../../../src/data-plane/chat/openai-chat-completions/interceptors/normalize-exclusive-cached-tokens.ts';
-import { normalizeUsage } from '../../../../src/data-plane/chat/openai-chat-completions/interceptors/normalize-usage.ts';
-import { stripPromptCacheKey } from '../../../../src/data-plane/chat/openai-chat-completions/interceptors/strip-prompt-cache-key.ts';
 import { parseOpenAIChatCompletions, type OpenAIChatCompletionsDelivery } from '../../../../src/data-plane/chat/openai-chat-completions/parse.ts';
+import { applyRoleCompatibility } from '../../../../src/data-plane/chat/openai-chat-completions/stages/apply-role-compatibility.ts';
+import { disableReasoningOnForcedToolChoice } from '../../../../src/data-plane/chat/openai-chat-completions/stages/disable-reasoning-on-forced-tool-choice.ts';
+import { includeUsageStreamOptions } from '../../../../src/data-plane/chat/openai-chat-completions/stages/include-usage-stream-options.ts';
+import { normalizeEmptyToolsToolChoice } from '../../../../src/data-plane/chat/openai-chat-completions/stages/normalize-empty-tools-tool-choice.ts';
+import { normalizeExclusiveCachedTokens } from '../../../../src/data-plane/chat/openai-chat-completions/stages/normalize-exclusive-cached-tokens.ts';
+import { normalizeUsage } from '../../../../src/data-plane/chat/openai-chat-completions/stages/normalize-usage.ts';
+import { stripPromptCacheKey } from '../../../../src/data-plane/chat/openai-chat-completions/stages/strip-prompt-cache-key.ts';
 import { collectChat } from '../../../../src/data-plane/chat/shared/collect.ts';
 import { localResponseHead } from '../../../../src/data-plane/pipeline/encode.ts';
 import type { GatewayPipelineFacts } from '../../../../src/data-plane/pipeline/facts.ts';

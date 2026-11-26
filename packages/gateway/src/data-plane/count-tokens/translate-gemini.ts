@@ -1,6 +1,6 @@
 import { geminiGenerateContentRpcErrorPayload } from '../chat/gemini-generate-content/errors.ts';
-import { stripUnsupportedPartFieldsFromPayload } from '../chat/gemini-generate-content/interceptors/strip-unsupported-part-fields.ts';
-import { stripUnsupportedToolsFromPayload } from '../chat/gemini-generate-content/interceptors/strip-unsupported-tools.ts';
+import { stripUnsupportedPartFieldsFromPayload } from '../chat/gemini-generate-content/stages/strip-unsupported-part-fields.ts';
+import { stripUnsupportedToolsFromPayload } from '../chat/gemini-generate-content/stages/strip-unsupported-tools.ts';
 import { SidecarDomain } from '../chat/shared/sidecar-codec.ts';
 import { localResponseHead } from '../pipeline/encode.ts';
 import { defineStage } from '../pipeline/facts.ts';

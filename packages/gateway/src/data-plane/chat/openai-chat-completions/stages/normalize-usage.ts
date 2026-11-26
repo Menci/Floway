@@ -9,12 +9,8 @@ import { defineStage } from '../../../pipeline/facts.ts';
 // chunk and re-emit it on a synthesized spec-compliant carrier chunk
 // immediately after, so downstream consumers can rely on the standard shape.
 //
-// Vendor-specific cache-token field rewrites (DeepSeek
-// `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`, Kimi
-// `cached_tokens`) live on each vendor's own `vendor-<X>-normalize`
-// interceptor and run before this one on the response path, so by the time
-// the chunk reaches us its `usage.prompt_tokens_details.cached_tokens` is
-// already in the OpenAI standard shape.
+// Provider normalization stages already map vendor cache fields to
+// `usage.prompt_tokens_details.cached_tokens` on the response path.
 
 export const normalizeUsage = defineStage({
   name: 'openaiChatCompletions.normalize-usage',

@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { collectAnthropicMessages, collectAnthropicMessagesStreamError, encodeAnthropicMessages } from '../../../../src/data-plane/chat/anthropic-messages/encode.ts';
-import { answerClaudeCodeProbe } from '../../../../src/data-plane/chat/anthropic-messages/interceptors/answer-claude-code-probe.ts';
-import { stripBillingAttribution } from '../../../../src/data-plane/chat/anthropic-messages/interceptors/strip-billing-attribution.ts';
 import { parseAnthropicMessages } from '../../../../src/data-plane/chat/anthropic-messages/parse.ts';
+import { answerClaudeCodeProbe } from '../../../../src/data-plane/chat/anthropic-messages/stages/answer-claude-code-probe.ts';
+import { stripBillingAttribution } from '../../../../src/data-plane/chat/anthropic-messages/stages/strip-billing-attribution.ts';
 import { anthropicMessagesIngress } from '../../../../src/data-plane/chat/pipeline.ts';
 import { collectChat } from '../../../../src/data-plane/chat/shared/collect.ts';
 import { localResponseHead } from '../../../../src/data-plane/pipeline/encode.ts';

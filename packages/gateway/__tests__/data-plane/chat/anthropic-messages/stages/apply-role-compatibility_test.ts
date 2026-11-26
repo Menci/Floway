@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { applyAnthropicMessagesRoleCompatibility } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/apply-role-compatibility.ts';
+import { applyAnthropicMessagesRoleCompatibility } from '../../../../../src/data-plane/chat/anthropic-messages/stages/apply-role-compatibility.ts';
 import type { AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
 import type { FlagId } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
