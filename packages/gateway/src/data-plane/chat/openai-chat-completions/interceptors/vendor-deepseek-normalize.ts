@@ -41,7 +41,6 @@ import type { OpenAIChatCompletionsInterceptor } from './types.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../shared/json-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsReasoningItemEx, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
-import { providerModelOf } from '@floway-dev/provider';
 
 const synthesizeFromItems = (items: OpenAIChatCompletionsReasoningItemEx[] | null | undefined): string | undefined => {
   if (!items?.length) return undefined;
@@ -121,7 +120,7 @@ const rewriteInboundUsage = (chunk: OpenAIChatCompletionsStreamEvent): OpenAICha
 };
 
 export const withVendorDeepSeekOpenAIChatCompletionsNormalize: OpenAIChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-deepseek')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('vendor-deepseek')) return await run();
 
   ctx.payload = rewriteOutboundPayload(ctx.payload);
 

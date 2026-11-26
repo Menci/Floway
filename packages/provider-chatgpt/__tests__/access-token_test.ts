@@ -29,7 +29,6 @@ const makeRecord = (state: ChatGPTUpstreamState): UpstreamRecord => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
 });
 
@@ -160,9 +159,9 @@ describe('ensureChatGPTAccessToken', () => {
     // accountId; we should return it instead of destroying a working
     // credential.
     const siblingEntry: ChatGPTAccessTokenEntry = { token: 'at_sibling', expiresAt: farFutureMs, refreshedAt: 'sibling' };
-    repo.getById.mockImplementationOnce(async () => current === null ? null : { ...current, configVersion: 1 }).mockImplementationOnce(async () => {
+    repo.getById.mockImplementationOnce(async () => current === null ? null : { ...current, version: 1 }).mockImplementationOnce(async () => {
       current = makeRecord({ accounts: [{ ...baseAccount, refresh_token: 'rt_v2', accessToken: siblingEntry }] });
-      return { ...current, configVersion: 1 };
+      return { ...current, version: 1 };
     });
     const mint = vi.fn().mockRejectedValue(new ChatGPTOAuthSessionTerminatedError({ code: 'invalid_grant', message: 'replayed' }));
 

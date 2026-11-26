@@ -1,5 +1,4 @@
-import { DurableObjectExecutionCellNamespace, type ExecutionDurableObjectNamespace } from './durable-object-execution-cell.ts';
-import { ExecutionCellChannelBroker } from './execution-cell-channel-broker.ts';
+import { DurableObjectChannelBroker, type ExecutionDurableObjectNamespace } from './durable-object-channel-broker.ts';
 import { createCloudflareExternalResourceFetcher } from './external-resource-fetcher.ts';
 import { cloudflareFetch } from './fetch.ts';
 import { cloudflareHttpContentDecoders } from './http-content-decoders.ts';
@@ -8,7 +7,7 @@ import { KvImageCacheStore, type KvNamespace } from './kv-image-cache-store.ts';
 import { R2FileStore, type R2BucketLike } from './r2-file-store.ts';
 import { cloudflareSocketDial } from './socket-dial.ts';
 import { timingSafeEqual } from './timing-safe-equal.ts';
-import { FileDumpStore, initDumpBroker, initDumpStore, initExecutionCellNamespace } from '@floway-dev/gateway';
+import { FileDumpStore, initDumpBroker, initDumpStore } from '@floway-dev/gateway';
 import { dumpCodec } from '@floway-dev/gateway/dump-codec';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 import {
@@ -37,7 +36,7 @@ export interface CloudflareEnv {
 // Every binding declared on `CloudflareEnv` is load-bearing — D1 holds all
 // config and telemetry, R2 stores file-backed response payloads and dump bodies,
 // Images re-encodes images, KV memoises the results, and EXECUTION_DO hosts
-// WebSocket fan-out plus per-use execution cells. A missing binding means
+// WebSocket fan-out for live dump streams. A missing binding means
 // wrangler.jsonc drifted from the code, so we refuse to initialise rather
 // than 503 on first use of the absent binding.
 const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'KV', 'EXECUTION_DO'] as const;
@@ -66,8 +65,6 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES));
   initSocketDial(cloudflareSocketDial);
   initDumpStore(new FileDumpStore(env.DB, files));
-  const executionCells = new DurableObjectExecutionCellNamespace(env.EXECUTION_DO);
-  initExecutionCellNamespace(executionCells);
-  initDumpBroker(new ExecutionCellChannelBroker<DumpMetadata>(executionCells, dumpCodec));
+  initDumpBroker(new DurableObjectChannelBroker<DumpMetadata>(env.EXECUTION_DO, dumpCodec));
   return { db: env.DB };
 };

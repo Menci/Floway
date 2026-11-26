@@ -1,7 +1,7 @@
 import { ToolError } from './errors.ts';
 import { MODEL_CATALOG_REVISION } from '@floway-dev/gateway';
 import { canonicalPricingSelectorKey, type ModelPricing, type PriceVector, validateModelPricing } from '@floway-dev/protocols/common';
-import { assertUpstreamProviderKind, isRecord, modelsField, pricingField, type UpstreamModelConfig, type UpstreamProviderKind } from '@floway-dev/provider';
+import { assertUpstreamProviderKind, isRecord, pricingField, type UpstreamModelConfig, type UpstreamProviderKind } from '@floway-dev/provider';
 import { pricingForChatGPTModelKey } from '@floway-dev/provider-chatgpt';
 import { pricingForClaudeCodeModelKey } from '@floway-dev/provider-claude-code';
 import { pricingForCopilotPublicModelId } from '@floway-dev/provider-copilot';
@@ -14,7 +14,10 @@ export interface StoredUpstream {
   id: string;
   provider: string;
   configJson: string;
-  modelsCacheJson: string | null;
+  manualModels: readonly UpstreamModelConfig[];
+  modelsCacheRevision: number | null;
+  modelsCacheFetchedAt: number | null;
+  cachedModelJson: string | null;
 }
 
 export type PricingResolution =
@@ -30,14 +33,8 @@ const parsedJson = (raw: string, label: string): unknown => {
   }
 };
 
-const configuredModels = (upstream: StoredUpstream): UpstreamModelConfig[] => {
-  const config = parsedJson(upstream.configJson, `Upstream ${upstream.id} config_json`);
-  if (!isRecord(config) || config.models === undefined) return [];
-  return modelsField(config.models, `${upstream.provider} upstream ${upstream.id}`);
-};
-
 const configuredModel = (upstream: StoredUpstream, modelKey: string): UpstreamModelConfig | undefined =>
-  configuredModels(upstream).find(model => model.upstreamModelId === modelKey);
+  upstream.manualModels.find(model => model.upstreamModelId === modelKey);
 
 const customModelsFetchEnabled = (upstream: StoredUpstream): boolean => {
   const config = parsedJson(upstream.configJson, `Upstream ${upstream.id} config_json`);
@@ -59,19 +56,20 @@ const customCacheResolution = (
   modelKey: string,
   now: number,
 ): PricingResolution => {
-  if (upstream.modelsCacheJson === null) {
+  if (upstream.modelsCacheFetchedAt === null) {
     return { status: 'unavailable', reason: `Custom upstream ${upstream.id} has no stored model catalog` };
   }
-  const cache = parsedJson(upstream.modelsCacheJson, `Upstream ${upstream.id} models_cache_json`);
-  if (!isRecord(cache) || cache.revision !== MODEL_CATALOG_REVISION || typeof cache.fetchedAt !== 'number' || !Array.isArray(cache.models)) {
+  if (upstream.modelsCacheRevision !== MODEL_CATALOG_REVISION) {
     return { status: 'unavailable', reason: `Custom upstream ${upstream.id} has no current stored model catalog` };
   }
-  if (!Number.isFinite(cache.fetchedAt) || now - cache.fetchedAt >= CATALOG_HARD_TTL_MS) {
+  if (!Number.isFinite(upstream.modelsCacheFetchedAt) || now - upstream.modelsCacheFetchedAt >= CATALOG_HARD_TTL_MS) {
     return { status: 'unavailable', reason: `Custom upstream ${upstream.id} model catalog is older than 24 hours` };
   }
-  const cached = cache.models.find(candidate =>
-    isRecord(candidate) && candidate.id === model && candidate.providerData === modelKey);
-  if (!isRecord(cached)) {
+  if (upstream.cachedModelJson === null) {
+    return { status: 'unavailable', reason: `Custom upstream ${upstream.id} catalog does not contain ${model} (${modelKey})` };
+  }
+  const cached = parsedJson(upstream.cachedModelJson, `Upstream ${upstream.id} upstream_models.model_json`);
+  if (!isRecord(cached) || cached.id !== model || cached.providerData !== modelKey) {
     return { status: 'unavailable', reason: `Custom upstream ${upstream.id} catalog does not contain ${model} (${modelKey})` };
   }
   const pricing = pricingField(cached.pricing, `custom upstream ${upstream.id} cached model ${model}.pricing`);

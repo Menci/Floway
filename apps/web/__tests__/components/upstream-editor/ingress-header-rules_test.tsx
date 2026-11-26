@@ -23,8 +23,8 @@ const record = (ingressHeadersRules: { key: string; value: string | null }[]): C
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules,
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models: [],
   },
+  manual_models: [],
   state: null,
 }) as CustomRecord;
 
@@ -37,7 +37,7 @@ function Harness({ ingressHeadersRules = [] }: { ingressHeadersRules?: { key: st
   const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(upstream), mode: 'onBlur', resolver: zodResolver(schema) });
   const config = useWatch({ control: form.control, name: 'config' }) as typeof upstream.config;
   return <FormProvider {...form}>
-    <ProviderConfigSection record={upstream} onPatch={vi.fn()} onRefreshModels={vi.fn()} />
+    <ProviderConfigSection record={upstream} onPatch={vi.fn()} />
     <button onClick={() => void form.handleSubmit(() => {})()}>Save probe</button>
     <output data-testid="rules">{JSON.stringify(config.ingressHeadersRules)}</output>
   </FormProvider>;

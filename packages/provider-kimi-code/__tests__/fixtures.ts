@@ -30,7 +30,7 @@ export const record = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord 
   id: 'up_kimi_code', kind: 'kimi-code', name: 'Kimi Code', enabled: true,
   usageRefreshIntervalMinutes: 0, sortOrder: 0, createdAt: '', updatedAt: '',
   config, state: recentState(), flagOverrides: {}, disabledPublicModelIds: [],
-  proxyFallbackList: [], modelPrefix: null, modelsCache: null, hue: 210, ...overrides,
+  proxyFallbackList: [], modelPrefix: null, hue: 210, ...overrides,
 });
 export const rawModel = (overrides: Record<string, unknown> = {}) => ({
   id: 'arbitrary-model', display_name: 'A catalog model', context_length: 1_048_576,

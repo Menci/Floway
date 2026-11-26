@@ -26,7 +26,7 @@ const draft = () => ({ ...blueprintUpstreamRecord('kimi-code'), config, proxy_fa
 const kimiRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_kimi_code', kind: 'kimi-code', config, state: null, name: 'Kimi Code', enabled: true,
   usageRefreshIntervalMinutes: 5, sortOrder: 0, createdAt: '', updatedAt: '', flagOverrides: {},
-  disabledPublicModelIds: [], proxyFallbackList: MOCKED_FETCH_EGRESS, modelPrefix: null, modelsCache: null, hue: 210, ...overrides,
+  disabledPublicModelIds: [], proxyFallbackList: MOCKED_FETCH_EGRESS, modelPrefix: null, hue: 210, ...overrides,
 });
 
 test('draft quota and optional profile probes use coding auth and do not persist a record', async () => {
@@ -101,10 +101,13 @@ test.each([{ fail: false, restore: false }, { fail: true, restore: false }, { fa
   const record = kimiRecord();
   await saveUpstreamForTest(repo.upstreams, record);
   const releases: Array<() => void> = [];
-  await withMockedFetch(request => new Promise(resolve => {
-    expect(request.headers.get('authorization')).toBe(`Bearer ${config.apiKey}`);
-    releases.push(() => resolve(fail ? new Response('old key rejected', { status: 401 }) : Response.json(request.url.endsWith('/usages') ? quota : profile)));
-  }), async () => {
+  await withMockedFetch(request => {
+    if (request.url.endsWith('/models')) return Response.json(catalog);
+    return new Promise(resolve => {
+      expect(request.headers.get('authorization')).toBe(`Bearer ${config.apiKey}`);
+      releases.push(() => resolve(fail ? new Response('old key rejected', { status: 401 }) : Response.json(request.url.endsWith('/usages') ? quota : profile)));
+    });
+  }, async () => {
     const pending = requestApp('/api/upstreams/kimi-code/usage', authed(adminSession, { record: upstreamRecordToFullJson(record) }));
     await vi.waitFor(() => expect(releases).toHaveLength(2));
     const patched = await requestApp(`/api/upstreams/${record.id}`, authed(adminSession, { config: { apiKey: 'sk-kimi-fake-rotated-key' } }, 'PATCH'));
@@ -117,7 +120,7 @@ test.each([{ fail: false, restore: false }, { fail: true, restore: false }, { fa
     expect(rotated.state).toBeNull();
     releases.forEach(release => release());
     expect((await pending).status).toBe(fail ? 502 : 200);
-    expect(await repo.upstreams.getById(record.id)).toEqual(rotated);
+    expect((await repo.upstreams.getById(record.id))?.state).toBeNull();
   });
   expect(await repo.upstreamMetrics.listAll()).toEqual([]);
 });
@@ -130,13 +133,13 @@ test('an empty projected catalog preserves the saved model cache', async () => {
     const first = await requestApp(`/api/upstreams/${record.id}/list-models`, authed(adminSession, {}));
     expect(first.status).toBe(200);
   });
-  const cache = (await repo.upstreams.getById(record.id))!.modelsCache!;
-  expect(cache.models).toHaveLength(1);
+  const modelsBefore = await repo.upstreamModels.listByUpstream(record.id);
+  expect(modelsBefore).toHaveLength(1);
   await withMockedFetch(() => Response.json({ data: [] }), async () => {
     const response = await requestApp(`/api/upstreams/${record.id}/list-models`, authed(adminSession, {}));
     expect(response.status).toBe(502);
   });
-  const after = (await repo.upstreams.getById(record.id))!.modelsCache!;
-  expect(after.models).toEqual(cache.models);
+  const after = (await repo.upstreams.getById(record.id))!.modelsCache;
+  expect(await repo.upstreamModels.listByUpstream(record.id)).toEqual(modelsBefore);
   expect(after.lastError).not.toBeNull();
 });

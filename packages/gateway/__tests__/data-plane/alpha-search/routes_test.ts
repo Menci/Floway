@@ -31,7 +31,7 @@ const PASSTHROUGH_CONFIG: WebSearchConfig = {
   passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_alpha', model: 'gpt-search' },
 };
 
-const searchUpstream = (modelIds: readonly string[]) => buildCustomUpstreamRecord({
+const searchUpstream = () => buildCustomUpstreamRecord({
   id: 'up_alpha',
   name: 'Alpha Search',
   config: {
@@ -40,9 +40,11 @@ const searchUpstream = (modelIds: readonly string[]) => buildCustomUpstreamRecor
     apiKey: 'search-secret',
     endpoints: { openaiResponses: {} },
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models: modelIds.map(upstreamModelId => ({ upstreamModelId, endpoints: { openaiResponses: {} } })),
   },
 });
+
+const searchManualModels = (modelIds: readonly string[]) =>
+  modelIds.map(upstreamModelId => ({ upstreamModelId, kind: 'chat' as const, endpoints: { openaiResponses: {} } }));
 
 interface ProviderOverrides {
   search?: (req: WebSearchProviderRequest) => Promise<WebSearchProviderResult> | WebSearchProviderResult;
@@ -124,7 +126,7 @@ describe('/alpha/search data plane', () => {
     ] as const)('returns the same missing-model response for $reason at $path', async ({ path, reason }) => {
       const { apiKey, repo } = await setupAppTest({ webSearchConfig: PASSTHROUGH_CONFIG });
       await repo.upstreams.deleteAll();
-      await saveUpstreamForTest(repo.upstreams, searchUpstream(['gpt-search']));
+      await saveUpstreamForTest(repo.upstreams, searchUpstream(), { manualModels: searchManualModels(['gpt-search']) });
       const request = { model: 'caller-context', commands: { search_query: [{ q: 'Floway' }] } };
       let upstreamCalls = 0;
       await withMockedFetch(
@@ -141,7 +143,7 @@ describe('/alpha/search data plane', () => {
           expect(upstreamCalls).toBe(1);
           upstreamCalls = 0;
           if (reason === 'missing-model') {
-            await saveUpstreamForTest(repo.upstreams, searchUpstream(['another-model']));
+            await saveUpstreamForTest(repo.upstreams, searchUpstream(), { manualModels: searchManualModels(['another-model']) });
             await warmModelsForTest();
           } else if (reason === 'denied-model') {
             await repo.accessRecords.save({
@@ -166,7 +168,7 @@ describe('/alpha/search data plane', () => {
     it('raw-passthrough mode dispatches to the selected custom upstream and preserves its response', async () => {
       const { apiKey, repo } = await setupAppTest({ webSearchConfig: PASSTHROUGH_CONFIG });
       await repo.upstreams.deleteAll();
-      await saveUpstreamForTest(repo.upstreams, searchUpstream(['gpt-search']));
+      await saveUpstreamForTest(repo.upstreams, searchUpstream(), { manualModels: searchManualModels(['gpt-search']) });
       const upstreamPayload = {
         encrypted_output: 'opaque',
         output: 'upstream output',

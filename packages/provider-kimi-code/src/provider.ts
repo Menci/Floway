@@ -117,9 +117,6 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
     kind: 'kimi-code',
     name: record.name,
     inboundHeaderAllowlist: [],
-    disabledPublicModelIds: record.disabledPublicModelIds,
-    modelPrefix: record.modelPrefix,
-    modelsCache: record.modelsCache,
     instance,
   };
 };

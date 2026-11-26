@@ -9,12 +9,12 @@ const baseAzure = {
   config: {
     endpoint: 'https://a.example.com',
     apiKey: 'k',
-    models: [{
-      upstreamModelId: 'm',
-      kind: 'chat' as const,
-      endpoints: { openaiChatCompletions: {} },
-    }],
   },
+  manual_models: [{
+    upstreamModelId: 'm',
+    kind: 'chat' as const,
+    endpoints: { openaiChatCompletions: {} },
+  }],
 };
 
 describe('ChatGPT import schemas', () => {
@@ -34,7 +34,7 @@ describe('ChatGPT import schemas', () => {
 describe('upstreamModelSchema chat', () => {
   test('rejects chat on non-chat kind', () => {
     const body = structuredClone(baseAzure);
-    const model = body.config.models[0] as Record<string, unknown>;
+    const model = body.manual_models[0] as Record<string, unknown>;
     model.kind = 'embedding';
     model.endpoints = { openaiEmbeddings: {} };
     model.chat = { modalities: { input: ['text'], output: ['text'] } };
@@ -43,7 +43,7 @@ describe('upstreamModelSchema chat', () => {
 
   test('accepts output modalities without text', () => {
     const body = structuredClone(baseAzure);
-    (body.config.models[0] as Record<string, unknown>).chat = {
+    (body.manual_models[0] as Record<string, unknown>).chat = {
       modalities: { input: ['text'], output: ['image'] },
     };
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
@@ -52,7 +52,7 @@ describe('upstreamModelSchema chat', () => {
   test.each([[['audio'], true], [[], false]] as const)('validates %j inputs identically for manual models and alias announcements', (input, expected) => {
     const chat = { modalities: { input, output: ['text'] } };
     const body = structuredClone(baseAzure);
-    Object.assign(body.config.models[0], { chat });
+    Object.assign(body.manual_models[0], { chat });
     expect(createUpstreamBody.safeParse(body).success).toBe(expected);
     expect(createAliasBody.safeParse({
       name: 'a', kind: 'chat', selection: 'first-available', display_name: null, visible_in_models_list: true,
@@ -75,18 +75,18 @@ describe('upstreamModelSchema rerank', () => {
       ingressHeadersRules: [],
       apiKey: 'key',
       endpoints: {},
-      models: [{
-        upstreamModelId: 'reranker',
-        kind: 'rerank' as const,
-        endpoints: { rerank: {} },
-        rerankTarget: { protocol: 'cohere-v2' as const },
-      }],
     },
+    manual_models: [{
+      upstreamModelId: 'reranker',
+      kind: 'rerank' as const,
+      endpoints: { rerank: {} },
+      rerankTarget: { protocol: 'cohere-v2' as const },
+    }],
   });
 
   test('derives rerank from its sole endpoint before validating the target', () => {
     const body = customRerank();
-    delete (body.config.models[0] as Partial<typeof body.config.models[0]>).kind;
+    delete (body.manual_models[0] as Partial<typeof body.manual_models[0]>).kind;
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
   });
 

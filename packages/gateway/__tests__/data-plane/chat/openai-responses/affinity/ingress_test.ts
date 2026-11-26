@@ -5,7 +5,7 @@ import { AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, com
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
+import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const codec = new AffinityCodec('22'.repeat(32));
 const canonicalItemType = (itemType: string): string => itemType === 'compaction' || itemType === 'compaction_summary' || itemType === 'context_compaction' ? 'compaction' : itemType;
@@ -21,14 +21,8 @@ const candidate = (
     provider: { ...base.provider, upstreamId: upstream },
     model: {
       id: model,
+      upstreamModelId: model,
       opaqueBlobCompatibilityScope: scope,
-      providerModels: {
-        [upstream]: stubProviderModel({
-          id: model,
-          upstreamModelId: model,
-          opaqueBlobCompatibilityScope: scope,
-        }),
-      },
     },
   });
 };

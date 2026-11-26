@@ -12,19 +12,18 @@ import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import type { PassthroughServeApiName } from './api-names.ts';
-import { appendFailedUpstreams } from './failed-upstreams.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { iterateCandidates } from './iterate-candidates.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
 import { recordFailedRequest } from './telemetry/performance.ts';
 import { settle } from './telemetry/settle.ts';
-import { forwardUpstreamResponse, providerModelsUnavailableResponse } from './upstream-response.ts';
+import { forwardUpstreamResponse } from './upstream-response.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { toInternalDebugError } from '@floway-dev/provider';
-import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
+import type { PerformanceOperation, PerformanceTelemetryContext, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 type PassthroughResponseHandling =
   | {
@@ -59,11 +58,7 @@ interface PassthroughServeContext {
   // to `model.kind === kind`; `sawModel=true && candidates=[]` becomes
   // the "model exists but doesn't support this endpoint" 400.
   readonly kind: ModelKind;
-  // Endpoint-availability gate against a resolved candidate's `InternalModel`.
-  // Reads `.endpoints` on the candidate — the row narrows to exactly one
-  // contributing upstream, so those endpoints come verbatim from the emitting
-  // upstream's `ProviderModel`.
-  readonly modelServesEndpoint: (model: InternalModel) => boolean;
+  readonly modelServesEndpoint: (model: ProviderModel) => boolean;
   // Any throw here is preserved and becomes a 502 with the internal-debug
   // envelope. `model` is the emitting upstream's `ProviderModel`.
   readonly call: (provider: Provider, model: ProviderModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
@@ -92,35 +87,25 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // flattened list. Passthrough endpoints never consult that overlay, so
     // whatever rules a target carries are inert here — the alias flow only
     // changes which id the gateway addresses upstream.
-    const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+    const { candidates, sawModel } = await enumerateModelCandidates({
       subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       randomizeUpstreams: ctx.randomizeUpstreams,
       model,
       kind,
-      scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
     if (candidates.length === 0) {
       ctx.dump?.error('gateway');
-      // `sawModel` includes only Model.Use-permitted catalogs. With no candidates,
-      // false keeps hidden/missing ids at 404; true identifies wrong-kind matches
-      // (400), like the empty-viable case below.
       return sawModel
-        ? passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400)
-        : passthroughApiError(c, appendFailedUpstreams(`Model ${model} is not available on any configured upstream.`, failedUpstreams), 404);
+        ? passthroughApiError(c, `Model ${model} does not support the ${sourceApi} endpoint.`, 400)
+        : passthroughApiError(c, `Model ${model} is not available on any configured upstream.`, 404);
     }
 
-    // Endpoint-level pre-filter: drop candidates whose upstream model
-    // exists for the requested kind but doesn't expose this endpoint's
-    // specific capability (e.g. an embedding-kind model on an upstream
-    // that only exposes chat). An empty viable set is the same "model
-    // exists but no upstream serves this endpoint" 400 the empty-candidate
-    // branch above surfaces.
     const viable = candidates.filter(c => modelServesEndpoint(c.model));
     if (viable.length === 0) {
       ctx.dump?.error('gateway');
-      return passthroughApiError(c, appendFailedUpstreams(`Model ${model} does not support the ${sourceApi} endpoint.`, failedUpstreams), 400);
+      return passthroughApiError(c, `Model ${model} does not support the ${sourceApi} endpoint.`, 400);
     }
 
     // Iterate the viable list. Each candidate's attempt runs the upstream
@@ -166,11 +151,6 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     settle(ctx, performanceContext, identity, usage, false);
     return forwardUpstreamResponse(response);
   } catch (e) {
-    const forwarded = providerModelsUnavailableResponse(e);
-    if (forwarded) {
-      ctx.dump?.error('upstream');
-      return forwarded;
-    }
     // Attributes to whichever candidate iterateCandidates was on (or short-circuits if none started).
     recordFailedRequest(ctx, ctx.attempt.telemetry);
     ctx.dump?.failed(e);

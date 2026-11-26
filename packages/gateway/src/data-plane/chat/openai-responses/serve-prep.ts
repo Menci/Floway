@@ -82,13 +82,12 @@ export const prepareOpenAIResponsesServePlan = async (args: {
   const { payload, ctx } = args;
   const store = ctx.store;
   const prepared = await expandPreviousResponseId(payload, store);
-  const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+  const { candidates, sawModel } = await enumerateModelCandidates({
     subject: ctx.user,
     upstreamIds: ctx.upstreamIds,
     randomizeUpstreams: ctx.randomizeUpstreams,
     model: prepared.model,
     kind: 'chat',
-    scheduler: ctx.backgroundScheduler,
     runtimeLocation: ctx.runtimeLocation,
   });
   const viable = candidates.filter(c => openaiResponsesTarget.canServe(c.model.endpoints));
@@ -114,7 +113,7 @@ export const prepareOpenAIResponsesServePlan = async (args: {
   if (selection.candidates.length === 0) {
     return {
       kind: 'failure',
-      result: renderOpenAIResponsesFailure(noViableCandidateFailure(sawModel, prepared.model, failedUpstreams)),
+      result: renderOpenAIResponsesFailure(noViableCandidateFailure(sawModel, prepared.model)),
     };
   }
   return { kind: 'ready', affinitySelection: selection, candidates: selection.candidates };

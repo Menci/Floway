@@ -2,7 +2,6 @@ import { canAuditPrincipal, hasPermissionAuditTarget, loadPermissionAuditContext
 import { resolveEffectiveAssignments } from '../../access-control/resolution.ts';
 import { AccessRecordConflictError } from '../../access-control/types.ts';
 import type { AccessPrincipal, AccessRecord, AccessRecordInput } from '../../access-control/types.ts';
-import { storedCatalogSize } from '../../data-plane/providers/catalog.ts';
 import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -69,16 +68,19 @@ const projectPermissionDirectory = async (context: PermissionAuditContext, recor
 };
 
 const permissionUpstreamOptions = async (visibleRecords: readonly AccessRecord[], admin: boolean) => {
-  const items = await getRepo().upstreams.list();
+  const repo = getRepo();
+  const items = await repo.upstreams.listMeta();
   const all = admin || visibleRecords.some(record => record.scope.kind === 'upstreams');
   const ids = new Set(visibleRecords.flatMap(record => record.scope.kind === 'upstream' || record.scope.kind === 'upstreamModel' ? [record.scope.upstreamId] : []));
-  return items.filter(item => all || ids.has(item.id)).map(item => ({
+  const visible = items.filter(item => all || ids.has(item.id));
+  const counts = await repo.upstreamModels.countListedByUpstream(visible.map(item => item.id));
+  return visible.map(item => ({
     id: item.id,
     name: item.name,
     kind: item.kind,
     enabled: item.enabled,
     hue: item.hue,
-    cachedModelCount: storedCatalogSize(item),
+    cachedModelCount: counts.get(item.id) ?? null,
   }));
 };
 

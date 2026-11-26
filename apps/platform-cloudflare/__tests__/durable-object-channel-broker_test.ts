@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { ExecutionCellChannelBroker } from '../src/execution-cell-channel-broker.ts';
-import type { ChannelCodec, ExecutionCellNamespace } from '@floway-dev/platform';
+import { DurableObjectChannelBroker, type ExecutionDurableObjectNamespace } from '../src/durable-object-channel-broker.ts';
+import type { ChannelCodec } from '@floway-dev/platform';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // Identity string codec: every test below drives the generic broker through
@@ -43,13 +43,14 @@ const buildNamespace = (
   socket: FakeServerSocket,
   broadcasts: string[] = [],
   closeAlls: string[] = [],
-  fetches?: { count: number; cellIds?: string[] },
-) => {
-  const ns: ExecutionCellNamespace = {
-    async fetch(cellId, request) {
+  fetches?: { count: number; stubIds?: string[] },
+): ExecutionDurableObjectNamespace => ({
+  idFromName: name => name,
+  get: id => ({
+    async fetch(request) {
       if (fetches) {
         fetches.count += 1;
-        fetches.cellIds?.push(cellId);
+        fetches.stubIds?.push(String(id));
       }
       const url = new URL(request.url);
       if (url.pathname === '/broadcast' && request.method === 'POST') {
@@ -67,13 +68,12 @@ const buildNamespace = (
       Object.defineProperty(response, 'webSocket', { value: socket, configurable: true });
       return response;
     },
-  };
-  return ns;
-};
+  }),
+});
 
-test('ExecutionCellChannelBroker.subscribe drives payloads through the broadcast socket', async () => {
+test('DurableObjectChannelBroker.subscribe drives payloads through the broadcast socket', async () => {
   const socket = new FakeServerSocket();
-  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
@@ -96,9 +96,9 @@ test('ExecutionCellChannelBroker.subscribe drives payloads through the broadcast
   assertEquals(socket.closed?.code, 1000);
 });
 
-test('ExecutionCellChannelBroker.subscribe surfaces a server-side socket error by throwing from .next()', async () => {
+test('DurableObjectChannelBroker.subscribe surfaces a server-side socket error by throwing from .next()', async () => {
   const socket = new FakeServerSocket();
-  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 
@@ -115,9 +115,9 @@ test('ExecutionCellChannelBroker.subscribe surfaces a server-side socket error b
   assertEquals(caught instanceof Error, true);
 });
 
-test('ExecutionCellChannelBroker.subscribe closes the socket when the iterator returns', async () => {
+test('DurableObjectChannelBroker.subscribe closes the socket when the iterator returns', async () => {
   const socket = new FakeServerSocket();
-  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
+  const broker = new DurableObjectChannelBroker<string>(buildNamespace(socket), stringCodec);
   const controller = new AbortController();
   const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
 

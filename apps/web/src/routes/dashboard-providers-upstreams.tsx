@@ -833,9 +833,6 @@ const buildModelCounts = (
     }
   }
   const countFor = (record: ListedUpstreamRecord): number | null => {
-    // Azure's catalog is the operator's own configured list, so it is known
-    // without the listing.
-    if (record.kind === 'azure') return record.config.models.length;
     // The live catalog is filtered by Model.Use. Auditors still see the size
     // of the catalog the upstream stored while it was on, without gaining the
     // catalog rows themselves.

@@ -16,7 +16,6 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate, ExecuteResult, AnthropicMessagesUpstreamCallOptions, PlainResult } from '@floway-dev/provider';
-import { providerModelOf } from '@floway-dev/provider';
 import { routeAnthropicMessagesViaOpenAIChatCompletions, routeAnthropicMessagesViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
 
 // `/v1/messages` generate prefers a native Anthropic Messages target, then the
@@ -85,7 +84,7 @@ export const anthropicMessagesAttempt = {
       if (candidate.rules !== undefined) applyRulesToUpstreamAnthropicMessages(invocation.payload, candidate.rules);
       const { model: _model, ...body } = invocation.payload;
       const { http: response } = await candidate.provider.instance.callAnthropicMessagesCountTokens(
-        providerModelOf(candidate),
+        candidate.model,
         body,
         ctx.abortSignal,
         buildAnthropicMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, invocation.anthropicBeta),
@@ -105,7 +104,7 @@ const dispatchAnthropicMessages = async (
     if (candidate.rules !== undefined) applyRulesToUpstreamAnthropicMessages(invocation.payload, candidate.rules);
     const { model: _model, ...body } = invocation.payload;
     const providerResult = await candidate.provider.instance.callAnthropicMessages(
-      providerModelOf(candidate),
+      candidate.model,
       body,
       ctx.abortSignal,
       buildAnthropicMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, invocation.anthropicBeta),

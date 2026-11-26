@@ -17,7 +17,7 @@ export type {
 } from '@floway-dev/gateway/browser';
 
 export type UpstreamRecordEnvelope = InferRequestType<
-  typeof api.api.upstreams['preview-models']['$post']
+  typeof api.api.upstreams.copilot.quota.$post
 >['json']['record'];
 
 export type ProxyRecord = SerializedProxyRecord;

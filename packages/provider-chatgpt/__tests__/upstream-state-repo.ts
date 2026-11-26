@@ -22,7 +22,7 @@ export const createUpstreamStateRepoStub = (
   return {
     getById: vi.fn(async () => {
       const record = read();
-      return record === null ? null : { ...record, configVersion: 1 };
+      return record === null ? null : { ...record, version: 1 };
     }),
     saveState: vi.fn(async (id, mutate) => {
       const row = read();

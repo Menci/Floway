@@ -15,8 +15,8 @@ import { buildKeyToUserMap } from '../../src/control-plane/shared/key-to-user.ts
 import { normalizeDisabledPublicModelIds } from '../../src/repo/disabled-public-models.ts';
 import { normalizeFlagOverrides } from '../../src/repo/flag-overrides.ts';
 import { groupNameKey } from '../../src/repo/group-names.ts';
-import { MODEL_CATALOG_REVISION, storedModelErrorMessage } from '../../src/repo/models-cache-contract.ts';
-import { matchesModelsRefreshInputs } from '../../src/repo/models-refresh-inputs.ts';
+import { AUTOMATIC_REFRESH_INTERVAL_MS, storedModelErrorMessage } from '../../src/repo/models-cache-contract.ts';
+import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-backoff.ts';
 import {
   assertSameStoredOpenAIResponsesItem,
   cloneStoredOpenAIResponsesItem,
@@ -43,6 +43,8 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
+  CatalogUpstreamRow,
+  DueModelsRefreshCandidate,
   Group,
   GroupWithMembers,
   GroupsRepo,
@@ -63,6 +65,7 @@ import type {
   ProxyRecord,
   ProxyRepo,
   Repo,
+  ResolvedUpstreamModelMatch,
   OpenAIResponsesItemsRepo,
   OpenAIResponsesSnapshotsRepo,
   ScheduledMaintenanceRepo,
@@ -76,7 +79,15 @@ import type {
   SessionsRepo,
   StoredOpenAIResponsesItem,
   StoredOpenAIResponsesSnapshot,
+  StoredUpstreamMeta,
   StoredUpstreamRecord,
+  UpstreamCatalogFilter,
+  UpstreamInsertInput,
+  UpstreamModelEntry,
+  UpstreamModelsCacheAction,
+  UpstreamModelsCacheState,
+  UpstreamModelsRepo,
+  UpstreamModelsWritePayload,
   UpstreamRepo,
   UsageRecord,
   UsageOverviewAxis,
@@ -90,13 +101,13 @@ import type {
   UserPreferencesRepo,
   UsersRepo,
 } from '../../src/repo/types.ts';
-import { serializeStoredConfig, serializeStoredState } from '../../src/repo/upstream-json.ts';
+import { serializeStoredState } from '../../src/repo/upstream-json.ts';
 import { usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
 import { assertWebSearchProviderName, type WebSearchConfig } from '../../src/shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
-import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, defaultUserPreferences, multiplyDecimalStrings, parseUserPreferences, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
-import { normalizeUpstreamMetricIdentity, upstreamMetricIdentityKey, UpstreamGoneError, type UpstreamRecord } from '@floway-dev/provider';
+import { addDecimalStrings, canonicalPricingSelectorKey, canonicalizePricingSelector, defaultUserPreferences, multiplyDecimalStrings, parseUserPreferences, tokenUsageUnattributedUserId, usageUpstreamDimensionValue, type BillingMetric, type DecimalString, type ModelKind, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
+import { normalizeUpstreamMetricIdentity, upstreamMetricIdentityKey, UpstreamGoneError, type ProviderModel, type UpstreamModelConfig, type UpstreamModelSource, type UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: SEED_ADMIN_USER_ID,
@@ -1087,128 +1098,430 @@ class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
   }
 }
 
-class MemoryUpstreamRepo implements UpstreamRepo {
-  private store = new Map<string, StoredUpstreamRecord>();
+const toUpstreamMeta = (record: StoredUpstreamRecord): StoredUpstreamMeta => ({
+  id: record.id,
+  kind: record.kind,
+  name: record.name,
+  enabled: record.enabled,
+  sortOrder: record.sortOrder,
+  hue: record.hue,
+});
 
-  constructor(private readonly backoffs: MemoryProxyBackoffRows) {}
+const emptyModelsCacheState = (): UpstreamModelsCacheState => ({
+  revision: null,
+  fetchedAt: null,
+  lastError: null,
+});
+
+const applyCacheAction = (
+  current: UpstreamModelsCacheState,
+  action: UpstreamModelsCacheAction,
+): UpstreamModelsCacheState => {
+  switch (action.kind) {
+  case 'preserve':
+    return structuredClone(current);
+  case 'mark-stale':
+    return { revision: null, fetchedAt: current.fetchedAt, lastError: null };
+  case 'clear-cache':
+    return emptyModelsCacheState();
+  case 'set-fresh':
+    return { revision: action.revision, fetchedAt: action.fetchedAt, lastError: null };
+  }
+};
+
+const dedupeMemoryModels = (entries: readonly UpstreamModelEntry[]): UpstreamModelEntry[] => {
+  const seen = new Set<string>();
+  const out: UpstreamModelEntry[] = [];
+  for (const entry of entries) {
+    if (!entry.model.id) continue;
+    const key = `${entry.model.id}\0${entry.model.kind}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ source: entry.source, model: structuredClone(entry.model) });
+  }
+  out.sort((a, b) => a.model.kind.localeCompare(b.model.kind) || a.model.id.localeCompare(b.model.id));
+  return out;
+};
+
+const memoryRequiresNetwork = (record: StoredUpstreamRecord): boolean => {
+  if (record.kind === 'azure') return false;
+  if (record.kind === 'custom') {
+    const cfg = record.config as { modelsFetch?: { enabled?: unknown } } | null;
+    return cfg?.modelsFetch?.enabled !== false;
+  }
+  return true;
+};
+
+class MemoryUpstreamStore {
+  readonly upstreams = new Map<string, StoredUpstreamRecord>();
+  readonly models = new Map<string, UpstreamModelEntry[]>();
+  readonly manualModels = new Map<string, UpstreamModelConfig[]>();
+}
+
+class MemoryUpstreamRepo implements UpstreamRepo {
+  constructor(
+    private readonly shared: MemoryUpstreamStore,
+    private readonly backoffs: MemoryProxyBackoffRows,
+  ) {}
 
   has(id: string): boolean {
-    return this.store.has(id);
+    return this.shared.upstreams.has(id);
+  }
+
+  private sorted(): StoredUpstreamRecord[] {
+    return [...this.shared.upstreams.values()]
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   }
 
   list(): Promise<StoredUpstreamRecord[]> {
-    return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)));
+    return Promise.resolve(this.sorted().map(cloneUpstreamRecord));
+  }
+
+  listIds(): Promise<string[]> {
+    return Promise.resolve(this.sorted().map(record => record.id));
+  }
+
+  listMeta(): Promise<StoredUpstreamMeta[]> {
+    return Promise.resolve(this.sorted().map(toUpstreamMeta));
+  }
+
+  getMetaByIds(ids: readonly string[]): Promise<StoredUpstreamMeta[]> {
+    const wanted = new Set(ids);
+    if (wanted.size === 0) return Promise.resolve([]);
+    return Promise.resolve(this.sorted().filter(record => wanted.has(record.id)).map(toUpstreamMeta));
   }
 
   getById(id: string): Promise<StoredUpstreamRecord | null> {
-    const found = this.store.get(id);
+    const found = this.shared.upstreams.get(id);
     return Promise.resolve(found ? cloneUpstreamRecord(found) : null);
+  }
+
+  listDueModelsRefresh(revision: number, nowMs: number): Promise<DueModelsRefreshCandidate[]> {
+    const staleBefore = nowMs - AUTOMATIC_REFRESH_INTERVAL_MS;
+    const due: DueModelsRefreshCandidate[] = [];
+    for (const record of this.sorted()) {
+      if (!record.enabled) continue;
+      const requiresNetwork = memoryRequiresNetwork(record);
+      const isDue = record.modelsCache.revision !== revision
+        || record.modelsCache.fetchedAt === null
+        || (requiresNetwork && record.modelsCache.fetchedAt <= staleBefore);
+      if (!isDue) continue;
+      if (record.modelsCache.lastError !== null && modelsRefreshRetryAt(record.modelsCache.lastError) > nowMs) continue;
+      due.push({
+        id: record.id,
+        version: record.version,
+        proxyFallbackList: normalizeProxyFallbackList(record.proxyFallbackList),
+        requiresNetwork,
+      });
+    }
+    return Promise.resolve(due);
   }
 
   async reorder(
     expectedIds: readonly string[],
     assignments: readonly { id: string; sortOrder: number }[],
-  ): Promise<StoredUpstreamRecord[] | null> {
-    const current = await this.list();
+  ): Promise<StoredUpstreamMeta[] | null> {
+    const current = this.sorted();
     if (JSON.stringify(current.map(record => record.id)) !== JSON.stringify(expectedIds)) return null;
     const assignmentIds = assignments.map(assignment => assignment.id);
-    if (new Set(assignmentIds).size !== assignmentIds.length || assignmentIds.some(id => !this.store.has(id))) return null;
+    if (new Set(assignmentIds).size !== assignmentIds.length || assignmentIds.some(id => !this.shared.upstreams.has(id))) return null;
     const now = new Date().toISOString();
     const updated = assignments.map(({ id, sortOrder }) => {
-      const record = this.store.get(id)!;
-      return cloneUpstreamRecord({ ...record, sortOrder, updatedAt: now });
+      const record = this.shared.upstreams.get(id)!;
+      return cloneUpstreamRecord({ ...record, sortOrder, updatedAt: now, version: record.version + 1 });
     });
-    for (const record of updated) this.store.set(record.id, record);
-    return updated.map(cloneUpstreamRecord);
+    for (const record of updated) this.shared.upstreams.set(record.id, record);
+    return updated.map(toUpstreamMeta);
   }
 
-  insertAtEndForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
-    const sortOrder = Math.max(-1, ...[...this.store.values()].map(record => record.sortOrder)) + 1;
-    return this.insertForModels({ ...upstream, sortOrder });
+  private applyChildWrites(
+    upstreamId: string,
+    manualModels: readonly UpstreamModelConfig[] | undefined,
+    modelsWrite: UpstreamModelsWritePayload | undefined,
+  ): void {
+    if (manualModels !== undefined) {
+      if (manualModels.length === 0) this.shared.manualModels.delete(upstreamId);
+      else this.shared.manualModels.set(upstreamId, structuredClone([...manualModels]));
+    }
+    if (modelsWrite?.models !== undefined) {
+      this.shared.models.set(upstreamId, dedupeMemoryModels(modelsWrite.models));
+    }
   }
 
-  insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
-    if (this.store.has(upstream.id)) return Promise.resolve(null);
-    const stored = cloneUpstreamRecord({ ...upstream, configVersion: 1, modelsCache: null });
-    this.store.set(upstream.id, stored);
+  insertAtEnd(input: UpstreamInsertInput): Promise<StoredUpstreamRecord | null> {
+    const sortOrder = Math.max(-1, ...[...this.shared.upstreams.values()].map(record => record.sortOrder)) + 1;
+    return this.insert({ ...input, upstream: { ...input.upstream, sortOrder } });
+  }
+
+  insert(input: UpstreamInsertInput): Promise<StoredUpstreamRecord | null> {
+    const { upstream, manualModels, modelsWrite } = input;
+    if (this.shared.upstreams.has(upstream.id)) return Promise.resolve(null);
+    const cacheAction = modelsWrite?.cacheAction ?? { kind: 'preserve' as const };
+    const stored = cloneUpstreamRecord({
+      ...upstream,
+      version: 1,
+      modelsCache: applyCacheAction(emptyModelsCacheState(), cacheAction),
+    });
+    this.shared.upstreams.set(upstream.id, stored);
+    this.applyChildWrites(upstream.id, manualModels, modelsWrite);
     return Promise.resolve(cloneUpstreamRecord(stored));
   }
 
-  replaceForModels(input: {
-    previous: StoredUpstreamRecord;
-    upstream: UpstreamRecord;
+  replace(input: {
+    readonly previous: StoredUpstreamRecord;
+    readonly upstream: UpstreamRecord;
+    readonly replaceState?: boolean;
+    readonly manualModels?: readonly UpstreamModelConfig[];
+    readonly modelsWrite?: UpstreamModelsWritePayload;
   }): Promise<StoredUpstreamRecord | null> {
-    const { previous, upstream } = input;
-    const modelConfigChanged = previous.kind !== upstream.kind
-      || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config)
-      || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides);
-    const transportChanged = serializeStoredConfig(previous.proxyFallbackList) !== serializeStoredConfig(upstream.proxyFallbackList);
-    const refreshInputsChanged = modelConfigChanged || transportChanged;
-    const configVersion = previous.configVersion + (refreshInputsChanged ? 1 : 0);
-    const existing = this.store.get(upstream.id);
-    if (existing === undefined) return Promise.resolve(null);
-    const replaceState = serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
-    const comparableExisting = { ...existing, modelsCache: null, state: replaceState ? existing.state : null };
-    const comparablePrevious = { ...previous, modelsCache: null, state: replaceState ? previous.state : null };
-    if (serializeStoredConfig(comparableExisting) !== serializeStoredConfig(comparablePrevious)) return Promise.resolve(null);
+    const { previous, upstream, manualModels, modelsWrite } = input;
+    const existing = this.shared.upstreams.get(upstream.id);
+    if (existing === undefined || existing.version !== previous.version) return Promise.resolve(null);
+    const replaceState = input.replaceState ?? serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
     const next = cloneUpstreamRecord({
       ...upstream,
       createdAt: existing.createdAt,
-      configVersion,
+      version: existing.version + 1,
       state: replaceState ? upstream.state : existing.state,
-      modelsCache: modelConfigChanged ? null : transportChanged && existing.modelsCache
-        ? { ...existing.modelsCache, lastError: null } : existing.modelsCache,
+      modelsCache: applyCacheAction(existing.modelsCache, modelsWrite?.cacheAction ?? { kind: 'preserve' }),
     });
-    this.store.set(upstream.id, next);
+    this.shared.upstreams.set(upstream.id, next);
+    this.applyChildWrites(upstream.id, manualModels, modelsWrite);
     return Promise.resolve(cloneUpstreamRecord(next));
   }
 
   delete(id: string): Promise<boolean> {
-    const deleted = this.store.delete(id);
-    if (deleted) this.backoffs.deleteWhere(row => row.upstreamId === id);
+    const deleted = this.shared.upstreams.delete(id);
+    if (deleted) {
+      this.shared.models.delete(id);
+      this.shared.manualModels.delete(id);
+      this.backoffs.deleteWhere(row => row.upstreamId === id);
+    }
     return Promise.resolve(deleted);
   }
 
   deleteAll(): Promise<void> {
-    this.store.clear();
+    this.shared.upstreams.clear();
+    this.shared.models.clear();
+    this.shared.manualModels.clear();
     this.backoffs.clear();
     return Promise.resolve();
   }
 
-  // No retry loop: this store is single-threaded, so the mutator always sees
-  // the current state and the write always lands. Serialization still round-
-  // trips through the canonical encoder so a mutator that returns its argument
-  // unchanged is a no-op here too.
-  saveState(id: string, mutate: (current: unknown, configVersion: number) => unknown): Promise<void> {
-    const existing = this.store.get(id);
+  saveState(id: string, mutate: (current: unknown, version: number) => unknown): Promise<void> {
+    const existing = this.shared.upstreams.get(id);
     if (!existing) throw new UpstreamGoneError(id);
-    const next = mutate(existing.state, existing.configVersion);
+    const next = mutate(existing.state, existing.version);
     const serialized = serializeStoredState(next);
     existing.state = serialized === null ? null : (JSON.parse(serialized) as unknown);
     return Promise.resolve();
   }
 
-  publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
-    const { id, configVersion, cacheEpoch, refreshInputs, cache } = input;
-    const existing = this.store.get(id);
-    if (!existing || existing.configVersion !== configVersion || !matchesModelsRefreshInputs(existing, refreshInputs)
-      || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
-    existing.modelsCache = { ...cache, models: [...cache.models], lastError: null };
-    return Promise.resolve(true);
+  publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<number | null> {
+    const { id, version, revision, fetchedAt, models } = input;
+    const existing = this.shared.upstreams.get(id);
+    if (existing?.version !== version) return Promise.resolve(null);
+    existing.version += 1;
+    existing.modelsCache = { revision, fetchedAt, lastError: null };
+    this.shared.models.set(id, dedupeMemoryModels(models));
+    return Promise.resolve(existing.version);
   }
 
   recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
-    const { id, configVersion, cacheEpoch, refreshInputs, error, previousFailureCount } = input;
-    const existing = this.store.get(id);
-    if (!existing || existing.configVersion !== configVersion || !matchesModelsRefreshInputs(existing, refreshInputs)
-      || (existing.modelsCache?.fetchedAt ?? 0) !== cacheEpoch) return Promise.resolve(false);
-    if ((existing.modelsCache?.lastError?.failureCount ?? 0) !== previousFailureCount) return Promise.resolve(false);
-    const lastError = { ...error, message: storedModelErrorMessage(error.message), failureCount: previousFailureCount + 1 };
-    if (existing.modelsCache?.revision === MODEL_CATALOG_REVISION) existing.modelsCache.lastError = lastError;
-    else existing.modelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError };
+    const { id, version, error } = input;
+    const existing = this.shared.upstreams.get(id);
+    if (existing?.version !== version) return Promise.resolve(false);
+    const previousCount = existing.modelsCache.lastError?.failureCount ?? 0;
+    existing.modelsCache = {
+      ...existing.modelsCache,
+      lastError: {
+        message: storedModelErrorMessage(error.message),
+        at: error.at,
+        failureCount: previousCount + 1,
+      },
+    };
     return Promise.resolve(true);
   }
+}
 
+class MemoryUpstreamModelsRepo implements UpstreamModelsRepo {
+  constructor(private readonly shared: MemoryUpstreamStore) {}
+
+  private sortedUpstreams(upstreamIds: readonly string[] | null): StoredUpstreamRecord[] {
+    const all = [...this.shared.upstreams.values()]
+      .filter(u => u.enabled)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    if (upstreamIds === null) return all;
+    const rank = new Map(upstreamIds.map((id, index) => [id, index] as const));
+    return all.filter(u => rank.has(u.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+  }
+
+  resolve(input: {
+    readonly modelIds: readonly string[];
+    readonly upstreamIds: readonly string[] | null;
+  }): Promise<ResolvedUpstreamModelMatch[]> {
+    const modelIds = [...new Set(input.modelIds.filter(id => id.length > 0))];
+    if (modelIds.length === 0) return Promise.resolve([]);
+    if (input.upstreamIds !== null && input.upstreamIds.length === 0) return Promise.resolve([]);
+
+    const modelIdSet = new Set(modelIds);
+    const orderedUpstreams = this.sortedUpstreams(input.upstreamIds);
+    const matches: ResolvedUpstreamModelMatch[] = [];
+
+    for (const upstream of orderedUpstreams) {
+      const disabled = new Set(upstream.disabledPublicModelIds);
+      const entries = this.shared.models.get(upstream.id) ?? [];
+      const clonedUpstream = cloneUpstreamRecord(upstream);
+      const allowsUnprefixed = upstream.modelPrefix === null || upstream.modelPrefix.addressable.includes('unprefixed');
+      const allowsPrefixed = upstream.modelPrefix?.addressable.includes('prefixed') ?? false;
+
+      if (allowsUnprefixed) {
+        for (const entry of entries) {
+          if (disabled.has(entry.model.id) || !modelIdSet.has(entry.model.id)) continue;
+          matches.push({
+            matchedInputId: entry.model.id,
+            matchedForm: 'unprefixed',
+            upstream: clonedUpstream,
+            model: structuredClone(entry.model),
+          });
+        }
+      }
+      if (allowsPrefixed) {
+        const prefix = upstream.modelPrefix!.prefix;
+        for (const inputId of modelIds) {
+          if (!inputId.startsWith(prefix)) continue;
+          const rest = inputId.slice(prefix.length);
+          if (rest.length === 0 || disabled.has(rest)) continue;
+          for (const entry of entries) {
+            if (entry.model.id !== rest) continue;
+            matches.push({
+              matchedInputId: inputId,
+              matchedForm: 'prefixed',
+              upstream: clonedUpstream,
+              model: structuredClone(entry.model),
+            });
+          }
+        }
+      }
+    }
+    return Promise.resolve(matches);
+  }
+
+  listCatalog(filter: UpstreamCatalogFilter | null): Promise<{
+    readonly upstreams: CatalogUpstreamRow[];
+    readonly modelsByUpstream: Map<string, ProviderModel[]>;
+  }> {
+    const include = filter?.include;
+    const exclude = filter?.exclude;
+    if (include?.length === 0) return Promise.resolve({ upstreams: [], modelsByUpstream: new Map() });
+    let orderedUpstreams = include !== undefined && filter?.preserveIncludeOrder === true
+      ? this.sortedUpstreams(include)
+      : this.sortedUpstreams(null);
+    if (include !== undefined && filter?.preserveIncludeOrder !== true) {
+      const includeSet = new Set(include);
+      orderedUpstreams = orderedUpstreams.filter(u => includeSet.has(u.id));
+    }
+    if (exclude !== undefined && exclude.length > 0) {
+      const excludeSet = new Set(exclude);
+      orderedUpstreams = orderedUpstreams.filter(u => !excludeSet.has(u.id));
+    }
+    const upstreams: CatalogUpstreamRow[] = orderedUpstreams.map(u => ({
+      id: u.id,
+      kind: u.kind,
+      name: u.name,
+      hue: u.hue,
+      modelPrefix: structuredClone(u.modelPrefix),
+    }));
+    const modelsByUpstream = new Map<string, ProviderModel[]>();
+    for (const u of orderedUpstreams) {
+      const disabled = new Set(u.disabledPublicModelIds);
+      const active = (this.shared.models.get(u.id) ?? [])
+        .filter(entry => !disabled.has(entry.model.id))
+        .map(entry => structuredClone(entry.model));
+      if (active.length > 0) modelsByUpstream.set(u.id, active);
+    }
+    return Promise.resolve({ upstreams, modelsByUpstream });
+  }
+
+  listAddressableIdsForUpstreams(upstreamIds: readonly string[]): Promise<{
+    readonly upstreamId: string;
+    readonly addressableId: string;
+  }[]> {
+    const wanted = new Set(upstreamIds);
+    if (wanted.size === 0) return Promise.resolve([]);
+    const out: { readonly upstreamId: string; readonly addressableId: string }[] = [];
+    for (const u of this.shared.upstreams.values()) {
+      if (!u.enabled || !wanted.has(u.id)) continue;
+      const disabled = new Set(u.disabledPublicModelIds);
+      const seenModelIds = new Set<string>();
+      for (const entry of this.shared.models.get(u.id) ?? []) {
+        if (disabled.has(entry.model.id) || seenModelIds.has(entry.model.id)) continue;
+        seenModelIds.add(entry.model.id);
+        if (u.modelPrefix === null) {
+          out.push({ upstreamId: u.id, addressableId: entry.model.id });
+          continue;
+        }
+        if (u.modelPrefix.addressable.includes('unprefixed')) {
+          out.push({ upstreamId: u.id, addressableId: entry.model.id });
+        }
+        if (u.modelPrefix.addressable.includes('prefixed')) {
+          out.push({ upstreamId: u.id, addressableId: `${u.modelPrefix.prefix}${entry.model.id}` });
+        }
+      }
+    }
+    return Promise.resolve(out);
+  }
+
+  countListedByUpstream(upstreamIds?: readonly string[]): Promise<Map<string, number | null>> {
+    const wanted = upstreamIds === undefined ? null : new Set(upstreamIds);
+    const counts = new Map<string, number | null>();
+    for (const u of this.shared.upstreams.values()) {
+      if (wanted !== null && !wanted.has(u.id)) continue;
+      if (u.modelsCache.fetchedAt === null) {
+        counts.set(u.id, null);
+        continue;
+      }
+      const disabled = new Set(u.disabledPublicModelIds);
+      const distinctActive = new Set(
+        (this.shared.models.get(u.id) ?? [])
+          .map(entry => entry.model.id)
+          .filter(id => !disabled.has(id)),
+      ).size;
+      const mult = u.modelPrefix === null ? 1 : u.modelPrefix.listed.length;
+      counts.set(u.id, distinctActive * mult);
+    }
+    return Promise.resolve(counts);
+  }
+
+  listByUpstream(
+    upstreamId: string,
+    options?: { readonly source?: UpstreamModelSource },
+  ): Promise<UpstreamModelEntry[]> {
+    const entries = this.shared.models.get(upstreamId) ?? [];
+    const filtered = options?.source === undefined
+      ? entries
+      : entries.filter(entry => entry.source === options.source);
+    return Promise.resolve(filtered.map(entry => ({ source: entry.source, model: structuredClone(entry.model) })));
+  }
+
+  getByKey(upstreamId: string, modelId: string, kind: ModelKind): Promise<ProviderModel | null> {
+    const found = (this.shared.models.get(upstreamId) ?? []).find(
+      entry => entry.model.id === modelId && entry.model.kind === kind,
+    );
+    return Promise.resolve(found ? structuredClone(found.model) : null);
+  }
+
+  listManualModels(upstreamId: string): Promise<UpstreamModelConfig[]> {
+    return Promise.resolve(structuredClone(this.shared.manualModels.get(upstreamId) ?? []));
+  }
+
+  listManualModelsByUpstreams(upstreamIds: readonly string[]): Promise<Map<string, UpstreamModelConfig[]>> {
+    const map = new Map<string, UpstreamModelConfig[]>();
+    for (const id of new Set(upstreamIds)) {
+      map.set(id, structuredClone(this.shared.manualModels.get(id) ?? []));
+    }
+    return Promise.resolve(map);
+  }
 }
 
 const cloneUpstreamRecord = (upstream: StoredUpstreamRecord): StoredUpstreamRecord => ({
@@ -1916,6 +2229,7 @@ export class InMemoryRepo implements Repo {
   siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
+  upstreamModels: UpstreamModelsRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
   modelAliases: ModelAliasesRepo;
@@ -1949,9 +2263,11 @@ export class InMemoryRepo implements Repo {
     this.siteSettings = new MemorySiteSettingsRepo();
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
     const backoffRows = new MemoryProxyBackoffRows();
-    const upstreams = new MemoryUpstreamRepo(backoffRows);
+    const upstreamStore = new MemoryUpstreamStore();
+    const upstreams = new MemoryUpstreamRepo(upstreamStore, backoffRows);
     const proxies = new MemoryProxyRepo(upstreams, backoffRows);
     this.upstreams = upstreams;
+    this.upstreamModels = new MemoryUpstreamModelsRepo(upstreamStore);
     this.proxies = proxies;
     this.proxyBackoffs = new MemoryProxyBackoffRepo(backoffRows, proxies, upstreams);
     this.modelAliases = new MemoryModelAliasesRepo();

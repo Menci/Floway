@@ -4,7 +4,7 @@
 
 import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel, CodexServiceTier } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
-import type { InternalModel } from '@floway-dev/provider';
+import type { InternalModel, ProviderModel } from '@floway-dev/provider';
 import type { ChatGPTCodexModelMetadata } from '@floway-dev/provider-chatgpt';
 
 // Keep the established 128K compaction policy for synthesized models whose
@@ -57,17 +57,23 @@ const BASELINE = {
 // the rest of the client catalog. Custom ids remain usable through the final
 // id-as-name fallback.
 // https://github.com/openai/codex/blob/be2951ea34f0d295ed0becf97079f92fa5f6950e/codex-rs/tui/src/chatwidget/service_tiers.rs#L76-L104
+const EMPTY_SERVICE_TIERS: ReadonlyMap<string, CodexServiceTier> = new Map();
+
 const deriveServiceTiers = (
   model: InternalModel,
   modelTiers: readonly CodexServiceTier[],
-  catalogTiers: readonly CodexServiceTier[],
+  catalogTierById: ReadonlyMap<string, CodexServiceTier>,
 ): CodexServiceTier[] => {
-  const ids = new Set(model.pricing?.entries.flatMap(entry => typeof entry.selector?.serviceTier === 'string' ? [entry.selector.serviceTier] : []) ?? []);
-  const modelTierById = new Map(modelTiers.map(tier => [tier.id, tier]));
-  const catalogTierById = new Map<string, CodexServiceTier>();
-  for (const tier of catalogTiers) {
-    if (!catalogTierById.has(tier.id)) catalogTierById.set(tier.id, tier);
+  const entries = model.pricing?.entries;
+  if (entries === undefined || entries.length === 0) return [];
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    const tier = entry.selector?.serviceTier;
+    if (typeof tier === 'string') ids.add(tier);
   }
+  if (ids.size === 0) return [];
+  const modelTierById = new Map<string, CodexServiceTier>();
+  for (const tier of modelTiers) modelTierById.set(tier.id, tier);
   return [...ids].map(id => modelTierById.get(id) ?? catalogTierById.get(id) ?? { id, name: id, description: '' });
 };
 
@@ -75,14 +81,15 @@ export const synthesizeCatalogEntry = (
   model: InternalModel,
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
-  catalogServiceTiers: readonly CodexServiceTier[] = [],
-  { metadata: codexMetadata, serviceTiers }: { metadata?: ChatGPTCodexModelMetadata | undefined; serviceTiers?: CodexServiceTier[] | undefined } = {},
+  catalogServiceTiers: ReadonlyMap<string, CodexServiceTier> = EMPTY_SERVICE_TIERS,
+  { metadata: codexMetadata, serviceTiers, chatProviderModels }: {
+    metadata?: ChatGPTCodexModelMetadata | undefined;
+    serviceTiers?: CodexServiceTier[] | undefined;
+    chatProviderModels?: readonly ProviderModel[] | undefined;
+  } = {},
 ): CatalogModel => {
   const { max_context_window: _sourceMaxContextWindow, ...source }: CatalogModel = { ...(base ?? BASELINE), ...codexMetadata };
 
-  const chatProviderModels = model.providerModels === undefined
-    ? undefined
-    : Object.values(model.providerModels).filter(providerModel => providerModel.kind === 'chat');
   const supportsAudio = capabilities.audioInput && model.endpoints.openaiResponses !== undefined && model.chat?.modalities?.input.includes('audio')
     && (chatProviderModels?.every(providerModel => providerModel.endpoints.openaiResponses !== undefined && providerModel.chat?.modalities?.input.includes('audio')) ?? true);
   const inputModalities = (model.chat?.modalities?.input ?? source.input_modalities ?? BASELINE.input_modalities)

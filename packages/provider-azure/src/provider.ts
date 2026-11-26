@@ -9,9 +9,37 @@ import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
-import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelPathOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type FetchInit, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelPathOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type FetchInit, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModelConfig, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
+
+export const projectAzureModels = (
+  record: UpstreamRecord,
+  manualModels: readonly UpstreamModelConfig[],
+): ProviderModel[] => {
+  const azure = assertAzureUpstreamRecord(record);
+  return manualModels.map(model => {
+    const effective = resolveEffectiveFlags([AZURE_DEFAULT_FLAGS, azure.flagOverrides, model.flagOverrides]);
+    const endpoints = model.endpoints;
+    const kind = kindForEndpoints(endpoints);
+    return {
+      id: publicModelId(model),
+      upstreamModelId: model.upstreamModelId,
+      limits: { ...(model.limits ?? {}) },
+      ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
+      ...(model.pricing ? { pricing: model.pricing } : {}),
+      ...(kind === 'chat' && model.chat ? { chat: model.chat } : {}),
+      kind,
+      endpoints,
+      providerData: { upstreamModelId: model.upstreamModelId },
+      enabledFlags: effective,
+      opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
+      // A Foundry decision deployment answers the System One contract; the
+      // dialect is not the operator's to choose.
+      ...(kind === 'decision' ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
+    };
+  });
+};
 
 type AzureTypedFetch = (config: ReturnType<typeof assertAzureUpstreamRecord>['config'], init: FetchInit, options: UpstreamFetchOptions) => Promise<Response>;
 
@@ -49,28 +77,8 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
   const instance: ProviderInstance = {
     runScheduledTask: async () => {},
     callAlphaSearch: () => Promise.reject(new Error('Azure provider does not support callAlphaSearch')),
-    getProvidedModels() {
-      return Promise.resolve(azure.config.models.map(model => {
-        const effective = resolveEffectiveFlags([AZURE_DEFAULT_FLAGS, azure.flagOverrides, model.flagOverrides]);
-        const endpoints = model.endpoints;
-        const kind = kindForEndpoints(endpoints);
-        return {
-          id: publicModelId(model),
-          upstreamModelId: model.upstreamModelId,
-          limits: { ...(model.limits ?? {}) },
-          ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
-          ...(model.pricing ? { pricing: model.pricing } : {}),
-          ...(kind === 'chat' && model.chat ? { chat: model.chat } : {}),
-          kind,
-          endpoints,
-          providerData: { upstreamModelId: model.upstreamModelId },
-          enabledFlags: effective,
-          opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
-          // A Foundry decision deployment answers the System One contract; the
-          // dialect is not the operator's to choose.
-          ...(kind === 'decision' ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
-        };
-      }));
+    getProvidedModels(_fetcher, manualModels = []) {
+      return Promise.resolve(projectAzureModels(azure, manualModels));
     },
     callOpenAICompletions: (model, body, signal, opts) => callNonStreaming(azureFetchOpenAICompletions, model, body, signal, [...opts.headers], opts),
     callOpenAIChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchOpenAIChatCompletions, model, body, signal, [...opts.headers], parseOpenAIChatCompletionsStream, opts),
@@ -146,9 +154,6 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     kind: 'azure',
     name: azure.name,
     inboundHeaderAllowlist: [],
-    disabledPublicModelIds: azure.disabledPublicModelIds,
-    modelPrefix: azure.modelPrefix,
-    modelsCache: azure.modelsCache,
     instance,
   };
 };

@@ -51,7 +51,6 @@ test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     config: {
       githubHost: 'github.com',
@@ -62,7 +61,7 @@ test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => ({ ...upstream, configVersion: 1 }),
+      getById: async () => ({ ...upstream, version: 1 }),
       saveState: async () => {},
     },
   }));

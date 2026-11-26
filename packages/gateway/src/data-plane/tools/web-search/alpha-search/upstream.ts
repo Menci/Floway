@@ -3,7 +3,7 @@ import { enumerateModelCandidates } from '../../../providers/resolution.ts';
 import { filterInboundHeadersForProvider } from '../../../shared/inbound-headers.ts';
 import type { WebSearchConfig } from '../types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { identityWrapUpstreamCall, providerModelOf } from '@floway-dev/provider';
+import { identityWrapUpstreamCall } from '@floway-dev/provider';
 
 export type AlphaSearchDispatcher = (body: Record<string, unknown>, signal: AbortSignal | undefined, headers: Headers) => Promise<Response>;
 
@@ -36,7 +36,6 @@ export const resolveAlphaSearchDispatcher = async ({
     randomizeUpstreams: false,
     model: config.model,
     kind: 'chat',
-    scheduler,
     runtimeLocation,
   });
   const candidate = candidates.find(value => value.provider.upstreamId === config.upstreamId);
@@ -52,7 +51,7 @@ export const resolveAlphaSearchDispatcher = async ({
     // TODO: pin SearchRequest.id to one provider account when ChatGPT upstreams
     // support account pools. The current ChatGPT provider has one active account.
     const result = await candidate.provider.instance.callAlphaSearch(
-      providerModelOf(candidate),
+      candidate.model,
       request,
       signal,
       {

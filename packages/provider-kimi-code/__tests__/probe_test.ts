@@ -12,7 +12,7 @@ const setupRepo = (initial: unknown = null) => {
   initProviderRepo(() => ({
     recordUpstreamMetric: async (_id, name, _labels, value) => { metrics.push({ name, value }); },
     upstreams: {
-      getById: async () => ({ ...record({ state }), configVersion: 1 }),
+      getById: async () => ({ ...record({ state }), version: 1 }),
       saveState: async (_id, update) => { state = update(state, 1); },
     },
   }));
@@ -98,7 +98,7 @@ test('request-time debounce, opt-out and scheduled intervals issue only due read
 test('probe errors preserve the network error and any persistence failure', async () => {
   const network = new Error('network failed');
   const disk = new Error('write failed');
-  initProviderRepo(() => ({ recordUpstreamMetric: async () => {}, upstreams: { getById: async () => ({ ...record(), configVersion: 1 }), saveState: async () => { throw disk; } } }));
+  initProviderRepo(() => ({ recordUpstreamMetric: async () => {}, upstreams: { getById: async () => ({ ...record(), version: 1 }), saveState: async () => { throw disk; } } }));
   try {
     await refreshKimiCodeUsageProbe('up_kimi_code', config, () => Promise.reject(network));
     throw new Error('Expected failure');

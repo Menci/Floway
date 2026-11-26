@@ -10,7 +10,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesResultToEvents, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, assertStringIncludes, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertStringIncludes, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the http entry exactly the
 // provider candidates it wants, optionally with an alias-rules overlay
@@ -18,7 +18,6 @@ import { assert, assertEquals, assertStringIncludes, stubProvider, stubInternalM
 interface QueuedResolution {
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
-  readonly failedUpstreams: readonly string[];
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastSeenModel: { value: string | null } = { value: null };
@@ -46,7 +45,6 @@ const queueResolution = (
   resolutionsQueue.push({
     candidates: aliasRules !== undefined ? candidates.map(c => ({ ...c, rules: aliasRules })) : candidates,
     sawModel: candidates.length > 0,
-    failedUpstreams: [],
   });
 };
 
@@ -134,20 +132,12 @@ const makeCandidate = (overrides: {
       kind: 'custom',
       name: upstream,
       inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      modelsCache: null,
       instance: provider,
     },
-    model: stubInternalModel({
+    model: stubProviderModel({
       endpoints,
-      providerModels: {
-        [upstream]: stubProviderModel({
-          endpoints,
-          enabledFlags: overrides.enabledFlags ?? new Set(),
-        }),
-      },
-    }, upstream),
+      enabledFlags: overrides.enabledFlags ?? new Set(),
+    }),
     fetcher: directFetcher,
   };
 };

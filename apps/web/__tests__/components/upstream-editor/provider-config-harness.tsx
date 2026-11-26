@@ -12,7 +12,7 @@ export const ProviderConfigHarness = ({ record }: { record: UpstreamRecord }) =>
   const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(record) });
   return (
     <FormProvider {...form}>
-      <ProviderConfigSection record={record} onPatch={vi.fn()} onRefreshModels={vi.fn()} />
+      <ProviderConfigSection record={record} onPatch={vi.fn()} />
     </FormProvider>
   );
 };

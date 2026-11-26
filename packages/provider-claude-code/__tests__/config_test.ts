@@ -13,7 +13,7 @@ const goodAccount = {
 const wrap = (config: unknown): UpstreamRecord => ({
   id: 'up', kind: 'claude-code', name: 'n', enabled: true, usageRefreshIntervalMinutes: 0, sortOrder: 0,
   createdAt: '', updatedAt: '', config: config as UpstreamRecord['config'], state: null,
-  flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null, modelsCache: null, hue: 210,
+  flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null, hue: 210,
 });
 
 describe('assertClaudeCodeUpstreamRecord (config validation)', () => {

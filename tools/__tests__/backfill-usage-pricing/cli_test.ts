@@ -24,7 +24,20 @@ test('non-interactive CLI writes a private plan and applies only that artifact',
     CREATE TABLE upstreams (
       id TEXT PRIMARY KEY, provider TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
       sort_order INTEGER NOT NULL, created_at TEXT NOT NULL, config_json TEXT NOT NULL,
-      models_cache_json TEXT
+      version INTEGER NOT NULL DEFAULT 1,
+      models_cache_revision INTEGER, models_cache_fetched_at INTEGER
+    );
+    CREATE TABLE upstream_manual_models (
+      upstream_id TEXT NOT NULL, position INTEGER NOT NULL,
+      upstream_model_id TEXT NOT NULL, public_model_id TEXT,
+      kind TEXT NOT NULL, config_json TEXT NOT NULL,
+      PRIMARY KEY (upstream_id, position)
+    );
+    CREATE TABLE upstream_models (
+      upstream_id TEXT NOT NULL, model_id TEXT NOT NULL,
+      upstream_model_id TEXT NOT NULL, kind TEXT NOT NULL,
+      source TEXT NOT NULL, disabled INTEGER NOT NULL DEFAULT 0, model_json TEXT NOT NULL,
+      PRIMARY KEY (upstream_id, model_id, kind)
     );
     CREATE TABLE usage (
       key_id TEXT NOT NULL, model TEXT NOT NULL, upstream TEXT, model_key TEXT NOT NULL,
@@ -34,16 +47,16 @@ test('non-interactive CLI writes a private plan and applies only that artifact',
     CREATE UNIQUE INDEX idx_usage_metric_identity
       ON usage (key_id, model, COALESCE(upstream, ''), model_key, hour, pricing_selector, metric);
   `);
-  const config = {
-    models: [{
-      kind: 'chat',
-      endpoints: { openaiResponses: {} },
-      upstreamModelId: 'wire',
-      pricing: { entries: [{ rates: { input_tokens: '0.01' } }] },
-    }],
+  const manualModel = {
+    kind: 'chat',
+    endpoints: { openaiResponses: {} },
+    upstreamModelId: 'wire',
+    pricing: { entries: [{ rates: { input_tokens: '0.01' } }] },
   };
-  db.prepare('INSERT INTO upstreams VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run('azure-1', 'azure', 'Azure', 1, 0, '2026-01-01T00:00:00.000Z', JSON.stringify(config), null);
+  db.prepare('INSERT INTO upstreams VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('azure-1', 'azure', 'Azure', 1, 0, '2026-01-01T00:00:00.000Z', JSON.stringify({}), 1, null, null);
+  db.prepare('INSERT INTO upstream_manual_models VALUES (?, ?, ?, ?, ?, ?)')
+    .run('azure-1', 0, 'wire', null, 'chat', JSON.stringify(manualModel));
   db.prepare('INSERT INTO usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run('key-1', 'public', 'azure-1', 'wire', '2026-01-01T00', '{}', 'input_tokens', '10', null);
   db.close();

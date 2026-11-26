@@ -1,11 +1,10 @@
 import type { OpenAIResponsesInterceptor } from './types.ts';
 import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf } from '@floway-dev/provider';
 
 export const withRoleCompatibilityApplied: OpenAIResponsesInterceptor = (ctx, _gatewayCtx, run) => {
   if (ctx.targetApi !== 'openaiResponses') return run();
 
-  const flags = providerModelOf(ctx.candidate).enabledFlags;
+  const flags = ctx.candidate.model.enabledFlags;
   const rewriteSystemToDeveloper = flags.has('rewrite-system-to-developer');
   const rewriteDeveloperToSystem = flags.has('rewrite-developer-to-system');
   const rewriteMidConvSystemToUser = flags.has('rewrite-mid-conv-system-to-user');

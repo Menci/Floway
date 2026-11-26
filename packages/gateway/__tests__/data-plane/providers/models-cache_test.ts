@@ -1,13 +1,13 @@
 import { expect, test, vi } from 'vitest';
 
-import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
-import { createProvider } from '../../../src/data-plane/providers/registry.ts';
-import { createModelsRefreshScheduler, modelsRefreshTarget, refreshModels, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
-import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
+import type { StoredUpstreamRecord } from '../../../src/repo/types.ts';
+import { refreshModels, refreshModelsExplicit } from '../../../src/upstreams/models-refresh.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildChatGPTUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
-import { jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+
+const targetFor = (record: StoredUpstreamRecord) => ({ upstreamId: record.id, version: record.version });
 
 const setupCustom = async () => {
   const { repo } = await setupAppTest();
@@ -18,74 +18,26 @@ const setupCustom = async () => {
   return { repo, record };
 };
 
-const captureScheduled = () => {
-  const promises: Promise<unknown>[] = [];
-  return {
-    promises,
-    scheduler: (promise: Promise<unknown>): void => { promises.push(promise); },
-  };
-};
-
-test('a stale snapshot returns immediately and refreshes through the execution cell', async () => {
-  const { repo, record } = await setupCustom();
-  await seedModelsCache(repo.upstreams, record.id, modelsRefreshIdentity(record), {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: Date.now() - 11 * 60_000,
-    models: [stubProviderModel({ id: 'stale' })],
-  });
-  const stale = await repo.upstreams.getById(record.id);
-  if (stale === null) throw new Error('stale upstream missing');
-  const scheduled = captureScheduled();
-
-  await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: [{ id: 'fresh' }] }),
-    async () => {
-      const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(
-        createProvider(stale),
-        createModelsRefreshScheduler('TEST', scheduled.scheduler),
-      );
-      expect(snapshot.models.map(model => model.id)).toEqual(['stale']);
-      await Promise.all(scheduled.promises);
-    },
-  );
-
-  expect((await repo.upstreams.getById(record.id))?.modelsCache?.models.map(model => model.id)).toEqual(['fresh']);
-});
-
-test('concurrent callers share one upstream fetch', async () => {
-  const { record } = await setupCustom();
-  let release: ((response: Response) => void) | undefined;
-  const fetch = vi.fn(() => new Promise<Response>(resolve => { release = resolve; }));
-
-  await withMockedFetch(fetch, async () => {
-    const target = modelsRefreshTarget(record);
-    const first = refreshModels(target, 'TEST');
-    const second = refreshModels(target, 'TEST');
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    release!(jsonResponse({ object: 'list', data: [{ id: 'shared' }] }));
-    await expect(Promise.all([first, second])).resolves.toEqual([
-      expect.objectContaining({ kind: 'discovered', publication: 'published' }),
-      expect.objectContaining({ kind: 'discovered', publication: 'published' }),
-    ]);
-  });
-});
-
 test('a config edit during discovery returns its models without publishing the old catalog', async () => {
   const { repo, record } = await setupCustom();
   let release: ((response: Response) => void) | undefined;
   await withMockedFetch(
     () => new Promise<Response>(resolve => { release = resolve; }),
     async () => {
-      const pending = refreshModelsExplicit(modelsRefreshTarget(record), 'TEST');
+      const pending = refreshModelsExplicit(targetFor(record), 'TEST');
       await vi.waitFor(() => expect(release).toBeDefined());
       const current = await repo.upstreams.getById(record.id);
       if (current === null) throw new Error('upstream disappeared');
-      await repo.upstreams.replaceForModels({ previous: current, upstream: { ...current, config: { ...current.config as Record<string, unknown>, baseUrl: 'https://next.example.com' } } });
+      await repo.upstreams.replace({
+        previous: current,
+        upstream: { ...current, config: { ...current.config as Record<string, unknown>, baseUrl: 'https://next.example.com' } },
+      });
       release!(jsonResponse({ object: 'list', data: [{ id: 'old-model' }] }));
-      await expect(pending).resolves.toMatchObject({ kind: 'discovered', publication: 'lost-race', discovered: [{ upstreamModelId: 'old-model' }] });
+      await expect(pending).resolves.toMatchObject({ kind: 'discovered', publication: 'lost-race', entries: [{ source: 'auto', model: expect.objectContaining({ upstreamModelId: 'old-model' }) }] });
     },
   );
-  expect((await repo.upstreams.getById(record.id))?.modelsCache).toBeNull();
+  expect((await repo.upstreams.getById(record.id))?.modelsCache).toEqual({ revision: null, fetchedAt: null, lastError: null });
+  expect(await repo.upstreamModels.listByUpstream(record.id)).toEqual([]);
 });
 
 test('background refreshes honor backoff and explicit refreshes bypass it', async () => {
@@ -93,7 +45,7 @@ test('background refreshes honor backoff and explicit refreshes bypass it', asyn
   const fetch = vi.fn(() => new Response('unavailable', { status: 503 }));
 
   await withMockedFetch(fetch, async () => {
-    const target = modelsRefreshTarget(record);
+    const target = targetFor(record);
     await expect(refreshModels(target, 'TEST'))
       .rejects.toBeInstanceOf(ProviderModelsUnavailableError);
     await expect(refreshModels(target, 'TEST'))
@@ -110,7 +62,7 @@ test.each([
   { name: 'long', apiKey: 'x'.repeat(15_300) },
 ])('a model-list error redacts the echoed $name credential', async ({ apiKey }) => {
   const { repo, record } = await setupCustom();
-  const configured = await repo.upstreams.replaceForModels({
+  const configured = await repo.upstreams.replace({
     previous: record,
     upstream: { ...record, config: { ...record.config as Record<string, unknown>, apiKey } },
   });
@@ -127,7 +79,7 @@ test.each([
     },
     async () => {
       try {
-        await refreshModelsExplicit(modelsRefreshTarget(configured), 'TEST');
+        await refreshModelsExplicit(targetFor(configured), 'TEST');
         throw new Error('refresh unexpectedly succeeded');
       } catch (error) {
         expect(error).toBeInstanceOf(ProviderModelsUnavailableError);
@@ -139,7 +91,7 @@ test.each([
       }
     },
   );
-  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache.lastError?.message;
   expect(message).toContain('rejected [REDACTED]');
   expect(message).not.toContain(apiKey);
   expect(message).not.toContain(JSON.stringify(apiKey).slice(1, -1));
@@ -151,7 +103,7 @@ test('model discovery redacts an endpoint query credential', async () => {
   const { repo, record } = await setupCustom();
   const config = { ...record.config as Record<string, unknown> };
   delete config.apiKey;
-  const configured = await repo.upstreams.replaceForModels({
+  const configured = await repo.upstreams.replace({
     previous: record,
     upstream: { ...record, config: { ...config, apiKey: '', modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: `/v1/models?limit=1&monkey=banana&${parameter}=query-secret-42` } } },
   });
@@ -162,17 +114,17 @@ test('model discovery redacts an endpoint query credential', async () => {
       return new Response(JSON.stringify({ error: `HTTP 401 rejected ${query.get('monkey')} ${query.get(parameter)}` }), { status: 401 });
     },
     async () => {
-      await expect(refreshModelsExplicit(modelsRefreshTarget(configured), 'TEST')).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
+      await expect(refreshModelsExplicit(targetFor(configured), 'TEST')).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
     },
   );
-  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache.lastError?.message;
   expect(message).toContain('HTTP 401 rejected banana [REDACTED]');
   expect(message).not.toContain('query-secret-42');
 });
 
 test('model discovery redacts userinfo from a URL construction failure', async () => {
   const { repo, record } = await setupCustom();
-  const configured = await repo.upstreams.replaceForModels({
+  const configured = await repo.upstreams.replace({
     previous: record,
     upstream: { ...record, config: { ...record.config as Record<string, unknown>, baseUrl: 'https://user:secret@custom.example.com' } },
   });
@@ -180,10 +132,10 @@ test('model discovery redacts userinfo from a URL construction failure', async (
   await withMockedFetch(
     () => new Response('upstream unavailable', { status: 401 }),
     async () => {
-      await expect(refreshModelsExplicit(modelsRefreshTarget(configured), 'TEST')).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
+      await expect(refreshModelsExplicit(targetFor(configured), 'TEST')).rejects.toBeInstanceOf(ProviderModelsUnavailableError);
     },
   );
-  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache.lastError?.message;
   expect(message).not.toContain('secret');
   expect(message).not.toContain('user:secret');
 });
@@ -202,10 +154,10 @@ test('ChatGPT OAuth failure redacts a form-encoded refresh token echo', async ()
   await withMockedFetch(
     async request => new Response(`denied ${await request.text()}`, { status: 503 }),
     async () => {
-      await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST')).rejects.toThrow('refresh_token=[REDACTED]');
+      await expect(refreshModelsExplicit(targetFor(record), 'TEST')).rejects.toThrow('refresh_token=[REDACTED]');
     },
   );
-  const message = (await repo.upstreams.getById(record.id))?.modelsCache?.lastError?.message;
+  const message = (await repo.upstreams.getById(record.id))?.modelsCache.lastError?.message;
   expect(message).toContain('refresh_token=[REDACTED]');
   expect(message).not.toContain('rt+with+spaces');
 });
@@ -218,7 +170,7 @@ test('failure persistence retains the upstream error when recording also fails',
     () => new Response('unavailable', { status: 503 }),
     async () => {
       try {
-        await refreshModels(modelsRefreshTarget(record), 'TEST');
+        await refreshModels(targetFor(record), 'TEST');
         throw new Error('refresh unexpectedly succeeded');
       } catch (error) {
         expect(error).toBeInstanceOf(AggregateError);
@@ -240,11 +192,11 @@ test('publication failure is not recorded as an upstream failure', async () => {
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'discovered' }] }),
     async () => {
-      await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST')).rejects.toBe(storageError);
+      await expect(refreshModelsExplicit(targetFor(record), 'TEST')).rejects.toBe(storageError);
     },
   );
   expect(recordFailure).not.toHaveBeenCalled();
-  expect((await repo.upstreams.getById(record.id))?.modelsCache).toBeNull();
+  expect((await repo.upstreams.getById(record.id))?.modelsCache).toEqual({ revision: null, fetchedAt: null, lastError: null });
 });
 
 test('a changed config fences an old execution target before fetching', async () => {
@@ -255,7 +207,7 @@ test('a changed config fences an old execution target before fetching', async ()
   const fetch = vi.fn(() => jsonResponse({ object: 'list', data: [] }));
 
   await withMockedFetch(fetch, async () => {
-    await expect(refreshModelsExplicit(modelsRefreshTarget(record), 'TEST'))
+    await expect(refreshModelsExplicit(targetFor(record), 'TEST'))
       .resolves.toEqual({ kind: 'superseded' });
   });
   expect(fetch).not.toHaveBeenCalled();

@@ -116,17 +116,18 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
     disabledPublicModelIds: [],
     proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'azkey',
-      models: [{
-        upstreamModelId: 'gpt-image-2',
-        endpoints: { openaiImagesEdits: {} },
-      }],
     },
     state: null,
+  }, {
+    manualModels: [{
+      upstreamModelId: 'gpt-image-2',
+      kind: 'image',
+      endpoints: { openaiImagesEdits: {} },
+    }],
   });
 
   let observedForm: FormData | undefined;

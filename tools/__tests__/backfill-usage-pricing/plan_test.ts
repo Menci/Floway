@@ -19,7 +19,20 @@ const createDatabase = async (): Promise<string> => {
     CREATE TABLE upstreams (
       id TEXT PRIMARY KEY, provider TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
       sort_order INTEGER NOT NULL, created_at TEXT NOT NULL, config_json TEXT NOT NULL,
-      models_cache_json TEXT
+      version INTEGER NOT NULL DEFAULT 1,
+      models_cache_revision INTEGER, models_cache_fetched_at INTEGER
+    );
+    CREATE TABLE upstream_manual_models (
+      upstream_id TEXT NOT NULL, position INTEGER NOT NULL,
+      upstream_model_id TEXT NOT NULL, public_model_id TEXT,
+      kind TEXT NOT NULL, config_json TEXT NOT NULL,
+      PRIMARY KEY (upstream_id, position)
+    );
+    CREATE TABLE upstream_models (
+      upstream_id TEXT NOT NULL, model_id TEXT NOT NULL,
+      upstream_model_id TEXT NOT NULL, kind TEXT NOT NULL,
+      source TEXT NOT NULL, disabled INTEGER NOT NULL DEFAULT 0, model_json TEXT NOT NULL,
+      PRIMARY KEY (upstream_id, model_id, kind)
     );
     CREATE TABLE usage (
       key_id TEXT NOT NULL, model TEXT NOT NULL, upstream TEXT, model_key TEXT NOT NULL,
@@ -30,9 +43,11 @@ const createDatabase = async (): Promise<string> => {
       ON usage (key_id, model, COALESCE(upstream, ''), model_key, hour, pricing_selector, metric);
   `);
   const pricing = { entries: [{ rates: { input_tokens: '0.01' } }] };
-  const config = { models: [{ kind: 'chat', endpoints: { openaiResponses: {} }, upstreamModelId: 'wire', pricing }] };
-  db.prepare('INSERT INTO upstreams VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run('azure-1', 'azure', 'Azure', 1, 0, '2026-01-01T00:00:00.000Z', JSON.stringify(config), null);
+  const manualModel = { kind: 'chat', endpoints: { openaiResponses: {} }, upstreamModelId: 'wire', pricing };
+  db.prepare('INSERT INTO upstreams VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('azure-1', 'azure', 'Azure', 1, 0, '2026-01-01T00:00:00.000Z', JSON.stringify({}), 1, null, null);
+  db.prepare('INSERT INTO upstream_manual_models VALUES (?, ?, ?, ?, ?, ?)')
+    .run('azure-1', 0, 'wire', null, 'chat', JSON.stringify(manualModel));
   db.prepare('INSERT INTO usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run('key-1', 'public', 'azure-1', 'wire', '2026-01-01T00', '{}', 'input_tokens', '10', null);
   db.prepare('INSERT INTO usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -110,21 +125,28 @@ test('plan blocks an unpriced historical selector when priced siblings prove an 
 });
 
 test('an unguarded plan keeps the stored catalog out of its apply statement', async () => {
-  // `models_cache_json` is 73 KB on a live Copilot upstream and doubles under
-  // the hex encoding that renders a parameter into SQL. Every provider except
-  // a cache-priced custom one resolves its rates without the catalog and
-  // short-circuits the comparison, so carrying it into the statement bought
-  // nothing and cost a 6-row backfill, which failed with SQLITE_TOOBIG before
-  // writing a row.
   const directory = await mkdtemp(join(tmpdir(), 'floway-tools-unguarded-'));
   const path = join(directory, 'floway.db');
-  const catalog = JSON.stringify({ revision: 1, fetchedAt: Date.now(), models: [{ id: 'public', providerData: 'wire', filler: 'q'.repeat(120_000) }] });
+  const filler = JSON.stringify({ id: 'public', providerData: 'wire', filler: 'q'.repeat(120_000) });
   const db = new DatabaseSync(path);
   db.exec(`
     CREATE TABLE upstreams (
       id TEXT PRIMARY KEY, provider TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
       sort_order INTEGER NOT NULL, created_at TEXT NOT NULL, config_json TEXT NOT NULL,
-      models_cache_json TEXT
+      version INTEGER NOT NULL DEFAULT 1,
+      models_cache_revision INTEGER, models_cache_fetched_at INTEGER
+    );
+    CREATE TABLE upstream_manual_models (
+      upstream_id TEXT NOT NULL, position INTEGER NOT NULL,
+      upstream_model_id TEXT NOT NULL, public_model_id TEXT,
+      kind TEXT NOT NULL, config_json TEXT NOT NULL,
+      PRIMARY KEY (upstream_id, position)
+    );
+    CREATE TABLE upstream_models (
+      upstream_id TEXT NOT NULL, model_id TEXT NOT NULL,
+      upstream_model_id TEXT NOT NULL, kind TEXT NOT NULL,
+      source TEXT NOT NULL, disabled INTEGER NOT NULL DEFAULT 0, model_json TEXT NOT NULL,
+      PRIMARY KEY (upstream_id, model_id, kind)
     );
     CREATE TABLE usage (
       key_id TEXT NOT NULL, model TEXT NOT NULL, upstream TEXT, model_key TEXT NOT NULL,
@@ -135,9 +157,13 @@ test('an unguarded plan keeps the stored catalog out of its apply statement', as
       ON usage (key_id, model, COALESCE(upstream, ''), model_key, hour, pricing_selector, metric);
   `);
   const pricing = { entries: [{ rates: { input_tokens: '0.01' } }] };
-  const config = { models: [{ kind: 'chat', endpoints: { openaiResponses: {} }, upstreamModelId: 'wire', pricing }] };
-  db.prepare('INSERT INTO upstreams VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run('azure-1', 'azure', 'Azure', 1, 0, '2026-01-01T00:00:00.000Z', JSON.stringify(config), catalog);
+  const manualModel = { kind: 'chat', endpoints: { openaiResponses: {} }, upstreamModelId: 'wire', pricing };
+  db.prepare('INSERT INTO upstreams VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('azure-1', 'azure', 'Azure', 1, 0, '2026-01-01T00:00:00.000Z', JSON.stringify({}), 1, 1, Date.now());
+  db.prepare('INSERT INTO upstream_manual_models VALUES (?, ?, ?, ?, ?, ?)')
+    .run('azure-1', 0, 'wire', null, 'chat', JSON.stringify(manualModel));
+  db.prepare('INSERT INTO upstream_models VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run('azure-1', 'public', 'wire', 'chat', 'manual', 0, filler);
   db.prepare('INSERT INTO usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run('key-1', 'public', 'azure-1', 'wire', '2026-01-01T00', '{}', 'input_tokens', '10', null);
   db.close();
@@ -169,7 +195,7 @@ test('an unguarded plan keeps the stored catalog out of its apply statement', as
 
   assertEquals(result.rowsUpdated, 1);
   const applyStatement = executed.find(sql => sql.includes('UPDATE usage'))!;
-  // The catalog never reaches the statement, so its size cannot bound a backfill.
-  assertEquals(applyStatement.includes(Buffer.from(catalog, 'utf8').toString('hex')), false);
-  assertEquals(applyStatement.length < catalog.length, true);
+  // The catalog row never reaches the statement, so its size cannot bound a backfill.
+  assertEquals(applyStatement.includes(Buffer.from(filler, 'utf8').toString('hex')), false);
+  assertEquals(applyStatement.length < filler.length, true);
 });

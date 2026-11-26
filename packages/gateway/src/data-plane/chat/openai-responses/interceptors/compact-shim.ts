@@ -66,7 +66,7 @@ import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { syntheticEventsFromCompaction, syntheticEventsFromResult } from '../items/output.ts';
 import { sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, createRandomOpenAIResponsesItemId, isOpenAIResponsesCompactionItem, type CanonicalOpenAIResponsesPayload, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf, type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
+import { type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
 // are the compactor system prompt and the handoff prefix openai/codex ships
@@ -507,8 +507,8 @@ export const withOpenAIResponsesCompactShim: OpenAIResponsesInterceptor = async 
   // candidate without sending our private envelope to an upstream.
   ctx.payload = expandShimCompactionItems(ctx.payload);
 
-  const flagOn = providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-compact-shim');
-  const decryptFlagOn = providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-compact-decrypt');
+  const flagOn = ctx.candidate.model.enabledFlags.has('openai-responses-compact-shim');
+  const decryptFlagOn = ctx.candidate.model.enabledFlags.has('openai-responses-compact-decrypt');
   const structurallyRequired = ctx.targetApi !== 'openaiResponses';
   if (!flagOn && !structurallyRequired) {
     const isCompactShaped = ctx.action === 'compact' || containsCompactionTrigger(ctx.payload.input);

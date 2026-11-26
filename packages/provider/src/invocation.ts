@@ -1,4 +1,4 @@
-import type { InternalModel, ProviderModel } from './model.ts';
+import type { ProviderModel } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { Provider, OpenAIResponsesAction } from './provider.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
@@ -9,54 +9,18 @@ import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/open
 
 export type ChatTargetApi = 'anthropicMessages' | 'geminiGenerateContent' | 'openaiResponses' | 'openaiChatCompletions';
 
-// One (provider, model) pair the resolver produced for an inbound id,
-// plus the per-request `Fetcher` minted for the provider's upstream. The
-// pair is the smallest unit the dispatch layer needs to make a wire call:
-// `provider.instance.callXxx(providerModelOf(candidate), body, ...)` —
-// upstream id / upstream name / provider kind / capability flags come off
-// `provider.*`, the merged public metadata (id, endpoints, limits, ...) off
-// `model.*`, and the per-upstream `ProviderModel` (providerData,
-// enabledFlags) off `providerModelOf(candidate)`.
+// One resolved (provider, model) dispatch unit plus the per-request `Fetcher`
+// minted for that upstream. Resolution narrows by `model.kind` only; choosing
+// the target protocol from `model.endpoints` belongs to the attempt layer.
 //
-// Resolution narrows by `model.kind` only — choosing the inbound target
-// protocol from `model.endpoints` is the attempt layer's job, not part of
-// the candidate.
-//
-// `rules` is set only for candidates minted by the alias walk — it carries
-// the picked target's rule overlay so the attempt's terminal wire call can
-// apply it against the target IR. Absent (undefined) for direct-resolution
-// candidates and present (possibly `{}`) for alias-origin candidates.
+// `rules` is set only for alias-origin candidates (present, possibly `{}`),
+// carrying the picked target's rule overlay for the terminal wire call.
 export interface ModelCandidate {
   readonly provider: Provider;
-  readonly model: InternalModel;
+  readonly model: ProviderModel;
   readonly fetcher: Fetcher;
   readonly rules?: AliasRules;
 }
-
-// Pull the emitting upstream's `ProviderModel` off the candidate. Dispatch
-// hands this to the provider's `callXxx`; interceptor gates read
-// `.enabledFlags`, boundary shims read `.providerData`, etc. The candidate
-// always names exactly one upstream via `provider.upstreamId`; for real-row
-// candidates the resolver populates `model.providerModels` with an entry
-// under that key at candidate-creation time.
-//
-// Two error paths, distinguished so a caller reading the message can tell
-// which invariant broke: an alias row was mistakenly used as a dispatch
-// target (the resolver should have expanded it to its target's real row
-// first), or a real row is missing the entry for the candidate's upstream
-// (the candidate was assembled outside the resolver, or the row was merged
-// after the upstream stopped contributing).
-export const providerModelOf = (candidate: ModelCandidate): ProviderModel => {
-  const { model, provider } = candidate;
-  if (model.providerModels === undefined) {
-    throw new Error(`providerModelOf: model '${model.id}' is an alias row; the resolver should have expanded it to a target row before dispatch`);
-  }
-  const providerModel = model.providerModels[provider.upstreamId];
-  if (providerModel === undefined) {
-    throw new Error(`providerModelOf: model '${model.id}' has no providerModel for '${provider.upstreamId}'`);
-  }
-  return providerModel;
-};
 
 // Per-protocol invocation shape passed to interceptors. Carries the
 // source-shape request body (mutable, so the body can be cleaned), the

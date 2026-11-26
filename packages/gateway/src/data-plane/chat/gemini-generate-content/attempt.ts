@@ -15,7 +15,7 @@ import { chatTargetPicker } from '../shared/target-picker.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { billableUsageFromGeminiGenerateContentEvent, type GeminiGenerateContentPayload, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import { type ModelCandidate, providerModelOf, decodeResponseBody, plainResult, toInternalDebugError, type ApiErrorResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
+import { type ModelCandidate, decodeResponseBody, plainResult, toInternalDebugError, type ApiErrorResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
 import { routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
 
 // A candidate that speaks Gemini's native wire receives the client's payload
@@ -63,7 +63,7 @@ export const geminiGenerateContentAttempt = {
     return await runInterceptors(invocation, ctx, geminiGenerateContentCountTokensInterceptors, async () => {
       if (targetApi === 'geminiGenerateContent') {
         const { http: response } = await candidate.provider.instance.callGeminiGenerateContentCountTokens(
-          providerModelOf(candidate),
+          candidate.model,
           invocation.payload,
           ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, invocation.headers),
@@ -149,7 +149,7 @@ const dispatchGeminiGenerateContent = async (
     // The upstream reads the model from the URL, so the payload crosses the
     // provider boundary exactly as the client shaped it.
     const providerResult = await candidate.provider.instance.callGeminiGenerateContent(
-      providerModelOf(candidate),
+      candidate.model,
       invocation.payload,
       ctx.abortSignal,
       buildUpstreamCallOptions(candidate, ctx, invocation.headers),

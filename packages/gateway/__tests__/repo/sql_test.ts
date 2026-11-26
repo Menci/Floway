@@ -1,17 +1,18 @@
 import { test } from 'vitest';
 
-import { modelsRefreshIdentity, seedModelsCache } from './models-cache-fixture.ts';
+import { seedModelsCache } from './models-cache-fixture.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { saveUpstreamForTest } from './upstreams.ts';
-import { MODEL_CATALOG_REVISION } from '../../src/data-plane/providers/models-cache.ts';
-import { SqlRepo, UPSTREAM_STATE_WRITE_ATTEMPTS } from '../../src/repo/sql.ts';
-import type { StoredUpstreamRecord } from '../../src/repo/types.ts';
+import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
+import { SqlRepo } from '../../src/repo/sql.ts';
+import { UPSTREAM_STATE_WRITE_ATTEMPTS } from '../../src/repo/upstream-models-sql.ts';
 import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
+import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertRejects, stubProviderModel } from '@floway-dev/test-utils';
 
 const goodAccount = { chatgptAccountId: 'aid', refresh_token: 'rt_v1', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z' };
 const GENERATION = '2026-06-05T00:00:00.000Z';
-const baseRecord = (overrides: Partial<StoredUpstreamRecord> = {}): StoredUpstreamRecord => ({
+const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_test',
   kind: 'chatgpt',
   name: 'ChatGPT Test',
@@ -26,12 +27,9 @@ const baseRecord = (overrides: Partial<StoredUpstreamRecord> = {}): StoredUpstre
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  configVersion: 1,
-  modelsCache: null,
   hue: 210,
   ...overrides,
 });
-const identityFor = modelsRefreshIdentity;
 
 const ownValue = (value: unknown, key: string): unknown => {
   if (value === null || typeof value !== 'object' || !Object.hasOwn(value, key)) {
@@ -41,9 +39,11 @@ const ownValue = (value: unknown, key: string): unknown => {
 };
 
 test('SQL upstream repo preserves opaque provider data while restoring only the model enabledFlags Set', async () => {
-  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-  await seedModelsCache(repo, 'up_test', identityFor(baseRecord()), {
+  const fullRepo = new SqlRepo(await createSqliteTestDb());
+  await saveUpstreamForTest(fullRepo.upstreams, baseRecord());
+  const inserted = (await fullRepo.upstreams.getById('up_test'))!;
+  await seedModelsCache(fullRepo.upstreams, 'up_test', {
+    version: inserted.version,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({
@@ -52,7 +52,7 @@ test('SQL upstream repo preserves opaque provider data while restoring only the 
     })],
   });
 
-  const model = (await repo.getById('up_test'))?.modelsCache?.models[0];
+  const model = (await fullRepo.upstreamModels.listByUpstream('up_test'))[0]?.model;
   assertEquals(model?.enabledFlags instanceof Set, true);
   assertEquals(ownValue(model?.providerData, 'enabledFlags'), ['provider-private']);
   assertEquals(ownValue(ownValue(ownValue(model?.providerData, 'future'), '__proto__'), 'marker'), 'provider');
@@ -149,9 +149,9 @@ for (const initialState of [null, { accounts: [goodAccount] }]) test(`SQL state 
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
   await saveUpstreamForTest(repo, baseRecord({ state: initialState }));
-  const version = (await repo.getById('up_test'))!.configVersion;
+  const version = (await repo.getById('up_test'))!.version;
   const racing = new SqlRepo(withWriterRacingReads(db, () =>
-    db.prepare('UPDATE upstreams SET config_version = config_version + 1 WHERE id = ?').bind('up_test').run(), 1)).upstreams;
+    db.prepare('UPDATE upstreams SET version = version + 1 WHERE id = ?').bind('up_test').run(), 1)).upstreams;
   const seen: number[] = [];
   await racing.saveState('up_test', (current, currentVersion) => {
     seen.push(currentVersion);

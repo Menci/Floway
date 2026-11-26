@@ -53,7 +53,6 @@ const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
 });
 
@@ -86,7 +85,7 @@ beforeEach(() => {
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => ({ ...currentRecord, configVersion: 1 }),
+      getById: async () => ({ ...currentRecord, version: 1 }),
       saveState: async (_id, mutate) => {
         currentRecord = { ...currentRecord, state: mutate(currentRecord.state, 1) };
       },

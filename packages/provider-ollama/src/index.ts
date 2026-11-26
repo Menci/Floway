@@ -7,8 +7,8 @@ export const ollamaProviderModule: ProviderModule = {
   defaultFlags: OLLAMA_DEFAULT_FLAGS,
 };
 
-export { createOllamaProvider } from './provider.ts';
-export { assertOllamaUpstreamRecord, parseOllamaUpstreamConfig, type OllamaUpstreamConfig, type OllamaUpstreamRecord } from './config.ts';
+export { createOllamaProvider, projectOllamaManualModels } from './provider.ts';
+export { assertOllamaUpstreamRecord, parseOllamaUpstreamConfig, validateOllamaManualModels, type OllamaUpstreamConfig, type OllamaUpstreamRecord } from './config.ts';
 export { pricingForOllamaModelKey } from './pricing.ts';
 export { readOllamaUpstreamState, type OllamaAccountEntry, type OllamaUpstreamState } from './state.ts';
 export { isOllamaUsageEnabled, refreshOllamaUsageProbe } from './usage-probe.ts';

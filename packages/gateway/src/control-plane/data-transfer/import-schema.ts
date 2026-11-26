@@ -13,11 +13,13 @@ import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
+import { supportsManualModels } from '../../upstreams/models-refresh.ts';
 import { USERNAME_PATTERN } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
+import { validateManualModels } from '../shared/manual-models.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, parseUserPreferences, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
-import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamHue, normalizeUpstreamMetricIdentity, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamHue, normalizeUpstreamMetricIdentity, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamModelConfig, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/provider-chatgpt';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
@@ -40,7 +42,7 @@ export interface ParsedImportData {
   groups: Array<Group & { memberIds: number[] }>;
   accessRecords: AccessRecordInput[];
   apiKeys: ApiKey[];
-  upstreams: UpstreamRecord[];
+  upstreams: ImportedUpstream[];
   proxies: SerializedProxy[];
   usage: UsageRecord[];
   searchUsage: WebSearchUsageRecord[];
@@ -147,7 +149,12 @@ const upstreamKindSchema = z.enum(ALL_PROVIDER_KINDS, { error: `kind must be one
 const finiteSortOrderSchema = z.number({ error: 'sort_order must be a finite number' })
   .finite({ error: 'sort_order must be a finite number' });
 
-const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
+export interface ImportedUpstream {
+  readonly record: UpstreamRecord;
+  readonly manualModels?: UpstreamModelConfig[];
+}
+
+const upstreamWireSchema = parsedBy((value): ImportedUpstream => {
   const wire = parseRecord(value, 'record must be an object');
   if (hasOwn(wire, 'enabled_fixes')) {
     throw new Error("legacy 'enabled_fixes' field is no longer supported; re-export with current code");
@@ -159,6 +166,10 @@ const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
   if (isLegacyUpstreamIdentity(id)) {
     throw new Error('id must use a raw upstream id, not a legacy provider-prefixed identity');
   }
+
+  const manualModels = supportsManualModels(kind)
+    ? validateManualModels(kind, wire.manual_models)
+    : undefined;
 
   const record: UpstreamRecord = {
     id,
@@ -176,9 +187,11 @@ const upstreamWireSchema = parsedBy((value): UpstreamRecord => {
     hue: parseValue(parsedBy(normalizeUpstreamHue), wire.hue),
     config: wire.config,
     state: normalizeUpstreamState(kind, wire.state),
-    modelsCache: null,
   };
-  return { ...record, config: normalizeUpstreamConfig(record) };
+  return {
+    record: { ...record, config: normalizeUpstreamConfig(record) },
+    ...(manualModels !== undefined ? { manualModels } : {}),
+  };
 });
 
 const proxySchema = parsedBy((value): SerializedProxy => {
@@ -575,11 +588,12 @@ export const parseImportData = (value: unknown): ImportDataParseResult => {
   if (upstreams.type === 'invalid') return upstreams;
   const upstreamIds = new Map<string, number>();
   for (let index = 0; index < upstreams.records.length; index++) {
-    const prior = upstreamIds.get(upstreams.records[index].id);
+    const id = upstreams.records[index].record.id;
+    const prior = upstreamIds.get(id);
     if (prior !== undefined) {
-      return { type: 'invalid', error: `invalid upstreams: duplicate upstream id ${upstreams.records[index].id} at indexes ${prior} and ${index}` };
+      return { type: 'invalid', error: `invalid upstreams: duplicate upstream id ${id} at indexes ${prior} and ${index}` };
     }
-    upstreamIds.set(upstreams.records[index].id, index);
+    upstreamIds.set(id, index);
   }
   const proxies = parseCollection('proxies', proxySchema, value.proxies, { arrayError: 'proxies must be an array', optional: true });
   if (proxies.type === 'invalid') return proxies;

@@ -32,7 +32,6 @@ import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../share
 import { foldsExclusiveCacheTokens } from '../../../shared/telemetry/usage.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { providerModelOf } from '@floway-dev/provider';
 
 const rewriteInboundUsage = (
   chunk: OpenAIChatCompletionsStreamEvent,
@@ -74,7 +73,7 @@ export const withExclusiveCachedTokensNormalized: OpenAIChatCompletionsIntercept
   // form, which is the one case the fold has nothing to do with.
   if (ctx.targetApi !== 'openaiChatCompletions') return await run();
 
-  const model = providerModelOf(ctx.candidate);
+  const model = ctx.candidate.model;
   const declaredExclusive = model.enabledFlags.has('usage-exclusive-cached-tokens');
   const identity = `${ctx.candidate.provider.upstreamId}/${model.id}`;
 

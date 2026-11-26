@@ -12,7 +12,7 @@ import {
 } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
+import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const candidate = (upstreamId: string, model: string, rules?: AliasRules) => {
   const base = stubModelCandidate();
@@ -33,10 +33,8 @@ const candidateWithScope = (
     provider: { ...base.provider, upstreamId },
     model: {
       id: model,
+      upstreamModelId: model,
       opaqueBlobCompatibilityScope: scope,
-      providerModels: {
-        [upstreamId]: stubProviderModel({ id: model, upstreamModelId: model, opaqueBlobCompatibilityScope: scope }),
-      },
     },
   });
 };

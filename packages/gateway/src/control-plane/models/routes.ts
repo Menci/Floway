@@ -1,24 +1,14 @@
 import { toPublicModel } from '../../data-plane/models/load.ts';
-import { type AddressableIdEntry, enumerateAddressableModelIds, listedRealModels } from '../../data-plane/shared/listing/addressable.ts';
+import type { CatalogUpstreamMeta } from '../../data-plane/providers/catalog.ts';
+import { type AddressableIdEntry, listedRealModels, loadAddressableSurfaces } from '../../data-plane/shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../../data-plane/shared/listing/alias.ts';
-import { createModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { modelsQuery } from '../schemas.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
-import type { InternalModel, Provider, UpstreamProviderKind } from '@floway-dev/provider';
+import type { InternalModel, UpstreamProviderKind } from '@floway-dev/provider';
 
-// Same DTO as the public /models endpoint, plus one dashboard-only field:
-// `upstreams` lists every upstream that surfaces this model as { kind, id, name, hue }
-// tuples. A single model id can be served by mixed provider kinds (e.g. one
-// azure deployment + one custom upstream both expose `gpt-5.5`), so a flat
-// `provider`/`upstream_ids` split would misrepresent that. Alias-synthesized
-// rows carry an empty list — they do not bind to an upstream directly; their
-// targets live under `aliasedFrom`. `hue` is the upstream's badge hue, which
-// the dashboard paints each chip from.
 interface ControlPlaneModel extends PublicModel {
   upstreams: { kind: UpstreamProviderKind; id: string; name: string; hue: number }[];
 }
@@ -27,41 +17,21 @@ interface ControlPlaneModelsResponse extends Omit<PublicModelsResponse, 'data'> 
   data: ControlPlaneModel[];
 }
 
-// The map and the provider instances are both built from the same
-// `upstreams.list()` call, so a miss is a composition bug rather than a row
-// that happens to have no hue.
-const upstreamHue = (hueByUpstream: ReadonlyMap<string, number>, upstreamId: string): number => {
-  const hue = hueByUpstream.get(upstreamId);
-  if (hue === undefined) throw new Error(`No upstream row backs provider instance ${upstreamId}`);
-  return hue;
-};
-
 const toControlPlaneModel = (
   model: InternalModel,
-  instances: readonly Provider[],
-  hueByUpstream: ReadonlyMap<string, number>,
+  upstreams: readonly CatalogUpstreamMeta[],
 ): ControlPlaneModel => ({
   ...toPublicModel(model),
-  upstreams: instances.map(instance => ({
-    kind: instance.kind,
-    id: instance.upstreamId,
-    name: instance.name,
-    hue: upstreamHue(hueByUpstream, instance.upstreamId),
+  upstreams: upstreams.map(upstream => ({
+    kind: upstream.kind,
+    id: upstream.id,
+    name: upstream.name,
+    hue: upstream.hue,
   })),
 });
 
-// Wrap an addressable-but-not-listed entry as a control-plane row. The
-// canonical metadata (`limits`, `chat`, `endpoints`, `upstreams`) reads
-// off the real model the addressable id resolves to; only `id` and
-// `display_name` swap in the addressable form so the alias dialog
-// combobox renders the actual id the operator can type. `unlisted: true`
-// carries the addressability tag through to the dashboard so a future UI
-// badge does not need a second registry call.
-const toUnlistedControlPlaneModel = (
-  entry: AddressableIdEntry,
-  hueByUpstream: ReadonlyMap<string, number>,
-): ControlPlaneModel => ({
-  ...toControlPlaneModel(entry.model, entry.upstreams, hueByUpstream),
+const toUnlistedControlPlaneModel = (entry: AddressableIdEntry): ControlPlaneModel => ({
+  ...toControlPlaneModel(entry.model, entry.upstreams),
   id: entry.id,
   display_name: entry.model.display_name ?? entry.id,
   unlisted: true,
@@ -72,62 +42,35 @@ export const controlPlaneModels = async (c: CtxWithQuery<typeof modelsQuery>) =>
     const { aliases: aliasesValue, include_unlisted: includeUnlistedValue } = c.req.valid('query');
     const includeAliases = aliasesValue !== 'false';
     const includeUnlisted = includeUnlistedValue === 'true';
-    // Admin sessions see the entire gateway for editor surfaces. Non-admin
-    // sessions receive only model/upstream pairs allowed by Model.Use.
     const subject = userFromContext(c);
     const isAdmin = subject.isAdmin;
-    const gatewayMetadataSubject = isAdmin ? subject : { ...subject, isAdmin: true };
     const upstreamScope = isAdmin ? null : effectiveUpstreamIdsFromContext(c);
-    // Fetch the upstream list once at the request boundary and thread it into
-    // catalog enumeration and the hue join.
-    const upstreamRows = await getRepo().upstreams.list();
-    const runtimeLocation = getRuntimeLocation(c.req.raw);
-    const scheduleRefresh = createModelsRefreshScheduler(runtimeLocation, backgroundSchedulerFromContext(c));
-    // Two addressable surfaces: caller-scoped (drives visibility +
-    // `aliasedFrom.targets` narrowing for non-admin) and gateway-wide
-    // (drives the alias's metadata + endpoints + pricing — every caller
-    // sees the same numbers for the same alias). For admin the two are
-    // the same, so skip the second fetch.
-    const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
-      enumerateAddressableModelIds(subject, upstreamScope, scheduleRefresh, upstreamRows),
-      isAdmin
-        ? Promise.resolve(null)
-        : enumerateAddressableModelIds(gatewayMetadataSubject, null, scheduleRefresh, upstreamRows),
+    const { callerAddressable, gatewayAddressable, aliases } = await loadAddressableSurfaces(
+      subject,
+      upstreamScope,
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
-    ]);
-    const hueByUpstream = new Map<string, number>(upstreamRows.map(row => [row.id, row.hue]));
-    const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
+    );
     const upstreamsByListedId = new Map(callerAddressable.map(entry => [entry.id, entry.upstreams] as const));
     const realModels = listedRealModels(callerAddressable);
     const merged = includeAliases
       ? mergeAliasesIntoModels({
           realModels,
-          gatewayAddressableModelIds,
+          gatewayAddressableModelIds: gatewayAddressable,
           callerAddressableModelIds: callerAddressable,
           aliases,
-          // Admin sees raw configured targets (including typos / out-of-
-          // cap models) so the alias-edit dialog can render the full
-          // configuration; non-admin sessions get the narrowed projection.
           narrowTargets: !isAdmin,
         })
       : realModels;
-    // Alias-synthesized rows never bind to an upstream — hand an empty
-    // list; real rows read the reverse index built from `callerAddressable`.
     const listedRows = merged.map(model => {
       const upstreams = model.aliasedFrom !== undefined ? [] : upstreamsByListedId.get(model.id);
       if (upstreams === undefined) throw new Error(`Missing upstream index for listed model ${model.id}`);
-      return toControlPlaneModel(model, upstreams, hueByUpstream);
+      return toControlPlaneModel(model, upstreams);
     });
-    // Dedupe the unlisted half against the listed half on `id` — an alias
-    // whose name coincides with an addressable-but-not-listed id (e.g. a
-    // Copilot variant) would otherwise emit two rows with the same id but
-    // different `unlisted` flags. /v1/models already collapses this kind
-    // of collision; the dashboard must agree.
     const listedIds = new Set(listedRows.map(row => row.id));
     const unlistedRows = includeUnlisted
       ? callerAddressable
           .filter(entry => entry.unlisted === true && !listedIds.has(entry.id))
-          .map(entry => toUnlistedControlPlaneModel(entry, hueByUpstream))
+          .map(toUnlistedControlPlaneModel)
       : [];
     const data = [...listedRows, ...unlistedRows];
     const response: ControlPlaneModelsResponse = {

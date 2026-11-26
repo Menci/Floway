@@ -27,7 +27,6 @@ const registerAudioModel = async (
     disabledPublicModelIds: [],
     proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     config: {
       baseUrl: 'https://audio.example.com',
@@ -35,14 +34,15 @@ const registerAudioModel = async (
       apiKey: 'sk-audio',
       endpoints: {},
       modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{
-        upstreamModelId: 'gpt-4o-transcribe-upstream',
-        publicModelId: 'gpt-4o-transcribe',
-        kind: 'transcription',
-        endpoints: { openaiAudioTranscriptions: {} },
-        ...(pricing ? { pricing } : {}),
-      }],
     },
+  }, {
+    manualModels: [{
+      upstreamModelId: 'gpt-4o-transcribe-upstream',
+      publicModelId: 'gpt-4o-transcribe',
+      kind: 'transcription',
+      endpoints: { openaiAudioTranscriptions: {} },
+      ...(pricing ? { pricing } : {}),
+    }],
   });
 };
 

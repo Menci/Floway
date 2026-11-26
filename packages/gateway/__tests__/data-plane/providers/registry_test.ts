@@ -1,11 +1,10 @@
 import { expect, test } from 'vitest';
 
-import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest, sseOpenAIChatCompletionsResponse, sseOpenAIResponsesResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
 import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
-test('listModelProviders creates enabled provider instances with upstream row ids', async () => {
+test('listCatalog returns enabled upstreams in sort order and silently drops deleted whitelist ids', async () => {
   const { githubAccount, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom', sortOrder: 1 }));
@@ -21,37 +20,29 @@ test('listModelProviders creates enabled provider instances with upstream row id
     config: {
       endpoint: 'https://example.openai.azure.com',
       apiKey: 'az-key',
-      models: [
-        {
-          upstreamModelId: 'gpt-prod',
-          endpoints: { openaiChatCompletions: {} },
-        },
-      ],
     },
     flagOverrides: {},
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     state: null,
+  }, {
+    manualModels: [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
   });
   await saveUpstreamForTest(repo.upstreams, buildCopilotUpstreamRecord(githubAccount, { id: 'up_copilot', name: 'Copilot Row', sortOrder: 3 }));
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_disabled', enabled: false, usageRefreshIntervalMinutes: 0, sortOrder: 0 }));
 
-  const providers = await listModelProviders(null);
-  assertEquals(providers.map(provider => provider.upstreamId), ['up_custom', 'up_azure', 'up_copilot']);
-});
+  const all = await repo.upstreamModels.listCatalog(null);
+  assertEquals(all.upstreams.map(upstream => upstream.id), ['up_custom', 'up_azure', 'up_copilot']);
 
-test('listModelProviders silently drops deleted upstreams from a whitelist', async () => {
   // Deleting an upstream does not prune the caps that reference it, so a
   // dangling id narrows the cap instead of failing the principal's requests.
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_a', name: 'A', sortOrder: 10 }));
-
-  const providers = await listModelProviders(['up_ghost', 'up_a']);
-  assertEquals(providers.map(p => p.upstreamId), ['up_a']);
+  const filtered = await repo.upstreamModels.listCatalog({
+    include: ['up_ghost', 'up_copilot', 'up_custom'],
+    preserveIncludeOrder: true,
+  });
+  assertEquals(filtered.upstreams.map(upstream => upstream.id), ['up_copilot', 'up_custom']);
 });
 
 // Lane selection and per-model prices belong to provider-kimi-code; this

@@ -25,7 +25,7 @@ import type {
 } from '@floway-dev/protocols/anthropic-messages';
 import { ANTHROPIC_MESSAGES_WEB_SEARCH_ERROR_CODES } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { providerModelOf, internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
+import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 
 const MAX_QUERY_LENGTH = 1000;
 const WEB_SEARCH_TOOL_NAME = 'web_search';
@@ -919,7 +919,7 @@ type PrepareAnthropicMessagesWebSearchInvocationResult =
   | { type: 'prepared'; state: PreparedAnthropicMessagesWebSearchShimState };
 
 const prepareAnthropicMessagesWebSearchInvocation = (ctx: AnthropicMessagesInvocation): PrepareAnthropicMessagesWebSearchInvocationResult => {
-  if (ctx.targetApi === 'anthropicMessages' && !providerModelOf(ctx.candidate).enabledFlags.has('anthropic-messages-web-search-shim')) {
+  if (ctx.targetApi === 'anthropicMessages' && !ctx.candidate.model.enabledFlags.has('anthropic-messages-web-search-shim')) {
     return { type: 'inactive' };
   }
 

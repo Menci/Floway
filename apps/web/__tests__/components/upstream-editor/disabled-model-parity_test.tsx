@@ -42,8 +42,8 @@ const customRecord = upstreamRecord('up_custom', {
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models: [listed('model-a')],
   },
+  manual_models: [listed('model-a')],
   state: null,
 });
 
@@ -64,7 +64,6 @@ function Harness({ discovered, editLevel, record }: {
           discovered={discovered}
           editLevel={editLevel}
           onPatch={vi.fn()}
-          onRefreshModels={vi.fn()}
           proxies={[]}
           record={record}
           runtime={{ kind: 'node', runtimeLocation: 'TEST' }}

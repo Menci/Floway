@@ -49,8 +49,8 @@ const record = upstreamRecord('up_test', {
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models: [model('model-a')],
   },
+  manual_models: [model('model-a')],
   state: null,
 });
 

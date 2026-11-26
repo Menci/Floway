@@ -41,7 +41,7 @@ import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/com
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
-import { headersForAnthropicMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeModelFieldOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { headersForAnthropicMessagesCall, jsonRequestBody, publicModelId, resolveEffectiveFlags, serializeModelFieldOpenAIAudioTranscriptionRequest, streamingProviderCall, type FetchInit, type FlagId, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 
 // providerData carries the raw upstream id verbatim — the same value /api/tags
 // returns and the same value the gateway must send back on every inference call.
@@ -89,29 +89,12 @@ const finalizeOllamaModels = (
   return models;
 };
 
-export const createOllamaProvider = (record: UpstreamRecord): Provider => {
-  const { config } = assertOllamaUpstreamRecord(record);
-  const upstreamFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides]);
-  const state = readOllamaUpstreamState(record.state);
-
-  // Cloud inference arms a paired usage/balance refresh. Account identity has
-  // its own longer cadence. Token counting consumes neither, so it arms neither.
-  const armProbes = (opts: UpstreamCallOptions): void => {
-    scheduleOllamaUsageProbe(record.id, config, state, opts.fetcher, opts.waitUntil);
-    scheduleOllamaAccountProbe(record.id, config, state, opts.fetcher, opts.waitUntil);
-  };
-
-  // Rate-limited responses also trigger a refresh so the balances explaining
-  // the refusal can appear in the dashboard.
-  const withProbes = <T>(opts: UpstreamCallOptions, dispatched: Promise<T>): Promise<T> =>
-    dispatched.then(result => {
-      armProbes(opts);
-      return result;
-    });
-
-  // Manual models always emit.
-  const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
-  const manualModels: ProviderModel[] = config.models.map(model => {
+export const projectOllamaManualModels = (
+  record: UpstreamRecord,
+  manualModels: readonly UpstreamModelConfig[],
+): ProviderModel[] => {
+  assertOllamaUpstreamRecord(record);
+  return manualModels.map(model => {
     const enabledFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides, model.flagOverrides]);
     const endpoints = model.endpoints;
     const kind = kindForEndpoints(endpoints);
@@ -134,6 +117,27 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     if (kind === 'chat' && model.chat) internal.chat = model.chat;
     return internal;
   });
+};
+
+export const createOllamaProvider = (record: UpstreamRecord): Provider => {
+  const { config } = assertOllamaUpstreamRecord(record);
+  const upstreamFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides]);
+  const state = readOllamaUpstreamState(record.state);
+
+  // Cloud inference arms a paired usage/balance refresh. Account identity has
+  // its own longer cadence. Token counting consumes neither, so it arms neither.
+  const armProbes = (opts: UpstreamCallOptions): void => {
+    scheduleOllamaUsageProbe(record.id, config, state, opts.fetcher, opts.waitUntil);
+    scheduleOllamaAccountProbe(record.id, config, state, opts.fetcher, opts.waitUntil);
+  };
+
+  // Rate-limited responses also trigger a refresh so the balances explaining
+  // the refusal can appear in the dashboard.
+  const withProbes = <T>(opts: UpstreamCallOptions, dispatched: Promise<T>): Promise<T> =>
+    dispatched.then(result => {
+      armProbes(opts);
+      return result;
+    });
   const call = (
     transport: (config: OllamaUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions) => Promise<Response>,
     model: ProviderModel,
@@ -180,13 +184,15 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     callAlphaSearch: rejectUnsupported('callAlphaSearch'),
     callGeminiGenerateContent: rejectUnsupported('callGeminiGenerateContent'),
     callGeminiGenerateContentCountTokens: rejectUnsupported('callGeminiGenerateContentCountTokens'),
-    getProvidedModels: async fetcher => {
+    getProvidedModels: async (fetcher, manualModels = []) => {
       const catalog = await fetchOllamaCatalog(config, fetcher);
+      const overriddenIds = new Set(manualModels.map(m => m.upstreamModelId));
+      const projectedManual = projectOllamaManualModels(record, manualModels);
       const auto = finalizeOllamaModels(
         { data: catalog.data.filter(raw => !overriddenIds.has(raw.id)) },
         upstreamFlags,
       );
-      return [...manualModels, ...auto];
+      return [...projectedManual, ...auto];
     },
     callOpenAICompletions: (model, body, signal, opts) => withProbes(opts, call(ollamaFetchOpenAICompletions, model, body, signal, [...opts.headers], opts)),
     callOpenAIChatCompletions: async (model, body, signal, opts) => {
@@ -252,9 +258,6 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     kind: 'ollama',
     name: record.name,
     inboundHeaderAllowlist: [],
-    disabledPublicModelIds: record.disabledPublicModelIds,
-    modelPrefix: record.modelPrefix,
-    modelsCache: record.modelsCache,
     instance,
   };
 };

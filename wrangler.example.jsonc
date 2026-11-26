@@ -118,9 +118,8 @@
       "id": "<YOUR_KV_NAMESPACE_ID>"
     }
   ],
-  // Per-use execution cells. The initial broadcast protocol provides
-  // hibernatable WebSocket fan-out; model refresh operations share this
-  // actor host without placing provider data in Durable Object storage.
+  // Durable Object hosting hibernatable WebSocket fan-out for live dump
+  // streams. Kept stateless (`ctx.storage` is unused).
   "durable_objects": {
     "bindings": [
       {

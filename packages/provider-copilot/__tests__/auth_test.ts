@@ -32,14 +32,13 @@ const installRepoAndClearCache = async () => {
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     config: { githubHost: 'github.com', githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => ({ ...stub, state, configVersion: 1 }),
+      getById: async () => ({ ...stub, state, version: 1 }),
       saveState: async (_id, mutate) => {
         state = mutate(state, 1);
       },
@@ -257,14 +256,13 @@ test('copilotAuthedFetch persists a minted token even when the row changed durin
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     config: { githubHost: 'github.com', githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => ({ ...stub, state, configVersion: 1 }),
+      getById: async () => ({ ...stub, state, version: 1 }),
       saveState: async (_id, mutate) => {
         state = mutate(state, 1);
       },

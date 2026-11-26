@@ -27,7 +27,7 @@ interface BackendStub {
   // When set, the next `enumerateModelCandidates` call returns this
   // shape verbatim instead of the default single in-test candidate; lets
   // a test drive `resolveImageCandidate`'s failure branches.
-  nextResolutionOverride: { candidates: readonly unknown[]; sawModel: boolean; failedUpstreams: readonly string[] } | null;
+  nextResolutionOverride: { candidates: readonly unknown[]; sawModel: boolean } | null;
 }
 
 // Hoisted so the vi.mock factory below can close over it; tests mutate the
@@ -45,7 +45,6 @@ const defaultCandidates = vi.hoisted(() => () => [{
     name: 'mock-image',
     disabledPublicModelIds: [],
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     instance: {
       callOpenAIImagesGenerations: async (_model: unknown, body: Record<string, unknown>) => {
@@ -64,14 +63,11 @@ const defaultCandidates = vi.hoisted(() => () => [{
   },
   model: {
     id: 'gpt-image-2',
+    upstreamModelId: 'gpt-image-2',
+    limits: {},
+    kind: 'image',
     endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
-    providerModels: {
-      u: {
-        id: 'gpt-image-2', limits: {}, kind: 'image',
-        endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
-        enabledFlags: new Set<FlagId>(),
-      },
-    },
+    enabledFlags: new Set<FlagId>(),
   },
   fetcher: (request: Request) => fetch(request),
 }]);
@@ -83,7 +79,7 @@ vi.mock('../../../../../../src/data-plane/providers/resolution.ts', () => ({
       stub.nextResolutionOverride = null;
       return override;
     }
-    return { candidates: defaultCandidates(), sawModel: true, failedUpstreams: [] };
+    return { candidates: defaultCandidates(), sawModel: true };
   }),
 }));
 
@@ -193,7 +189,6 @@ beforeEach(async () => {
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     config: {
       baseUrl: 'https://unused.example.com',
@@ -402,7 +397,7 @@ test('retries on 429 and surfaces the eventual success', async () => {
 // from existing-but-unsupported.
 
 test('resolveImageCandidate renders model_not_found when no upstream knows the model id', async () => {
-  stub.nextResolutionOverride = { candidates: [], sawModel: false, failedUpstreams: [] };
+  stub.nextResolutionOverride = { candidates: [], sawModel: false };
   const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('sorry'),
@@ -430,7 +425,6 @@ test('resolveImageCandidate renders model_not_supported when image-kind candidat
       },
     })],
     sawModel: true,
-    failedUpstreams: [],
   };
   const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),

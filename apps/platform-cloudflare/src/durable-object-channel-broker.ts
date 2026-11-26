@@ -1,15 +1,25 @@
-import { iterateReadableStream, type ChannelBroker, type ChannelCodec, type ExecutionCellNamespace } from '@floway-dev/platform';
+import { iterateReadableStream, type ChannelBroker, type ChannelCodec } from '@floway-dev/platform';
 
-const broadcastCellId = (channelId: string): string => JSON.stringify(['broadcast', channelId]);
+export interface ExecutionDurableObjectNamespace {
+  idFromName(name: string): unknown;
+  get(id: unknown): { fetch(request: Request): Promise<Response> };
+}
 
-export class ExecutionCellChannelBroker<T> implements ChannelBroker<T> {
+const fetchBroadcastStub = (
+  namespace: ExecutionDurableObjectNamespace,
+  channelId: string,
+  request: Request,
+): Promise<Response> =>
+  namespace.get(namespace.idFromName(JSON.stringify(['broadcast', channelId]))).fetch(request);
+
+export class DurableObjectChannelBroker<T> implements ChannelBroker<T> {
   constructor(
-    private readonly cells: ExecutionCellNamespace,
+    private readonly namespace: ExecutionDurableObjectNamespace,
     private readonly codec: ChannelCodec<T>,
   ) {}
 
   async publish(channelId: string, payload: T): Promise<void> {
-    const response = await this.cells.fetch(broadcastCellId(channelId), new Request('https://execution.do/broadcast', {
+    const response = await fetchBroadcastStub(this.namespace, channelId, new Request('https://execution.do/broadcast', {
       method: 'POST',
       body: this.codec.encode(payload),
     }));
@@ -17,7 +27,7 @@ export class ExecutionCellChannelBroker<T> implements ChannelBroker<T> {
   }
 
   async closeChannel(channelId: string, reason: string): Promise<void> {
-    const response = await this.cells.fetch(broadcastCellId(channelId), new Request('https://execution.do/broadcast/close', {
+    const response = await fetchBroadcastStub(this.namespace, channelId, new Request('https://execution.do/broadcast/close', {
       method: 'POST',
       body: reason,
     }));
@@ -25,12 +35,12 @@ export class ExecutionCellChannelBroker<T> implements ChannelBroker<T> {
   }
 
   subscribe(channelId: string, signal: AbortSignal): AsyncIterable<T> {
-    return iterateReadableStream(iterateFromExecutionSocket(this.cells, channelId, signal, this.codec));
+    return iterateReadableStream(iterateFromExecutionSocket(this.namespace, channelId, signal, this.codec));
   }
 }
 
 const iterateFromExecutionSocket = <T>(
-  cells: ExecutionCellNamespace,
+  namespace: ExecutionDurableObjectNamespace,
   channelId: string,
   signal: AbortSignal,
   codec: ChannelCodec<T>,
@@ -103,7 +113,7 @@ const iterateFromExecutionSocket = <T>(
       pull = flushError;
 
       const openPromise = (async (): Promise<void> => {
-        const response = await cells.fetch(broadcastCellId(channelId), new Request('https://execution.do/broadcast', {
+        const response = await fetchBroadcastStub(namespace, channelId, new Request('https://execution.do/broadcast', {
           headers: { Upgrade: 'websocket' },
         }));
         if (response.status !== 101) {

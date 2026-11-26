@@ -128,9 +128,6 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
     kind: 'claude-code',
     name: record.name,
     inboundHeaderAllowlist: INBOUND_HEADER_ALLOWLIST,
-    disabledPublicModelIds: record.disabledPublicModelIds,
-    modelPrefix: record.modelPrefix,
-    modelsCache: record.modelsCache,
     instance,
   };
 };

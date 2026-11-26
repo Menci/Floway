@@ -22,7 +22,7 @@ const Harness = ({ readOnly = false }: { readOnly?: boolean }) => {
   const record = kimiCodeRecord();
   if (readOnly) record.config = { region: 'china', apiKeySet: true };
   const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(record) });
-  return <FormProvider {...form}><ProviderConfigSection readOnly={readOnly} record={record} onPatch={() => {}} onRefreshModels={() => {}} /></FormProvider>;
+  return <FormProvider {...form}><ProviderConfigSection readOnly={readOnly} record={record} onPatch={() => {}} /></FormProvider>;
 };
 
 test('quota refresh uses the edited region and API key', async () => {

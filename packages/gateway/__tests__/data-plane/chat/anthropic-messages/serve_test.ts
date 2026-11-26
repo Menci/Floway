@@ -6,14 +6,13 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
 // candidates it wants, optionally with an alias-rules overlay attached.
 interface QueuedResolution {
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
-  readonly failedUpstreams: readonly string[];
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastResolveCall: { model?: string } = {};
@@ -42,7 +41,6 @@ const queueResolution = (
   resolutionsQueue.push({
     candidates: rules !== undefined ? candidates.map(c => ({ ...c, rules })) : candidates,
     sawModel: extra.sawModel ?? candidates.length > 0,
-    failedUpstreams: [],
   });
 };
 
@@ -121,19 +119,13 @@ const makeCandidate = (overrides: {
   return {
     provider: {
       upstreamId: upstream, kind, name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
+      instance: provider,
     },
-    model: stubInternalModel({
+    model: stubProviderModel({
       id: modelId,
       ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-      providerModels: {
-        [upstream]: stubProviderModel({
-          id: modelId,
-          ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-          ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
-        }),
-      },
-    }, upstream),
+      ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
+    }),
     fetcher: directFetcher,
   };
 };

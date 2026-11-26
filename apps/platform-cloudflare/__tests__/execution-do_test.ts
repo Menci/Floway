@@ -37,11 +37,6 @@ class FakeWebSocket implements WebSocket {
 
 class FakeState {
   readonly sockets: FakeWebSocket[] = [];
-  readonly exports = {
-    ExecutionOperationEntrypoint: {
-      fetch: async (_request: Request) => new Response('executed'),
-    },
-  };
   acceptWebSocket(ws: WebSocket): void {
     this.sockets.push(ws as FakeWebSocket);
   }
@@ -69,26 +64,8 @@ test('ExecutionDO broadcast request sends the payload verbatim to every register
   assertEquals(ws2.sent[0], 'hello world');
 });
 
-test('ExecutionDO coalesces concurrent operations and returns independent responses', async () => {
-  let calls = 0;
-  const state = new FakeState();
-  state.exports.ExecutionOperationEntrypoint.fetch = async () => {
-    calls += 1;
-    return new Response('models refreshed', { status: 202, headers: { 'x-execution': 'done' } });
-  };
-  const actor = new ExecutionDO(state, {});
-
-  const first = actor.fetch(new Request('https://execution.do/models/refresh', { method: 'POST' }));
-  const second = actor.fetch(new Request('https://execution.do/models/refresh', { method: 'POST' }));
-
-  const firstResponse = await first;
-  const secondResponse = await second;
-  assertEquals(firstResponse.status, 202);
-  assertEquals(await firstResponse.text(), 'models refreshed');
-  assertEquals(await secondResponse.text(), 'models refreshed');
-  assertEquals(secondResponse.headers.get('x-execution'), 'done');
-  assertEquals(calls, 1);
-
-  await actor.fetch(new Request('https://execution.do/models/refresh', { method: 'POST' }));
-  assertEquals(calls, 2);
+test('ExecutionDO returns 404 for unknown routes', async () => {
+  const actor = new ExecutionDO(new FakeState(), {});
+  const response = await actor.fetch(new Request('https://execution.do/unknown', { method: 'POST' }));
+  assertEquals(response.status, 404);
 });

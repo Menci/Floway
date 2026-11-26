@@ -27,7 +27,6 @@ const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): Upstream
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     ...rest,
     config: overrideConfig ?? {
@@ -55,7 +54,7 @@ const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): 
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => ({ ...upstream, configVersion: 1 }),
+      getById: async () => ({ ...upstream, version: 1 }),
       saveState: (id, mutate) => saveStateImpl(id, current => mutate(current, 1)),
     },
   }));

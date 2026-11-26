@@ -29,7 +29,6 @@ const cloudRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
   ...overrides,
 });
@@ -42,7 +41,7 @@ const withStateRepo = (state: unknown = null) => {
   initProviderRepo(() => ({
     recordUpstreamMetric: async (_upstreamId, name, labels, value, timestamp) => { metrics.push({ name, labels: { ...labels }, value, timestamp }); },
     upstreams: {
-      getById: async () => ({ ...cloudRecord(), state: current, configVersion: 1 }),
+      getById: async () => ({ ...cloudRecord(), state: current, version: 1 }),
       saveState: async (_id, mutate) => {
         current = mutate(current, 1);
         writes.push(current);

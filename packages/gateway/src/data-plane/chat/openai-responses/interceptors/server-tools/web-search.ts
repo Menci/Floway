@@ -34,7 +34,6 @@ import type { ConfiguredWebSearchProvider } from '../../../../tools/web-search/t
 import type { ServerToolHistoryExpansion, ServerToolLoopState, ServerToolOutputItem, ServerToolRegistration } from '../server-tool-shim.ts';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesWebSearchTool, OpenAIResponsesInputWebSearchCall, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
 import { collectOpenAIResponsesToolEntries, createRandomOpenAIResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf } from '@floway-dev/provider';
 
 // Runtime set derived from the canonical tuple declared next to
 // `OpenAIResponsesHostedToolType` so the type union and runtime check can't drift.
@@ -620,7 +619,7 @@ const planShimSlots = (
 };
 
 export const webSearchServerTool: ServerToolRegistration = async (invocation, gatewayCtx) => {
-  if (invocation.targetApi === 'openaiResponses' && !providerModelOf(invocation.candidate).enabledFlags.has('openai-responses-web-search-shim')) {
+  if (invocation.targetApi === 'openaiResponses' && !invocation.candidate.model.enabledFlags.has('openai-responses-web-search-shim')) {
     return { type: 'inactive' };
   }
 

@@ -4,7 +4,7 @@ import { resolveLegacyOpaqueBlobCompatibilityIdentity } from '../../../../../src
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../../../../src/repo/models-cache-contract.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { seedModelsCache, storedModelsRefreshIdentity } from '../../../../repo/models-cache-fixture.ts';
+import { seedModelsCache } from '../../../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../../../repo/upstreams.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { stubProviderModel } from '@floway-dev/test-utils';
@@ -29,53 +29,41 @@ const upstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
   config: {
     baseUrl: 'https://example.com',
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
     modelsFetch: { enabled: true, authStyle: 'bearer' },
-    models: [],
   },
   state: null,
   ...overrides,
 } as UpstreamRecord);
 
-test('resolves v1 affinity from the current provider-model cache', async () => {
+test('resolves v1 affinity from the current provider-model cache for bound and unbound scopes', async () => {
   const record = upstream();
   await saveUpstreamForTest(repo.upstreams, record);
-  await seedModelsCache(repo.upstreams, record.id, await storedModelsRefreshIdentity(repo.upstreams, record.id), {
+  const stored = (await repo.upstreams.getById(record.id))!;
+  await seedModelsCache(repo.upstreams, record.id, {
+    version: stored.version,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: Date.now(),
-    models: [stubProviderModel({
-      id: 'gpt-main',
-      upstreamModelId: 'gpt-main-wire',
-      opaqueBlobCompatibilityScope: { bindToUpstream: true, key: 'openai' },
-    })],
+    models: [
+      stubProviderModel({
+        id: 'gpt-main',
+        upstreamModelId: 'gpt-main-wire',
+        opaqueBlobCompatibilityScope: { bindToUpstream: true, key: 'openai' },
+      }),
+      stubProviderModel({
+        id: 'claude-public',
+        upstreamModelId: 'claude-wire',
+        opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'claude-opus' },
+      }),
+    ],
   });
 
   await expect(resolveLegacyOpaqueBlobCompatibilityIdentity({ upstreamId: 'up-a', modelId: 'gpt-main' }))
     .resolves.toEqual({ upstreamId: 'up-a', key: 'openai' });
-});
-
-test('resolves v1 affinity from manual configuration when the catalog is cold', async () => {
-  await saveUpstreamForTest(repo.upstreams, upstream({
-    config: {
-      baseUrl: 'https://example.com',
-      endpoints: { openaiResponses: {} },
-      ingressHeadersRules: [],
-      modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{
-        upstreamModelId: 'claude-wire',
-        publicModelId: 'claude-public',
-        kind: 'chat',
-        endpoints: { openaiResponses: {} },
-        opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'claude-opus' },
-      }],
-    },
-  }));
-
   await expect(resolveLegacyOpaqueBlobCompatibilityIdentity({ upstreamId: 'up-a', modelId: 'claude-public' }))
     .resolves.toEqual({ key: 'claude-opus' });
 });

@@ -88,7 +88,6 @@ export interface CustomUpstreamConfig {
   pathOverrides?: Partial<Record<CustomPathOverrideKey, string>>;
   ingressHeadersRules: CustomIngressHeaderRule[];
   modelsFetch: CustomModelsFetch;
-  models: UpstreamModelConfig[];
 }
 
 export type CustomUpstreamRecord = UpstreamRecord & {
@@ -206,6 +205,9 @@ const modelsFetchField = (value: unknown): CustomModelsFetch => {
   return { enabled: value.enabled, authStyle, endpoint: validPath.value };
 };
 
+export const validateCustomManualModels = (value: unknown): UpstreamModelConfig[] =>
+  modelsField(value ?? [], 'custom');
+
 export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstreamRecord => {
   if (record.kind !== 'custom') throw new Error(`Expected custom upstream record, got ${record.kind}`);
   if (!isRecord(record.config)) throw new Error('Malformed custom upstream config: config must be an object');
@@ -218,7 +220,6 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
     ...(raw.pathOverrides !== undefined ? { pathOverrides: pathOverridesField(raw.pathOverrides) } : {}),
     ingressHeadersRules: ingressHeadersRulesField(raw.ingressHeadersRules),
     modelsFetch: modelsFetchField(raw.modelsFetch),
-    models: modelsField(raw.models ?? [], 'custom'),
   };
 
   return { ...record, kind: 'custom', config: base };

@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import type { StatusCode } from 'hono/utils/http-status';
 
-import { bufferedResultToResponse, ProviderModelsUnavailableError, type BufferedHttpResult, type HttpHead } from '@floway-dev/provider';
+import { bufferedResultToResponse, type BufferedHttpResult, type HttpHead } from '@floway-dev/provider';
 
 // Upstream response headers are propagated through a blocklist so vendor
 // traces, quota state, and future end-to-end metadata remain visible. Only
@@ -61,12 +61,6 @@ export const forwardBufferedUpstreamResponse = (result: BufferedHttpResult): Res
     body: result.body,
     http: { status: result.http.status, headers: forwardedResponseHeaders(result.http.headers, null) },
   });
-
-export const providerModelsUnavailableResponse = (error: unknown): Response | null => {
-  if (!(error instanceof ProviderModelsUnavailableError) || !error.httpResponse) return null;
-  const { status, headers, body } = error.httpResponse;
-  return new Response(body, { status, headers: forwardedResponseHeaders(headers, null) });
-};
 
 export interface ForwardUpstreamResponseOptions {
   readonly body?: BodyInit | null;

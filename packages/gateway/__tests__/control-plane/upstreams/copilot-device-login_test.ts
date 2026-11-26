@@ -1,8 +1,9 @@
 import { test } from 'vitest';
 
-import { seedModelsCache, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
+import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCopilotUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { buildCopilotUpstreamRecord, copilotModels, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
 import { assertEquals, assertStringIncludes, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const githubUser = {
@@ -127,6 +128,10 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
           endpoints: { api: 'https://api.business.githubcopilot.com' },
         });
       }
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.origin === 'https://api.business.githubcopilot.com' && url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'refreshed-model', supported_endpoints: ['/chat/completions'] }]));
+      }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
@@ -142,6 +147,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
       const body = (await response.json()) as { status: string; patch: { config: { githubToken: string } } };
       assertEquals(body.status, 'complete');
       assertEquals(body.patch.config.githubToken, 'ghu_refreshed');
+      await flushBackground();
     },
   );
 
@@ -157,14 +163,16 @@ test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+sta
   assertEquals(persistedState?.copilotToken?.baseUrl, 'https://api.business.githubcopilot.com');
 });
 
-test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identity model cache', async () => {
+test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identity model cache and refreshes the new identity', async () => {
   const { repo, adminSession, githubAccount } = await setupAppTest({
     githubAccount: { token: 'ghu_old', user: githubUser },
   });
   const existing = buildCopilotUpstreamRecord(githubAccount, { id: 'up_switch_identity' });
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, existing);
-  await seedModelsCache(repo.upstreams, existing.id, await storedModelsRefreshIdentity(repo.upstreams, existing.id), {
+  const storedBefore = (await repo.upstreams.getById(existing.id))!;
+  await seedModelsCache(repo.upstreams, existing.id, {
+    version: storedBefore.version,
     revision: 1,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'old-tenant-model' })],
@@ -183,6 +191,10 @@ test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identit
           endpoints: { api: 'https://api.business.githubcopilot.com' },
         });
       }
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.origin === 'https://api.business.githubcopilot.com' && url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'new-tenant-model', supported_endpoints: ['/chat/completions'] }]));
+      }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
@@ -195,8 +207,11 @@ test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identit
         }),
       });
       assertEquals(response.status, 200);
+      await flushBackground();
     },
   );
 
-  assertEquals((await repo.upstreams.getById(existing.id))?.modelsCache, null);
+  const after = await repo.upstreams.getById(existing.id);
+  assertEquals(after?.modelsCache.lastError, null);
+  assertEquals((await repo.upstreamModels.listByUpstream(existing.id)).map(entry => entry.model.id), ['new-tenant-model']);
 });

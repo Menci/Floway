@@ -4,7 +4,6 @@ import type { RawAttemptResult } from './raw-attempt-result.ts';
 import { telemetryModelIdentity, upstreamPerformanceContext } from './telemetry/attribution.ts';
 import { buildUpstreamCallOptions } from './upstream-call-options.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
-import { providerModelOf } from '@floway-dev/provider';
 import type { ModelCandidate, PerformanceOperation, Provider, ProviderCallResult, ProviderModel, UpstreamCallOptions } from '@floway-dev/provider';
 
 export interface PassthroughAttemptArgs {
@@ -23,7 +22,7 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
   const { c, ctx, candidate, operation, call } = args;
   const { http: response, modelKey } = await call(
     candidate.provider,
-    providerModelOf(candidate),
+    candidate.model,
     buildUpstreamCallOptions(candidate, ctx, inboundHeaders(c)),
   );
   return {
