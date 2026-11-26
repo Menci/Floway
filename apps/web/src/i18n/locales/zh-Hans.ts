@@ -371,6 +371,10 @@ const zhHansCN = {
               label: 'Kimi 兼容',
               description: 'Kimi 的 API 在缓存 Token 用量统计方面采用了非标准格式。\n开启此开关，以将 Kimi 响应中的扁平缓存 Token 字段 (`cached_tokens`) 归一化为 OpenAI 规范格式 (`prompt_tokens_details.cached_tokens`)。\n当上游为 **Kimi（月之暗面）chat completions API** 时应开启。',
             },
+            'vendor-mistral': {
+              label: 'Mistral 兼容',
+              description: 'Mistral 的 Chat Completions API 会拒绝请求格式中未定义的任何字段（`422 extra_forbidden`），例如 `stream_options.continuous_usage_stats` 或回放的助手消息中的 `reasoning_content`。\n开启此开关，以只发送 Mistral API 定义的请求字段，并将 `max_completion_tokens` 改为 Mistral 的 `max_tokens`、不发送客户端的 `metadata`。\n当上游为 **Mistral chat completions API** 时应开启。',
+            },
             'anthropic-messages-web-search-shim': {
               label: 'Anthropic Messages 网页搜索兼容层',
               description: 'Anthropic Messages API 包含搜索能力，但本上游可能不支持搜索。\n开启此开关，以通过 Floway 配置的搜索提供商来处理网页搜索工具调用，而非转发到上游。\n当上游不提供 Messages API 时，此开关被视为开启。',

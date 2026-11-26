@@ -4,6 +4,7 @@ export const AZURE_DEFAULT_FLAGS: FlagDefaults = {
   'vendor-deepseek': false,
   'vendor-qwen': false,
   'vendor-kimi': false,
+  'vendor-mistral': false,
   'anthropic-messages-web-search-shim': true,
   'openai-responses-web-search-shim': true,
   'openai-responses-image-generation-shim': true,

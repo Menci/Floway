@@ -17,6 +17,7 @@ export const CLAUDE_CODE_DEFAULT_FLAGS: FlagDefaults = {
   'vendor-deepseek': false,
   'vendor-qwen': false,
   'vendor-kimi': false,
+  'vendor-mistral': false,
   'anthropic-messages-web-search-shim': false,
   'openai-responses-web-search-shim': false,
   'openai-responses-image-generation-shim': false,

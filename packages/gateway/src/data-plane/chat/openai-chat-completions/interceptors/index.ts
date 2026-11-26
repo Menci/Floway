@@ -8,6 +8,7 @@ import { withPromptCacheKeyStripped } from './strip-prompt-cache-key.ts';
 import type { OpenAIChatCompletionsInterceptor } from './types.ts';
 import { withVendorDeepSeekOpenAIChatCompletionsNormalize } from './vendor-deepseek-normalize.ts';
 import { withVendorKimiOpenAIChatCompletionsNormalize } from './vendor-kimi-normalize.ts';
+import { withVendorMistralOpenAIChatCompletionsNormalize } from './vendor-mistral-normalize.ts';
 import { withVendorQwenOpenAIChatCompletionsNormalize } from './vendor-qwen-normalize.ts';
 
 // Unified OpenAI Chat Completions interceptor list. All entries are attached to
@@ -61,4 +62,5 @@ export const openaiChatCompletionsInterceptors: readonly OpenAIChatCompletionsIn
   withVendorDeepSeekOpenAIChatCompletionsNormalize,
   withVendorQwenOpenAIChatCompletionsNormalize,
   withVendorKimiOpenAIChatCompletionsNormalize,
+  withVendorMistralOpenAIChatCompletionsNormalize,
 ];
