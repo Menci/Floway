@@ -51,7 +51,7 @@ const useStyles = makeStyles({
   emptyState: { padding: EDGE_INSET },
 });
 
-export function ResourceListPanel({ className, rowHeight = DEFAULT_ROW_HEIGHT, style, ...props }: PanelProps & { rowHeight?: string }) {
+export function ResourceListPanel({ className, rowHeight = DEFAULT_ROW_HEIGHT, style, ...props }: PanelProps & { rowHeight?: string | undefined }) {
   const styles = useStyles();
   return (
     <Panel
@@ -64,15 +64,15 @@ export function ResourceListPanel({ className, rowHeight = DEFAULT_ROW_HEIGHT, s
 }
 
 type ResourceListActionsProps = {
-  appearance?: 'subtle';
-  createDisabled?: boolean;
-  disabled?: boolean;
+  appearance?: 'subtle' | undefined;
+  createDisabled?: boolean | undefined;
+  disabled?: boolean | undefined;
   onRefresh: () => void;
   refreshLabel: string;
-  refreshing?: boolean;
+  refreshing?: boolean | undefined;
 } & (
   | { createLabel: string; createTrailingIcon?: never; onCreate: () => void; createTrigger?: never }
-  | { createLabel: string; createTrailingIcon?: ReactNode; createTrigger: (button: ReactElement) => ReactNode; onCreate?: never }
+  | { createLabel: string; createTrailingIcon?: ReactNode | undefined; createTrigger: (button: ReactElement) => ReactNode; onCreate?: never }
   | { createLabel?: never; createTrailingIcon?: never; onCreate?: never; createTrigger?: never }
 );
 
@@ -101,7 +101,7 @@ export function ResourceListActions(props: ResourceListActionsProps) {
     <div aria-busy={refreshing} className="flex items-center gap-2 flex-none max-w-full">
       <Tooltip content={refreshLabel} relationship="label">
         <Button
-          appearance={appearance}
+          {...(appearance === undefined ? {} : { appearance })}
           aria-label={refreshLabel}
           className="flex-none"
           disabled={disabled}

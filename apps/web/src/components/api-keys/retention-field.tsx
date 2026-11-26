@@ -51,15 +51,15 @@ export function RetentionField({
   presets,
   value,
 }: {
-  children?: ReactNode;
-  defaultUnit?: DurationUnit;
+  children?: ReactNode | undefined;
+  defaultUnit?: DurationUnit | undefined;
   description: string;
-  disabled?: boolean;
+  disabled?: boolean | undefined;
   icon: ReactNode;
   label: string;
-  maximumSeconds?: number;
-  minimumSeconds?: number;
-  multipleOfSeconds?: number;
+  maximumSeconds?: number | undefined;
+  minimumSeconds?: number | undefined;
+  multipleOfSeconds?: number | undefined;
   offLabel: string;
   offValue: 0 | null;
   onChange: (value: RetentionValue) => void;

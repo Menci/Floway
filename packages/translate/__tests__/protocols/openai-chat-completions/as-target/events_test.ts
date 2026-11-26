@@ -49,7 +49,11 @@ const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?
     builder,
     onAssistantTurn: (...args) => { captured = args; },
   };
-  for await (const record of readOpenAIChatCompletionsEvents((async function* () { yield* frames; yield doneFrame(); })(), { roundTrip, customToolNames: options.customToolNames, originalToolNames: options.originalToolNames })) {
+  for await (const record of readOpenAIChatCompletionsEvents((async function* () { yield* frames; yield doneFrame(); })(), {
+    roundTrip,
+    ...(options.customToolNames === undefined ? {} : { customToolNames: options.customToolNames }),
+    ...(options.originalToolNames === undefined ? {} : { originalToolNames: options.originalToolNames }),
+  })) {
     if (record.type === 'write' && record.kind === 'assign') assigns.push(record);
     if (record.type !== 'write' || record.kind !== 'append') continue;
     const field = record.path.at(-1);

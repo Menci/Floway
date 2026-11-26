@@ -4,6 +4,7 @@ import type { AnthropicMessagesInputAssistantTurnState, AnthropicMessagesInputAs
 import { readAnthropicMessagesEvents } from '../../../../src/protocols/anthropic-messages/as-target/events.ts';
 import { appendEmittedField, collectEmittedFieldPlacements, createEmittedFieldState, createReferenceBuilder, type ReadFieldStates } from '../../../../src/round-trip/reference/reference-builder.ts';
 import { referenceAssistantTurn } from '../../../../src/round-trip/reference/reference-selection.ts';
+import { collectIR } from '../../../ir/output/helpers.ts';
 import { fixtureFrames } from '../../fixtures.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -45,4 +46,24 @@ test('keeps native-shaped field state aligned through sparse block ordering and 
     { text: 'late' },
   ]);
   expect(result).not.toHaveProperty('referencedContentHashes');
+});
+
+test.each([false, true])('unwraps enveloped function output IR (initial input: %s)', async initialInput => {
+  const frames = fixtureFrames('anthropic-messages', {
+    tools: [{ name: 'update', id: 'call_update', args: { arguments: { mode: 'delete', id: 'job-1' } } }],
+  });
+  const upstream = frames.flatMap(frame => {
+    if (!initialInput || frame.type !== 'event') return [frame];
+    if (frame.event.type === 'content_block_delta' && frame.event.delta.type === 'input_json_delta') return [];
+    if (frame.event.type !== 'content_block_start' || frame.event.content_block.type !== 'tool_use') return [frame];
+    return [eventFrame({ ...frame.event, content_block: { ...frame.event.content_block, input: { arguments: { mode: 'delete', id: 'job-1' } } } })];
+  });
+  const builder = createReferenceBuilder();
+  const result = await collectIR(readAnthropicMessagesEvents((async function* () { yield* upstream; })(), {
+    envelopedFunctionToolNames: new Set(['update']),
+    roundTrip: { builder, onAssistantTurn: () => {} },
+  }));
+  expect(result.choices[0]?.items).toContainEqual({
+    type: 'function_call', call_id: 'call_update', name: 'update', arguments: '{"mode":"delete","id":"job-1"}',
+  });
 });

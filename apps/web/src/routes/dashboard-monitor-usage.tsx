@@ -6,7 +6,7 @@ import type { Route } from './+types/dashboard-monitor-usage';
 import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
-import { sameDashboardRange } from '../components/charts/dashboard-time';
+import { dashboardChartBuckets, sameDashboardRange } from '../components/charts/dashboard-time';
 import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
 import { CycleQuota } from '../components/telemetry/cycle-quota';
 import { TelemetryFilterFields } from '../components/telemetry/dimension-controls';
@@ -24,7 +24,7 @@ import { UsageChartSection } from '../components/usage/chart-section';
 import { createUsageOverviewLoader, loadUsagePageData, type UsageOverviewLoader } from '../components/usage/data';
 import { usageDimensions } from '../components/usage/dimensions';
 import { UsageGrouping } from '../components/usage/grouping';
-import { buildSearchChart, dashboardBuckets } from '../components/usage/plot';
+import { buildSearchChart } from '../components/usage/plot';
 import { TokenUsageCharts } from '../components/usage/token-charts';
 import type { UsageGroupBy, UsageMetric, UsageRange } from '../components/usage/types';
 import { parseUsageUrlState, serializeUsageUrlState, type UsageUrlState } from '../components/usage/url-state';
@@ -126,7 +126,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   }, [rewrite, setSearchParams, urlState]);
   const addressOf = (patch: Partial<UsageUrlState>) => `?${serializeUsageUrlState({ ...urlState, ...patch })}`;
 
-  const buckets = useMemo(() => dashboardBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
+  const buckets = useMemo(() => dashboardChartBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
   const availableDimensions = useMemo(() => usage === null ? null : usageDimensions({
     usage, upstreams,
     currentUserId: loaderData.currentUserId, t,

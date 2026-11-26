@@ -193,7 +193,7 @@ function SearchSettings({ config, models, upstreams }: {
   }, [draft.passthroughOpenAiSearch, eligibleUpstreams, setPassthroughUpstream]);
 
   const handleProviderChange = useCallback(
-    (_: unknown, data: { optionValue?: string }) => {
+    (_: unknown, data: { optionValue?: string | undefined }) => {
       if (data.optionValue) {
         setDraft(prev => ({
           ...prev,
@@ -465,7 +465,7 @@ function SearchSettings({ config, models, upstreams }: {
 
 const modelLabel = (model: ControlPlaneModel) => model.display_name ?? model.id;
 
-function DescribedOptionLabel({ description, label }: { description?: string; label: string }) {
+function DescribedOptionLabel({ description, label }: { description?: string | undefined; label: string }) {
   return (
     <span className="grid gap-0.5 min-w-0">
       <span className="truncate">{label}</span>
@@ -478,7 +478,7 @@ function DescribedOptionLabel({ description, label }: { description?: string; la
   );
 }
 
-function ProviderOptionLabel({ iconUrl, label }: { iconUrl?: string; label: string }) {
+function ProviderOptionLabel({ iconUrl, label }: { iconUrl?: string | undefined; label: string }) {
   return (
     <span className="flex items-center gap-2 min-w-0">
       {iconUrl && <img alt="" className="block h-[16px] w-[16px] flex-none" src={iconUrl} />}

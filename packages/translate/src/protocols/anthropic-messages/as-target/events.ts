@@ -1,4 +1,5 @@
 import type { AnthropicMessagesInputAssistantTurnState } from './assistant-turn.ts';
+import { unwrapToolArguments } from './tool-schema-envelope.ts';
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
 import type { ToolNameContext } from '../../../composition/request/tool-names.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle } from '../../../ir/output/builder.ts';
@@ -52,19 +53,20 @@ const UNTRANSLATED_BLOCK_TYPES: readonly string[] = [
 type MessagesBlockFieldState = NonNullable<NonNullable<AnthropicMessagesInputAssistantTurnState<ReadFieldStates>['content']>[number]>;
 
 interface MessagesBlockState {
-  readonly item?: IRItemHandle;
-  readonly part?: IRPartHandle;
-  readonly tool?: 'function' | 'custom';
-  annotationCount?: number;
-  textField?: ReadFieldState<'text'>;
+  readonly item: IRItemHandle | undefined;
+  readonly part: IRPartHandle | undefined;
+  readonly tool: 'function' | 'enveloped' | 'custom' | undefined;
+  annotationCount: number | undefined;
+  textField: ReadFieldState<'text'> | undefined;
   jsonField?: ReadFieldState<'json'>;
-  fieldState?: MessagesBlockFieldState;
+  fieldState: MessagesBlockFieldState | undefined;
   wrappedInput: string;
 }
 
 export const readAnthropicMessagesEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   options: Partial<ToolNameContext> & {
+    envelopedFunctionToolNames?: ReadonlySet<string>;
     roundTrip: RoundTripReader<'anthropicMessages'>;
   },
 ): AsyncGenerator<IRRecord> {
@@ -111,7 +113,8 @@ export const readAnthropicMessagesEvents = async function* (
         item.append(['summary', 0], block.thinking, [appendReadField(options.roundTrip.builder, textField, block.thinking)]);
       }
     } else if (block.type === 'tool_use') {
-      tool = options.customToolNames?.has(block.name) === true ? 'custom' : 'function';
+      tool = options.customToolNames?.has(block.name) === true ? 'custom'
+        : options.envelopedFunctionToolNames?.has(block.name) === true ? 'enveloped' : 'function';
       // Restore allocated names, including bare names renamed to avoid collisions.
       const identity = options.originalToolNames?.get(block.name);
       const naming = identity ?? { name: block.name };
@@ -176,15 +179,16 @@ export const readAnthropicMessagesEvents = async function* (
         break;
       case 'signature_delta': break;
       case 'input_json_delta':
-        if (d.partial_json !== '') {
-          if (block.jsonField === undefined) {
-            block.jsonField = createReadFieldState('json');
-            block.fieldState = { input: block.jsonField };
-          }
-          const partId = appendReadField(options.roundTrip.builder, block.jsonField, d.partial_json);
-          if (block.tool === 'custom') block.wrappedInput += d.partial_json;
-          else block.item.append('arguments', d.partial_json, [partId]);
+        if (d.partial_json === '') break;
+        if (block.tool === 'custom' || block.tool === 'enveloped') {
+          block.wrappedInput += d.partial_json;
+          break;
         }
+        if (block.jsonField === undefined) {
+          block.jsonField = createReadFieldState('json');
+          block.fieldState = { input: block.jsonField };
+        }
+        block.item.append('arguments', d.partial_json, [appendReadField(options.roundTrip.builder, block.jsonField, d.partial_json)]);
         break;
       case 'citations_delta': {
         if (block.part === undefined) throw new TypeError('Messages citation requires a text block');
@@ -211,11 +215,26 @@ export const readAnthropicMessagesEvents = async function* (
         if (block.tool === 'custom') {
           const input = unwrapCustomToolInput(block.wrappedInput);
           if (input !== '') block.item.append('input', input);
-        } else if (block.tool === 'function' && block.jsonField === undefined) {
-          // With no JSON fragments, the native block retains its initial input object.
-          const nativeBlock = nativeAccumulator.contentBlock(e.index);
-          if (nativeBlock?.type !== 'tool_use') throw new TypeError('Expected a Messages tool_use block');
-          block.item.append('arguments', JSON.stringify(requireJSONObject(nativeBlock.input)));
+        } else if (block.tool === 'enveloped' || (block.tool === 'function' && block.jsonField === undefined)) {
+          let input = block.wrappedInput;
+          if (input === '') {
+            const nativeBlock = nativeAccumulator.contentBlock(e.index);
+            if (nativeBlock?.type !== 'tool_use') throw new TypeError('Expected a Messages tool_use block');
+            input = JSON.stringify(requireJSONObject(nativeBlock.input));
+          }
+          if (block.tool === 'enveloped') {
+            const { json, objectArgument } = unwrapToolArguments(input);
+            if (objectArgument) {
+              // Only the inner object appears in the source turn and can be referenced on replay.
+              const field = createReadFieldState('json');
+              block.fieldState = { input: { arguments: field } };
+              block.item.append('arguments', json, [appendReadField(options.roundTrip.builder, field, json)]);
+            } else {
+              block.item.append('arguments', json);
+            }
+          } else {
+            block.item.append('arguments', input);
+          }
         }
         block.item.end();
       }

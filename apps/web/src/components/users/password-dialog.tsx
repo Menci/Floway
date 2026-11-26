@@ -86,7 +86,7 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
         <Field
           label={t('directory.users.form.newPassword')}
           validationMessage={errors.password?.message ? t(errors.password.message) : undefined}
-          validationState={errors.password ? 'error' : undefined}
+          validationState={errors.password ? 'error' : 'none'}
         >
           <Input {...field} autoComplete="new-password" disabled={saving} type="password" />
         </Field>
@@ -95,7 +95,7 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
         <Field
           label={t('directory.users.form.confirmPassword')}
           validationMessage={errors.confirmation?.message ? t(errors.confirmation.message) : undefined}
-          validationState={errors.confirmation ? 'error' : undefined}
+          validationState={errors.confirmation ? 'error' : 'none'}
         >
           <Input {...field} autoComplete="new-password" disabled={saving} type="password" />
         </Field>

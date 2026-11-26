@@ -126,11 +126,11 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
 
   const stamp = <Component>(
     component: Component,
-    axis: { prop: string; attribute: string; fallback: string; slots?: readonly string[] },
+    axis: { prop: string; attribute: string; fallback: string; slots: readonly string[] },
   ): Component => wrapFluent(component, (props: PropCarrier) => {
     const mark = { [axis.attribute]: props[axis.prop] ?? axis.fallback };
     const stampedSlotProps = Object.fromEntries(
-      (axis.slots ?? [])
+      axis.slots
         .filter(name => props[name] !== null)
         .map(name => [name, { ...resolveSlotProps(props[name]), ...mark }]),
     );
@@ -138,9 +138,9 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     return { ...props, ...mark, ...stampedSlotProps };
   });
 
-  const appearance = (fallback: string, slots?: readonly string[]) =>
+  const appearance = (fallback: string, slots: readonly string[]) =>
     ({ prop: 'appearance', attribute: winuiAppearanceAttribute, fallback, slots });
-  const size = (fallback: string, slots?: readonly string[]) =>
+  const size = (fallback: string, slots: readonly string[]) =>
     ({ prop: 'size', attribute: winuiSizeAttribute, fallback, slots });
 
   // The table builds the selection cell's check box out of Fluent's own
@@ -157,10 +157,8 @@ export const withWinuiAppearance = (components: FluentComponents): FluentCompone
     wrapFluent(component, (props: PropCarrier) => {
       const drawsCheckbox = (props.type ?? 'checkbox') === 'checkbox' && props.checkboxIndicator !== null;
       const slotProps = resolveSlotProps(props.checkboxIndicator);
-      const checkboxIndicator = useCheckedProps({
-        ...slotProps,
-        checked: (slotProps?.checked ?? props.checked) as CheckedState | undefined,
-      });
+      const checked = (slotProps?.checked ?? props.checked) as CheckedState | undefined;
+      const checkboxIndicator = useCheckedProps({ ...slotProps, ...(checked === undefined ? {} : { checked }) });
 
       return { ...props, ...(drawsCheckbox ? { checkboxIndicator } : {}) };
     });

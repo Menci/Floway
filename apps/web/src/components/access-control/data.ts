@@ -1,4 +1,4 @@
-import { api, callApi } from '../../api/client';
+import { abortOptions, api, callApi } from '../../api/client';
 import { mapResult, mergeResults } from '../../api/partial-results';
 import type { AccessRecord, ControlPlaneModel, PermissionsDirectory, UpstreamOption } from '../../api/types';
 
@@ -14,8 +14,8 @@ export const unloadedPermissionsData: Omit<PermissionsData, 'error'> = { records
 
 export const loadPermissionsData = async (current: Omit<PermissionsData, 'error'>, signal?: AbortSignal): Promise<PermissionsData> => {
   const [permissions, models] = await Promise.all([
-    callApi(() => api.api.permissions.$get(undefined, { init: { signal } })),
-    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
+    callApi(() => api.api.permissions.$get(undefined, abortOptions(signal))),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, abortOptions(signal))),
   ]);
   const merged = mergeResults(current, {
     records: mapResult(permissions, body => body.records),

@@ -100,6 +100,26 @@ test('parseOpenAIResponsesStream preserves error notifications and expands the f
   assertEquals(terminal?.type === 'event' && 'response' in terminal.event && terminal.event.response, failed);
 });
 
+test('parseOpenAIResponsesStream continues the upstream sequence through a fast-path expansion', async () => {
+  const completed = makeResponse('completed');
+  // An upstream error notification ahead of the terminal shifts every expanded
+  // event past the position the expansion itself numbers it at.
+  const frames = await collect(parse(
+    sseFrame(JSON.stringify({ response: { ...completed, status: 'in_progress' }, sequence_number: 0 }), 'response.created'),
+    sseFrame(JSON.stringify({ type: 'error', code: null, message: 'notice', param: null, sequence_number: 1 }), 'error'),
+    sseFrame(JSON.stringify({ response: completed, sequence_number: 2 }), 'response.completed'),
+    sseFrame('[DONE]'),
+  ));
+
+  const events = frames.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
+  assertEquals(events.map(event => event.type), [
+    'response.created', 'error', 'response.in_progress', 'response.output_item.added',
+    'response.content_part.added', 'response.output_text.delta', 'response.output_text.done',
+    'response.content_part.done', 'response.output_item.done', 'response.completed',
+  ]);
+  assertEquals(events.map(event => event.sequence_number), events.map((_, index) => index));
+});
+
 test('parseOpenAIResponsesStream fast-paths when ping interleaves the wrappers', async () => {
   const completed = makeResponse('completed');
   const frames = await collect(parse(

@@ -28,7 +28,7 @@ const rangeAfterClick = (selection: CalendarRangeSelection, day: string): Calend
 };
 
 export function CalendarRange({ autoFocus = false, displayDate, onChange, value }: {
-  autoFocus?: boolean;
+  autoFocus?: boolean | undefined;
   displayDate: string;
   onChange: (selection: CalendarRangeSelection) => void;
   value: CalendarRangeSelection;

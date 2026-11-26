@@ -20,7 +20,7 @@ import { readOllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
 
 const { InfoLabel, Text } = fluentComponents;
 
-export function OllamaUsageCard({ probeRecord, readOnly = false, record }: { probeRecord: UpstreamRecordEnvelope; readOnly?: boolean; record: OllamaRecord }) {
+export function OllamaUsageCard({ probeRecord, readOnly = false, record }: { probeRecord: UpstreamRecordEnvelope; readOnly?: boolean | undefined; record: OllamaRecord }) {
   const { t } = useTranslation();
   const preferences = useUserPreferences();
   const locale = useLocale();

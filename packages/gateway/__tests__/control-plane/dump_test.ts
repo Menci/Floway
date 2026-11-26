@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
 import type { DumpStore } from '../../src/dump/store-contract.ts';
@@ -21,6 +21,20 @@ test('GET /api/dump/keys/:keyId/records 404s when the key has no retention', asy
     headers: { 'x-api-key': apiKey.key },
   });
   assertEquals(response.status, 404);
+});
+
+test('GET /api/dump/keys/:keyId/records defaults an absent limit and coerces a supplied one', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const { store } = installDumpStubs(initDumpStore, initDumpBroker);
+  const list = vi.fn(store.list);
+  initDumpStore({ ...store, list });
+
+  const path = `/api/dump/keys/${apiKey.id}/records`;
+  const request = { headers: { 'x-api-key': apiKey.key } };
+  assertEquals((await requestApp(path, request)).status, 200);
+  assertEquals((await requestApp(`${path}?limit=2`, request)).status, 200);
+  assertEquals(list.mock.calls.map(([, options]) => options.limit), [100, 2]);
 });
 
 // Read N SSE frames (`\n\n` delimited) off the response body. A deterministic

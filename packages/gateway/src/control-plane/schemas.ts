@@ -27,9 +27,12 @@ import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseF
 // --- shared atoms ---
 
 // Reuse the runtime parseFlagOverridesWire so unknown-id and type errors
-// carry the canonical messages. z.unknown() → transform keeps the
-// schema-validated output typed as FlagOverrides for the RPC client.
-const flagOverridesSchema = z.unknown().transform((value, ctx): FlagOverrides => {
+// carry the canonical messages. The transform keeps the schema-validated
+// output typed as FlagOverrides for the RPC client. An exact-optional key runs
+// its schema even when absent and keeps the key unless that schema rejects
+// `undefined`, so the guard ahead of the transform does that rejecting.
+// https://github.com/colinhacks/zod/issues/6236
+const flagOverridesSchema = z.unknown().refine(value => value !== undefined).transform((value, ctx): FlagOverrides => {
   try {
     return parseFlagOverridesWire(value);
   } catch (e) {
@@ -49,17 +52,17 @@ const disabledPublicModelIdsSchema = z.array(z.string()).transform(normalizeDisa
 // One concept, all endpoints — the runtime validators enforce presence/emptiness
 // rules.
 const modelEndpointsSchema = z.object({
-  openaiCompletions: z.object({}).optional(),
-  openaiChatCompletions: z.object({}).optional(),
-  openaiResponses: z.object({}).optional(),
-  anthropicMessages: z.object({}).optional(),
-  geminiGenerateContent: z.object({}).optional(),
-  openaiEmbeddings: z.object({}).optional(),
-  openaiImagesGenerations: z.object({}).optional(),
-  openaiImagesEdits: z.object({}).optional(),
-  openaiAudioTranscriptions: z.object({}).optional(),
-  rerank: z.object({}).optional(),
-  decision: z.object({}).optional(),
+  openaiCompletions: z.object({}).exactOptional(),
+  openaiChatCompletions: z.object({}).exactOptional(),
+  openaiResponses: z.object({}).exactOptional(),
+  anthropicMessages: z.object({}).exactOptional(),
+  geminiGenerateContent: z.object({}).exactOptional(),
+  openaiEmbeddings: z.object({}).exactOptional(),
+  openaiImagesGenerations: z.object({}).exactOptional(),
+  openaiImagesEdits: z.object({}).exactOptional(),
+  openaiAudioTranscriptions: z.object({}).exactOptional(),
+  rerank: z.object({}).exactOptional(),
+  decision: z.object({}).exactOptional(),
 });
 
 const priceSchema = z.string().transform((value, ctx) => {
@@ -71,16 +74,16 @@ const priceSchema = z.string().transform((value, ctx) => {
   }
 });
 const pricingMetricShape = {
-  input_tokens: priceSchema.optional(),
-  output_tokens: priceSchema.optional(),
-  input_cache_read_tokens: priceSchema.optional(),
-  input_cache_write_tokens: priceSchema.optional(),
-  input_cache_write_1h_tokens: priceSchema.optional(),
-  input_image_tokens: priceSchema.optional(),
-  output_image_tokens: priceSchema.optional(),
-  input_audio_tokens: priceSchema.optional(),
-  input_audio_seconds: priceSchema.optional(),
-  rerank_searches: priceSchema.optional(),
+  input_tokens: priceSchema.exactOptional(),
+  output_tokens: priceSchema.exactOptional(),
+  input_cache_read_tokens: priceSchema.exactOptional(),
+  input_cache_write_tokens: priceSchema.exactOptional(),
+  input_cache_write_1h_tokens: priceSchema.exactOptional(),
+  input_image_tokens: priceSchema.exactOptional(),
+  output_image_tokens: priceSchema.exactOptional(),
+  input_audio_tokens: priceSchema.exactOptional(),
+  input_audio_seconds: priceSchema.exactOptional(),
+  rerank_searches: priceSchema.exactOptional(),
 };
 
 const modalityArraySchema = z.array(z.enum(['text', 'image']))
@@ -106,43 +109,43 @@ const effortSchema = z.object({
 );
 
 const budgetTokensSchema = z.object({
-  min: z.number().int().nonnegative().optional(),
-  max: z.number().int().nonnegative().optional(),
+  min: z.number().int().nonnegative().exactOptional(),
+  max: z.number().int().nonnegative().exactOptional(),
 }).refine(
   r => r.min === undefined || r.max === undefined || r.max >= r.min,
   { message: 'budget_tokens.max must be >= budget_tokens.min' },
 );
 
 const reasoningSchema = z.object({
-  effort: effortSchema.optional(),
-  budget_tokens: budgetTokensSchema.optional(),
-  adaptive: z.literal(true).optional(),
-  mandatory: z.literal(true).optional(),
+  effort: effortSchema.exactOptional(),
+  budget_tokens: budgetTokensSchema.exactOptional(),
+  adaptive: z.literal(true).exactOptional(),
+  mandatory: z.literal(true).exactOptional(),
 }).refine(
   r => r.effort !== undefined || r.budget_tokens !== undefined || r.adaptive !== undefined || r.mandatory !== undefined,
   { message: 'reasoning must have at least one of effort, budget_tokens, adaptive, mandatory' },
 );
 
 const chatSchema = z.object({
-  modalities: modalitiesSchema.optional(),
+  modalities: modalitiesSchema.exactOptional(),
   // A real boolean, unlike reasoning.adaptive / reasoning.mandatory: false is
   // the upstream stating it rejects detail 'original', not the absence of a
   // statement.
-  image_detail_original: z.boolean().optional(),
-  reasoning: reasoningSchema.optional(),
+  image_detail_original: z.boolean().exactOptional(),
+  reasoning: reasoningSchema.exactOptional(),
 });
 
 // Shared limits shape used by both the upstream-model schema and the
 // alias's announced-metadata override.
 const limitsSchema = z.object({
-  max_context_window_tokens: z.number().optional(),
-  max_prompt_tokens: z.number().optional(),
-  max_output_tokens: z.number().optional(),
+  max_context_window_tokens: z.number().exactOptional(),
+  max_prompt_tokens: z.number().exactOptional(),
+  max_output_tokens: z.number().exactOptional(),
 });
 
 const opaqueBlobCompatibilityScopeSchema = z.object({
   bindToUpstream: z.boolean(),
-  key: z.string().min(1).optional(),
+  key: z.string().min(1).exactOptional(),
 }).strict();
 
 // Mirrors the runtime UpstreamModelConfig in @floway-dev/provider.
@@ -150,24 +153,24 @@ const opaqueBlobCompatibilityScopeSchema = z.object({
 // canonical per-model endpoint validation lives in the runtime validator.
 const upstreamModelSchema = z.object({
   upstreamModelId: z.string().min(1),
-  publicModelId: z.string().optional(),
-  kind: z.enum(MODEL_KINDS).optional(),
+  publicModelId: z.string().exactOptional(),
+  kind: z.enum(MODEL_KINDS).exactOptional(),
   endpoints: modelEndpointsSchema,
   rerankTarget: z.object({
     protocol: z.enum(RERANK_PROTOCOLS),
-    path: z.string().optional(),
-  }).strict().optional(),
-  display_name: z.string().optional(),
+    path: z.string().exactOptional(),
+  }).strict().exactOptional(),
+  display_name: z.string().exactOptional(),
   pricing: z.object({
     entries: z.array(z.object({
-      selector: z.record(z.string(), z.unknown()).optional(),
+      selector: z.record(z.string(), z.unknown()).exactOptional(),
       rates: z.object(pricingMetricShape).strict(),
     }).strict()).min(1),
-  }).strict().optional(),
-  flagOverrides: flagOverridesSchema.optional(),
-  limits: limitsSchema.optional(),
-  chat: chatSchema.optional(),
-  opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema.optional(),
+  }).strict().exactOptional(),
+  flagOverrides: flagOverridesSchema.exactOptional(),
+  limits: limitsSchema.exactOptional(),
+  chat: chatSchema.exactOptional(),
+  opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema.exactOptional(),
 }).refine(
   m => m.chat === undefined || m.kind === undefined || m.kind === 'chat',
   { message: "chat metadata only allowed when kind === 'chat'", path: ['chat'] },
@@ -188,7 +191,7 @@ const customConfigSchema = z.object({
   apiKey: z.string(),
   // PATCH passes `null` to explicitly clear pathOverrides; nullable() keeps
   // that escape hatch.
-  pathOverrides: z.record(z.string(), z.string()).nullable().optional(),
+  pathOverrides: z.record(z.string(), z.string()).nullable().exactOptional(),
   ingressHeadersRules: z.array(z.object({
     key: z.string(),
     value: z.string().nullable(),
@@ -199,15 +202,15 @@ const customConfigSchema = z.object({
   modelsFetch: z.object({
     enabled: z.boolean(),
     authStyle: z.enum(['bearer', 'x-api-key', 'x-goog-api-key']),
-    endpoint: z.string().optional(),
-  }).optional(),
+    endpoint: z.string().exactOptional(),
+  }).exactOptional(),
   // Statically configured per-model overrides merged with the live fetch.
-  models: z.array(upstreamModelSchema).optional(),
+  models: z.array(upstreamModelSchema).exactOptional(),
 });
 
 const azureConfigSchema = z.object({
   endpoint: z.string().min(1),
-  apiKey: z.string().optional(),
+  apiKey: z.string().exactOptional(),
   models: z.array(upstreamModelSchema).min(1, 'models must be a non-empty array'),
 }).refine(config => config.models.every(model => model.kind !== 'rerank'), {
   message: 'rerank models require a custom upstream',
@@ -223,11 +226,11 @@ const ollamaConfigSchema = z.object({
   baseUrl: z.string().min(1),
   // Optional: required against ollama.com, typically absent for a private
   // daemon. PATCH passes `null` to explicitly clear it.
-  apiKey: z.string().nullable().optional(),
+  apiKey: z.string().nullable().exactOptional(),
   // Whether this upstream is an Ollama Cloud account whose usage windows the
   // gateway reads; see the provider config for why a base URL cannot answer it.
-  cloudUsage: z.boolean().optional(),
-  models: z.array(upstreamModelSchema).optional(),
+  cloudUsage: z.boolean().exactOptional(),
+  models: z.array(upstreamModelSchema).exactOptional(),
 }).refine(config => config.models?.every(model => model.kind !== 'rerank') !== false, {
   message: 'rerank models require a custom upstream',
   path: ['models'],
@@ -258,15 +261,15 @@ const usernameSchema = z.string().regex(USERNAME_PATTERN, 'username must be 1-64
 export const createUserBody = z.object({
   username: usernameSchema,
   password: passwordSchema,
-  isAdmin: z.boolean().optional(),
-  groupIds: z.array(z.number().int().positive()).optional(),
+  isAdmin: z.boolean().exactOptional(),
+  groupIds: z.array(z.number().int().positive()).exactOptional(),
 });
 
 export const updateUserBody = z.object({
-  username: usernameSchema.optional(),
-  password: passwordSchema.optional(),
-  isAdmin: z.boolean().optional(),
-  groupIds: z.array(z.number().int().positive()).optional(),
+  username: usernameSchema.exactOptional(),
+  password: passwordSchema.exactOptional(),
+  isAdmin: z.boolean().exactOptional(),
+  groupIds: z.array(z.number().int().positive()).exactOptional(),
 });
 
 const groupMemberIdsSchema = z.array(z.number().int().positive())
@@ -275,13 +278,13 @@ const groupMemberIdsSchema = z.array(z.number().int().positive())
 export const createGroupBody = z.object({
   name: z.string().trim().min(1).max(64),
   hue: z.number().int().min(0).max(359),
-  memberIds: groupMemberIdsSchema.optional(),
+  memberIds: groupMemberIdsSchema.exactOptional(),
 });
 
 export const updateGroupBody = z.object({
-  name: z.string().trim().min(1).max(64).optional(),
-  hue: z.number().int().min(0).max(359).optional(),
-  memberIds: groupMemberIdsSchema.optional(),
+  name: z.string().trim().min(1).max(64).exactOptional(),
+  hue: z.number().int().min(0).max(359).exactOptional(),
+  memberIds: groupMemberIdsSchema.exactOptional(),
 }).refine(body => body.name !== undefined || body.hue !== undefined || body.memberIds !== undefined, { message: 'Provide a name, hue, or memberIds to update.' });
 
 export const accessRecordBody = accessRecordInputSchema;
@@ -289,7 +292,7 @@ export const accessRecordBody = accessRecordInputSchema;
 export const resolveAccessBody = z.object({
   principal: accessPrincipalSchema,
   scope: accessTargetScopeSchema,
-  excludeRecordId: z.number().int().positive().optional(),
+  excludeRecordId: z.number().int().positive().exactOptional(),
 }).strict();
 
 export const reorderAccessRecordsBody = z.object({
@@ -305,9 +308,9 @@ export const changeOwnPasswordBody = z.object({
 });
 
 export const updateOwnPreferencesBody = z.object({
-  quotaDisplay: z.enum(QUOTA_DISPLAYS).optional(),
-  language: z.enum(SUPPORTED_LANGUAGES).nullable().optional(),
-  uiTextEditor: z.boolean().optional(),
+  quotaDisplay: z.enum(QUOTA_DISPLAYS).exactOptional(),
+  language: z.enum(SUPPORTED_LANGUAGES).nullable().exactOptional(),
+  uiTextEditor: z.boolean().exactOptional(),
 }).refine(body => body.quotaDisplay !== undefined || body.language !== undefined || body.uiTextEditor !== undefined, {
   error: 'Provide quotaDisplay, language, or uiTextEditor',
 });
@@ -333,30 +336,30 @@ const openaiResponsesRetentionSecondsSchema = z.union([
 // `custom_key`. The choice is per-call — the shape is not persisted, and a
 // later rotate is free to switch styles without any state on the row.
 const keySourceShape = {
-  key_source: z.enum(KEY_SOURCES).optional(),
-  custom_key: z.string().max(CUSTOM_API_KEY_MAX_LENGTH).optional(),
+  key_source: z.enum(KEY_SOURCES).exactOptional(),
+  custom_key: z.string().max(CUSTOM_API_KEY_MAX_LENGTH).exactOptional(),
 };
 
 const apiKeyUpstreamIdsSchema = z.array(z.string().min(1))
-  .refine(ids => new Set(ids).size === ids.length, { message: 'upstream_ids contains duplicates' }).nullable().optional();
+  .refine(ids => new Set(ids).size === ids.length, { message: 'upstream_ids contains duplicates' }).nullable().exactOptional();
 
 export const createKeyBody = z.object({
   name: z.string().min(1),
   upstream_ids: apiKeyUpstreamIdsSchema,
-  randomize_upstreams: z.boolean().optional(),
-  dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
-  responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
+  randomize_upstreams: z.boolean().exactOptional(),
+  dump_retention_seconds: dumpRetentionSecondsSchema.exactOptional(),
+  responses_retention_seconds: openaiResponsesRetentionSecondsSchema.exactOptional(),
   ...keySourceShape,
 });
 
 export const rotateKeyBody = z.object(keySourceShape);
 
 export const updateKeyBody = z.object({
-  name: z.string().min(1).optional(),
+  name: z.string().min(1).exactOptional(),
   upstream_ids: apiKeyUpstreamIdsSchema,
-  randomize_upstreams: z.boolean().optional(),
-  dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
-  responses_retention_seconds: openaiResponsesRetentionSecondsSchema.optional(),
+  randomize_upstreams: z.boolean().exactOptional(),
+  dump_retention_seconds: dumpRetentionSecondsSchema.exactOptional(),
+  responses_retention_seconds: openaiResponsesRetentionSecondsSchema.exactOptional(),
 });
 
 // --- upstreams ---
@@ -371,7 +374,7 @@ export const updateKeyBody = z.object({
 // symmetric, so "all colos" is always the absent field.
 const proxyFallbackListSchema = z.array(z.object({
   id: z.string().min(1),
-  colos: z.array(z.string().min(1)).min(1).optional(),
+  colos: z.array(z.string().min(1)).min(1).exactOptional(),
 }));
 
 // Per-upstream model name prefix policy. `null` clears the policy (the upstream
@@ -394,13 +397,13 @@ const upstreamHueSchema = z.number().int().min(0).max(UPSTREAM_HUE_DEGREES - 1);
 
 const upstreamBaseFields = {
   name: z.string().min(1),
-  enabled: z.boolean().optional(),
-  usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
-  sort_order: z.never({ error: 'New upstreams always append after the current order.' }).optional(),
-  flag_overrides: flagOverridesSchema.optional(),
-  disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-  model_prefix: modelPrefixSchema.optional(),
+  enabled: z.boolean().exactOptional(),
+  usage_refresh_interval_minutes: z.number().int().nonnegative().exactOptional(),
+  sort_order: z.never({ error: 'New upstreams always append after the current order.' }).exactOptional(),
+  flag_overrides: flagOverridesSchema.exactOptional(),
+  disabled_public_model_ids: disabledPublicModelIdsSchema.exactOptional(),
+  proxy_fallback_list: proxyFallbackListSchema.exactOptional(),
+  model_prefix: modelPrefixSchema.exactOptional(),
   hue: upstreamHueSchema,
 };
 
@@ -414,9 +417,9 @@ export const createUpstreamBody = z.discriminatedUnion('kind', [
   // before Save. `state` is accepted here as an opaque payload; the
   // per-kind assertXxxUpstreamRecord in the handler narrows it once the
   // request lands.
-  z.object({ kind: z.literal('copilot'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
-  z.object({ kind: z.literal('chatgpt'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
-  z.object({ kind: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
+  z.object({ kind: z.literal('copilot'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().exactOptional() }),
+  z.object({ kind: z.literal('chatgpt'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().exactOptional() }),
+  z.object({ kind: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().exactOptional() }),
   z.object({ kind: z.literal('kimi-code'), ...upstreamBaseFields, config: kimiCodeConfigSchema }),
   z.object({ kind: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
 ]);
@@ -431,23 +434,23 @@ export const createUpstreamBody = z.discriminatedUnion('kind', [
 // without this field the schema would silently strip it and the API would
 // look like it had accepted the change.
 export const updateUpstreamBody = z.object({
-  kind: z.enum(['custom', 'azure', 'copilot', 'chatgpt', 'claude-code', 'kimi-code', 'ollama']).optional(),
-  name: z.string().min(1).optional(),
-  enabled: z.boolean().optional(),
-  usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
-  sort_order: z.never({ error: 'Use the upstream reorder endpoint to change sort_order.' }).optional(),
-  flag_overrides: flagOverridesSchema.optional(),
-  disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-  model_prefix: modelPrefixSchema.optional(),
-  hue: upstreamHueSchema.optional(),
+  kind: z.enum(['custom', 'azure', 'copilot', 'chatgpt', 'claude-code', 'kimi-code', 'ollama']).exactOptional(),
+  name: z.string().min(1).exactOptional(),
+  enabled: z.boolean().exactOptional(),
+  usage_refresh_interval_minutes: z.number().int().nonnegative().exactOptional(),
+  sort_order: z.never({ error: 'Use the upstream reorder endpoint to change sort_order.' }).exactOptional(),
+  flag_overrides: flagOverridesSchema.exactOptional(),
+  disabled_public_model_ids: disabledPublicModelIdsSchema.exactOptional(),
+  proxy_fallback_list: proxyFallbackListSchema.exactOptional(),
+  model_prefix: modelPrefixSchema.exactOptional(),
+  hue: upstreamHueSchema.exactOptional(),
   // Patches only carry field diffs, not per-kind shape validation — the
   // handler dispatches on the existing row's kind and enforces the shape
   // there (Copilot/ChatGPT/Claude Code reject a config patch outright, since
   // OAuth-managed slices belong to the action endpoints; the rest run
   // through `assertXxxUpstreamRecord`). `z.record(z.unknown())` blocks
   // primitives / arrays / null from reaching the handler as `config`.
-  config: z.record(z.string(), z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).exactOptional(),
 });
 
 export const reorderUpstreamsBody = z.object({
@@ -470,7 +473,7 @@ export const upstreamRecordEnvelope = z.object({
   kind: z.string(),
   config: z.unknown(),
   state: z.unknown(),
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
+  proxy_fallback_list: proxyFallbackListSchema.exactOptional(),
 }).passthrough();
 
 const recordOnlyBody = z.object({ record: upstreamRecordEnvelope });
@@ -509,23 +512,23 @@ export const chatgptImportExchangeBody = z.object({
   json: z.object({
     raw_json: z.string().min(1),
     source_index: z.number().int().nonnegative(),
-  }).optional(),
+  }).exactOptional(),
   callback: z.object({
     code: z.string().min(1),
     verifier: z.string().min(1),
-  }).optional(),
+  }).exactOptional(),
   // Only the bearer is required. Every other field is the operator stating
   // something the tokens cannot say, so `null` and an omitted key mean the
   // same thing and the provider decides what a value is worth.
   manual: z.object({
     access_token: z.string().min(1),
-    refresh_token: z.string().nullable().optional(),
-    id_token: z.string().nullable().optional(),
-    account_id: z.string().nullable().optional(),
-    email: z.string().nullable().optional(),
-    plan_type: z.string().nullable().optional(),
-    expires_at: z.union([z.number(), z.string()]).nullable().optional(),
-  }).optional(),
+    refresh_token: z.string().nullable().exactOptional(),
+    id_token: z.string().nullable().exactOptional(),
+    account_id: z.string().nullable().exactOptional(),
+    email: z.string().nullable().exactOptional(),
+    plan_type: z.string().nullable().exactOptional(),
+    expires_at: z.union([z.number(), z.string()]).nullable().exactOptional(),
+  }).exactOptional(),
 }).refine(
   b => [b.json, b.callback, b.manual].filter(value => value !== undefined).length === 1,
   { message: 'Provide exactly one of json, callback, or manual' },
@@ -554,8 +557,8 @@ export const claudeCodeOAuthAuthorizeUrlBody = oauthAuthorizeUrlBody;
 
 export const claudeCodeOAuthExchangeBody = z.object({
   record: upstreamRecordEnvelope,
-  credentials_json: z.string().min(1).optional(),
-  callback: oauthCallbackSchema.optional(),
+  credentials_json: z.string().min(1).exactOptional(),
+  callback: oauthCallbackSchema.exactOptional(),
 }).refine(
   b => (b.credentials_json !== undefined) !== (b.callback !== undefined),
   { message: 'Provide exactly one of credentials_json or callback' },
@@ -577,16 +580,16 @@ export const claudeCodeProbeBody = recordOnlyBody;
 export const previewModelsBody = z.object({
   record: upstreamRecordEnvelope.extend({
     proxy_fallback_list: proxyFallbackListSchema,
-    name: z.string().optional(),
-    enabled: z.boolean().optional(),
-    usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
-    sort_order: z.number().int().optional(),
-    created_at: z.string().optional(),
-    updated_at: z.string().optional(),
-    hue: upstreamHueSchema.optional(),
-    flag_overrides: flagOverridesSchema.optional(),
-    disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
-    model_prefix: modelPrefixSchema.optional(),
+    name: z.string().exactOptional(),
+    enabled: z.boolean().exactOptional(),
+    usage_refresh_interval_minutes: z.number().int().nonnegative().exactOptional(),
+    sort_order: z.number().int().exactOptional(),
+    created_at: z.string().exactOptional(),
+    updated_at: z.string().exactOptional(),
+    hue: upstreamHueSchema.exactOptional(),
+    flag_overrides: flagOverridesSchema.exactOptional(),
+    disabled_public_model_ids: disabledPublicModelIdsSchema.exactOptional(),
+    model_prefix: modelPrefixSchema.exactOptional(),
   }),
 });
 // --- kimi-code ---
@@ -621,15 +624,15 @@ const dialTimeoutSecondsSchema = z.number().int().min(1).max(600);
 export const createProxyBody = z.object({
   name: z.string().min(1).max(200),
   url: z.string().min(1),
-  dial_timeout_seconds: dialTimeoutSecondsSchema.nullable().optional(),
+  dial_timeout_seconds: dialTimeoutSecondsSchema.nullable().exactOptional(),
 });
 
 export const updateProxyBody = z.object({
-  name: z.string().min(1).max(200).optional(),
-  url: z.string().min(1).optional(),
+  name: z.string().min(1).max(200).exactOptional(),
+  url: z.string().min(1).exactOptional(),
   // nullable so the operator can clear back to the gateway-wide default;
   // absent vs. null is meaningful in PATCH.
-  dial_timeout_seconds: dialTimeoutSecondsSchema.nullable().optional(),
+  dial_timeout_seconds: dialTimeoutSecondsSchema.nullable().exactOptional(),
 });
 
 // `url` carries the live URL the operator currently has in the editor so the
@@ -641,8 +644,8 @@ export const updateProxyBody = z.object({
 // teach the gateway a new endpoint.
 export const testProxyBody = z.object({
   url: z.string().min(1),
-  dial_timeout_seconds: dialTimeoutSecondsSchema.nullable().optional(),
-  anchor: z.enum(['ipify', 'aws', 'ident.me-v6']).optional(),
+  dial_timeout_seconds: dialTimeoutSecondsSchema.nullable().exactOptional(),
+  anchor: z.enum(['ipify', 'aws', 'ident.me-v6']).exactOptional(),
 });
 
 // `upstream_id` narrows the reset to a single (proxy, upstream) pair; without
@@ -651,11 +654,11 @@ export const testProxyBody = z.object({
 // would otherwise read the empty string as a real id, deleting nothing and
 // reporting success on malformed input.
 export const resetBackoffBody = z.object({
-  upstream_id: z.string().min(1).optional(),
+  upstream_id: z.string().min(1).exactOptional(),
 });
 
 export const proxyOptionsQuery = z.object({ upstream_id: z.string().min(1) });
-export const upstreamOptionsQuery = z.object({ view: z.enum(['key', 'audit', 'all']).optional() });
+export const upstreamOptionsQuery = z.object({ view: z.enum(['key', 'audit', 'all']).exactOptional() });
 
 // --- search config ---
 
@@ -689,10 +692,10 @@ export const webSearchConfigSchema = z.object({
 // string for the same reason; the dashboard pins canonical presets as
 // combobox suggestions.
 const chatAliasReasoningSchema = z.object({
-  effort: z.string().min(1).optional(),
-  budget_tokens: z.number().int().nonnegative().optional(),
-  adaptive: z.boolean().optional(),
-  summary: z.string().min(1).optional(),
+  effort: z.string().min(1).exactOptional(),
+  budget_tokens: z.number().int().nonnegative().exactOptional(),
+  adaptive: z.boolean().exactOptional(),
+  summary: z.string().min(1).exactOptional(),
 }).strict().refine(
   // `adaptive` and a pinned `budget_tokens` are mutually exclusive on the
   // Anthropic Messages wire — `thinking.type` is one of `adaptive` or `enabled`, and
@@ -706,9 +709,9 @@ const chatAliasReasoningSchema = z.object({
 );
 
 const chatAliasRulesSchema = z.object({
-  reasoning: chatAliasReasoningSchema.optional(),
-  verbosity: z.string().min(1).optional(),
-  serviceTier: z.string().min(1).optional(),
+  reasoning: chatAliasReasoningSchema.exactOptional(),
+  verbosity: z.string().min(1).exactOptional(),
+  serviceTier: z.string().min(1).exactOptional(),
 }).strict();
 
 // Rules are validated against the alias-level kind in the superRefine pass
@@ -729,8 +732,8 @@ const aliasTargetSchema = z.object({
 // surface validates, so the override carries the catalog's full
 // vocabulary.
 const announcedMetadataSchema = z.object({
-  limits: limitsSchema.optional(),
-  chat: chatSchema.optional(),
+  limits: limitsSchema.exactOptional(),
+  chat: chatSchema.exactOptional(),
 });
 
 const aliasBaseShape = {
@@ -741,7 +744,7 @@ const aliasBaseShape = {
   visible_in_models_list: z.boolean(),
   targets: z.array(aliasTargetSchema).min(1),
   announced_metadata: announcedMetadataSchema.nullable(),
-  sort_order: z.number().int().optional(),
+  sort_order: z.number().int().exactOptional(),
 };
 
 const aliasBodyCore = z.object(aliasBaseShape);
@@ -816,11 +819,11 @@ export const siteSettingsBody = z.object({
 export const importBody = z.object({
   version: z.literal(25, { error: 'version must be 25 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
-  data: z.unknown().optional(),
+  data: z.unknown().exactOptional(),
 });
 
 export const exportQuery = z.object({
-  include_performance: z.string().optional(),
+  include_performance: z.string().exactOptional(),
 });
 
 // --- query strings (token-usage, search-usage, performance) ---
@@ -838,11 +841,11 @@ export const exportQuery = z.object({
 // required-ness check.
 
 const usageBaseQuery = {
-  start: z.string().optional(),
-  end: z.string().optional(),
-  key_id: z.string().optional(),
-  include_key_metadata: z.string().optional(),
-  include_user_metadata: z.string().optional(),
+  start: z.string().exactOptional(),
+  end: z.string().exactOptional(),
+  key_id: z.string().exactOptional(),
+  include_key_metadata: z.string().exactOptional(),
+  include_user_metadata: z.string().exactOptional(),
   view: z.enum(['all-by-user', 'self-by-key'], { error: "view must be 'all-by-user' or 'self-by-key'" }),
 };
 
@@ -854,13 +857,13 @@ export const tokenUsageQuery = z.object(usageBaseQuery);
 // addressable-but-not-listed surface (prefix-form alternates), so the alias
 // dialog combobox sees every id the data-plane resolver would accept.
 export const modelsQuery = z.object({
-  aliases: z.enum(['true', 'false']).optional(),
-  include_unlisted: z.enum(['true', 'false']).optional(),
+  aliases: z.enum(['true', 'false']).exactOptional(),
+  include_unlisted: z.enum(['true', 'false']).exactOptional(),
 });
 
 export const webSearchUsageQuery = z.object({
   ...usageBaseQuery,
-  provider: z.string().optional(),
+  provider: z.string().exactOptional(),
 });
 
 // A multi-select filter travels as a repeated query parameter. Hono hands one
@@ -872,7 +875,7 @@ const filterValues = (item: z.ZodType<string, string>) =>
   z.union([z.string(), z.array(z.string())])
     .transform(value => (typeof value === 'string' ? [value] : value).filter(Boolean))
     .pipe(z.array(item))
-    .optional();
+    .exactOptional();
 
 // User ids are auto-increment starting at 1, so zero and leading-zero forms
 // can never resolve and are rejected up front rather than silently returning
@@ -884,11 +887,11 @@ const filterTokenUsageOverviewUserId = z.union([
 ]);
 
 const telemetryOverviewQuery = {
-  start: z.string().optional(),
-  end: z.string().optional(),
-  bucket: z.custom<TelemetryBucketGranularity>(isTelemetryBucketGranularity, 'Invalid telemetry bucket granularity').optional(),
-  timezone: z.string().optional(),
-  timezone_offset_minutes: z.string().optional(),
+  start: z.string().exactOptional(),
+  end: z.string().exactOptional(),
+  bucket: z.custom<TelemetryBucketGranularity>(isTelemetryBucketGranularity, 'Invalid telemetry bucket granularity').exactOptional(),
+  timezone: z.string().exactOptional(),
+  timezone_offset_minutes: z.string().exactOptional(),
   // Cross-cutting filters applied to raw records before aggregation. Values
   // within one filter are OR'd, and the filters themselves AND together.
   filter_model: filterValues(z.string()),
@@ -899,17 +902,22 @@ const telemetryOverviewQuery = {
 
 export const tokenUsageOverviewQuery = z.object({
   ...telemetryOverviewQuery,
-  format: z.literal('buckets'),
+  format: z.literal('fixed-buckets'),
   // Token Usage overview exposes unattributed hard-deleted-key records through
   // the synthetic user bucket.
   filter_user_id: filterValues(filterTokenUsageOverviewUserId),
-  group_by: z.enum(['keyId', 'userId', 'model', 'upstream']).optional(),
-  cursor: z.string().max(13).optional(),
+  group_by: z.enum(['keyId', 'userId', 'model', 'upstream']).exactOptional(),
+  cursor: z.string().max(13).exactOptional(),
 });
+
+const performanceDimension = z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).exactOptional();
 
 export const performanceQuery = z.object({
   ...telemetryOverviewQuery,
-  group_by: z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).optional(),
+  group_by: performanceDimension,
+  format: z.literal('buckets').exactOptional(),
+  dimension: performanceDimension,
+  cursor: z.string().max(13).exactOptional(),
   filter_operation: filterValues(z.string()),
   filter_runtime_location: filterValues(z.string()),
 });

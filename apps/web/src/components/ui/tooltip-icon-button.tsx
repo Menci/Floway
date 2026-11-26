@@ -7,10 +7,10 @@ import { fluentComponents } from '../../fluent';
 const { Button, Tooltip, mergeClasses } = fluentComponents;
 
 interface IconButtonProps extends Pick<AriaAttributes, 'aria-expanded' | 'aria-controls'> {
-  className?: string;
-  danger?: boolean;
-  disabled?: boolean;
-  disabledFocusable?: boolean;
+  className?: string | undefined;
+  danger?: boolean | undefined;
+  disabled?: boolean | undefined;
+  disabledFocusable?: boolean | undefined;
   icon: ReactElement;
   label: string;
 }
@@ -44,8 +44,8 @@ function AddressedIconButton({ to, ...props }: IconButtonProps & { to: string })
 }
 
 function IconButton({ 'aria-expanded': expanded, 'aria-controls': controls, className, danger = false, disabled = false, disabledFocusable = false, href, icon, label, onClick }: IconButtonProps & {
-  href?: string;
-  onClick?: (event: MouseEvent<HTMLElement>) => void;
+  href?: string | undefined;
+  onClick?: ((event: MouseEvent<HTMLElement>) => void) | undefined;
 }) {
   const dangerClasses = useDangerActionClasses();
   const shared = {

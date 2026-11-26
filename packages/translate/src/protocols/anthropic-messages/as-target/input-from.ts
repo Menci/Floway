@@ -90,7 +90,7 @@ const documentBlock = (document: IRInputDocument): Extract<AnthropicMessagesUser
       content: source.content.map(part => part.type === 'text'
         ? {
             type: 'text' as const, text: part.text,
-            ...(part.citations === undefined ? {} : { citations: part.citations as AnthropicMessagesTextBlockParam['citations'] }),
+            ...(part.citations === undefined ? {} : { citations: part.citations as Exclude<AnthropicMessagesTextBlockParam['citations'], undefined> }),
             ...(part.cache_control === undefined ? {} : { cache_control: part.cache_control }),
           }
         : {

@@ -26,13 +26,13 @@ export function DialogShell({ actions, children, onExited, onOpenChange, onSubmi
    * closing and destroying in one handler is one React commit, and the exit
    * never gets to start.
    */
-  onExited?: () => void;
-  onOpenChange: DialogProps['onOpenChange'];
-  onSubmit?: () => void;
+  onExited?: (() => void) | undefined;
+  onOpenChange: NonNullable<DialogProps['onOpenChange']>;
+  onSubmit?: (() => void) | undefined;
   open: boolean;
-  surfaceClassName?: string;
+  surfaceClassName?: string | undefined;
   title: ReactNode;
-  width?: keyof typeof surfaceWidthClasses;
+  width?: keyof typeof surfaceWidthClasses | undefined;
 }) {
   return (
     <Dialog

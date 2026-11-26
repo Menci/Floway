@@ -968,9 +968,9 @@ type OpenAIResponsesStreamEventVariant =
     message: string;
     code?: string | null;
     param?: string | null;
-    provider_specific_fields?: OpenAIResponsesErrorEx['provider_specific_fields'];
+    provider_specific_fields?: NonNullable<OpenAIResponsesErrorEx['provider_specific_fields']>;
   }
-  | { type: 'error'; error: Partial<OpenAIResponsesErrorPayload> & { message: string; provider_specific_fields?: OpenAIResponsesErrorEx['provider_specific_fields'] } };
+  | { type: 'error'; error: Partial<OpenAIResponsesErrorPayload> & { message: string; provider_specific_fields?: NonNullable<OpenAIResponsesErrorEx['provider_specific_fields']> } };
 
 // Either side of the OpenAI Responses reasoning round trip: input echoes a prior
 // turn's reasoning back in, output emits the current turn's reasoning. Shape

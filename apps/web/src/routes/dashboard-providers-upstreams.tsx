@@ -17,7 +17,7 @@ import type { Route } from './+types/dashboard-providers-upstreams';
 import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
-import { api, callApi } from '../api/client';
+import { abortOptions, api, callApi } from '../api/client';
 import type { ControlPlaneModel, ListedUpstreamRecord } from '../api/types';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
@@ -65,8 +65,67 @@ const {
   TableRow,
   Text,
   Tooltip,
+  makeStyles,
+  mergeClasses,
   switchClassNames,
 } = fluentComponents;
+
+const useStyles = makeStyles({
+  // At a phone's width each row is restacked in place rather than replaced by
+  // a list: the rows carry the priority drag and the telemetry disclosure, and
+  // all of that keeps working on the same markup. The selectors double the row
+  // and cell classes to outrank the inset and height
+  // ../components/ui/resource-list.tsx states for a table row.
+  //
+  // 900px is where ./dashboard.tsx folds the sidebar away; from there down the
+  // page is at most 900px less its two insets, narrower than the table's own
+  // 900px floor, so the table could only scroll sideways.
+  narrowTable: {
+    '@media (max-width: 900px)': {
+      minWidth: 0,
+      // The table and its column widths go too: left a table, it sizes the
+      // restacked rows from the colgroup's fixed columns.
+      display: 'block',
+      '& colgroup, & .fui-TableHeader': { display: 'none' },
+      '& .fui-TableBody': { display: 'block' },
+      '& [data-table-expansion-row]': { display: 'block' },
+      '& [data-table-expansion-row] > .fui-TableCell': { display: 'block' },
+      '& .fui-TableRow.fui-TableRow:not([data-table-expansion-row])': {
+        display: 'grid',
+        // The lead holds the rank (22px floor, below) and the small icon-only
+        // reorder grip Fluent pins at 24px, one gap-1 apart.
+        // https://github.com/microsoft/fluentui/blob/c771f587c6634a356605e6d7d4658681f15d689b/packages/react-components/react-button/library/src/components/Button/useButtonStyles.styles.ts#L502-L509
+        gridTemplateColumns: 'calc(22px + var(--spacingHorizontalXS) + 24px) minmax(0, 1fr) auto',
+        gridTemplateAreas: '"lead name enabled" "lead details details" "lead models actions"',
+        alignItems: 'center',
+        columnGap: 'var(--spacingHorizontalM)',
+        rowGap: 'var(--spacingVerticalXS)',
+        height: 'auto',
+        // The narrow list row's own block padding (../components/ui/narrow-list-item.ts).
+        paddingBlock: '10px',
+        paddingInline: 'var(--floway-panel-inset)',
+      },
+      '& .fui-TableRow.fui-TableRow:not([data-table-expansion-row]) > .fui-TableCell.fui-TableCell': {
+        display: 'block',
+        height: 'auto',
+        minWidth: 0,
+        padding: 0,
+      },
+      '& .fui-TableRow.fui-TableRow:not([data-table-expansion-row]) > .fui-TableCell.fui-TableCell:nth-child(1)': {
+        gridArea: 'lead',
+        // Centred, as on the one-line row: a drop lands past a neighbour's
+        // midpoint measured from the pointer, so a grip at the top of a tall
+        // row would have to travel twice as far down as up.
+        alignSelf: 'center',
+      },
+      '& .fui-TableRow.fui-TableRow:not([data-table-expansion-row]) > .fui-TableCell.fui-TableCell:nth-child(2)': { gridArea: 'name' },
+      '& .fui-TableRow.fui-TableRow:not([data-table-expansion-row]) > .fui-TableCell.fui-TableCell:nth-child(3)': { gridArea: 'details' },
+      '& .fui-TableRow.fui-TableRow:not([data-table-expansion-row]) > .fui-TableCell.fui-TableCell:nth-child(4)': { gridArea: 'models' },
+      '& .fui-TableRow.fui-TableRow:not([data-table-expansion-row]) > .fui-TableCell.fui-TableCell:nth-child(5)': { gridArea: 'enabled', justifySelf: 'end' },
+      '& .fui-TableRow.fui-TableRow:not([data-table-expansion-row]) > .fui-TableCell.fui-TableCell:nth-child(6)': { gridArea: 'actions', justifySelf: 'end' },
+    },
+  },
+});
 
 interface LoaderData {
   /** `null` when the fetch failed, not the same as none configured. */
@@ -114,10 +173,10 @@ const upstreamCopyPath = (record: ListedUpstreamRecord) => `/dashboard/providers
 
 const loadPageData = async (signal?: AbortSignal): Promise<LoaderData> => {
   const [upstreamsResult, modelsResult] = await Promise.all([
-    callApi(() => api.api.upstreams.$get(undefined, { init: { signal } })),
+    callApi(() => api.api.upstreams.$get(undefined, abortOptions(signal))),
     callApi(() => api.api.models.$get(
       { query: { aliases: 'false', include_unlisted: 'true' } },
-      { init: { signal } },
+      abortOptions(signal),
     )),
   ]);
   return {
@@ -529,6 +588,7 @@ function UpstreamsTable({
   onRangeEditingChange: (editing: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const styles = useStyles();
   const upstreams = data.upstreams;
   const modelCounts = useMemo(() => buildModelCounts(upstreams ?? [], data.models), [data.models, upstreams]);
 
@@ -540,7 +600,7 @@ function UpstreamsTable({
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('upstreams.table.title')} className="min-w-[900px]">
+      <Table aria-label={t('upstreams.table.title')} className={mergeClasses('min-w-[900px]', styles.narrowTable)}>
         <TableColumns widths={['96px', '200px', null, '140px', '90px', TABLE_ACTIONS_WITH_LEADING_WIDTH]} />
         <TableHeader>
           <TableRow>

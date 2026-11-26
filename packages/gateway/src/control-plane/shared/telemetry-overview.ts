@@ -1,10 +1,12 @@
 import type { Context } from 'hono';
 
+import type { TelemetryOverviewSnapshot } from './telemetry-overview-types.ts';
 import { checkMany } from '../../access-control/check.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
+import { overviewBucketId, type OverviewBucket } from '../../repo/telemetry-bucket-sql.ts';
 import type { ApiKey, StoredUpstreamRecord, User } from '../../repo/types.ts';
-import { parseTelemetryHour, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
+import { parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryHourKey, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 
 interface TelemetryOverviewQuery {
   start?: string;
@@ -18,9 +20,33 @@ export interface TelemetryOverviewWindow {
   start: string;
   end: string;
   bucket: TelemetryBucketGranularity;
-  timeZone?: string;
+  timeZone?: string | undefined;
   timezoneOffsetMinutes: number;
 }
+
+export const shiftTelemetryHour = (hour: string, count: number): string =>
+  telemetryHourKey(parseTelemetryHour(hour) + count * TELEMETRY_HOUR_MS);
+
+export const planTelemetrySlices = (
+  start: string,
+  end: string,
+  nowHour: string,
+  previous: string | undefined,
+  bucket: OverviewBucket,
+) => {
+  const resumeFrom = shiftTelemetryHour(nowHour, -1);
+  const nextHour = shiftTelemetryHour(nowHour, 1);
+  const coveredEnd = end < nextHour ? end : nextHour;
+  const windowEnd = coveredEnd < start ? start : coveredEnd;
+  const cursor = windowEnd < resumeFrom ? windowEnd : resumeFrom;
+  const resume = previous !== undefined && previous <= cursor;
+  const scanStart = resume && previous > start ? previous : start;
+  const hourlyBoundaries = resume ? [resumeFrom, nowHour, scanStart] : [resumeFrom, nowHour];
+  const hourlyBuckets = [...new Set(hourlyBoundaries
+    .filter(hour => hour >= scanStart && hour < windowEnd)
+    .map(hour => overviewBucketId(bucket, hour)))];
+  return { scanStart, windowEnd, cursor, reset: !resume, hourlyBuckets };
+};
 
 export const readTelemetryOverviewWindow = (
   query: TelemetryOverviewQuery,
@@ -69,6 +95,23 @@ export interface TelemetryOverviewIdentity {
   visibleUserIds: ReadonlySet<number>;
   visibleUpstreams: ReadonlySet<string>;
 }
+
+export const telemetryOverviewVisibility = (
+  identity: TelemetryOverviewIdentity,
+  ownedKeysOnly: boolean,
+): Pick<TelemetryOverviewSnapshot<never>, 'scope' | 'metadataVisibility'> => {
+  // The dashboard compares serialized scopes, so set order is canonical.
+  const userIds = [...identity.visibleUserIds].sort((a, b) => a - b);
+  const upstreamIds = [...identity.visibleUpstreams].sort();
+  return {
+    scope: {
+      actorId: identity.actor.id,
+      ownedKeyIds: [...identity.ownedKeyIds].sort(),
+      visibility: ownedKeysOnly ? 'owned-keys' : identity.actor.isAdmin ? 'all' : { userIds, upstreamIds },
+    },
+    metadataVisibility: { complete: identity.actor.isAdmin, userIds, upstreamIds },
+  };
+};
 
 export const loadTelemetryOverviewIdentity = async (c: Context): Promise<TelemetryOverviewIdentity> => {
   const actor = userFromContext(c);

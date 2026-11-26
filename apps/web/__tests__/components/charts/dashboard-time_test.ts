@@ -1,10 +1,26 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { dashboardBucketFrames, dashboardBucketMapper, dashboardGranularity, dashboardInterval, dashboardRangeIsCurrent, parseDashboardRange, serializeDashboardRange, type DashboardResetRange } from '../../../src/components/charts/dashboard-time';
+import { dashboardBucketFrames, dashboardFixedBucketFrames, dashboardFixedRangeQuery, dashboardGranularity, dashboardInterval, dashboardRangeIsCurrent, dashboardRangeQuery, parseDashboardRange, serializeDashboardRange, type DashboardResetRange } from '../../../src/components/charts/dashboard-time';
 import { upstreamMetricsInterval } from '../../../src/components/upstream-metrics/data';
 import { calendarDate } from '../../../src/lib/calendar-date';
+import { createTelemetryBucket } from '@floway-dev/protocols/browser';
 
 afterEach(() => vi.unstubAllEnvs());
+
+test('fixed day grids retain the selected local date range across a clock change', () => {
+  vi.stubEnv('TZ', 'America/New_York');
+  const range = { start: '2026-03-01', end: '2026-03-30' };
+  expect(dashboardFixedRangeQuery(range, 0)).toEqual({
+    start: '2026-03-01T05',
+    end: '2026-03-31T04',
+    bucket: 'day',
+  });
+  const frames = dashboardFixedBucketFrames(range, 0);
+  expect(frames).toHaveLength(30);
+  expect(frames[8]!.key).toBe('2026-03-09T05');
+  expect(calendarDate(frames[8]!.date)).toBe('2026-03-09');
+  expect(frames.at(-1)!.end - frames.at(-1)!.start).toBe(23 * 3_600_000);
+});
 
 test('custom aggregation adapts to inclusive calendar-day density', () => {
   vi.stubEnv('TZ', 'UTC');
@@ -38,8 +54,8 @@ test('closed cycles round-trip and use adjacent hour buckets while quota gauges 
     expect(parseDashboardRange(search)).toEqual(range);
     expect(upstreamMetricsInterval(range, now)).toEqual({ start: range.start, end: range.end ?? now });
   }
-  expect(dashboardBucketFrames(previous, now).map(frame => frame.key)).toEqual(['2026-10-10T08', '2026-10-10T09', '2026-10-10T10', '2026-10-10T11', '2026-10-10T12']);
-  expect(dashboardBucketFrames(current, now).map(frame => frame.key)).toEqual(['2026-10-10T13', '2026-10-10T14']);
+  expect(dashboardFixedBucketFrames(previous, now).map(frame => frame.key)).toEqual(['2026-10-10T08', '2026-10-10T09', '2026-10-10T10', '2026-10-10T11', '2026-10-10T12']);
+  expect(dashboardFixedBucketFrames(current, now).map(frame => frame.key)).toEqual(['2026-10-10T13', '2026-10-10T14']);
   expect(dashboardRangeIsCurrent(previous, now)).toBe(false);
   expect(dashboardRangeIsCurrent(current, now)).toBe(true);
 });
@@ -71,7 +87,8 @@ test.each([
   const range = { start, end };
   const interval = dashboardInterval(range, 0);
   const frames = dashboardBucketFrames(range, 0);
-  const mapper = dashboardBucketMapper(range, 0);
+  const query = dashboardRangeQuery(range, 0);
+  const mapper = createTelemetryBucket({ bucket: query.bucket, start: query.start, timeZone: query.timezone, timezoneOffsetMinutes: Number(query.timezone_offset_minutes) });
   expect(frames.length).toBeLessThanOrEqual(48);
   expect(frames[0]?.start).toBe(interval.start);
   expect(frames.at(-1)?.end).toBe(interval.end);

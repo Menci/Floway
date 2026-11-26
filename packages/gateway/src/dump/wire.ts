@@ -50,9 +50,8 @@ const responseBodyToWire = (body: StoredDumpResponseBody, contentType: string): 
 };
 
 export const upstreamResponseToWire = (
-  upstream: StoredDumpUpstreamResponse | undefined,
-): DumpUpstreamResponse | undefined => {
-  if (upstream === undefined) return undefined;
+  upstream: StoredDumpUpstreamResponse,
+): DumpUpstreamResponse => {
   // The upstream body's content-type comes from the upstream response headers
   // (api-error path); the `stream` branch ignores it.
   return {

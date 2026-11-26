@@ -19,7 +19,7 @@ interface SocketDialOptions {
    * its Error reason is rethrown as-is, and a primitive or absent reason
    * becomes a DOMException('AbortError').
    */
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export interface DialedSocket {
@@ -43,14 +43,14 @@ export interface TlsUpgradeOptions {
    * SANs; the userspace path also accepts a CN match, while Node ignores CN
    * once the certificate lists any DNS SAN. Defaults to `host`.
    */
-  verifyHost?: string;
+  verifyHost?: string | undefined;
   /** ALPN protocols to offer, in preference order. */
-  alpn?: string[];
+  alpn?: string[] | undefined;
   /**
    * Accept the peer certificate without chain validation or name matching.
    * For self-signed proxy leaves only.
    */
-  insecure?: boolean;
+  insecure?: boolean | undefined;
   /**
    * Bytes to write to the transport before the handshake starts. Proxy
    * protocols whose request header precedes the tunneled TLS — trojan's —
@@ -58,9 +58,9 @@ export interface TlsUpgradeOptions {
    * implementation may additionally coalesce it into the first handshake
    * record.
    */
-  prefix?: Uint8Array;
+  prefix?: Uint8Array | undefined;
   /** Cancellation, honoured during and after the handshake. */
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export interface SocketDial {

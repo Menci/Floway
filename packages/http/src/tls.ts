@@ -79,7 +79,7 @@ export interface UserspaceTlsOptions {
    * lock so the caller can close the transport. After the handshake, the
    * caller's ReadableStream cancel/WritableStream abort drive teardown.
    */
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export type TlsStream = DuplexStream;
@@ -230,7 +230,7 @@ export const userspaceTls = async (
   // shape. When the upstream typing absorbs the patch, this extension type
   // and the cast become redundant.
   type PatchedTLSOptions = Parameters<typeof makeTLSClient>[0] & {
-    verifyHost?: string;
+    verifyHost?: string | undefined;
     checkServerIdentity?: (identity: string, certificate: LibraryCertificate) => Promise<void>;
     onTlsEnd?: (error?: unknown) => void;
   };
@@ -250,7 +250,7 @@ export const userspaceTls = async (
         if (error !== undefined) throw error;
       },
     }),
-    applicationLayerProtocols: opts.alpn,
+    ...(opts.alpn === undefined ? {} : { applicationLayerProtocols: opts.alpn }),
     cipherSuites: opts.cipherSuites ?? ['TLS_AES_256_GCM_SHA384', 'TLS_AES_128_GCM_SHA256'],
     write({ header, content }) {
       const prefixLen = pendingPrefix ? pendingPrefix.byteLength : 0;

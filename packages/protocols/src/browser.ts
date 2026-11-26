@@ -4,6 +4,7 @@
 // the browser runtime API without an explicit review.
 
 export type * from './common/index.ts';
+export { percentileFromBuckets } from './common/histogram-percentile.ts';
 export type * from './openai-completions/index.ts';
 export type * from './openai-chat-completions/index.ts';
 export type * from './openai-responses/index.ts';
@@ -140,7 +141,7 @@ export { captureExtras } from './common/reassemble-extras.ts';
 
 export { sseFrame, sseCommentFrame, eventFrame, doneFrame } from './common/sse.ts';
 
-export { createTelemetryBucket, isTelemetryHourlyBucket, TELEMETRY_HOUR_MS, telemetryDayOrdinal, telemetryHourBucketSizes, telemetryHourKey } from './common/telemetry-time.ts';
+export { createTelemetryBucket, isTelemetryHourlyBucket, parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryBucketHours, telemetryDayOrdinal, telemetryHourBucketSizes, telemetryHourKey } from './common/telemetry-time.ts';
 
 export {
   usageUpstreamDimensionPrefix,

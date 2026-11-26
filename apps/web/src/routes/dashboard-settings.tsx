@@ -277,7 +277,7 @@ function PasswordDialog({ onOpenChange, open }: { onOpenChange: (open: boolean) 
         <Field
           label={t('settings.account.currentPassword')}
           validationMessage={errors.currentPassword?.message ? t(errors.currentPassword.message) : undefined}
-          validationState={errors.currentPassword ? 'error' : undefined}
+          validationState={errors.currentPassword ? 'error' : 'none'}
         >
           <Input {...field} autoComplete="current-password" disabled={saving} type="password" />
         </Field>
@@ -291,7 +291,7 @@ function PasswordDialog({ onOpenChange, open }: { onOpenChange: (open: boolean) 
         <Field
           label={t('settings.account.newPassword')}
           validationMessage={errors.newPassword?.message ? t(errors.newPassword.message) : undefined}
-          validationState={errors.newPassword ? 'error' : undefined}
+          validationState={errors.newPassword ? 'error' : 'none'}
         >
           <Input {...field} autoComplete="new-password" disabled={saving} type="password" />
         </Field>
@@ -305,7 +305,7 @@ function PasswordDialog({ onOpenChange, open }: { onOpenChange: (open: boolean) 
         <Field
           label={t('settings.account.confirmPassword')}
           validationMessage={errors.confirmPassword?.message ? t(errors.confirmPassword.message) : undefined}
-          validationState={errors.confirmPassword ? 'error' : undefined}
+          validationState={errors.confirmPassword ? 'error' : 'none'}
         >
           <Input {...field} autoComplete="new-password" disabled={saving} type="password" />
         </Field>

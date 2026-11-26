@@ -6,6 +6,7 @@ import { MODEL_CATALOG_REVISION, storedModelErrorMessage } from './models-cache-
 import { matchesModelsRefreshInputs } from './models-refresh-inputs.ts';
 import { SqlOpenAIResponsesItemsRepo, SqlOpenAIResponsesSnapshotsRepo } from './openai-responses-state-sql.ts';
 import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
+import { querySqlPerformanceSlices } from './performance-slices-sql.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlScheduledMaintenanceRepo } from './scheduled-maintenance-sql.ts';
 import { generateSessionToken } from './session-tokens.ts';
@@ -35,6 +36,7 @@ import type {
   PerformanceMetric,
   PerformanceOverviewQueryOptions,
   PerformanceOverviewResult,
+  PerformanceSliceQuery,
   PerformanceRepo,
   PerformanceSample,
   PerformanceTelemetryRecord,
@@ -55,6 +57,7 @@ import type {
   Session,
   SessionsRepo,
   UpstreamRepo,
+  UsageMetricRecord,
   UsageRecord,
   UsageOverviewQueryOptions,
   UsageOverviewResult,
@@ -148,7 +151,7 @@ const toApiKey = (row: ApiKeyRow): ApiKey => ({
   key: row.key,
   serverSecret: parseServerSecret(row.server_secret, `api_keys.server_secret for id=${row.id}`),
   createdAt: row.created_at,
-  lastUsedAt: row.last_used_at ?? undefined,
+  ...(row.last_used_at === null ? {} : { lastUsedAt: row.last_used_at }),
   upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
   randomizeUpstreams: row.randomize_upstreams === 1,
   deletedAt: row.deleted_at,
@@ -241,7 +244,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
     const hasName = sqliteBoolean(patch.name !== undefined);
     const hasKey = sqliteBoolean(patch.key !== undefined);
-    const hasLastUsedAt = sqliteBoolean(patch.lastUsedAt !== undefined);
     const hasUpstreamIds = sqliteBoolean(patch.upstreamIds !== undefined);
     const hasRandomizeUpstreams = sqliteBoolean(patch.randomizeUpstreams !== undefined);
     const hasDumpRetention = sqliteBoolean(patch.dumpRetentionSeconds !== undefined);
@@ -251,7 +253,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         `UPDATE api_keys
          SET name = CASE WHEN ? THEN ? ELSE name END,
              key = CASE WHEN ? THEN ? ELSE key END,
-             last_used_at = CASE WHEN ? THEN ? ELSE last_used_at END,
              upstream_ids = CASE WHEN ? THEN ? ELSE upstream_ids END,
              randomize_upstreams = CASE WHEN ? THEN ? ELSE randomize_upstreams END,
              dump_retention_seconds = CASE WHEN ? THEN ? ELSE dump_retention_seconds END,
@@ -262,7 +263,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       .bind(
         hasName ? 1 : 0, patch.name ?? null,
         hasKey ? 1 : 0, patch.key ?? null,
-        hasLastUsedAt ? 1 : 0, patch.lastUsedAt ?? null,
         hasUpstreamIds ? 1 : 0, hasUpstreamIds ? serializeUpstreamIds(patch.upstreamIds!) : null,
         hasRandomizeUpstreams ? 1 : 0, patch.randomizeUpstreams ? 1 : 0,
         hasDumpRetention ? 1 : 0, patch.dumpRetentionSeconds ?? null,
@@ -271,6 +271,12 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       )
       .first<ApiKeyRow>();
     return row === null ? null : toApiKey(row);
+  }
+
+  async setLastUsedAt(id: string, lastUsedAt: string): Promise<void> {
+    await this.db.prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ? AND deleted_at IS NULL')
+      .bind(lastUsedAt, id)
+      .run();
   }
 
   async softDelete(id: string): Promise<boolean> {
@@ -802,13 +808,11 @@ class SqlSessionsRepo implements SessionsRepo {
 class SqlUsageRepo implements UsageRepo {
   constructor(private db: SqlDatabase) {}
 
-  private async addMetric(
-    record: UsageRecord,
-    upstream: string | null,
-    selector: string,
-    row: ReturnType<typeof usageMetricRows>[number],
+  private async addMetricWithCompareAndSwap(
+    recordIdentity: readonly SqlBindValue[],
+    row: UsageMetricRecord,
   ): Promise<void> {
-    const identity = [record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.metric];
+    const identity = [...recordIdentity, row.metric];
     for (let attempt = 0; attempt < 100; attempt++) {
       const current = await this.db.prepare(
         "SELECT quantity FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND pricing_selector = ? AND metric = ?",
@@ -835,11 +839,37 @@ class SqlUsageRepo implements UsageRepo {
   async record(record: UsageRecord): Promise<void> {
     const upstream = record.upstream ?? null;
     const selector = canonicalPricingSelectorKey(record.pricingSelector);
-    await this.db.prepare(
+    const identity = [record.keyId, record.model, upstream, record.modelKey, record.hour, selector] as const;
+    const request = this.db.prepare(
       `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT DO UPDATE SET requests = requests + excluded.requests`,
-    ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, record.requests).run();
-    await Promise.all(usageMetricRows(record).map(row => this.addMetric(record, upstream, selector, row)));
+    ).bind(...identity, record.requests);
+
+    let metrics: UsageRecord['metrics'];
+    try {
+      metrics = usageMetricRows(record);
+    } catch (error) {
+      await request.run();
+      throw error;
+    }
+
+    // The text round trips reject lossy integer casts. Bounding the sum keeps
+    // SQLite from promoting overflowing integer addition to REAL.
+    // https://sqlite.org/lang_expr.html
+    const increments = metrics.map(row => this.db.prepare(
+      `INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT DO UPDATE SET quantity = CAST(CAST(usage.quantity AS INTEGER) + CAST(excluded.quantity AS INTEGER) AS TEXT)
+       WHERE usage.quantity = CAST(CAST(usage.quantity AS INTEGER) AS TEXT)
+         AND excluded.quantity = CAST(CAST(excluded.quantity AS INTEGER) AS TEXT)
+         AND CAST(usage.quantity AS INTEGER) <= 9223372036854775807 - CAST(excluded.quantity AS INTEGER)`,
+    ).bind(...identity, row.metric, row.quantity, row.unitPrice));
+    const [, ...writes] = await runStatements(this.db, [request, ...increments]);
+    const exact = metrics.filter((row, index) => {
+      const changes = writes[index].meta.changes;
+      if (changes !== 0 && changes !== 1) throw new Error(`Invalid usage metric ${row.metric} change count: ${String(changes)}`);
+      return changes === 0;
+    });
+    await Promise.all(exact.map(row => this.addMetricWithCompareAndSwap(identity, row)));
   }
 
   async query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]> {
@@ -1078,6 +1108,10 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
   queryOverview(opts: PerformanceOverviewQueryOptions): Promise<PerformanceOverviewResult> {
     return querySqlPerformanceOverview(this.db, opts);
+  }
+
+  querySlices(opts: PerformanceSliceQuery) {
+    return querySqlPerformanceSlices(this.db, opts);
   }
 
   async listAll(): Promise<PerformanceTelemetryRecord[]> {

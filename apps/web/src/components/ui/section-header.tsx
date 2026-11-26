@@ -18,13 +18,13 @@ const { InfoButton, Text, mergeClasses } = fluentComponents;
 const TITLE_SIZE = { 2: 500, 3: 400, 4: 300 } as const;
 
 export function SectionHeader({ actions, description, info, level, title, titleId, truncate = false }: {
-  actions?: ReactNode;
-  description?: ReactNode;
-  info?: InfoButtonProps['info'];
+  actions?: ReactNode | undefined;
+  description?: ReactNode | undefined;
+  info?: InfoButtonProps['info'] | undefined;
   level: 2 | 3 | 4;
   title: ReactNode;
-  titleId?: string;
-  truncate?: boolean;
+  titleId?: string | undefined;
+  truncate?: boolean | undefined;
 }) {
   // Fluent's `truncate` contributes the ellipsis alone; the clip and the single
   // line come from `wrap={false}`, so a title that trims needs both.
@@ -51,6 +51,8 @@ export function SectionHeader({ actions, description, info, level, title, titleI
   if (actions === undefined) return block;
   return <div className={mergeClasses(HEADER_ROW_CLASS, 'gap-3')}>
     {block}
-    <div className="flex items-center gap-2 flex-none">{actions}</div>
+    {/* Wraps rather than shrinks: once HEADER_ROW_CLASS stacks the row, a
+        narrow card squeezes each action below its label instead. */}
+    <div className="flex flex-wrap items-center gap-2 flex-none">{actions}</div>
   </div>;
 }

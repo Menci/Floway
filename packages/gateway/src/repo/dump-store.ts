@@ -182,7 +182,8 @@ export class FileDumpStore implements DumpStore {
 
     let upstreamDescriptor: DumpBodyDescriptor | null = null;
     if (record.capture !== undefined) {
-      const envelope = dumpCaptureEnvelopeSchema.parse({ version: 1, capture: record.capture, upstream: upstreamResponseToWire(record.response.upstream) });
+      const upstream = record.response.upstream;
+      const envelope = dumpCaptureEnvelopeSchema.parse({ version: 1, capture: record.capture, ...(upstream === undefined ? {} : { upstream: upstreamResponseToWire(upstream) }) });
       upstreamDescriptor = await putRawBody(this.files, upstreamFileKey!, new TextEncoder().encode(JSON.stringify(envelope)), 'capture');
     } else if (upstreamBody !== undefined) {
       if (upstreamBody.type === 'bytes') {
@@ -385,23 +386,25 @@ export class FileDumpStore implements DumpStore {
       .all<{ rowid: number }>();
     const activeDeleted = active.results.length;
     if (activeDeleted >= limit) return activeDeleted;
+    // A null lookup key skips the dump index seek when retention is active.
     const inactive = await this.db
       .prepare(
         `DELETE FROM dump_records WHERE rowid IN (
            SELECT records.rowid FROM dump_records AS records
-           WHERE records.key_id = ?
-             AND NOT EXISTS (
+           WHERE records.key_id = (
+             SELECT ? WHERE NOT EXISTS (
                SELECT 1 FROM api_keys
-               WHERE api_keys.id = records.key_id
+               WHERE api_keys.id = ?
                  AND api_keys.deleted_at IS NULL
                  AND api_keys.dump_retention_seconds IS NOT NULL
              )
+           )
            ORDER BY records.created_at, records.rowid
            LIMIT ?
          )
          RETURNING rowid`,
       )
-      .bind(keyId, limit - activeDeleted)
+      .bind(keyId, keyId, limit - activeDeleted)
       .all<{ rowid: number }>();
     return activeDeleted + inactive.results.length;
   }

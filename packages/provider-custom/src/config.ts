@@ -163,8 +163,7 @@ const apiKeyField = (value: unknown): string => {
 
 const PATH_OVERRIDE_KEYS: ReadonlySet<string> = new Set(CUSTOM_PATH_OVERRIDE_KEYS);
 
-const pathOverridesField = (value: unknown): CustomUpstreamConfig['pathOverrides'] => {
-  if (value === undefined) return undefined;
+const pathOverridesField = (value: unknown): NonNullable<CustomUpstreamConfig['pathOverrides']> => {
   if (!isRecord(value)) throw new Error('Malformed custom upstream config: pathOverrides must be an object');
 
   const pathOverrides: NonNullable<CustomUpstreamConfig['pathOverrides']> = {};

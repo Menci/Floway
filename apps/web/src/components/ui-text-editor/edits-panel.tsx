@@ -102,12 +102,12 @@ function ConfirmDeleteIconFlyout({
   triggerLabel,
 }: {
   actionLabel: string;
-  align?: 'start' | 'end';
+  align?: 'start' | 'end' | undefined;
   cancelLabel: string;
   message: string;
   mountNode: HTMLElement | null;
   onConfirm: () => void;
-  position?: 'above' | 'below';
+  position?: 'above' | 'below' | undefined;
   title: string;
   triggerLabel: string;
 }) {
@@ -127,7 +127,7 @@ function ConfirmDeleteIconFlyout({
       }}
     >
       <PopoverTrigger disableButtonEnhancement>
-        {props => (
+        {({ disabled, ...props }) => (
           <Tooltip
             content={triggerLabel}
             mountNode={mountNode}
@@ -137,6 +137,7 @@ function ConfirmDeleteIconFlyout({
           >
             <Button
               {...props}
+              {...(disabled === undefined ? {} : { disabled })}
               ref={props.ref as Ref<HTMLButtonElement>}
               appearance="subtle"
               aria-label={triggerLabel}

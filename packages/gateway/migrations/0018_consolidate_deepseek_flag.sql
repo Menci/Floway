@@ -44,7 +44,7 @@ UPDATE upstreams
 SET config_json = json_set(
   config_json,
   '$.deployments',
-  (
+  json((
     SELECT json_group_array(
       CASE
         WHEN json_extract(deployment.value, '$.flagOverrides.values."deepseek-reasoning-dialect"') = 1
@@ -73,7 +73,7 @@ SET config_json = json_set(
       END
     )
     FROM json_each(json_extract(upstreams.config_json, '$.deployments')) AS deployment
-  )
+  ))
 )
 WHERE provider = 'azure'
   AND json_valid(config_json)

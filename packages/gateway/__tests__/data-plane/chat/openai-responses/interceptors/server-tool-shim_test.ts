@@ -472,6 +472,9 @@ const makeStubDeps = (overrides: DepsOverrides = {}): {
 interface InvocationOverrides {
   targetApi?: 'openaiResponses' | 'anthropicMessages' | 'openaiChatCompletions';
   enabledFlags?: ReadonlySet<FlagId>;
+  // Drops the default top-level hosted tool so a test can declare tools only
+  // inside input carriers.
+  withoutTools?: true;
   payload?: Partial<OpenAIResponsesPayloadEx>;
 }
 
@@ -488,7 +491,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): OpenAIResponsesInv
     model: 'claude-x',
     stream: true,
     input: [{ type: 'message', role: 'user', content: 'hi' }],
-    tools: [{ type: 'web_search' }],
+    ...(overrides.withoutTools ? {} : { tools: [{ type: 'web_search' }] }),
     // Opt the wire item into `results` so most tests can inspect them
     // directly; the new include-gating tests explicitly omit this and
     // assert the wire-item shape without `results`.
@@ -604,8 +607,8 @@ test('shim rewrites hosted tools inside additional_tools at their input position
   const inv = makeInvocation({
     targetApi: 'openaiResponses',
     enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
+    withoutTools: true,
     payload: {
-      tools: undefined,
       tool_choice: { type: 'web_search' },
       input: [
         { type: 'message', role: 'user', content: 'before' },
@@ -972,8 +975,8 @@ test('invalid request registration preserves an upstream error type and null cod
 test('later hosted validation keeps original paths before another tool rewrites the carrier', async () => {
   makeStubDeps();
   const inv = makeInvocation({
+    withoutTools: true,
     payload: {
-      tools: undefined,
       input: [{
         type: 'additional_tools', role: 'developer',
         tools: [
@@ -2115,11 +2118,12 @@ test('consumeTurn uses the completed call namespace before executing a hosted to
     id: 'fc_client', call_id: 'call_client', namespace: 'client', name: SHIM_TOOL_NAME,
     arguments: '{"client":true}', status: 'completed',
   };
+  const { namespace: _namespace, ...completedWithoutNamespace } = completed;
   const result = await consumeTurn(framesOf(
     mkResponseCreated(),
     eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_item.added', output_index: 0,
-      item: { ...completed, namespace: undefined, arguments: '', status: 'in_progress' },
+      item: { ...completedWithoutNamespace, arguments: '', status: 'in_progress' },
     }),
     mkFunctionCallArgsDelta(0, completed.arguments, completed.id),
     mkFunctionCallArgsDone(0, completed.arguments, completed.id),
@@ -2591,10 +2595,12 @@ test('helper echoes distinguish namespaced functions and rewrite hosted allowed_
   const inv = makeInvocation({ payload: { tool_choice: structuredClone(choice) } });
   const qualified = { type: 'function' as const, name: SHIM_TOOL_NAME, namespace: 'client' };
   const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), async () => {
-    assertEquals(inv.payload.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: SHIM_TOOL_NAME }] });
+    const echoedChoice = inv.payload.tool_choice;
+    assert(echoedChoice !== undefined);
+    assertEquals(echoedChoice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: SHIM_TOOL_NAME }] });
     return await scriptedRun([[
       mkResponseCreated(),
-      eventFrame({ type: 'response.completed', response: { ...emptyResult('upstream', 'completed'), tools: [qualified, { type: 'function', name: SHIM_TOOL_NAME }], tool_choice: inv.payload.tool_choice } }),
+      eventFrame({ type: 'response.completed', response: { ...emptyResult('upstream', 'completed'), tools: [qualified, { type: 'function', name: SHIM_TOOL_NAME }], tool_choice: echoedChoice } }),
     ]]).run();
   });
   const tools = findResponseCompleted(frames).response.tools;

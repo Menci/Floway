@@ -1,4 +1,4 @@
-import { api, callApi } from '../../api/client';
+import { abortOptions, api, callApi } from '../../api/client';
 import type { UpstreamOption } from '../../api/types';
 import { dashboardInterval, isResetRange, type DashboardRange } from '../charts/dashboard-time';
 
@@ -22,5 +22,5 @@ export const upstreamMetricsStep = (start: number, end: number): number => {
 export const loadUpstreamMetrics = async (upstreamId: string, range: DashboardRange, now: number, signal?: AbortSignal) => {
   const { start, end } = upstreamMetricsInterval(range, now);
   const step = upstreamMetricsStep(start, end);
-  return await callApi(() => api.api['upstream-metrics'].$get({ query: { upstream_id: upstreamId, start, end, step } }, { init: { signal } }));
+  return await callApi(() => api.api['upstream-metrics'].$get({ query: { upstream_id: upstreamId, start, end, step } }, abortOptions(signal)));
 };

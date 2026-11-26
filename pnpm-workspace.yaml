@@ -62,11 +62,39 @@ onlyBuiltDependencies:
 # https://www.iana.org/assignments/cbor-tags/tags.csv
 # https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
 # https://github.com/Menci/Floway/blob/54a8e2c783ed2ff1c166270c228821fa32aea252/patches/cbor-x%401.6.6.patch
+# @fluentui/react-utilities infers a component's ref element from
+# `Required<Props>['onLostPointerCaptureCapture']`. @types/react declares that
+# handler as `?: PointerEventHandler<T> | undefined`, and under
+# `exactOptionalPropertyTypes` `Required` keeps the explicit `undefined`, so the
+# inference collapses to `never` and every `ref` on a Fluent component fails to
+# type-check. Inferring from the handler with `undefined` removed restores the
+# element type. The upstream report was closed by the stale bot unfixed.
+# https://github.com/microsoft/fluentui/issues/25993
+# https://github.com/microsoft/fluentui/blob/d0f2372099cfd0b50ba067977e1356c618ada747/packages/react-components/react-utilities/src/compose/types.ts#L237-L241
+# The same patch lets an optional slot prop take `undefined`. `slot.optional`
+# already treats `undefined` as an omitted slot, but `Slot` admits only `null`,
+# and `null` hides a slot that would otherwise render by default.
+# `ComponentState` strips `null` from the always-rendered `root` slot, and it
+# now strips `undefined` beside it, so a resolved root stays required.
+# https://github.com/microsoft/fluentui/blob/d0f2372099cfd0b50ba067977e1356c618ada747/packages/react-components/react-utilities/src/compose/slot.ts#L67-L75
+# https://github.com/microsoft/fluentui/blob/d0f2372099cfd0b50ba067977e1356c618ada747/packages/react-components/react-utilities/src/compose/types.ts#L138-L157
+# https://github.com/microsoft/fluentui/blob/d0f2372099cfd0b50ba067977e1356c618ada747/packages/react-components/react-utilities/src/compose/types.ts#L213-L218
+# @hono/node-server stubs the `ws` server it accepts as `WebSocketServerLike`,
+# declaring `options.noServer?: boolean` and the send option
+# `compress?: boolean`, while @types/ws declares both with `| undefined`. Under
+# `exactOptionalPropertyTypes` a real `WebSocketServer` is then not assignable
+# to the stub, so the stub admits the explicit `undefined` its source types
+# already carry.
+# https://github.com/honojs/node-server/blob/3c196345fe048ee219a4ff05ea616488858fbdfb/src/websocket-types.ts#L16-L34
+# https://github.com/DefinitelyTyped/DefinitelyTyped/blob/2bb69f9ac09fce7b6c84c835358fd6790e151005/types/ws/index.d.ts#L97
+# https://github.com/DefinitelyTyped/DefinitelyTyped/blob/2bb69f9ac09fce7b6c84c835358fd6790e151005/types/ws/index.d.ts#L343
 patchedDependencies:
   'cbor-x@1.6.6': patches/cbor-x@1.6.6.patch
   '@discoveryjs/json-ext@1.1.0': patches/@discoveryjs__json-ext@1.1.0.patch
   'klona@2.0.6': patches/klona@2.0.6.patch
   '@fluentui/react-charts@9.3.22': patches/@fluentui__react-charts@9.3.22.patch
+  '@fluentui/react-utilities@9.26.5': patches/@fluentui__react-utilities@9.26.5.patch
+  '@hono/node-server@2.0.4': patches/@hono__node-server@2.0.4.patch
   '@reclaimprotocol/tls@0.1.5': patches/@reclaimprotocol__tls@0.1.5.patch
   'overlayscrollbars@2.13.0': patches/overlayscrollbars@2.13.0.patch
   'eventsource-parser@3.1.0': patches/eventsource-parser@3.1.0.patch

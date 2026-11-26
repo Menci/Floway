@@ -137,8 +137,9 @@ export type AccountStatus = ChatGPTDangerStatus | UsageHeavyOrActive;
 export const accountStatus = (lookup: CredentialLookup, entries: QuotaEntry[]): AccountStatus => {
   if (lookup.kind === 'account-id-mismatch') return { tone: 'danger', reason: 'account-id-mismatch' };
   const { credential } = lookup;
-  if (credential.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', detail: credential.state_message };
-  if (credential.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', detail: credential.state_message };
+  const detail = credential.state_message === undefined ? {} : { detail: credential.state_message };
+  if (credential.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', ...detail };
+  if (credential.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', ...detail };
   const until = entries
     .map(entry => entry.rateLimitedUntil)
     .filter((value): value is string => value !== null)

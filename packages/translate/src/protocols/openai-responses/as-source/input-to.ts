@@ -226,7 +226,7 @@ const selectionToIR = (selection: { readonly type: 'function' | 'custom'; readon
   if (qualified.some(tool => tool.namespace !== first.namespace || tool.name !== first.name)) {
     throw new TranslateInputException(`Cannot translate ambiguous tool selector '${selection.name}'.`);
   }
-  return { type: selection.type, name: first.name, namespace: first.namespace };
+  return { type: selection.type, name: first.name, ...(first.namespace === undefined ? {} : { namespace: first.namespace }) };
 };
 
 // A selector may name a whole group, which selects each callable it holds.
@@ -238,7 +238,7 @@ const selectorOf = (payload: CanonicalOpenAIResponsesPayload, selector: Record<s
   if (!toolInventories(payload).some(tool => tool.type === 'namespace' && tool.name === selector.name)) {
     throw new TranslateInputException(`Cannot translate group selector '${String(selector.name)}' without a matching declaration.`);
   }
-  return declarations.flatMap(({ type, namespace, name }) => namespace === selector.name ? [{ type, namespace, name }] : []);
+  return declarations.flatMap(({ type, namespace, name }) => namespace !== undefined && namespace === selector.name ? [{ type, namespace, name }] : []);
 };
 
 const toolChoiceToIR = (

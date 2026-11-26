@@ -29,12 +29,12 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
     labelKey: limit === 'codex'
       ? options.quotaDisplay === 'used' ? 'monitoring.upstreams.series.usage' : 'monitoring.upstreams.series.remaining'
       : `monitoring.upstreams.series.named${options.quotaDisplay === 'used' ? 'Usage' : 'Remaining'}`,
-    labelValues: limit === 'codex' ? undefined : { name: limit },
+    ...(limit === 'codex' ? {} : { labelValues: { name: limit } }),
     axisPriority: upstreamMetricAxisPriority.subscriptionQuota,
     windowSeconds,
     // Floway records the x-codex-* windows even when the active label is premium.
     // https://github.com/openai/codex/issues/58413
-    quotaCostScope: limit === 'codex' || limit === '' || limit === 'premium' ? 'upstream' : undefined,
+    ...((limit === 'codex' || limit === '' || limit === 'premium') && { quotaCostScope: 'upstream' }),
     emptyValue: null,
     form: 'area',
   });

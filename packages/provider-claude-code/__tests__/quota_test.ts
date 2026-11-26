@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { claudeCodeRateLimitedUntil, parseClaudeCodeQuotaHeaders } from '../src/quota.ts';
+import type { ClaudeCodeQuotaSnapshotEntry } from '../src/state.ts';
 
 describe('parseClaudeCodeQuotaHeaders — coercion edge cases', () => {
   test('fallback header is the literal token `available` — anything else is `false`', () => {
@@ -16,9 +17,9 @@ describe('claudeCodeRateLimitedUntil', () => {
   const now = Date.parse('2026-11-13T00:00:00Z');
   const sessionReset = '2026-11-13T05:00:00.000Z';
   const weekReset = '2026-11-18T00:00:00.000Z';
-  const snapshot = (headers: Record<string, string>, modelId?: string) => ({
+  const snapshot = (headers: Record<string, string>, modelId?: string): ClaudeCodeQuotaSnapshotEntry => ({
     fetchedAt: now,
-    modelId,
+    ...(modelId === undefined ? {} : { modelId }),
     data: parseClaudeCodeQuotaHeaders(new Headers({
       'anthropic-ratelimit-unified-status': 'rejected',
       'anthropic-ratelimit-unified-reset': String(Date.parse(weekReset) / 1000),
@@ -31,7 +32,8 @@ describe('claudeCodeRateLimitedUntil', () => {
     expect(claudeCodeRateLimitedUntil(entry, now)).toBeNull();
     expect(claudeCodeRateLimitedUntil(entry, now, 'claude-opus-5-5')).toBeNull();
     expect(claudeCodeRateLimitedUntil(entry, now, 'claude-fable-5-1')).toBe(weekReset);
-    expect(claudeCodeRateLimitedUntil({ ...entry, modelId: undefined }, now, 'claude-fable-5-1')).toBeNull();
+    const { modelId: _modelId, ...unattributed } = entry;
+    expect(claudeCodeRateLimitedUntil(unattributed, now, 'claude-fable-5-1')).toBeNull();
   });
 
   test('a shared rejection alongside Fable exhaustion uses the shared reset for sibling models', () => {

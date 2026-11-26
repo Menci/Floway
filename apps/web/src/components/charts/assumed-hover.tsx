@@ -10,7 +10,7 @@ import { chartPointerOffset, type ChartHoverPointerStore } from './linked-hover'
 // the frame's own rule hide the empty callout.
 export function AssumedChartHover({ bottom, children, element, pointerStore, top, x }: {
   bottom: number;
-  children?: ReactNode;
+  children?: ReactNode | undefined;
   element: HTMLElement;
   pointerStore: ChartHoverPointerStore;
   top: number;

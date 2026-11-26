@@ -46,7 +46,7 @@ export const upstreamResetCycles = async (c: CtxWithQuery<typeof upstreamResetCy
     if (display?.resetThreshold === undefined) return [];
     const { name, labelKey, labelValues, windowSeconds, resetThreshold } = display;
     return [repo.upstreamMetrics.queryResetStarts(upstream_id, identity, resetThreshold, before).then(starts => ({
-      identity, display: { name, labelKey, labelValues, windowSeconds }, starts,
+      identity, display: { name, labelKey, ...(labelValues === undefined ? {} : { labelValues }), windowSeconds }, starts,
     }))];
   }));
   const selection = cycle_metric === undefined ? undefined : metrics.find(metric => upstreamMetricIdentityKey(metric.identity) === cycle_metric);

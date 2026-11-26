@@ -49,7 +49,6 @@ const BASELINE = {
   // https://github.com/openai/codex/blob/15fd656ddb55bd82a208fb9f00681880523f5260/codex-rs/protocol/src/openai_models.rs#L524-L537
   auto_compact_token_limit: null,
   context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
-  max_context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
 } satisfies CatalogModel;
 
 // Every distinct registry serviceTier selector is a billable wire id. Codex
@@ -77,9 +76,9 @@ export const synthesizeCatalogEntry = (
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
   catalogServiceTiers: readonly CodexServiceTier[] = [],
-  { metadata: codexMetadata, serviceTiers }: { metadata?: ChatGPTCodexModelMetadata; serviceTiers?: CodexServiceTier[] } = {},
+  { metadata: codexMetadata, serviceTiers }: { metadata?: ChatGPTCodexModelMetadata | undefined; serviceTiers?: CodexServiceTier[] | undefined } = {},
 ): CatalogModel => {
-  const source: CatalogModel = { ...(base ?? BASELINE), ...codexMetadata };
+  const { max_context_window: _sourceMaxContextWindow, ...source }: CatalogModel = { ...(base ?? BASELINE), ...codexMetadata };
 
   const chatProviderModels = model.providerModels === undefined
     ? undefined
@@ -134,7 +133,7 @@ export const synthesizeCatalogEntry = (
     service_tiers: serviceTiers ?? deriveServiceTiers(model, source.service_tiers ?? [], catalogServiceTiers),
     ...(serviceTiers === undefined ? {} : { additional_speed_tiers: serviceTiers.some(tier => tier.id === 'priority') ? ['fast'] : [] }),
     context_window: contextWindow,
-    max_context_window: maxContextWindow,
+    ...(maxContextWindow === undefined ? {} : { max_context_window: maxContextWindow }),
   };
 
   // Codex uses the advertised version to select the local agent tools for a new thread.

@@ -12,7 +12,11 @@ const flags = [undefined, false, true];
 
 test.each(protocols)('ChatCompletions via %s captures continuous usage preferences for the trip', async protocol => {
   for (const include_usage of flags) for (const continuous_usage_stats of flags) {
-    const src: OpenAIChatCompletionsPayloadEx = { model: 'model', messages: [], stream: true, stream_options: { include_usage, continuous_usage_stats } };
+    const stream_options = {
+      ...(include_usage === undefined ? {} : { include_usage }),
+      ...(continuous_usage_stats === undefined ? {} : { continuous_usage_stats }),
+    };
+    const src: OpenAIChatCompletionsPayloadEx = { model: 'model', messages: [], stream: true, stream_options };
     const trip = protocol === 'anthropic-messages'
       ? expectTrip(await routeOpenAIChatCompletionsViaAnthropicMessages(src, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: 100 }))
       : expectTrip(await routeOpenAIChatCompletionsViaOpenAIResponses(src, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }));

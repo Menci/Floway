@@ -13,6 +13,7 @@ import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
+import { applyFieldPatch, type FieldPatch } from '../../lib/field-patch';
 import { ModelInputFields } from '../models/input-modalities';
 import { pruneLimitsForKind } from '../models/limits';
 import { ModelLimitsFields } from '../models/limits-editor';
@@ -61,13 +62,9 @@ export function ModelDetail({
   const reasoningLabelId = useId();
   const upstreamIdRef = useRef<HTMLInputElement>(null);
   const fieldsReadOnly = readOnly || row.source !== 'manual';
-  const patch = (next: Partial<UpstreamModelConfig>) => {
+  const patch = (next: FieldPatch<UpstreamModelConfig>) => {
     if (fieldsReadOnly) return;
-    const updated = { ...row.config, ...next };
-    for (const key of Object.keys(next) as (keyof UpstreamModelConfig)[]) {
-      if (next[key] === undefined) delete (updated as unknown as Record<string, unknown>)[key];
-    }
-    onChange(updated);
+    onChange(applyFieldPatch(row.config, next));
   };
   const setKind = (kind: UpstreamModelConfig['kind']) => patch({
     kind,
@@ -83,16 +80,15 @@ export function ModelDetail({
   });
 
   const updateLimit = (key: keyof NonNullable<UpstreamModelConfig['limits']>, raw: string) => {
-    const limits = { ...(row.config.limits ?? {}) };
-    const value = optionalNumber(raw);
-    if (value === undefined) delete limits[key]; else limits[key] = value;
+    const limits = applyFieldPatch(row.config.limits ?? {}, { [key]: optionalNumber(raw) });
     patch({ limits: Object.keys(limits).length ? limits : undefined });
   };
 
-  const updateReasoning = (update: Partial<NonNullable<UpstreamChatModelConfig['reasoning']>>) => {
-    const reasoning = cleanObject({ ...(row.config.chat?.reasoning ?? {}), ...update });
-    const chat = cleanChat({ ...(row.config.chat ?? {}), reasoning: Object.keys(reasoning).length ? reasoning : undefined });
-    patch({ chat });
+  const updateChat = (update: FieldPatch<UpstreamChatModelConfig>) => patch({ chat: cleanChat(applyFieldPatch(row.config.chat ?? {}, update)) });
+
+  const updateReasoning = (update: FieldPatch<NonNullable<UpstreamChatModelConfig['reasoning']>>) => {
+    const reasoning = applyFieldPatch(row.config.chat?.reasoning ?? {}, update);
+    updateChat({ reasoning: Object.keys(reasoning).length ? reasoning : undefined });
   };
 
   const validationIssues = revealValidation ? modelValidationIssues(row.config) : [];
@@ -110,16 +106,10 @@ export function ModelDetail({
   const bindOpaqueBlobsToUpstream = opaqueBlobCompatibilityScope?.bindToUpstream ?? true;
 
   const updateOpaqueBlobCompatibilityScope = (
-    update: Partial<NonNullable<UpstreamModelConfig['opaqueBlobCompatibilityScope']>>,
-  ) => {
-    const next = {
-      bindToUpstream: bindOpaqueBlobsToUpstream,
-      ...opaqueBlobCompatibilityScope,
-      ...update,
-    };
-    if (next.key === undefined) delete next.key;
-    patch({ opaqueBlobCompatibilityScope: next });
-  };
+    update: FieldPatch<NonNullable<UpstreamModelConfig['opaqueBlobCompatibilityScope']>>,
+  ) => patch({
+    opaqueBlobCompatibilityScope: applyFieldPatch(opaqueBlobCompatibilityScope ?? { bindToUpstream: bindOpaqueBlobsToUpstream }, update),
+  });
 
   useEffect(() => {
     if (revealValidation && upstreamIdError) upstreamIdRef.current?.focus();
@@ -165,7 +155,7 @@ export function ModelDetail({
                 <Option value="decision">Decision</Option>
               </Dropdown>
             </Field>
-            {record.kind !== 'kimi-code' && <Field className="min-w-0" label={record.kind === 'azure' ? t('models.editor.deployment') : t('models.editor.upstreamId')} validationMessage={upstreamIdError} validationState={upstreamIdError ? 'error' : undefined}>
+            {record.kind !== 'kimi-code' && <Field className="min-w-0" label={record.kind === 'azure' ? t('models.editor.deployment') : t('models.editor.upstreamId')} validationMessage={upstreamIdError} validationState={upstreamIdError ? 'error' : 'none'}>
               <Input className="!w-full font-mono" placeholder={record.kind === 'azure' ? t('models.editor.deploymentPlaceholder') : t('models.editor.upstreamIdPlaceholder')} readOnly={fieldsReadOnly || row.hasAuto} ref={upstreamIdRef} value={row.config.upstreamModelId} onBlur={() => onUpstreamModelIdCommit(row.config.upstreamModelId)} onChange={(_, data) => patch({ upstreamModelId: data.value })} />
             </Field>}
             <Field className="min-w-0" label={t('models.editor.publicId')}>
@@ -184,7 +174,9 @@ export function ModelDetail({
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             <Input
               aria-label={t('models.editor.opaqueBlobCompatibilityKey')}
-              className="min-w-[220px] flex-1 font-mono"
+              // `!`: Fluent's Input states its own min-width from a sheet injected
+              // after the utility sheet, and without this floor the row never wraps.
+              className="!min-w-[220px] flex-1 font-mono"
               placeholder={row.config.upstreamModelId}
               readOnly={fieldsReadOnly}
               value={opaqueBlobCompatibilityScope?.key ?? ''}
@@ -234,14 +226,14 @@ export function ModelDetail({
             t={t}
           />
           {row.config.kind === 'chat' && <>
-            <ModelInputFields chat={row.config.chat} readOnly={fieldsReadOnly} onChange={change => patch({ chat: cleanChat({ ...row.config.chat, ...change }) })} />
+            <ModelInputFields chat={row.config.chat} readOnly={fieldsReadOnly} onChange={updateChat} />
             <div aria-labelledby={reasoningLabelId} className="grid gap-3" role="group">
               <Text id={reasoningLabelId} weight="semibold">{t('models.editor.reasoning')}</Text>
               <div className="flex flex-wrap gap-4">
                 <Switch checked={effort !== undefined} disabled={mandatory} readOnly={fieldsReadOnly} label={t('models.editor.effortLevels')} onChange={(_, data) => updateReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />
                 <Switch checked={budget !== undefined} disabled={mandatory} readOnly={fieldsReadOnly} label={t('models.editor.budgetTokens')} onChange={(_, data) => updateReasoning({ budget_tokens: data.checked ? {} : undefined })} />
                 <Switch checked={row.config.chat?.reasoning?.adaptive === true} disabled={mandatory} readOnly={fieldsReadOnly} label={t('models.editor.adaptive')} onChange={(_, data) => updateReasoning({ adaptive: data.checked ? true : undefined })} />
-                <Switch checked={mandatory} disabled={controlledReasoning} readOnly={fieldsReadOnly} label={t('models.editor.mandatory')} onChange={(_, data) => updateReasoning(data.checked ? { mandatory: true } : { mandatory: undefined })} />
+                <Switch checked={mandatory} disabled={controlledReasoning} readOnly={fieldsReadOnly} label={t('models.editor.mandatory')} onChange={(_, data) => updateReasoning({ mandatory: data.checked ? true : undefined })} />
               </div>
               {effort && <EffortEditor readOnly={fieldsReadOnly} effort={effort} onChange={next => updateReasoning({ effort: next })} t={t} />}
               {budget && <div className={`${TWO_COLUMN_FORM_CLASS} gap-4 max-w-[420px]`}>
@@ -269,7 +261,7 @@ export function ModelDetail({
   );
 }
 
-function NumberField({ label, onChange, placeholder, readOnly, value }: { label: string; onChange: (raw: string) => void; placeholder: string; readOnly: boolean; value?: number }) {
+function NumberField({ label, onChange, placeholder, readOnly, value }: { label: string; onChange: (raw: string) => void; placeholder: string; readOnly: boolean; value?: number | undefined }) {
   return <Field className="min-w-0" label={label}><Input className="!w-full" min={0} placeholder={placeholder} readOnly={readOnly} type="number" value={value === undefined ? '' : String(value)} onChange={(_, data) => onChange(data.value)} /></Field>;
 }
 
@@ -312,9 +304,8 @@ const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
 };
 
 const optionalNumber = (raw: string): number | undefined => raw === '' ? undefined : Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : undefined;
-const cleanObject = <T extends object>(value: T) => Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) as T;
 const cleanChat = (chat: UpstreamChatModelConfig): UpstreamChatModelConfig | undefined => chat.modalities || chat.image_detail_original !== undefined || chat.reasoning ? chat : undefined;
-const numberRange = (range: { min?: number; max?: number }, key: 'min' | 'max', raw: string) => { const next = { ...range }; const value = optionalNumber(raw); if (value === undefined) delete next[key]; else next[key] = value; return next; };
+const numberRange = (range: { min?: number; max?: number }, key: 'min' | 'max', raw: string) => applyFieldPatch(range, { [key]: optionalNumber(raw) });
 
 const ENDPOINT_CHOICE_KINDS = new Set<UpstreamModelConfig['kind']>(['chat', 'image']);
 

@@ -105,9 +105,11 @@ export const mergeAnthropicMessagesUsageSnapshot = (
   current: AnthropicMessagesUsageSnapshot,
   delta: Partial<AnthropicMessagesUsageDeltaEx> & { output_tokens: number },
 ): AnthropicMessagesUsageSnapshot => {
+  const { cache_creation: currentCacheCreation, ...rest } = current;
+  const cacheCreation = delta.cache_creation === undefined ? currentCacheCreation : delta.cache_creation;
   return {
-    ...current,
-    ...(delta.cache_creation === undefined ? {} : { cache_creation: delta.cache_creation ?? undefined }),
+    ...rest,
+    ...(present(cacheCreation) ? { cache_creation: cacheCreation } : {}),
     ...(present(delta.service_tier) ? { service_tier: delta.service_tier } : {}),
     ...(present(delta.speed) ? { speed: delta.speed } : {}),
     output_tokens: delta.output_tokens,

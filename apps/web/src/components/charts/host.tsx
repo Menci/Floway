@@ -14,9 +14,9 @@ export function ChartHost({ children, className, emptyText, hasData, onMouseEnte
   className: string;
   emptyText: string;
   hasData: boolean;
-  onMouseEnter?: () => void;
-  onMouseLeave?: () => void;
-  onMouseMove?: MouseEventHandler<HTMLDivElement>;
+  onMouseEnter?: (() => void) | undefined;
+  onMouseLeave?: (() => void) | undefined;
+  onMouseMove?: MouseEventHandler<HTMLDivElement> | undefined;
 }) {
   const [element, setElement] = useState<HTMLDivElement | null>(null);
   const size = useElementSize(element);

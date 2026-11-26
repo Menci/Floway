@@ -17,37 +17,37 @@ import { OPTIONAL_FLAG_IDS } from '@floway-dev/provider/flags';
 const opaqueJsonSchema = z.unknown().refine(value => value !== undefined, 'stored JSON cannot be undefined');
 const endpointSchema = z.object({}).passthrough();
 const endpointsSchema = z.object({
-  openaiCompletions: endpointSchema.optional(),
-  openaiChatCompletions: endpointSchema.optional(),
-  openaiResponses: endpointSchema.optional(),
-  anthropicMessages: endpointSchema.optional(),
-  geminiGenerateContent: endpointSchema.optional(),
-  openaiEmbeddings: endpointSchema.optional(),
-  openaiImagesGenerations: endpointSchema.optional(),
-  openaiImagesEdits: endpointSchema.optional(),
-  openaiAudioTranscriptions: endpointSchema.optional(),
-  rerank: endpointSchema.optional(),
-  decision: endpointSchema.optional(),
+  openaiCompletions: endpointSchema.exactOptional(),
+  openaiChatCompletions: endpointSchema.exactOptional(),
+  openaiResponses: endpointSchema.exactOptional(),
+  anthropicMessages: endpointSchema.exactOptional(),
+  geminiGenerateContent: endpointSchema.exactOptional(),
+  openaiEmbeddings: endpointSchema.exactOptional(),
+  openaiImagesGenerations: endpointSchema.exactOptional(),
+  openaiImagesEdits: endpointSchema.exactOptional(),
+  openaiAudioTranscriptions: endpointSchema.exactOptional(),
+  rerank: endpointSchema.exactOptional(),
+  decision: endpointSchema.exactOptional(),
 }).passthrough();
 
 const limitsSchema = z.object({
-  max_output_tokens: z.number().optional(),
-  max_context_window_tokens: z.number().optional(),
-  max_prompt_tokens: z.number().optional(),
+  max_output_tokens: z.number().exactOptional(),
+  max_context_window_tokens: z.number().exactOptional(),
+  max_prompt_tokens: z.number().exactOptional(),
 }).passthrough();
 
 const chatSchema = z.object({
   modalities: z.object({
     input: z.array(z.enum(['text', 'image', 'audio'])),
     output: z.array(z.enum(['text', 'image'])),
-  }).passthrough().optional(),
-  image_detail_original: z.boolean().optional(),
+  }).passthrough().exactOptional(),
+  image_detail_original: z.boolean().exactOptional(),
   reasoning: z.object({
-    effort: z.object({ supported: z.array(z.string()), default: z.string() }).passthrough().optional(),
-    budget_tokens: z.object({ min: z.number().optional(), max: z.number().optional() }).passthrough().optional(),
-    adaptive: z.boolean().optional(),
-    mandatory: z.boolean().optional(),
-  }).passthrough().optional(),
+    effort: z.object({ supported: z.array(z.string()), default: z.string() }).passthrough().exactOptional(),
+    budget_tokens: z.object({ min: z.number().exactOptional(), max: z.number().exactOptional() }).passthrough().exactOptional(),
+    adaptive: z.boolean().exactOptional(),
+    mandatory: z.boolean().exactOptional(),
+  }).passthrough().exactOptional(),
 }).passthrough();
 
 const pricingCoordinateSchema = z.union([
@@ -64,7 +64,7 @@ const decimalStringSchema = z.string().transform((value, ctx) => {
 });
 const pricingSchema = z.object({
   entries: z.array(z.object({
-    selector: z.record(z.string(), pricingCoordinateSchema).optional(),
+    selector: z.record(z.string(), pricingCoordinateSchema).exactOptional(),
     rates: z.partialRecord(z.enum(BILLING_METRICS), decimalStringSchema),
   }).passthrough()),
 }).passthrough();
@@ -72,59 +72,59 @@ const pricingSchema = z.object({
 const flagOverridesSchema = z.partialRecord(z.enum(OPTIONAL_FLAG_IDS), z.boolean());
 const opaqueBlobCompatibilityScopeSchema = z.object({
   bindToUpstream: z.boolean(),
-  key: z.string().min(1).optional(),
+  key: z.string().min(1).exactOptional(),
 }).strict();
 const providerModelSchema = z.object({
   id: z.string(),
   upstreamModelId: z.string(),
-  display_name: z.string().optional(),
-  owned_by: z.string().optional(),
-  created: z.number().optional(),
+  display_name: z.string().exactOptional(),
+  owned_by: z.string().exactOptional(),
+  created: z.number().exactOptional(),
   limits: limitsSchema,
   kind: z.enum(MODEL_KINDS),
-  pricing: pricingSchema.optional(),
-  chat: chatSchema.optional(),
+  pricing: pricingSchema.exactOptional(),
+  chat: chatSchema.exactOptional(),
   endpoints: endpointsSchema,
   opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema,
-  providerData: opaqueJsonSchema.optional(),
+  providerData: opaqueJsonSchema.exactOptional(),
   rerankTarget: z.object({
     protocol: z.enum(RERANK_PROTOCOLS),
-    path: z.string().optional(),
-  }).passthrough().optional(),
+    path: z.string().exactOptional(),
+  }).passthrough().exactOptional(),
   decisionTarget: z.object({
     protocol: z.enum(DECISION_PROTOCOLS),
-    path: z.string().optional(),
-  }).passthrough().optional(),
+    path: z.string().exactOptional(),
+  }).passthrough().exactOptional(),
   enabledFlags: z.array(z.enum(OPTIONAL_FLAG_IDS)).transform(flags => new Set(flags)),
-  flagOverrides: flagOverridesSchema.optional(),
+  flagOverrides: flagOverridesSchema.exactOptional(),
 }).passthrough();
 
 const discoveredModelSchema = z.object({
   upstreamModelId: z.string(),
-  publicModelId: z.string().optional(),
-  display_name: z.string().optional(),
-  limits: limitsSchema.optional(),
+  publicModelId: z.string().exactOptional(),
+  display_name: z.string().exactOptional(),
+  limits: limitsSchema.exactOptional(),
   kind: z.enum(MODEL_KINDS),
-  pricing: pricingSchema.optional(),
-  chat: chatSchema.optional(),
+  pricing: pricingSchema.exactOptional(),
+  chat: chatSchema.exactOptional(),
   endpoints: endpointsSchema,
-  opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema.optional(),
+  opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeSchema.exactOptional(),
   rerankTarget: z.object({
     protocol: z.enum(RERANK_PROTOCOLS),
-    path: z.string().optional(),
-  }).passthrough().optional(),
+    path: z.string().exactOptional(),
+  }).passthrough().exactOptional(),
   decisionTarget: z.object({
     protocol: z.enum(DECISION_PROTOCOLS),
-    path: z.string().optional(),
-  }).passthrough().optional(),
-  flagOverrides: flagOverridesSchema.optional(),
+    path: z.string().exactOptional(),
+  }).passthrough().exactOptional(),
+  flagOverrides: flagOverridesSchema.exactOptional(),
 }).passthrough();
 
 const modelsCacheSchema = z.object({
   revision: z.number(),
   fetchedAt: z.number(),
   models: z.array(providerModelSchema),
-  discovered: z.array(discoveredModelSchema).optional(),
+  discovered: z.array(discoveredModelSchema).exactOptional(),
   lastError: z.object({ message: z.string(), at: z.number(), failureCount: z.number().int().positive() }).passthrough().nullable(),
 }).passthrough();
 const modelsCacheEnvelopeSchema = z.object({ revision: z.number() }).passthrough();
@@ -133,7 +133,7 @@ const flagOverridesRecordSchema = z.record(z.string(), z.boolean());
 const disabledPublicModelIdsSchema = z.array(z.string());
 const proxyFallbackListSchema = z.array(z.object({
   id: z.string(),
-  colos: z.array(z.string()).optional(),
+  colos: z.array(z.string()).exactOptional(),
 }));
 const modelPrefixSchema = z.object({
   prefix: z.string(),

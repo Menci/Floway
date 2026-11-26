@@ -5,7 +5,7 @@ import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
 
 export interface ParseOpenAIChatCompletionsStreamOptions {
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export const parseOpenAIChatCompletionsStream = (

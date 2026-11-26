@@ -21,7 +21,8 @@ const adminDelete = (sessionId: string, id: number) => requestApp(`/api/users/${
 
 test('POST /api/users creates the user and provisions a Default key', async () => {
   const { adminSession, repo } = await setupAppTest();
-  const response = await adminPost(adminSession, { username: 'alice', password: 'hunter22' });
+  const group = await repo.groups.create('Research', 150);
+  const response = await adminPost(adminSession, { username: 'alice', password: 'hunter22', groupIds: [group.id] });
   assertEquals(response.status, 201);
   const body = (await response.json()) as { user: { id: number; username: string } };
   expect(body.user.id).toBeGreaterThan(2);
@@ -32,10 +33,9 @@ test('POST /api/users creates the user and provisions a Default key', async () =
   assertEquals(stored.length, 1);
   assertEquals(stored[0].name, 'Default');
   assertEquals(/^[0-9a-f]{64}$/.test(stored[0].serverSecret), true);
-  const records = await repo.accessRecords.listByPrincipal({ kind: 'user', id: body.user.id });
-  expect(records.map(record => ({ scope: record.scope, values: record.values }))).toEqual([
-    { scope: { kind: 'upstreams' }, values: { 'Model.Use': true } },
-  ]);
+  // Creating a user grants nothing of its own; access comes from the groups it joins.
+  assertEquals(await repo.accessRecords.listByPrincipal({ kind: 'user', id: body.user.id }), []);
+  assertEquals(await repo.groups.listIdsByUserId(body.user.id), [group.id]);
 });
 
 test('PATCH /api/users/1 may rename but cannot be demoted or deleted', async () => {

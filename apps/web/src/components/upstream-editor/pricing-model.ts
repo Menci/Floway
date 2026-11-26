@@ -1,3 +1,4 @@
+import { applyFieldPatch, type FieldPatch } from '../../lib/field-patch';
 import {
   BILLING_METRICS,
   PRICING_AXES,
@@ -149,13 +150,11 @@ export const withEqualityCoordinate = (draft: PricingEntryDraft, axisId: string,
 export const withThresholdCoordinate = (
   draft: PricingEntryDraft,
   axisId: string,
-  patch: Partial<PricingThresholdDraft>,
-): PricingEntryDraft => {
-  const current = thresholdCoordinate(draft, axisId);
-  const operator = patch.operator ?? current?.operator ?? 'gt';
-  const value = 'value' in patch ? patch.value : current?.value;
-  return { ...draft, selector: { ...draft.selector, [axisId]: { operator, ...(value !== undefined ? { value } : {}) } } };
-};
+  patch: FieldPatch<PricingThresholdDraft>,
+): PricingEntryDraft => ({
+  ...draft,
+  selector: { ...draft.selector, [axisId]: applyFieldPatch<PricingThresholdDraft>(thresholdCoordinate(draft, axisId) ?? { operator: 'gt' }, patch) },
+});
 
 export const withRate = (draft: PricingEntryDraft, field: PricingField, raw: string): PricingEntryDraft => {
   const displayPrice = raw.trim();

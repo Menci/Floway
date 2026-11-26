@@ -7,7 +7,7 @@ import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-admin-users';
 import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardAdmin } from './guards';
-import { api, callApi } from '../api/client';
+import { abortOptions, api, callApi } from '../api/client';
 import { mergeResults } from '../api/partial-results';
 import type { ControlPlaneGroup, ControlPlaneUser, ControlPlaneUserDirectory } from '../api/types';
 import { GroupDialog } from '../components/groups/dialog';
@@ -41,7 +41,7 @@ const loadPageData = async (
   current: Pick<LoaderData, 'directory'>,
   signal?: AbortSignal,
 ): Promise<LoaderData> => {
-  const directoryResult = await callApi(() => api.api['user-directory'].$get(undefined, { init: { signal } }));
+  const directoryResult = await callApi(() => api.api['user-directory'].$get(undefined, abortOptions(signal)));
   const { values, error } = mergeResults(current, {
     directory: directoryResult,
   });

@@ -59,7 +59,7 @@ export const useStatusHue = (tone: BadgeTone) => useBadgeHue(TONE_HUES[tone]);
 /** Fluent's `medium` default has an empty size rule, leaving the 20px root reset box, so every dashboard badge is `large`. */
 export function StatusBadge({ children, className, tone }: {
   children: ReactNode;
-  className?: string;
+  className?: string | undefined;
   tone: BadgeTone;
 }) {
   const hue = useStatusHue(tone);

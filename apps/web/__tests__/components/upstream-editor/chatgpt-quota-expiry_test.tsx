@@ -25,7 +25,7 @@ const record = upstreamRecord('', {
 const cases = [
   { name: 'primary only', primary: 100, secondary: 35, until: primaryReset },
   { name: 'both known', primary: 100, secondary: 100, until: secondaryReset },
-  { name: 'exhausted secondary without reset', primary: 100, secondary: 100, secondaryReset: undefined, until: primaryReset },
+  { name: 'exhausted secondary without reset', primary: 100, secondary: 100, secondaryReset: null, until: primaryReset },
 ];
 
 afterEach(() => vi.useRealTimers());
@@ -40,6 +40,7 @@ beforeEach(() => { primeDefaultSession(); });
 
 describe('ChatGPT projected quota on list and card', () => {
   it.each(cases)('expires the known timer without new traffic: $name', async ({ primary, secondary, until, ...scenario }) => {
+    const secondaryResetAt = 'secondaryReset' in scenario ? scenario.secondaryReset : secondaryReset;
     vi.useFakeTimers();
     vi.setSystemTime('2026-07-28T12:00:00.000Z');
     const quota = {
@@ -50,7 +51,7 @@ describe('ChatGPT projected quota on list and card', () => {
       primary_reset_after_at: primaryReset,
       secondary_used_percent: secondary,
       secondary_window_minutes: 10_080,
-      secondary_reset_after_at: 'secondaryReset' in scenario ? scenario.secondaryReset : secondaryReset,
+      ...(secondaryResetAt === null ? {} : { secondary_reset_after_at: secondaryResetAt }),
       ratelimited_until: until,
     };
     const projected = { ...record, chatgpt_quota: { premium: quota } };
@@ -78,7 +79,8 @@ describe('ChatGPT projected quota on list and card', () => {
     expect(card.getAllByText(remaining(0)).length).toBeGreaterThan(0);
     expect(projected.chatgpt_quota.premium).toEqual(quota);
 
-    const fresh = { ...projected, chatgpt_quota: { premium: { ...quota, primary_used_percent: 12, secondary_used_percent: 35, ratelimited_until: undefined } } };
+    const { ratelimited_until: _until, ...unlimited } = quota;
+    const fresh = { ...projected, chatgpt_quota: { premium: { ...unlimited, primary_used_percent: 12, secondary_used_percent: 35 } } };
     view.rerender(<><div data-testid="list"><UpstreamSignals record={fresh} /></div><div data-testid="card"><ChatGPTAccountCard record={fresh} /></div></>);
     expect(card.getByText(statusLabel('active'))).toBeTruthy();
     expect(list.getByText('88%')).toBeTruthy();

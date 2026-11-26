@@ -7,7 +7,7 @@ type NamedTelemetryBucket = typeof telemetryBucketGranularities[number];
 export type TelemetryBucketGranularity = NamedTelemetryBucket | `${number}d`;
 
 interface TelemetryBucketZone {
-  timeZone?: string;
+  timeZone?: string | undefined;
   timezoneOffsetMinutes: number;
 }
 export type TelemetryBucketOptions = TelemetryBucketZone & (
@@ -20,7 +20,19 @@ export const isTelemetryBucketGranularity = (value: unknown): value is Telemetry
   || /^[1-9]\d*d$/.test(value) && Number.isSafeInteger(Number(value.slice(0, -1)))
 );
 
-// UTC ordinals index civil dates; actual bucket boundaries retain local DST.
+export const telemetryBucketHours = (bucket: Exclude<TelemetryBucketGranularity, 'all' | 'month' | 'year'>): number => {
+  if (isTelemetryHourlyBucket(bucket)) return telemetryHourBucketSizes[bucket];
+  if (bucket === 'day') return 24;
+  if (bucket === 'week') return 7 * 24;
+  return Number(bucket.slice(0, -1)) * 24;
+};
+
+export const telemetryBucketStart = (hourMs: number, originMs: number, widthHours: number): number => {
+  const widthMs = widthHours * TELEMETRY_HOUR_MS;
+  return originMs + Math.floor((hourMs - originMs) / widthMs) * widthMs;
+};
+
+// Calendar buckets index civil dates in UTC and choose boundaries in local time.
 export const telemetryDayOrdinal = (date: string): number => Date.parse(`${date}T00:00:00Z`) / TELEMETRY_DAY_MS;
 
 export const parseTelemetryHour = (hour: string): number => {

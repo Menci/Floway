@@ -4,7 +4,7 @@ import { isEventStreamMediaType, type ProtocolFrame } from '@floway-dev/protocol
 
 export type ProviderStreamParser<TEvent> = (
   body: ReadableStream<Uint8Array>,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal | undefined },
 ) => AsyncIterable<ProtocolFrame<TEvent>>;
 
 const BODY_SNIPPET_CHARS = 1024;

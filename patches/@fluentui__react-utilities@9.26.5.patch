@@ -1,0 +1,31 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 08ba5a2b903950feb976aa4597dfd93a67339807..047d14437d898acaf3449b8a86cfa4a82d6a42be 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -94,7 +94,7 @@ export declare type ComponentState<Slots extends SlotPropsRecord> = {
+         [Key in keyof Slots]-?: React_2.ElementType;
+     };
+ } & {
+-    [Key in keyof Slots]: ReplaceNullWithUndefined<WithoutSlotRenderFunction<Exclude<Slots[Key], SlotShorthandValue | (Key extends 'root' ? null : never)>>>;
++    [Key in keyof Slots]: ReplaceNullWithUndefined<WithoutSlotRenderFunction<Exclude<Slots[Key], SlotShorthandValue | (Key extends 'root' ? null | undefined : never)>>>;
+ };
+ 
+ /**
+@@ -413,7 +413,7 @@ export declare const IdPrefixProvider: React_2.Provider<string | undefined>;
+ /**
+  * Infers the element type from props that are declared using ComponentProps.
+  */
+-export declare type InferredElementRefType<Props> = ObscureEventName extends keyof Props ? Required<Props>[ObscureEventName] extends React_2.PointerEventHandler<infer Element> ? Element : never : never;
++export declare type InferredElementRefType<Props> = ObscureEventName extends keyof Props ? NonNullable<Props[ObscureEventName]> extends React_2.PointerEventHandler<infer Element> ? Element : never : never;
+ 
+ /**
+  * Helper type for {@link Slot}. Modifies `JSXIntrinsicElements<Type>`:
+@@ -858,7 +858,7 @@ export declare type Slot<Type extends JSXIntrinsicElementKeys | ComponentType<an
+     as?: Type;
+ } & WithSlotRenderFunction<IntrinsicElementProps<Type>> : Type extends ComponentType<infer Props> ? Props extends UnknownSlotProps ? Props : WithSlotRenderFunction<Props> : Type> | (AlternateAs extends unknown ? {
+     as: AlternateAs;
+-} & WithSlotRenderFunction<IntrinsicElementProps<AlternateAs>> : never) | null : 'Error: First parameter to Slot must not be not a union of types. See documentation of Slot type.';
++} & WithSlotRenderFunction<IntrinsicElementProps<AlternateAs>> : never) | null | undefined : 'Error: First parameter to Slot must not be not a union of types. See documentation of Slot type.';
+ 
+ declare namespace slot {
+     export {

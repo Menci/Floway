@@ -67,6 +67,12 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.max_context_window).toBe(936000);
   });
 
+  test('private Codex metadata can leave the maximum context window unstated', () => {
+    const entry = synthesizeCatalogEntry(base, bundledBase, {}, [], { metadata: { context_window: 200_000 } });
+    expect(entry.context_window).toBe(200_000);
+    expect(Object.hasOwn(entry, 'max_context_window')).toBe(false);
+  });
+
   test('a matching client snapshot alone cannot grant audio input', () => {
     const entry = synthesizeCatalogEntry(base, { ...bundledBase, input_modalities: ['text', 'audio'] }, { audioInput: true });
     expect(entry.input_modalities).toEqual(['text']);
@@ -78,25 +84,26 @@ describe('synthesizeCatalogEntry', () => {
   });
 
   test('audio requires native Responses and audio input on every chat fallback', () => {
-    const primary = stubProviderModel({ endpoints: { openaiResponses: {} }, chat: { modalities: { input: ['text', 'audio'], output: ['text'] } } });
-    const listed = (fallback: ProviderModel) => synthesizeCatalogEntry({ ...base, endpoints: primary.endpoints, chat: primary.chat, providerModels: { primary, fallback } }, undefined, { audioInput: true }).input_modalities;
+    const chat: NonNullable<ProviderModel['chat']> = { modalities: { input: ['text', 'audio'], output: ['text'] } };
+    const primary = stubProviderModel({ endpoints: { openaiResponses: {} }, chat });
+    const listed = (fallback: ProviderModel) => synthesizeCatalogEntry({ ...base, endpoints: primary.endpoints, chat, providerModels: { primary, fallback } }, undefined, { audioInput: true }).input_modalities;
     expect(listed(primary)).toEqual(['text', 'audio']);
     expect(listed({ ...primary, endpoints: { anthropicMessages: {} } })).toEqual(['text']);
     expect(listed({ ...primary, chat: { modalities: { input: ['text'], output: ['text'] } } })).toEqual(['text']);
   });
 
   test('rejects original detail when one of several providers does not state it', () => {
-    const providerModel = (value: boolean | undefined): ProviderModel => stubProviderModel({
+    const draft: Partial<ProviderModel> = {
       id: 'gpt-5.5',
       upstreamModelId: 'gpt-5.5',
       endpoints: { openaiResponses: {} },
-      ...(value === undefined ? {} : { chat: { image_detail_original: value } }),
-    });
-    const accepting = providerModel(true);
-    const rejecting = providerModel(undefined);
+    };
+    const chat = { image_detail_original: true };
+    const accepting = stubProviderModel({ ...draft, chat });
+    const rejecting = stubProviderModel(draft);
 
     for (const providerModels of [{ accepting, rejecting }, { rejecting, accepting }]) {
-      const entry = synthesizeCatalogEntry({ ...base, chat: accepting.chat, providerModels }, bundledBase);
+      const entry = synthesizeCatalogEntry({ ...base, chat, providerModels }, bundledBase);
       expect(entry.supports_image_detail_original).toBe(false);
     }
   });

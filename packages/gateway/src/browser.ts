@@ -8,6 +8,8 @@ export type * from './app.ts';
 export type * from './access-control/types.ts';
 export type * from './control-plane/proxies/serialize.ts';
 export type * from './control-plane/usage-types.ts';
+export type * from './control-plane/performance/types.ts';
+export type * from './control-plane/shared/telemetry-overview-types.ts';
 export type * from './control-plane/upstreams/types.ts';
 export type * from './dump/types.ts';
 

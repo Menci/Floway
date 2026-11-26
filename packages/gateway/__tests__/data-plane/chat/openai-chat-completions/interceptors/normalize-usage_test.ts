@@ -52,7 +52,7 @@ test('relocates usage from a non-empty choices chunk onto a synthesized carrier'
         completion_tokens: 20,
         total_tokens: 120,
         prompt_tokens_details: { cached_tokens: 70 },
-      } as unknown as OpenAIChatCompletionsStreamEvent['usage'],
+      } as unknown as NonNullable<OpenAIChatCompletionsStreamEvent['usage']>,
     }),
   );
 

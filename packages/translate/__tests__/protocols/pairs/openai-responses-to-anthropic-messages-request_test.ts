@@ -277,6 +277,51 @@ test('buildTargetPayload flattens namespace functions collision-safely and maps 
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'web_run_2', disable_parallel_tool_use: false });
 });
 
+test('buildTargetPayload envelopes root unions after name allocation and wraps replay history', async () => {
+  const schema = {
+    type: 'object',
+    oneOf: [{ $ref: '#/$defs/view' }, { $ref: '#/$defs/delete' }],
+    $defs: {
+      view: { type: 'object', properties: { mode: { const: 'view' } }, required: ['mode'] },
+      delete: { type: 'object', properties: { mode: { const: 'delete' } }, required: ['mode'] },
+    },
+  };
+  const result = await buildWithTestSidecar({
+    ...minimalPayload,
+    input: [{ type: 'function_call', call_id: 'call_update', namespace: 'app', name: 'update', arguments: '{"mode":"delete"}', status: 'completed' }],
+    tools: [{ type: 'namespace', name: 'app', description: '', tools: [{ type: 'function', name: 'update', parameters: schema, strict: true }] }],
+  });
+
+  assertEquals(result.target.tools?.[0], {
+    type: 'custom', name: 'app_update', strict: true,
+    input_schema: {
+      type: 'object',
+      properties: { arguments: { ...schema, oneOf: [{ $ref: '#/properties/arguments/$defs/view' }, { $ref: '#/properties/arguments/$defs/delete' }] } },
+      required: ['arguments'],
+      additionalProperties: false,
+    },
+    cache_control: { type: 'ephemeral' },
+  });
+  assertEquals(result.target.messages[0], {
+    role: 'assistant',
+    content: [{ type: 'tool_use', id: 'call_update', name: 'app_update', input: { arguments: { mode: 'delete' } }, cache_control: { type: 'ephemeral' } }],
+  });
+});
+
+test('buildTargetPayload rejects root unions with dynamic recursive references', async () => {
+  await assertRejects(
+    () => buildWithTestSidecar({
+      ...minimalPayload,
+      tools: [{
+        type: 'function', name: 'recursive',
+        parameters: { type: 'object', $recursiveAnchor: true, oneOf: [{ type: 'object' }], properties: { child: { $recursiveRef: '#' } } },
+      }],
+    }),
+    TranslateInputException,
+    'Cannot translate an Anthropic tool schema with a root combinator and dynamic recursive references.',
+  );
+});
+
 test('buildTargetPayload maps incomplete function output to an Anthropic tool error', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,

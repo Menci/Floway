@@ -2,7 +2,7 @@ import { SaveRegular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
-import { useBlocker, useNavigate, type BlockerFunction } from 'react-router';
+import { useBlocker, useNavigate, useSearchParams, type BlockerFunction } from 'react-router';
 import { z } from 'zod';
 
 import { UpstreamConfigSidebar } from './config-sidebar';
@@ -23,15 +23,17 @@ import {
 } from './data';
 import { modelsAreValid } from './model-validation';
 import { parseModels } from './models-yaml';
-import { UpstreamWorkspace, type ModelsYamlDraft } from './workspace';
+import { configSectionSearch, isConfigSectionError, UpstreamWorkspace, type ModelsYamlDraft } from './workspace';
 import { api, callApi } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { canonicalJson } from '../../lib/canonical-json';
 import { useEntryRewrite } from '../../lib/page-navigation';
+import { useMediaQuery } from '../../lib/use-media-query';
 import { BackNavigationButton } from '../ui/back-navigation-button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
-import { PANE_GAP_CLASS } from '../ui/layout';
+import { PANE_GAP_CLASS, PINNED_CARD_FILL_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
 import { Panel } from '../ui/panel';
@@ -40,14 +42,18 @@ import { useRefresh } from '../ui/use-refresh';
 
 const { Button, Spinner, Text } = fluentComponents;
 
-const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, item) =>
-  item !== null && typeof item === 'object' && !Array.isArray(item)
-    ? Object.fromEntries(Object.keys(item).toSorted().map(key => [key, item[key]]))
-    : item);
+// Where the editor's two panes stop sitting side by side, which every
+// max-[1050px] class below restates: UnoCSS reads class names from the source
+// text, so the number cannot be composed into them.
+const SINGLE_COLUMN_QUERY = '(max-width: 1050px)';
 
 export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // One column has no room to keep the configuration beside the models, so it
+  // becomes a section of the workspace instead of a pane stacked above it.
+  const singleColumn = useMediaQuery(SINGLE_COLUMN_QUERY);
   const rewrite = useEntryRewrite();
   const toasts = useOutcomeToasts();
   const [record, setRecord] = useState(data.record);
@@ -170,10 +176,10 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     // the persisted connection. Draft previews exist for the admin create flow
     // and for Full editors previewing unsaved connection changes.
     const catalog = saved !== null
-      ? await fetchSavedModelCatalog(saved, { signal })
+      ? await fetchSavedModelCatalog(saved, signal)
       : isPersisted(record) && (editLevel === 'models' || !discoveryInputsDirty)
-        ? await fetchSavedModelCatalog(record, { signal })
-        : await previewDraftModelCatalog(record, getValues(), { signal });
+        ? await fetchSavedModelCatalog(record, signal)
+        : await previewDraftModelCatalog(record, getValues(), signal);
     if (signal.aborted) return;
     setModelsError(catalog.modelsError);
     if (catalog.discovered !== null) {
@@ -249,22 +255,40 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       if (data.mode === 'create') {
         setCreatedUpstreamId(saved.id);
       } else setSaving(false);
-    }, () => {
+    }, errors => {
       // Field rejections render on the control that produced them; the
       // page-level bar is only where a server says no.
       setSaveError(null);
+      // Sectioned, the control that rejected may be on a section not shown.
+      if (singleColumn && Object.keys(errors).some(isConfigSectionError)) setSearchParams(configSectionSearch(searchParams), rewrite);
     })();
     return savedRecord;
   };
+
+  const saveButton = !readOnly && <Button appearance="primary" disabled={data.mode === 'edit' && !hasUnsavedChanges} disabledFocusable={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{t('upstreams.editor.actions.save')}</Button>;
+  const unsavedNote = hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('upstreams.editor.unsaved')}</Text>;
+  const configSidebar = <UpstreamConfigSidebar
+    catalogAvailable={catalogAvailable}
+    discovered={discovered ?? []}
+    onPatch={applyProviderPatch}
+    onRefreshModels={requestModels}
+    editLevel={editLevel}
+    proxies={data.proxies}
+    record={record}
+    runtime={data.runtime}
+  />;
+  const workspace = <UpstreamWorkspace configPane={singleColumn ? configSidebar : undefined} editLevel={editLevel} record={record} discovered={discovered ?? []} modelsLoading={modelsLoading} modelsError={modelsError} modelsYamlDraft={modelsYamlDraft} onModelsYamlDraftChange={setModelsYamlDraft} onRefreshModels={requestModels} />;
 
   return <FormProvider {...form}>
     {/* A column rather than a row template: the error bar is only sometimes
         there, and a named row for it leaves an empty one and a gap when it
         is not. */}
-    <div className="flex flex-col gap-[14px] h-full min-h-0">
-      <header className="flex items-center gap-3 min-w-0">
+    {/* One column grows with its content and the page scrolls it: held to the
+        viewport, the panes became two short windows each scrolling alone. */}
+    <div className="flex flex-col gap-[14px] h-full min-h-0 max-[1050px]:h-auto">
+      <header className="flex flex-wrap items-center gap-3 min-w-0">
         <BackNavigationButton to="/dashboard/providers/upstreams">{t('upstreams.editor.actions.back')}</BackNavigationButton>
-        {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('upstreams.editor.unsaved')}</Text>}
+        {!singleColumn && unsavedNote}
         {/* Disabled on a clean form only in edit mode: a create form opens on a
             prefilled blueprint and is clean at first render, yet still has
             something to send, and its credential gates are submit-time schema
@@ -272,27 +296,34 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
             change, keeping the button live for the press that surfaces the
             field's own error. */}
         <div className="ml-auto flex items-center gap-2">
-          {!readOnly && <Button appearance="primary" disabled={data.mode === 'edit' && !hasUnsavedChanges} disabledFocusable={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{t('upstreams.editor.actions.save')}</Button>}
+          {!singleColumn && saveButton}
         </div>
       </header>
       {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
-      <div className={`grid grid-cols-[380px_minmax(0,1fr)] ${PANE_GAP_CLASS} min-h-0 min-w-0 flex-1 max-[1050px]:grid-cols-1`}>
-        <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
-          <UpstreamConfigSidebar
-            catalogAvailable={catalogAvailable}
-            discovered={discovered ?? []}
-            onPatch={applyProviderPatch}
-            onRefreshModels={requestModels}
-            editLevel={editLevel}
-            proxies={data.proxies}
-            record={record}
-            runtime={data.runtime}
-          />
-        </Panel>
-        <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
-          <UpstreamWorkspace editLevel={editLevel} record={record} discovered={discovered ?? []} modelsLoading={modelsLoading} modelsError={modelsError} modelsYamlDraft={modelsYamlDraft} onModelsYamlDraftChange={setModelsYamlDraft} onRefreshModels={requestModels} />
-        </Panel>
-      </div>
+      {singleColumn
+        // Clipped rather than hidden: a hidden overflow makes the panel the
+        // scroll container its sticky section bar resolves against, and the
+        // page, not the panel, is what scrolls here.
+        ? <Panel className="min-w-0 !overflow-clip" padding="flush">{workspace}</Panel>
+        : <div className={`grid grid-cols-[380px_minmax(0,1fr)] ${PANE_GAP_CLASS} min-h-0 min-w-0 flex-1 max-[1050px]:grid-cols-1 max-[1050px]:flex-none`}>
+            <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
+              {configSidebar}
+            </Panel>
+            <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">
+              {workspace}
+            </Panel>
+          </div>}
+      {/* The header scrolls away with the page in one column, so Save follows
+          the reader down instead, for as long as there is something to save
+          or a save under way: a clean saved record leaves nothing for it.
+          Held the page inset clear of the scrollport's bottom, which is where
+          the page's own padding leaves it at rest, so it does not jump on
+          reaching the end. `!` because Fluent's Card positions itself
+          relative from a sheet injected after the utility sheet. */}
+      {singleColumn && !readOnly && (data.mode !== 'edit' || hasUnsavedChanges || saving) && <Panel className={`!sticky bottom-[var(--floway-page-inset)] z-[1] !flex-row !items-center !justify-end !gap-3 min-w-0 ${PINNED_CARD_FILL_CLASS}`}>
+        {unsavedNote}
+        {saveButton}
+      </Panel>}
     </div>
     {leaveDialog.invocation && <ConfirmDialog
       open={leaveDialog.isOpen}

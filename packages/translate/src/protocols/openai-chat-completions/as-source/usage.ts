@@ -8,9 +8,9 @@ export const usageFromIR = (usage: IROutputUsage): OpenAIChatCompletionsUsageEx 
   const output = count('output_tokens_inclusive') ?? 0;
   const inputDetails: NonNullable<OpenAIChatCompletionsUsageEx['prompt_tokens_details']> = {};
   const outputDetails: NonNullable<OpenAIChatCompletionsUsageEx['completion_tokens_details']> = {};
-  if (usage.cached_input_tokens !== undefined) inputDetails.cached_tokens = count('cached_input_tokens');
-  if (usage.cache_creation_input_tokens !== undefined) inputDetails.cache_creation_input_tokens = count('cache_creation_input_tokens');
-  if (usage.reasoning_tokens !== undefined) outputDetails.reasoning_tokens = count('reasoning_tokens');
+  if (usage.cached_input_tokens !== undefined) inputDetails.cached_tokens = requireTokenCount('cached_input_tokens', usage.cached_input_tokens);
+  if (usage.cache_creation_input_tokens !== undefined) inputDetails.cache_creation_input_tokens = requireTokenCount('cache_creation_input_tokens', usage.cache_creation_input_tokens);
+  if (usage.reasoning_tokens !== undefined) outputDetails.reasoning_tokens = requireTokenCount('reasoning_tokens', usage.reasoning_tokens);
   if (usage.input_audio_tokens !== undefined) inputDetails.audio_tokens = requireTokenCount('input_audio_tokens', usage.input_audio_tokens);
   if (usage.output_audio_tokens !== undefined) outputDetails.audio_tokens = requireTokenCount('output_audio_tokens', usage.output_audio_tokens);
   if (usage.input_image_tokens !== undefined) inputDetails.image_tokens = requireTokenCount('input_image_tokens', usage.input_image_tokens);

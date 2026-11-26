@@ -7,7 +7,7 @@ import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/an
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
-const noOptions: { fallbackMaxOutputTokens?: number } = { fallbackMaxOutputTokens: undefined };
+const noOptions: { fallbackMaxOutputTokens?: number } = {};
 
 const buildWithTestSidecar = (
   payload: GeminiGenerateContentPayload,

@@ -27,11 +27,11 @@ const {
 // here stays enabled and keeps its own appearance, states `aria-readonly`, and
 // refuses the change at the source.
 interface ReadOnlyProp {
-  readOnly?: boolean;
+  readOnly?: boolean | undefined;
 }
 
 interface ClearActionProp {
-  clearAction?: { label: string; onClear: () => void };
+  clearAction?: { label: string; onClear: () => void } | undefined;
 }
 
 // The caller's own slot spreads first and the refusal lands on top of it, so a
@@ -158,13 +158,13 @@ const listboxFor = (listWidth: 'target' | 'content' | undefined, freeform: boole
 });
 
 interface ListWidthProp {
-  listWidth?: 'target' | 'content';
+  listWidth?: 'target' | 'content' | undefined;
 }
 
 // A caller that filters its own options says here what it wants the empty
 // result to read as, instead of adding a row of its own beside this one.
 interface EmptyMessageProp {
-  emptyMessage?: string;
+  emptyMessage?: string | undefined;
 }
 
 export const Input = forwardRef<HTMLInputElement, ComponentProps<typeof FluentInput>>(
@@ -186,14 +186,14 @@ export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
     <FluentCombobox
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
-      clearable={clearAction ? false : props.clearable}
+      clearable={clearAction ? false : props.clearable === true}
       clearIcon={clearAction && !readOnly ? {
         children: (_: ElementType, { className: clearClassName, style }: ComponentProps<'span'>) => <Tooltip content={clearAction.label} relationship="label"><Button
           appearance="subtle"
           aria-label={clearAction.label}
           className={clearClassName}
           data-combobox-clear-action=""
-          disabled={props.disabled}
+          disabled={props.disabled === true}
           icon={CLEAR_ICON}
           onClick={event => { event.stopPropagation(); clearAction.onClear(); }}
           onMouseDown={event => event.preventDefault()}
@@ -203,7 +203,7 @@ export const Combobox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
       } : props.clearIcon === undefined ? { children: CLEAR_ICON } : props.clearIcon}
       expandIcon={expandIcon === undefined ? EXPAND_ICON : expandIcon}
       input={{ ...slotProps(props.input), readOnly }}
-      onOptionSelect={readOnly === true ? undefined : onOptionSelect}
+      {...(readOnly === true || onOptionSelect === undefined ? {} : { onOptionSelect })}
       positioning={positioning ?? LISTBOX_POSITIONING}
       listbox={listboxFor(listWidth, props.freeform === true, emptyMessage)}
       className={mergeClasses(className, SELECT_MIN_WIDTH_CLASS)}
@@ -222,8 +222,8 @@ export const Dropdown = forwardRef<HTMLButtonElement, Omit<ComponentProps<typeof
       // `readOnly` has to withdraw the popup as well as the selection: leaving
       // it open would show a list of choices that the control is about to
       // refuse, which reads as enabled until the second click does nothing.
-      open={readOnly === true ? false : props.open}
-      onOptionSelect={readOnly === true ? undefined : onOptionSelect}
+      {...(readOnly === true ? { open: false } : props.open === undefined ? {} : { open: props.open })}
+      {...(readOnly === true || onOptionSelect === undefined ? {} : { onOptionSelect })}
       positioning={positioning ?? LISTBOX_POSITIONING}
       listbox={listboxFor(listWidth, false, emptyMessage)}
       className={mergeClasses(className, SELECT_MIN_WIDTH_CLASS)}
@@ -252,7 +252,7 @@ export const Checkbox = forwardRef<HTMLInputElement, Omit<ComponentProps<typeof 
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
       input={{ ...slotProps(input), ...(readOnly === true ? { onClick: refuseToggle } : {}) }}
-      onChange={readOnly === true ? undefined : onChange}
+      {...(readOnly === true || onChange === undefined ? {} : { onChange })}
       ref={ref}
     />
   ),
@@ -264,7 +264,7 @@ export const Switch = forwardRef<HTMLInputElement, ComponentProps<typeof FluentS
       {...props}
       aria-readonly={readOnly === true ? true : undefined}
       input={{ ...slotProps(input), ...(readOnly === true ? { onClick: refuseToggle } : {}) }}
-      onChange={readOnly === true ? undefined : onChange}
+      {...(readOnly === true || onChange === undefined ? {} : { onChange })}
       ref={ref}
     />
   ),

@@ -109,7 +109,7 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, disabled = false, loa
       if (event.type === 'keydown' && 'key' in event && event.key === 'Escape') finish();
       else if (!owns(event.target)) close();
     }} positioning={{
-      target: anchor ?? undefined, position: 'below', align: 'end', fallbackPositions: ['above'],
+      ...(anchor === null ? {} : { target: anchor }), position: 'below', align: 'end', fallbackPositions: ['above'],
       ...(isCyclePicker && { autoSize: LISTBOX_POSITIONING.autoSize, overflowBoundaryPadding: LISTBOX_POSITIONING.overflowBoundaryPadding }),
     }}>
       <PopoverSurface aria-label={t(isCyclePicker ? 'monitoring.controls.resetCycle.choose' : 'monitoring.controls.range.choose')}

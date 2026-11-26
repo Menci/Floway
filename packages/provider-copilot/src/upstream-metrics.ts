@@ -23,9 +23,8 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
   const credits = isCopilotCreditQuota(quota);
   const keyed = quota === 'premium_interactions' ? 'premiumInteractions' : quota === 'chat' ? 'chat' : quota === 'completions' ? 'completions' : 'other';
   const labelKey = `monitoring.upstreams.series.copilot.${keyed}.${quantity === 'entitlement' ? 'allowance' : quantity === 'used' ? 'usage' : 'remaining'}` as const;
-  const labelValues = keyed === 'other' ? { name: quota } : undefined;
   return {
-    name: `${quantity}_${quota}`, labelKey, labelValues, unit: credits ? 'usd' : 'count',
+    name: `${quantity}_${quota}`, labelKey, ...(keyed === 'other' && { labelValues: { name: quota } }), unit: credits ? 'usd' : 'count',
     axisPriority: quantity === 'entitlement' ? upstreamMetricAxisPriority.entitlement : upstreamMetricAxisPriority.remainingQuota,
     windowSeconds: null, emptyValue: null, form: quantity === 'entitlement' ? 'line' : 'area',
     ...(quantity === 'remaining' && { resetThreshold: { direction: 'remaining', full: { name: 'quota.entitlement', labels: { quota } } } }),

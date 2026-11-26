@@ -37,7 +37,7 @@ export interface WsUpgradeOptions {
    *  promise, cancels the read pump, and releases the writer lock so the
    *  caller can close the underlying transport. After the handshake, the
    *  caller's ReadableStream cancel / WritableStream abort drive teardown. */
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 // RFC 6455 §1.3 GUID concatenated with the client key to derive the

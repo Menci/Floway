@@ -56,11 +56,11 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
     labelKey: named === null
       ? options.quotaDisplay === 'used' ? 'monitoring.upstreams.series.usage' : 'monitoring.upstreams.series.remaining'
       : `monitoring.upstreams.series.named${options.quotaDisplay === 'used' ? 'Usage' : 'Remaining'}`,
-    labelValues: named === null ? undefined : { name: named },
+    ...(named === null ? {} : { labelValues: { name: named } }),
     axisPriority: upstreamMetricAxisPriority.subscriptionQuota,
     windowSeconds: quota === 'five_hour' ? 18_000 : 604_800,
     tracksResets: quota === 'five_hour' || quota === 'seven_day' || named !== null,
-    quotaCostScope: quota === 'five_hour' || quota === 'seven_day' ? 'upstream' : undefined,
+    ...((quota === 'five_hour' || quota === 'seven_day') && { quotaCostScope: 'upstream' }),
     emptyValue: null,
     form: 'area',
   });

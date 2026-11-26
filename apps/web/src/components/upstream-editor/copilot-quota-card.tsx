@@ -17,7 +17,7 @@ import { QuotaProgressRow } from '../upstreams/quota-progress-row';
 
 const { Text } = fluentComponents;
 
-export function CopilotQuotaCard({ readOnly = false, record }: { readOnly?: boolean; record: CopilotRecord }) {
+export function CopilotQuotaCard({ readOnly = false, record }: { readOnly?: boolean | undefined; record: CopilotRecord }) {
   const { t } = useTranslation();
   const preferences = useUserPreferences();
   const locale = useLocale();

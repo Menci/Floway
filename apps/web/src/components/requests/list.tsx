@@ -3,6 +3,7 @@ import {
   ArrowUploadRegular,
   CheckmarkCircleRegular,
   DismissCircleRegular,
+  FilterRegular,
   FlashRegular,
   TimerRegular,
 } from '@fluentui/react-icons';
@@ -22,6 +23,7 @@ import { formatBytes, formatCompactCount } from '../../lib/format-number';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { NO_READING } from '../../lib/no-reading';
 import { useLocale } from '../../lib/use-locale';
+import { useMediaQuery } from '../../lib/use-media-query';
 import { useNow } from '../../lib/use-now';
 import { EmptyState } from '../ui/empty-state';
 import { Checkbox, Dropdown } from '../ui/fluent-form-controls';
@@ -33,8 +35,11 @@ import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/browser';
 
-const { Option, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
+const { Option, Text, ToggleButton, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 const ROW_HEIGHT = 84;
+// A phone's width, where the page inset steps down in ../../global.css: the
+// toolbar folds behind a toggle and each row keeps only what fits one line.
+const COMPACT_QUERY = '(max-width: 680px)';
 
 const useStyles = makeStyles({
   keySelector: {
@@ -164,9 +169,9 @@ const useStyles = makeStyles({
 });
 
 interface RequestListProps {
-  q?: string;
-  failures?: boolean;
-  onFilterChange?: (q: string, failures: boolean) => void;
+  q?: string | undefined;
+  failures?: boolean | undefined;
+  onFilterChange?: ((q: string, failures: boolean) => void) | undefined;
   /** Where the record a row opens is read, so the row can be opened in a second tab. */
   addressOfRecord: (recordId: string) => string;
   apiKeys: ApiKey[];
@@ -182,6 +187,10 @@ interface RequestListProps {
 }
 
 interface RowProps {
+  /** Folded to a phone's width; see COMPACT_QUERY. */
+  compact: boolean;
+  /** Whether the export checkbox leads the row. */
+  exportable: boolean;
   exportIds: Set<string>;
   onToggleExport: (id: string) => void;
   addressOfRecord: (recordId: string) => string;
@@ -198,7 +207,7 @@ function RequestRow({ index, records, style, ...rest }: RowComponentProps<RowPro
   return <RequestRowContent {...rest} index={index} record={record} records={records} style={style} />;
 }
 
-function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, now, onSelect, record, records, selectByIndex, selectedId, style }: RowProps & {
+function RequestRowContent({ compact, exportable, exportIds, onToggleExport, addressOfRecord, index, now, onSelect, record, records, selectByIndex, selectedId, style }: RowProps & {
   index: number;
   record: DumpMetadata;
   style: CSSProperties;
@@ -228,7 +237,7 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
 
   return (
     <div style={style} className={mergeClasses(s.selectionRow, selected && s.selected)}>
-      <Checkbox aria-label={t('requests.selectExport')} checked={exportIds.has(record.id)} onChange={() => onToggleExport(record.id)} />
+      {exportable && <Checkbox aria-label={t('requests.selectExport')} checked={exportIds.has(record.id)} onChange={() => onToggleExport(record.id)} />}
       <a
         {...address}
         aria-selected={selected}
@@ -256,15 +265,16 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
         </div>
         <div className="flex items-center gap-2 min-w-0">
           <Tooltip content={`${record.method} ${record.path}`} relationship="description">
-            <Text size={200} className="min-w-0 flex-1 text-fui-fg3 font-mono" truncate wrap={false}>
+            <Text size={200} className={mergeClasses('min-w-0 flex-1 text-fui-fg3 font-mono', compact && 'min-w-16')} truncate wrap={false}>
               {record.path}
             </Text>
           </Tooltip>
-          {record.upstream && <ProviderBadge
+          {/* Compact, the upstream chip gives way to the path rather than overflowing. */}
+          {record.upstream && <span className={compact ? 'flex min-w-0 shrink' : 'contents'}><ProviderBadge
             upstream={record.upstream}
             label={record.upstream.name}
             title={`${record.upstream.kind}, ${record.upstream.id}`}
-          />}
+          /></span>}
         </div>
         <div className="flex items-center gap-3 min-w-0 text-fui-fg3">
           <Tooltip content={t('requests.duration', { value: formatDuration(record.durationMs, locale) })} relationship="description">
@@ -279,16 +289,20 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
               </span>
             </Tooltip>
           )}
-          <Tooltip content={t('requests.requestBytes', { value: record.requestBytes })} relationship="description">
-            <span className="inline-flex items-center gap-1 shrink-0">
-              <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatBytes(record.requestBytes, locale)}</Text>
-            </span>
-          </Tooltip>
-          <Tooltip content={t('requests.responseBytes', { value: record.responseBytes })} relationship="description">
-            <span className="inline-flex items-center gap-1 shrink-0">
-              <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatBytes(record.responseBytes, locale)}</Text>
-            </span>
-          </Tooltip>
+          {/* Compact, the sizes give their room to the error or token count;
+              the record itself still carries both bodies. */}
+          {!compact && <>
+            <Tooltip content={t('requests.requestBytes', { value: record.requestBytes })} relationship="description">
+              <span className="inline-flex items-center gap-1 shrink-0">
+                <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatBytes(record.requestBytes, locale)}</Text>
+              </span>
+            </Tooltip>
+            <Tooltip content={t('requests.responseBytes', { value: record.responseBytes })} relationship="description">
+              <span className="inline-flex items-center gap-1 shrink-0">
+                <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatBytes(record.responseBytes, locale)}</Text>
+              </span>
+            </Tooltip>
+          </>}
           {rowError
             ? <TruncationTooltip content={rowError} relationship="label">
                 {measureRef => <Text size={200} className={mergeClasses('ml-auto', s.error)} ref={measureRef} truncate wrap={false}>{rowError}</Text>}
@@ -310,6 +324,12 @@ export function RequestListPanel(props: RequestListProps) {
   const [listRef, setListRef] = useState<ListImperativeAPI | null>(null);
   const { hostProps } = useScrollAreaHost({ axes: 'vertical', noTabIndex: true, viewport: listRef?.element ?? null });
   const now = useNow(30_000);
+  const compact = useMediaQuery(COMPACT_QUERY);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const toolsShown = !compact || toolsOpen || !props.onFilterChange;
+  // A selection already made keeps its checkboxes and its export control in
+  // view, so folding the toolbar never hides what it would act on.
+  const exportable = toolsShown || exportIds.size > 0;
   const selectedKey = props.apiKeys.find(key => key.id === props.selectedKeyId)!;
 
   const { onRecordChange, records } = props;
@@ -322,6 +342,7 @@ export function RequestListPanel(props: RequestListProps) {
   }, [listRef, onRecordChange, records]);
 
   const rowProps = useMemo<RowProps>(() => ({
+    compact, exportable,
     exportIds, onToggleExport,
     addressOfRecord: props.addressOfRecord,
     now,
@@ -329,7 +350,7 @@ export function RequestListPanel(props: RequestListProps) {
     records,
     selectedId: props.selectedRecordId,
     selectByIndex,
-  }), [exportIds, onToggleExport, now, onRecordChange, props.addressOfRecord, records, props.selectedRecordId, selectByIndex]);
+  }), [compact, exportable, exportIds, onToggleExport, now, onRecordChange, props.addressOfRecord, records, props.selectedRecordId, selectByIndex]);
 
   return (
     <div className="h-full min-h-0 flex flex-col">
@@ -343,8 +364,22 @@ export function RequestListPanel(props: RequestListProps) {
         {props.apiKeys.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
       </Dropdown>
       <div className={mergeClasses(PANEL_INSET_CLASS, 'flex flex-col gap-2', s.toolbar)}>
-        {props.onFilterChange && <RequestFilters key={`${props.q}-${props.failures}`} q={props.q ?? ''} failures={props.failures ?? false} onChange={props.onFilterChange} />}
-        <BatchExport keyId={props.selectedKeyId} selected={exportIds} loadedIds={records.map(record => record.id)} onChange={setExportIds} />
+        {props.onFilterChange && <RequestFilters
+          beside={compact && <ToggleButton
+            aria-expanded={toolsOpen}
+            checked={toolsOpen}
+            icon={<FilterRegular />}
+            onClick={() => setToolsOpen(open => !open)}
+          >
+            {props.failures ? t('requests.toolsActive', { active: '1' }) : t('requests.tools')}
+          </ToggleButton>}
+          collapsed={!toolsShown}
+          key={`${props.q}-${props.failures}`}
+          q={props.q ?? ''}
+          failures={props.failures ?? false}
+          onChange={props.onFilterChange}
+        />}
+        {exportable && <BatchExport keyId={props.selectedKeyId} selected={exportIds} loadedIds={records.map(record => record.id)} onChange={setExportIds} />}
       </div>
       {props.error && <OutcomeMessageBar className="!m-2" onDismiss={props.onDismissError}>{props.error}</OutcomeMessageBar>}
       {props.records.length === 0 ? (

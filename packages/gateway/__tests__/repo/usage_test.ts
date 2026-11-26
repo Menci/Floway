@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { type CompletedStatement, recordCompletedStatements } from './recording-sql.ts';
@@ -74,7 +74,7 @@ for (const backend of backends) {
     assertEquals(tokenRatesFromUsage(row), longPricing);
   });
 
-  test(`${backend.name} usage repo retains the request when metric persistence fails`, async () => {
+  test(`${backend.name} usage repo retains the request when metric validation fails`, async () => {
     const repo = await backend.make();
     await assertRejects(() => repo.usage.record(record({
       metrics: [{ metric: 'input_tokens', quantity: '01.0', unitPrice: null }],
@@ -108,6 +108,24 @@ test('SQL usage repo atomically rolls concurrent decimal writes into one metric 
   assertEquals(stored.metrics, [{ metric: 'input_tokens', quantity: '5', unitPrice: '0.000002' }]);
   assertEquals(stored.requests, 50);
   assertEquals(await db.prepare('SELECT COUNT(*) AS count FROM usage').first(), { count: 1 });
+});
+
+test('SQL usage preserves a committed count when the batch response is lost', async () => {
+  const db = await createSqliteTestDb();
+  const failure = new Error('D1 response lost');
+  const repo = new SqlRepo({
+    prepare: sql => db.prepare(sql),
+    exec: sql => db.exec(sql),
+    async batch(statements) {
+      await db.batch!(statements);
+      throw failure;
+    },
+  });
+
+  await expect(repo.usage.record(record({ metrics: [{ metric: 'input_tokens', quantity: '3', unitPrice: null }] }))).rejects.toBe(failure);
+  const [stored] = await query(repo);
+  assertEquals(stored.requests, 1);
+  assertEquals(stored.metrics, [{ metric: 'input_tokens', quantity: '3', unitPrice: null }]);
 });
 
 test('SQL usage overview matches the in-memory oracle across filters, facets, axes, and exact decimals', async () => {
@@ -150,12 +168,11 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
     end: '2026-11-01T08',
     ownedKeysOnly: false,
     filters: { keyIds: [], userIds: [], models: ['model-a', 'model-b'], upstreams: ['none'] },
-    bucketForHour: hour => hour === '2026-11-01T05' || hour === '2026-11-01T06'
-      ? '2026-11-01T01'
-      : '2026-11-01T02',
+    bucket: { origin: '2026-11-01T05', hours: 2 },
+    hourlyBuckets: [],
   };
 
-  for (const bucketForHour of [options.bucketForHour, (hour: string) => hour, () => 'all-hours']) {
+  for (const bucket of [options.bucket, { origin: options.start, hours: 1 }, 'all'] as const) {
     for (const actor of [
       { actorUserId: 1, isAdmin: true, visibleUserIds: [], visibleUpstreams: [] },
       { actorUserId: 2, isAdmin: false, visibleUserIds: [2], visibleUpstreams: [] },
@@ -169,7 +186,7 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
           { keyIds: ['key-1'], userIds: [1], models: ['model-a'], upstreams: ['none'] },
           { keyIds: [], userIds: [], models: ['missing'], upstreams: [] },
         ]) {
-          const queryOptions = { ...options, ...actor, ownedKeysOnly, bucketForHour, filters };
+          const queryOptions = { ...options, ...actor, ownedKeysOnly, bucket, filters };
           assertEquals(
             await sql.usage.queryOverview(queryOptions),
             await memory.usage.queryOverview(queryOptions),
@@ -179,7 +196,7 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
     }
   }
 
-  const allHours = { ...options, bucketForHour: () => 'all-hours' };
+  const allHours = { ...options, bucket: 'all' } as const;
   const [expected] = await memory.usage.queryOverview(allHours);
   const [actual] = await sql.usage.queryOverview(allHours);
 
@@ -222,17 +239,16 @@ test('SQL usage overview stays within the D1 compound-select limit and returns g
     end: '2026-07-12T01',
     ownedKeysOnly: false,
     filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
-    bucketForHour: hour => hour,
+    bucket: { origin: '2026-07-12T00', hours: 1 },
+    hourlyBuckets: [],
   });
 
   const rawRows = await db.prepare('SELECT (SELECT COUNT(*) FROM usage) + (SELECT COUNT(*) FROM usage_requests) AS count')
     .first<{ count: number }>();
-  const aggregates = completed.filter(statement => statement.query.startsWith('/* usage-overview */'));
-  const aggregate = aggregates.at(-1);
+  const aggregate = completed.find(statement => statement.query.startsWith('/* usage-overview */'));
   if (!aggregate || !rawRows) throw new Error('Usage overview SQL evidence was not captured');
   assertD1CompoundSelectLimit(aggregate.query);
   assertEquals(rawRows.count, 160);
-  assertEquals(aggregates.length, 1);
   assertEquals(aggregate.resultCount < rawRows.count, true);
   assertEquals(overview!.axes.none[0], {
     group: 'all', requests: 80,

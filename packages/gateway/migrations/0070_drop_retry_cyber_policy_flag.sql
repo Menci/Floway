@@ -26,7 +26,7 @@ UPDATE upstreams
 SET config_json = json_set(
   config_json,
   '$.models',
-  (
+  json((
     SELECT json_group_array(
       CASE
         WHEN json_type(model.value, '$.flagOverrides."retry-cyber-policy"') IS NOT NULL
@@ -42,7 +42,7 @@ SET config_json = json_set(
       END
     )
     FROM json_each(json_extract(upstreams.config_json, '$.models')) AS model
-  )
+  ))
 )
 WHERE json_valid(config_json)
   AND json_type(config_json, '$.models') = 'array'

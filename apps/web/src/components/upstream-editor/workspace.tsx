@@ -2,12 +2,14 @@ import {
   AddRegular,
   ArrowClockwiseRegular,
   CheckmarkCircleRegular,
+  ChevronRightRegular,
   CodeRegular,
   DeleteRegular,
   EditRegular,
   WarningRegular,
 } from '@fluentui/react-icons';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Controller, useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useSearchParams } from 'react-router';
 
@@ -24,18 +26,21 @@ import { useTranslation } from '../../i18n/translation';
 import { dateTime, relativeTime } from '../../lib/format-time';
 import { useEntryRewrite } from '../../lib/page-navigation';
 import { useLocale } from '../../lib/use-locale';
+import { useMediaQuery } from '../../lib/use-media-query';
 import { useNow } from '../../lib/use-now';
 import { BackNavigationButton } from '../ui/back-navigation-button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
 import { useDangerTextClass } from '../ui/danger';
 import { EmptyStateLine } from '../ui/empty-state';
 import { Input, Switch } from '../ui/fluent-form-controls';
+import { PINNED_CARD_FILL_CLASS } from '../ui/layout';
 import { ContentLoadingScreen } from '../ui/loading-screen';
+import { useNarrowListItemClass } from '../ui/narrow-list-item';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { RowTitleButton } from '../ui/row-title';
 import { ScrollArea } from '../ui/scroll-area';
 import { SectionHeader } from '../ui/section-header';
-import { TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../ui/table-actions';
+import { stopRowSelection, TABLE_ACTIONS_WIDTH, TableActions, TableActionsHeader, TableCentredCell, TableCentredHeader } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
@@ -46,6 +51,8 @@ import type { UpstreamModelConfig } from '@floway-dev/provider/browser';
 
 const {
   Button,
+  List,
+  ListItem,
   Spinner,
   Tab,
   TabList,
@@ -60,7 +67,7 @@ const {
 } = fluentComponents;
 
 type ModelView = 'list' | 'detail' | 'yaml';
-type WorkspaceTab = 'models' | 'flags';
+type WorkspaceTab = 'config' | 'models' | 'flags';
 /** An edit typed into the YAML view and not yet applied, with whatever the last apply said about it. */
 export interface ModelsYamlDraft {
   baseline: string;
@@ -85,9 +92,39 @@ const SECTION_PARAM = 'section';
 const VIEW_PARAM = 'view';
 type ModelDetailTab = 'details' | 'flags';
 
+// The form fields the models and flags sections edit; every other field is
+// shown by the configuration section.
+const WORKSPACE_FIELDS: ReadonlySet<string> = new Set(['manualModels', 'disabledPublicModelIds', 'flagOverrides']);
+export const isConfigSectionError = (field: string): boolean => !WORKSPACE_FIELDS.has(field);
+
+/** The editor's address with the configuration section open. */
+export const configSectionSearch = (current: URLSearchParams): URLSearchParams => {
+  const search = new URLSearchParams(current);
+  search.set(TAB_PARAM, 'config');
+  search.delete(MODEL_PARAM);
+  search.delete(SECTION_PARAM);
+  return search;
+};
+
+// A sectioned workspace opens on the configuration, the pane a two-column
+// editor puts first; an address naming a model or the YAML view is still a
+// models address, whichever layout reads it.
+const workspaceTab = (params: URLSearchParams, sectioned: boolean): WorkspaceTab => {
+  const requested = params.get(TAB_PARAM);
+  if (requested === 'flags' || requested === 'models') return requested;
+  if (requested === 'config' && sectioned) return 'config';
+  if (!sectioned || params.has(MODEL_PARAM) || params.get(VIEW_PARAM) === 'yaml') return 'models';
+  return 'config';
+};
+
+// Where the model table no longer fits beside the card's inset and gives way
+// to a list, as the API key table does at the same width.
+const MODEL_LIST_QUERY = '(max-width: 760px)';
+
 const ModelsYamlEditor = lazy(() => import('./models-yaml-editor'));
 
 export function UpstreamWorkspace({
+  configPane,
   discovered,
   editLevel,
   modelsYamlDraft,
@@ -97,6 +134,8 @@ export function UpstreamWorkspace({
   onRefreshModels,
   record,
 }: {
+  /** Given, the configuration is a section of this workspace rather than a pane beside it. */
+  configPane?: ReactNode | undefined;
   discovered: UpstreamModelConfig[];
   editLevel: UpstreamEditLevel;
   modelsYamlDraft: ModelsYamlDraft | null;
@@ -119,11 +158,13 @@ export function UpstreamWorkspace({
   const [modelSelection, setModelSelection] = useState<ModelSelection | null>(null);
   const [modelValidationAttempted, setModelValidationAttempted] = useState(false);
   const workspaceScrollRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const sectioned = configPane !== undefined;
 
   // `model` is only a reloadable locator. The mounted editor uses the
   // field-array row id, so renames and temporary duplicate ids cannot retarget
   // or remount it.
-  const tab = params.get(TAB_PARAM) === 'flags' ? 'flags' : 'models';
+  const tab = workspaceTab(params, sectioned);
   const selectedUpstreamModelId = params.get(MODEL_PARAM);
   // A provider-owned catalog has no manual models to write, so its editor is
   // not addressable either — a typed `?view=yaml` lands on the list rather than
@@ -150,7 +191,9 @@ export function UpstreamWorkspace({
     setParams(previous => {
       const search = new URLSearchParams(previous);
       for (const [key, value] of Object.entries({
-        [TAB_PARAM]: next.tab === 'models' ? null : next.tab,
+        // Sectioned, every tab is written out: a bare address opens the
+        // configuration there, but a model or the YAML view would read as models.
+        [TAB_PARAM]: !sectioned && next.tab === 'models' ? null : next.tab,
         [MODEL_PARAM]: next.model,
         [SECTION_PARAM]: next.model !== null && next.section === 'flags' ? 'flags' : null,
         [VIEW_PARAM]: next.model === null && next.view === 'yaml' ? 'yaml' : null,
@@ -159,7 +202,7 @@ export function UpstreamWorkspace({
       }
       return search;
     }, rewrite);
-  }, [rewrite, setParams]);
+  }, [rewrite, sectioned, setParams]);
 
   const changeModelView = (next: ModelView) => navigate({
     tab,
@@ -194,10 +237,16 @@ export function UpstreamWorkspace({
   };
   useLayoutEffect(() => {
     workspaceScrollRef.current?.scrollTo({ left: 0, top: 0 });
-  }, [modelDetailTab, modelView, tab]);
+    // Sectioned, the page scrolls instead, and a section opened from far down
+    // the previous one would otherwise open at that depth.
+    const section = sectionRef.current;
+    if (sectioned && section && section.getBoundingClientRect().top < 0) section.scrollIntoView({ block: 'start' });
+  }, [modelDetailTab, modelView, sectioned, tab]);
   const modelsWorkspace = <ModelsWorkspace detailSection={modelDetailTab} modelSelection={modelSelection} onModelLocatorCommit={commitModelLocator} onModelSelectionChange={setModelSelection} onOpenModel={openModel} selectedUpstreamModelId={selectedUpstreamModelId} discovered={discovered} modelsLoading={modelsLoading} modelsError={modelsError} onRefreshModels={onRefreshModels} onViewChange={changeModelView} editableModels={editableModels} readOnly={!editableCatalog} record={record} revealValidation={modelValidationAttempted || submitCount > 0} view={modelView} yamlDraft={modelsYamlDraft} onYamlDraftChange={onModelsYamlDraftChange} />;
-  return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto">
-    <div className="flex items-center gap-2 border-0 border-b border-solid border-fui-divider px-5 pt-2">
+  return <section className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] h-full min-h-0 min-w-0 max-[1050px]:h-auto" ref={sectionRef}>
+    {/* Sectioned, the page scrolls the whole card, so the bar that switches
+        sections stays pinned to the top of the scrollport. */}
+    <div className={`flex flex-wrap items-center gap-2 border-0 border-b border-solid border-fui-divider px-5 pt-2 ${sectioned ? `sticky top-0 z-[1] ${PINNED_CARD_FILL_CLASS}` : ''}`}>
       {showModelDetail
         ? <>
             <BackNavigationButton onClick={leaveModel}>{t('models.editor.back')}</BackNavigationButton>
@@ -211,11 +260,12 @@ export function UpstreamWorkspace({
         // reset here would leave the view and discard whatever had been typed
         // and not yet applied.
         : <TabList aria-label={t('upstreams.editor.tabs.label')} selectedValue={tab} onTabSelect={(_, data) => navigate({ tab: data.value as WorkspaceTab, model: null, section: 'details', view: modelView === 'yaml' ? 'yaml' : 'list' })}>
+            {sectioned && <Tab value="config">{t('upstreams.editor.tabs.config')}</Tab>}
             <Tab value="models">{t('upstreams.editor.tabs.models')}</Tab>
             <Tab value="flags">{t('upstreams.editor.tabs.flags')}</Tab>
           </TabList>}
     </div>
-    <ScrollArea ref={workspaceScrollRef} axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName={tab === 'models' && modelView === 'yaml' ? 'h-full min-w-0' : ''} noTabIndex>
+    {tab === 'config' ? configPane : <ScrollArea ref={workspaceScrollRef} axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName={tab === 'models' && modelView === 'yaml' ? 'h-full min-w-0' : ''} noTabIndex>
       {tab === 'models' && modelView === 'yaml'
         ? modelsWorkspace
         : <div className="px-5 py-4">
@@ -229,7 +279,7 @@ export function UpstreamWorkspace({
               <Controller name="flagOverrides" render={({ field }) => <FeatureFlagsEditor defaults={record.flag_defaults} readOnly={editLevel !== 'full'} value={field.value} onChange={field.onChange} />} />
             </div>}
           </div>}
-    </ScrollArea>
+    </ScrollArea>}
   </section>;
 }
 
@@ -273,6 +323,8 @@ function ModelsWorkspace({ detailSection, discovered, editableModels, modelSelec
   const [search, setSearch] = useState('');
   const { copy, outcomeFor } = useCopyToClipboard();
   const copyLabel = useCopyLabel();
+  const listLayout = useMediaQuery(MODEL_LIST_QUERY);
+  const narrowItem = useNarrowListItemClass();
   const autoFetchEnabled = record.kind !== 'custom'
     || (config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled;
   const canFetch = canFetchModelCatalog(record, config);
@@ -346,6 +398,11 @@ function ModelsWorkspace({ detailSection, discovered, editableModels, modelSelec
     if (selectedRow?.key === target.key) onOpenModel(null);
     deleteDialog.close();
   };
+
+  const sourceLabel = (row: ModelRow) => t(`models.editor.${row.source}`);
+  const openRow = (row: ModelRow) => onOpenModel({ locator: row.config.upstreamModelId, manualIndex: row.manualIndex, rowKey: row.key });
+  const enabledSwitch = (row: ModelRow, id: string) => <Switch aria-label={t('models.editor.enabledFor', { name: row.config.display_name ?? id })} checked={!disabled.includes(id)} readOnly={!editableModels} onChange={(_, data) => setEnabled(id, data.checked)} />;
+  const deleteButton = (row: ModelRow, id: string) => editableModels && !readOnly && row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('models.editor.deleteNamed', { name: row.config.display_name ?? id })} onClick={() => deleteDialog.open(row)} />;
 
   const deleteTarget = deleteDialog.invocation?.value;
   const manualDeleteTarget = deleteTarget?.manualIndex == null
@@ -438,28 +495,53 @@ function ModelsWorkspace({ detailSection, discovered, editableModels, modelSelec
       </div>
     </OutcomeMessageBar>}
     <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('models.editor.search')} />
-    <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('models.editor.title')} className="w-full min-w-[664px]">
-        <TableColumns widths={['80px', '25%', '88px', null, '80px', TABLE_ACTIONS_WIDTH]} />
-        <TableHeader><TableRow><TableCentredHeader>{t('models.editor.enabled')}</TableCentredHeader><TableHeaderCell>{t('models.editor.name')}</TableHeaderCell><TableCentredHeader>{t('models.editor.kind')}</TableCentredHeader><TableHeaderCell>{t('models.editor.id')}</TableHeaderCell><TableCentredHeader>{t('models.editor.source')}</TableCentredHeader><TableActionsHeader /></TableRow></TableHeader>
-        <TableBody>{filtered.length === 0 ? <TableRow><TableCell colSpan={6}><EmptyStateLine>{t('models.editor.noMatches')}</EmptyStateLine></TableCell></TableRow> : filtered.map(row => {
-          const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
-            <TableCentredCell><Switch aria-label={t('models.editor.enabledFor', { name: row.config.display_name ?? id })} checked={!disabled.includes(id)} readOnly={!editableModels} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCentredCell>
-            <TableCell className="overflow-hidden">
-              <TruncationTooltip content={row.config.display_name ?? id} relationship="label">
-                {measureRef => <RowTitleButton onClick={() => onOpenModel({ locator: row.config.upstreamModelId, manualIndex: row.manualIndex, rowKey: row.key })} ref={measureRef}>
-                  {row.config.display_name ?? id}
-                </RowTitleButton>}
-              </TruncationTooltip>
-            </TableCell>
-            <TableCentredCell>{t(`models.editor.kindValue.${row.config.kind}`)}</TableCentredCell>
-            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full"><TruncationTooltip content={id} relationship="label">{measureRef => <code className="winui-focus-rect block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" ref={measureRef} tabIndex={0}>{id}</code>}</TruncationTooltip><TooltipIconButton className="flex-none" icon={copyOutcomeIcon(outcomeFor(id))} label={copyLabel(outcomeFor(id), t('models.editor.copy'))} onClick={() => copy(id, id)} /></span></TableCell>
-            <TableCentredCell>{t(`models.editor.${row.source}`)}</TableCentredCell>
-            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('models.editor.editNamed', { name: row.config.display_name ?? id })} onClick={() => onOpenModel({ locator: row.config.upstreamModelId, manualIndex: row.manualIndex, rowKey: row.key })} />{editableModels && !readOnly && row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('models.editor.deleteNamed', { name: row.config.display_name ?? id })} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
-          </TableRow>;
-        })}</TableBody>
-      </Table>
-    </ScrollArea>
+    {listLayout ? filtered.length === 0
+      ? <EmptyStateLine>{t('models.editor.noMatches')}</EmptyStateLine>
+      // The same rows in the same order as the table. The row opens its model,
+      // which the table offers through the name and the edit action; the
+      // controls inside keep their own clicks.
+      : <List aria-label={t('models.editor.title')} navigationMode="composite">
+          {filtered.map(row => {
+            const id = publicModelId(row.config);
+            return <ListItem aria-label={row.config.display_name ?? id} className={narrowItem.item} key={row.key} onAction={() => openRow(row)}>
+              <div className="flex items-center gap-3 min-w-0 w-full">
+                <span className="flex-none" {...stopRowSelection}>{enabledSwitch(row, id)}</span>
+                <div className="grid gap-0.5 min-w-0 flex-1">
+                  <Text block truncate size={300} wrap={false}>{row.config.display_name ?? id}</Text>
+                  <span className="flex items-center gap-1 min-w-0" {...stopRowSelection}>
+                    <code className="block min-w-0 truncate leading-[var(--lineHeightBase300)]">{id}</code>
+                    <TooltipIconButton className="flex-none" icon={copyOutcomeIcon(outcomeFor(id))} label={copyLabel(outcomeFor(id), t('models.editor.copy'))} onClick={() => copy(id, id)} />
+                  </span>
+                  <Text size={200} className="text-fui-fg3">{t(`models.editor.kindValue.${row.config.kind}`)} · {sourceLabel(row)}</Text>
+                </div>
+                <span className="flex flex-none items-center gap-1" {...stopRowSelection}>{deleteButton(row, id)}</span>
+                <ChevronRightRegular aria-hidden="true" className="flex-none text-fui-fg3" fontSize={16} />
+              </div>
+            </ListItem>;
+          })}
+        </List>
+      : <ScrollArea axes="horizontal" className="min-w-0">
+          <Table aria-label={t('models.editor.title')} className="w-full min-w-[664px]">
+            <TableColumns widths={['80px', '25%', '88px', null, '80px', TABLE_ACTIONS_WIDTH]} />
+            <TableHeader><TableRow><TableCentredHeader>{t('models.editor.enabled')}</TableCentredHeader><TableHeaderCell>{t('models.editor.name')}</TableHeaderCell><TableCentredHeader>{t('models.editor.kind')}</TableCentredHeader><TableHeaderCell>{t('models.editor.id')}</TableHeaderCell><TableCentredHeader>{t('models.editor.source')}</TableCentredHeader><TableActionsHeader /></TableRow></TableHeader>
+            <TableBody>{filtered.length === 0 ? <TableRow><TableCell colSpan={6}><EmptyStateLine>{t('models.editor.noMatches')}</EmptyStateLine></TableCell></TableRow> : filtered.map(row => {
+              const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
+                <TableCentredCell>{enabledSwitch(row, id)}</TableCentredCell>
+                <TableCell className="overflow-hidden">
+                  <TruncationTooltip content={row.config.display_name ?? id} relationship="label">
+                    {measureRef => <RowTitleButton onClick={() => openRow(row)} ref={measureRef}>
+                      {row.config.display_name ?? id}
+                    </RowTitleButton>}
+                  </TruncationTooltip>
+                </TableCell>
+                <TableCentredCell>{t(`models.editor.kindValue.${row.config.kind}`)}</TableCentredCell>
+                <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full"><TruncationTooltip content={id} relationship="label">{measureRef => <code className="winui-focus-rect block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" ref={measureRef} tabIndex={0}>{id}</code>}</TruncationTooltip><TooltipIconButton className="flex-none" icon={copyOutcomeIcon(outcomeFor(id))} label={copyLabel(outcomeFor(id), t('models.editor.copy'))} onClick={() => copy(id, id)} /></span></TableCell>
+                <TableCentredCell>{sourceLabel(row)}</TableCentredCell>
+                <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('models.editor.editNamed', { name: row.config.display_name ?? id })} onClick={() => openRow(row)} />{deleteButton(row, id)}</TableActions></TableCell>
+              </TableRow>;
+            })}</TableBody>
+          </Table>
+        </ScrollArea>}
   </div>{deleteConfirmation}</>;
 }
 

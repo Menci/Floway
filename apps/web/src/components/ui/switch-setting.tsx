@@ -11,8 +11,8 @@ const { InfoButton } = fluentComponents;
 // own popover, which is also why `infoLabelSlot` is not usable here.
 export function SwitchSetting({ checked, description, disabled, label, onChange }: {
   checked: boolean;
-  description: InfoButtonProps['info'];
-  disabled?: boolean;
+  description: NonNullable<InfoButtonProps['info']>;
+  disabled?: boolean | undefined;
   label: string;
   onChange: (checked: boolean) => void;
 }) {

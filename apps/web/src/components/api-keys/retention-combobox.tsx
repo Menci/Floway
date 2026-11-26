@@ -61,7 +61,7 @@ export function RetentionCombobox({
   presets,
   value,
 }: {
-  ariaDescribedBy?: string;
+  ariaDescribedBy?: string | undefined;
   defaultUnit: DurationUnit;
   disabled: boolean;
   formatDuration: FormatDuration;

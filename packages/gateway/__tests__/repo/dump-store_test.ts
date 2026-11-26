@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { createSqliteTestDb, mapRunChangeCount } from './test-sqlite.ts';
 import type { DumpWriteRecord } from '../../src/dump/types.ts';
@@ -96,7 +96,19 @@ test('FileDumpStore applies retention immediately and retires exact expired file
     assertEquals(left.map(m => m.id), ['01HZZ0000000000000000000A2']);
     const afterExpiredCursor = await store.list('key_x', { limit: 10, before: '01HZZ0000000000000000000A1' });
     assertEquals(afterExpiredCursor, []);
+    const prepare = vi.spyOn(db, 'prepare');
     assertEquals(await store.deleteExpiredBatch('key_x', now + 1, 100), 1);
+    const fallbackSql = prepare.mock.calls.at(-1)?.[0];
+    prepare.mockRestore();
+    assertExists(fallbackSql);
+    const { results: fallbackPlan } = await db
+      .prepare(`EXPLAIN QUERY PLAN ${fallbackSql}`)
+      .bind('key_x', 'key_x', 99)
+      .all<{ detail: string }>();
+    expect(fallbackPlan.map(row => row.detail)).toEqual(expect.arrayContaining([
+      expect.stringMatching(/^SCALAR SUBQUERY\b/),
+      expect.stringContaining('SEARCH records USING COVERING INDEX idx_dump_records_key_created'),
+    ]));
     const afterDeletedCursor = await store.list('key_x', { limit: 10, before: '01HZZ0000000000000000000A1' });
     assertEquals(afterDeletedCursor, []);
     await collectSpilledFiles(now + 1);

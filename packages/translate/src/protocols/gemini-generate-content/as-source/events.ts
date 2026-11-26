@@ -442,7 +442,7 @@ const logprobsResult = (tokens: readonly IROutputTokenLogprob[]): NonNullable<Ge
 });
 
 const groundingChunk = (citation: IROutputSourceCitation): GeminiGenerateContentGroundingChunk => {
-  if (citation.source_kind === 'url') return { web: { uri: citation.source, title: citation.source_label ?? undefined } };
+  if (citation.source_kind === 'url') return { web: { uri: citation.source, ...(citation.source_label == null ? {} : { title: citation.source_label }) } };
   return {
     retrievedContext: {
       ...(citation.source == null ? {} : { uri: citation.source }),

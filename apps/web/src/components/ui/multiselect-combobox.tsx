@@ -32,18 +32,18 @@ export function MultiselectCombobox({
   renderOption,
   value,
 }: {
-  ariaLabel?: string;
-  className?: string;
-  clearLabel?: string;
-  closedLabel?: string;
-  disabled?: boolean;
-  freeform?: boolean;
-  normalizeValue?: (entry: string) => string;
+  ariaLabel?: string | undefined;
+  className?: string | undefined;
+  clearLabel?: string | undefined;
+  closedLabel?: string | undefined;
+  disabled?: boolean | undefined;
+  freeform?: boolean | undefined;
+  normalizeValue?: ((entry: string) => string) | undefined;
   onChange: (value: string[]) => void;
   options: readonly MultiselectOption[];
   placeholder: string;
-  readOnly?: boolean;
-  renderOption?: (option: MultiselectOption) => ReactNode;
+  readOnly?: boolean | undefined;
+  renderOption?: ((option: MultiselectOption) => ReactNode) | undefined;
   value: readonly string[];
 }) {
   const [open, setOpen] = useState(false);

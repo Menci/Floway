@@ -44,7 +44,7 @@ export function useRouteAddress(to: string, onActivate?: () => void): RouteAddre
 //
 // `children` is optional because `Trans` supplies them by cloning the element
 // it was handed, so an interpolated link is authored without any.
-export function RouteLink({ children, to }: { children?: ReactNode; to: string }) {
+export function RouteLink({ children, to }: { children?: ReactNode | undefined; to: string }) {
   const address = useRouteAddress(to);
   return <Link {...address}>{children}</Link>;
 }

@@ -81,8 +81,7 @@ export const endpointsField = (value: unknown, label: string, options: { allowEm
   return endpoints;
 };
 
-const optionalNumberField = (value: unknown, label: string): number | undefined => {
-  if (value === undefined) return undefined;
+const finiteNumberField = (value: unknown, label: string): number => {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`Malformed ${label}: must be a finite number`);
   return value;
 };
@@ -97,9 +96,9 @@ const limitsField = (value: unknown, label: string): PublicModelLimits | undefin
   const record = optionalMetadataRecord(value, label);
   if (!record) return undefined;
   return {
-    ...(record.max_context_window_tokens !== undefined ? { max_context_window_tokens: optionalNumberField(record.max_context_window_tokens, `${label}.max_context_window_tokens`) } : {}),
-    ...(record.max_prompt_tokens !== undefined ? { max_prompt_tokens: optionalNumberField(record.max_prompt_tokens, `${label}.max_prompt_tokens`) } : {}),
-    ...(record.max_output_tokens !== undefined ? { max_output_tokens: optionalNumberField(record.max_output_tokens, `${label}.max_output_tokens`) } : {}),
+    ...(record.max_context_window_tokens !== undefined ? { max_context_window_tokens: finiteNumberField(record.max_context_window_tokens, `${label}.max_context_window_tokens`) } : {}),
+    ...(record.max_prompt_tokens !== undefined ? { max_prompt_tokens: finiteNumberField(record.max_prompt_tokens, `${label}.max_prompt_tokens`) } : {}),
+    ...(record.max_output_tokens !== undefined ? { max_output_tokens: finiteNumberField(record.max_output_tokens, `${label}.max_output_tokens`) } : {}),
   };
 };
 
@@ -173,7 +172,7 @@ const optionalNonNegativeIntField = (value: unknown, label: string): number | un
   return value;
 };
 
-const reasoningField = (value: unknown, label: string): UpstreamChatModelConfig['reasoning'] => {
+const reasoningField = (value: unknown, label: string): NonNullable<UpstreamChatModelConfig['reasoning']> => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
 
   const result: NonNullable<UpstreamChatModelConfig['reasoning']> = {};
@@ -323,21 +322,25 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   if (effectiveKind !== 'decision' && decisionTarget !== undefined) {
     throw new Error(`Malformed ${label}: decisionTarget is only allowed when endpoints select decision`);
   }
+  const displayName = optionalStringField(value.display_name, `${label}.display_name`);
+  const limits = limitsField(value.limits, `${label}.limits`);
+  const opaqueBlobCompatibilityScope = opaqueBlobCompatibilityScopeField(value.opaqueBlobCompatibilityScope, `${label}.opaqueBlobCompatibilityScope`);
+  const upstreamModelId = nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`);
+  const configuredPublicModelId = optionalStringField(value.publicModelId, `${label}.publicModelId`);
+  const flagOverrides = flagOverridesField(value.flagOverrides, `${label}.flagOverrides`);
   return {
     kind,
     endpoints,
-    ...(value.display_name !== undefined ? { display_name: optionalStringField(value.display_name, `${label}.display_name`) } : {}),
-    ...(value.limits !== undefined ? { limits: limitsField(value.limits, `${label}.limits`) } : {}),
+    ...(displayName !== undefined ? { display_name: displayName } : {}),
+    ...(limits !== undefined ? { limits } : {}),
     ...(pricing ? { pricing } : {}),
     ...(chat ? { chat } : {}),
     ...(rerankTarget ? { rerankTarget } : {}),
     ...(decisionTarget ? { decisionTarget } : {}),
-    ...(value.opaqueBlobCompatibilityScope !== undefined
-      ? { opaqueBlobCompatibilityScope: opaqueBlobCompatibilityScopeField(value.opaqueBlobCompatibilityScope, `${label}.opaqueBlobCompatibilityScope`) }
-      : {}),
-    upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
-    ...(value.publicModelId !== undefined ? { publicModelId: optionalStringField(value.publicModelId, `${label}.publicModelId`) } : {}),
-    ...(value.flagOverrides !== undefined ? { flagOverrides: flagOverridesField(value.flagOverrides, `${label}.flagOverrides`) } : {}),
+    ...(opaqueBlobCompatibilityScope !== undefined ? { opaqueBlobCompatibilityScope } : {}),
+    upstreamModelId,
+    ...(configuredPublicModelId !== undefined ? { publicModelId: configuredPublicModelId } : {}),
+    ...(flagOverrides !== undefined ? { flagOverrides } : {}),
   };
 };
 

@@ -45,7 +45,7 @@ const useStyles = makeStyles({
 
 interface PermissionContext { record: AccessRecord; data: ScopeExpressionData; decisions: PermissionDecisions }
 
-function ExplanationRun({ children, location = false }: { children?: ReactNode; location?: boolean }) {
+function ExplanationRun({ children, location = false }: { children?: ReactNode | undefined; location?: boolean | undefined }) {
   const styles = useStyles();
   return <span className={location ? styles.location : styles.explanation} data-override-explanation={location ? undefined : ''} data-override-location={location ? '' : undefined}>
     {Children.map(children, child => typeof child === 'string'
@@ -54,7 +54,7 @@ function ExplanationRun({ children, location = false }: { children?: ReactNode; 
   </span>;
 }
 
-export function RulePermissions({ context, values }: { context?: PermissionContext; values: AccessValues }) {
+export function RulePermissions({ context, values }: { context?: PermissionContext | undefined; values: AccessValues }) {
   return <ul className="m-0 p-0 list-none flex flex-wrap items-start gap-2 pt-[1px]" data-permissions="">
     {ACCESS_PERMISSIONS.flatMap(permission => {
       const value = values[permission];
@@ -94,7 +94,7 @@ function PresentedPermission({ context, permission, value }: { context: Permissi
   ><span className="winui-focus-rect inline-flex" data-overridden-by={by.id} tabIndex={0}>{token}</span></Tooltip>;
 }
 
-function PermissionToken({ emphasis = 'normal', permission, value }: { emphasis?: 'normal' | 'effective' | 'overridden'; permission: AccessPermission; value: NonNullable<AccessValues[AccessPermission]> }) {
+function PermissionToken({ emphasis = 'normal', permission, value }: { emphasis?: 'normal' | 'effective' | 'overridden' | undefined; permission: AccessPermission; value: NonNullable<AccessValues[AccessPermission]> }) {
   const { t } = useTranslation();
   const styles = useStyles();
   const state = permissionState(value);

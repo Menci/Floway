@@ -31,7 +31,7 @@ export interface ProxyFormProps {
   formName: string;
   onConfigChange: (update: (previous: ProxyConfig) => ProxyConfig) => void;
   onDialTimeoutChange: (value: string) => void;
-  onKindChange: (_: unknown, data: { optionValue?: string }) => void;
+  onKindChange: (_: unknown, data: { optionValue?: string | undefined }) => void;
   onNameChange: (value: string) => void;
   onPortChange: (value: string) => void;
   onUrlChange: (value: string) => void;
@@ -56,13 +56,13 @@ export function ProxyForm({
   const formKind = formKindFromConfig(config);
   const configIssues = issuesFromErrors(errors.config, PROXY_CONFIG_ISSUE_FIELDS);
   const message = (field: ProxyConfigIssueField) => issueText(configIssues[field]);
-  const state = (field: ProxyConfigIssueField) => configIssues[field] === undefined ? undefined : 'error' as const;
+  const state = (field: ProxyConfigIssueField) => configIssues[field] === undefined ? 'none' as const : 'error' as const;
   const nameMessage = issueText(errors.name?.message);
   const urlMessage = issueText(errors.url?.message);
   const dialTimeoutMessage = issueText(errors.dialTimeout?.message);
   return (
     <div className="grid gap-4 min-w-0">
-      <Field label={t('proxies.form.name')} validationMessage={nameMessage} validationState={nameMessage ? 'error' : undefined}>
+      <Field label={t('proxies.form.name')} validationMessage={nameMessage} validationState={nameMessage ? 'error' : 'none'}>
         <Input
           onChange={(_, d) => onNameChange(d.value)}
           placeholder={t('proxies.form.namePlaceholder')}
@@ -73,7 +73,7 @@ export function ProxyForm({
       <Field
         label={t('proxies.form.url')}
         validationMessage={urlMessage}
-        validationState={urlMessage ? 'error' : undefined}
+        validationState={urlMessage ? 'error' : 'none'}
       >
         <Input
           className="font-mono"
@@ -439,7 +439,7 @@ export function ProxyForm({
         hint={t('proxies.form.timeoutHint')}
         label={t('proxies.form.timeout')}
         validationMessage={dialTimeoutMessage}
-        validationState={dialTimeoutMessage ? 'error' : undefined}
+        validationState={dialTimeoutMessage ? 'error' : 'none'}
       >
         <Input
           inputMode="numeric"

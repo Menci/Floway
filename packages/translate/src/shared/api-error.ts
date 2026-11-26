@@ -69,14 +69,17 @@ const errorEnvelopeOf = (envelope: Readonly<Record<string, unknown>>) => {
 };
 
 // After merging, loose fields live only in the container so source projection cannot add them again.
-const withEnvelopeDetails = (payload: IRErrorPayload, details: readonly Readonly<Record<string, unknown>>[]): IRErrorPayload =>
-  details.length === 0 ? payload : {
+const withEnvelopeDetails = (payload: IRErrorPayload, details: readonly Readonly<Record<string, unknown>>[]): IRErrorPayload => {
+  if (details.length === 0) return payload;
+  const extension = extensionOf(payload, new Set(['message', 'type', 'code', 'param']), details);
+  return {
     message: payload.message,
     ...(payload.type === undefined ? {} : { type: payload.type }),
     ...(payload.code === undefined ? {} : { code: payload.code }),
     ...(payload.param === undefined ? {} : { param: payload.param }),
-    provider_specific_fields: extensionOf(payload, new Set(['message', 'type', 'code', 'param']), details),
+    ...(extension === undefined ? {} : { provider_specific_fields: extension }),
   };
+};
 
 const errorEventPayloadOf = (event: Readonly<Record<string, unknown>>) => {
   const { type: _type, sequence_number: _sequenceNumber, ...payload } = event;

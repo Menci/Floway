@@ -138,7 +138,7 @@ const claudeCodeTokenRequest = async (
   return {
     access_token: root.access_token,
     expires_in: root.expires_in,
-    refresh_token: typeof root.refresh_token === 'string' ? root.refresh_token : undefined,
+    ...(typeof root.refresh_token === 'string' ? { refresh_token: root.refresh_token } : {}),
     scope: root.scope,
   };
 };

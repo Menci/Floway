@@ -9,9 +9,10 @@ import { useLocale } from '../../lib/use-locale';
 import { useMediaQuery } from '../../lib/use-media-query';
 import { useNow } from '../../lib/use-now';
 import { useDangerActionClasses, useDangerTextClass } from '../ui/danger';
+import { useNarrowListItemClass } from '../ui/narrow-list-item';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
-import { TABLE_ACTIONS_WITH_LEADING_WIDTH, TableActions, TableActionsHeader, stopRowSelection } from '../ui/table-actions';
+import { sortDirectionProps, TABLE_ACTIONS_WITH_LEADING_WIDTH, TableActions, TableActionsHeader, stopRowSelection } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
@@ -29,15 +30,6 @@ const useStyles = makeStyles({
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L93
   // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L297
   accentText: { color: 'var(--winui-accent-text-fill-primary)' },
-  // Only what ../../winui/controls/list.css.ts has no ListViewItem counterpart for:
-  // a four-line row, and a divider separator rather than the card stroke, which is
-  // black in both themes and disappears against a dark page.
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
-  // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250
-  mobileItem: {
-    borderBottom: '1px solid var(--winui-divider-stroke-default)',
-    paddingBlock: '10px',
-  },
 });
 
 const RELATIVE_REFRESH_MS = 30_000;
@@ -53,6 +45,7 @@ export function KeysTable({
   const { t } = useTranslation();
   const copyLabel = useCopyLabel();
   const s = useStyles();
+  const narrowItem = useNarrowListItemClass();
   const dangerText = useDangerTextClass();
   const dangerClasses = useDangerActionClasses();
   const narrow = useMediaQuery('(max-width: 760px)');
@@ -112,7 +105,7 @@ export function KeysTable({
       const lastUsed = key.last_used_at
         ? relativeTime(key.last_used_at, locale, { now }) ?? t('apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })
         : t('apiKeys.table.never');
-      return <ListItem checkmark={null} className={s.mobileItem} disabledSelection={disabled} key={key.id} value={key.id}>
+      return <ListItem checkmark={null} className={narrowItem.item} disabledSelection={disabled} key={key.id} value={key.id}>
         <div className="flex items-start gap-2 min-w-0 w-full">
           <div className="grid gap-0.5 min-w-0 flex-1">
             <Text block truncate size={300} wrap={false}>{key.name}</Text>
@@ -162,15 +155,15 @@ export function KeysTable({
               radioIndicator={null}
               type="radio"
             />
-            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'name')} sortDirection={sort.getSortDirection('name')} sortable>
+            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'name')} {...sortDirectionProps(sort.getSortDirection('name'))} sortable>
               {t('apiKeys.table.name')}
             </TableHeaderCell>
             <TableHeaderCell>{t('apiKeys.table.upstreams')}</TableHeaderCell>
             <TableHeaderCell>{t('apiKeys.table.upstreamOrder')}</TableHeaderCell>
-            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'created')} sortDirection={sort.getSortDirection('created')} sortable>
+            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'created')} {...sortDirectionProps(sort.getSortDirection('created'))} sortable>
               {t('apiKeys.table.created')}
             </TableHeaderCell>
-            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'lastUsed')} sortDirection={sort.getSortDirection('lastUsed')} sortable>
+            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'lastUsed')} {...sortDirectionProps(sort.getSortDirection('lastUsed'))} sortable>
               {t('apiKeys.table.lastUsed')}
             </TableHeaderCell>
             <TableActionsHeader />

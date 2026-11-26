@@ -325,9 +325,12 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     setMessages(current => {
       const index = current.findIndex(message => message.id === id);
       if (index < 0) return current;
-      return current.slice(0, index + 1).map(message => message.id === id
-        ? { ...message, text: draft.text.trim(), assistantOutput: undefined, ...(message.role === 'user' && draft.imageUrl.trim() ? { imageUrl: draft.imageUrl.trim() } : { imageUrl: undefined }) }
-        : message);
+      return current.slice(0, index + 1).map(message => {
+        if (message.id !== id) return message;
+        const { assistantOutput: _assistantOutput, imageUrl: _imageUrl, ...kept } = message;
+        const imageUrl = message.role === 'user' ? draft.imageUrl.trim() : '';
+        return { ...kept, text: draft.text.trim(), ...(imageUrl ? { imageUrl } : {}) };
+      });
     });
     editDialog.close();
   };

@@ -62,6 +62,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: S
   const entryByLegend = useMemo(() => new Map(chart.entries.map(entry => [entry.legend, entry])), [chart.entries]);
   const visibleData = useMemo(() => visibleSeriesData(chart.entries, chart.data, hidden), [chart.data, chart.entries, hidden]);
   const values = visibleData.lineChartData?.flatMap(series => series.data.map(point => point.y).filter((value): value is number => typeof value === 'number' && value > 0)) ?? [];
+  const yRange = values.length ? { yMaxValue: Math.max(...values), yMinValue: Math.min(...values) } : {};
   const labelByTime = useMemo(() => new Map(chart.buckets.map(bucket => [bucket.date.getTime(), bucket.label])), [chart.buckets]);
   const callout = useCallback((props?: CustomizedCalloutData): ReactElement | null => !props?.values.length
     ? null
@@ -74,7 +75,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: S
 
   return <ChartHost className={chartStyles.root} emptyText={t('monitoring.performance.empty')} hasData={Boolean(visibleData.lineChartData?.length)}>
     {({ element, size }) => <>
-      <LineChart styles={chartRootStyles} customDateTimeFormatter={formatAxisDate} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-Math.max(0, size.height - chartMargins.top - chartMargins.bottom)} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" />
+      <LineChart styles={chartRootStyles} customDateTimeFormatter={formatAxisDate} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-Math.max(0, size.height - chartMargins.top - chartMargins.bottom)} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} {...yRange} yScaleType="log" />
       <FluentChartPointMarkers data={visibleData} element={element} form="line" />
     </>}
   </ChartHost>;

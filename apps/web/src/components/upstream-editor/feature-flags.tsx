@@ -15,6 +15,7 @@ const flagGroupById = {
   'vendor-deepseek': 'vendor',
   'vendor-qwen': 'vendor',
   'vendor-kimi': 'vendor',
+  'vendor-mistral': 'vendor',
   'anthropic-messages-web-search-shim': 'shims',
   'openai-responses-web-search-shim': 'shims',
   'openai-responses-image-generation-shim': 'shims',
@@ -45,9 +46,9 @@ export function FeatureFlagsEditor({
   value,
 }: {
   defaults: FlagDefaults;
-  inherited?: FlagOverrides;
+  inherited?: FlagOverrides | undefined;
   onChange: (value: FlagOverrides) => void;
-  readOnly?: boolean;
+  readOnly?: boolean | undefined;
   value: FlagOverrides;
 }) {
   const { t } = useTranslation();

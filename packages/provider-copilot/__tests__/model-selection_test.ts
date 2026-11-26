@@ -23,7 +23,7 @@ const model = (
       max_output_tokens: options.contextWindow === 1_000_000 ? 64_000 : 32_000,
     },
     supports: {
-      reasoning_effort: options.reasoningEfforts,
+      ...(options.reasoningEfforts === undefined ? {} : { reasoning_effort: options.reasoningEfforts }),
     },
   },
 });

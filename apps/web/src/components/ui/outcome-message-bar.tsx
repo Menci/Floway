@@ -22,12 +22,12 @@ export function OutcomeMessageBar({
   onDismiss,
   title,
 }: {
-  action?: ReactNode;
+  action?: ReactNode | undefined;
   children: ReactNode;
-  className?: string;
-  intent?: 'error' | 'warning' | 'success' | 'info';
-  onDismiss?: () => void;
-  title?: string;
+  className?: string | undefined;
+  intent?: 'error' | 'warning' | 'success' | 'info' | undefined;
+  onDismiss?: (() => void) | undefined;
+  title?: string | undefined;
 }) {
   const { t } = useTranslation();
   const dismissLabel = t('common.dismiss');
