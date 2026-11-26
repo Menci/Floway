@@ -64,7 +64,8 @@ test('api key update lands every patched column and leaves the rest alone', () =
   await seedKey(repo);
 
   // recordUsage() takes this path after every proxied request.
-  const touched = await repo.apiKeys.update('key_node', { lastUsedAt: '2026-07-26T12:00:00.000Z' });
+  await repo.apiKeys.setLastUsedAt('key_node', '2026-07-26T12:00:00.000Z');
+  const touched = await repo.apiKeys.getById('key_node');
   assertEquals(touched?.lastUsedAt, '2026-07-26T12:00:00.000Z');
   // The columns whose CASE WHEN guard is false must survive untouched.
   assertEquals(touched?.name, 'Node key');

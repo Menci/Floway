@@ -240,7 +240,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   async update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null> {
     const hasName = sqliteBoolean(patch.name !== undefined);
     const hasKey = sqliteBoolean(patch.key !== undefined);
-    const hasLastUsedAt = sqliteBoolean(patch.lastUsedAt !== undefined);
     const hasUpstreamIds = sqliteBoolean(patch.upstreamIds !== undefined);
     const hasRandomizeUpstreams = sqliteBoolean(patch.randomizeUpstreams !== undefined);
     const hasDumpRetention = sqliteBoolean(patch.dumpRetentionSeconds !== undefined);
@@ -250,7 +249,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         `UPDATE api_keys
          SET name = CASE WHEN ? THEN ? ELSE name END,
              key = CASE WHEN ? THEN ? ELSE key END,
-             last_used_at = CASE WHEN ? THEN ? ELSE last_used_at END,
              upstream_ids = CASE WHEN ? THEN ? ELSE upstream_ids END,
              randomize_upstreams = CASE WHEN ? THEN ? ELSE randomize_upstreams END,
              dump_retention_seconds = CASE WHEN ? THEN ? ELSE dump_retention_seconds END,
@@ -261,7 +259,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       .bind(
         hasName ? 1 : 0, patch.name ?? null,
         hasKey ? 1 : 0, patch.key ?? null,
-        hasLastUsedAt ? 1 : 0, patch.lastUsedAt ?? null,
         hasUpstreamIds ? 1 : 0, hasUpstreamIds ? serializeUpstreamIds(patch.upstreamIds!) : null,
         hasRandomizeUpstreams ? 1 : 0, patch.randomizeUpstreams ? 1 : 0,
         hasDumpRetention ? 1 : 0, patch.dumpRetentionSeconds ?? null,
@@ -270,6 +267,12 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       )
       .first<ApiKeyRow>();
     return row === null ? null : toApiKey(row);
+  }
+
+  async setLastUsedAt(id: string, lastUsedAt: string): Promise<void> {
+    await this.db.prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ? AND deleted_at IS NULL')
+      .bind(lastUsedAt, id)
+      .run();
   }
 
   async softDelete(id: string): Promise<boolean> {
@@ -801,7 +804,7 @@ class SqlSessionsRepo implements SessionsRepo {
 class SqlUsageRepo implements UsageRepo {
   constructor(private db: SqlDatabase) {}
 
-  private async addMetric(
+  private async addExactMetric(
     record: UsageRecord,
     upstream: string | null,
     selector: string,
@@ -834,11 +837,39 @@ class SqlUsageRepo implements UsageRepo {
   async record(record: UsageRecord): Promise<void> {
     const upstream = record.upstream ?? null;
     const selector = canonicalPricingSelectorKey(record.pricingSelector);
-    await this.db.prepare(
+    const identity = [record.keyId, record.model, upstream, record.modelKey, record.hour, selector] as const;
+    const request = this.db.prepare(
       `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT DO UPDATE SET requests = requests + excluded.requests`,
-    ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, record.requests).run();
-    await Promise.all(usageMetricRows(record).map(row => this.addMetric(record, upstream, selector, row)));
+    ).bind(...identity, record.requests);
+
+    let metrics: UsageRecord['metrics'];
+    try {
+      metrics = usageMetricRows(record);
+    } catch (error) {
+      await request.run();
+      throw error;
+    }
+
+    // SQLite promotes overflowing integer addition to REAL. A text round trip
+    // also rejects a saturated cast before the headroom check.
+    // https://sqlite.org/lang_expr.html#binaryops
+    const increments = metrics.map(row => this.db.prepare(
+      `INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, metric, quantity, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT DO UPDATE SET quantity = CAST(CAST(usage.quantity AS INTEGER) + CAST(excluded.quantity AS INTEGER) AS TEXT)
+       WHERE usage.quantity = CAST(CAST(usage.quantity AS INTEGER) AS TEXT)
+         AND excluded.quantity = CAST(CAST(excluded.quantity AS INTEGER) AS TEXT)
+         AND CAST(usage.quantity AS INTEGER) >= 0
+         AND CAST(excluded.quantity AS INTEGER) >= 0
+         AND CAST(usage.quantity AS INTEGER) <= 9223372036854775807 - CAST(excluded.quantity AS INTEGER)`,
+    ).bind(...identity, row.metric, row.quantity, row.unitPrice));
+    const [, ...writes] = await runStatements(this.db, [request, ...increments]);
+    const exact = metrics.filter((row, index) => {
+      const changes = writes[index]?.meta.changes;
+      if (changes !== 0 && changes !== 1) throw new Error(`Invalid usage metric ${row.metric} change count: ${String(changes)}`);
+      return changes === 0;
+    });
+    await Promise.all(exact.map(row => this.addExactMetric(record, upstream, selector, row)));
   }
 
   async query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]> {

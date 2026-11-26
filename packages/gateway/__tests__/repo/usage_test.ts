@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { type CompletedStatement, recordCompletedStatements } from './recording-sql.ts';
@@ -74,7 +74,7 @@ for (const backend of backends) {
     assertEquals(tokenRatesFromUsage(row), longPricing);
   });
 
-  test(`${backend.name} usage repo retains the request when metric persistence fails`, async () => {
+  test(`${backend.name} usage repo retains the request when metric validation fails`, async () => {
     const repo = await backend.make();
     await assertRejects(() => repo.usage.record(record({
       metrics: [{ metric: 'input_tokens', quantity: '01.0', unitPrice: null }],
@@ -108,6 +108,24 @@ test('SQL usage repo atomically rolls concurrent decimal writes into one metric 
   assertEquals(stored.metrics, [{ metric: 'input_tokens', quantity: '5', unitPrice: '0.000002' }]);
   assertEquals(stored.requests, 50);
   assertEquals(await db.prepare('SELECT COUNT(*) AS count FROM usage').first(), { count: 1 });
+});
+
+test('SQL usage preserves a committed count when the batch response is lost', async () => {
+  const db = await createSqliteTestDb();
+  const failure = new Error('D1 response lost');
+  const repo = new SqlRepo({
+    prepare: sql => db.prepare(sql),
+    exec: sql => db.exec(sql),
+    async batch(statements) {
+      await db.batch!(statements);
+      throw failure;
+    },
+  });
+
+  await expect(repo.usage.record(record({ metrics: [{ metric: 'input_tokens', quantity: '3', unitPrice: null }] }))).rejects.toBe(failure);
+  const [stored] = await query(repo);
+  assertEquals(stored.requests, 1);
+  assertEquals(stored.metrics, [{ metric: 'input_tokens', quantity: '3', unitPrice: null }]);
 });
 
 test('SQL usage overview matches the in-memory oracle across filters, facets, axes, and exact decimals', async () => {

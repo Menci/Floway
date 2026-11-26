@@ -83,11 +83,11 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
 test('[sql] targeted API key updates use SQLite-bindable scalar values', async () => {
   const repo = new SqlRepo(new ScalarOnlySqlDatabase(await createSqliteTestDb()));
   await repo.apiKeys.save(baseKey());
+  await repo.apiKeys.setLastUsedAt('key_dump', '2026-07-29T00:00:00.000Z');
 
   const updated = await repo.apiKeys.update('key_dump', {
     name: 'Updated key',
     key: 'updated_raw_key',
-    lastUsedAt: '2026-07-29T00:00:00.000Z',
     upstreamIds: ['upstream-a'],
     randomizeUpstreams: true,
     dumpRetentionSeconds: 3600,
