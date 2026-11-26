@@ -100,7 +100,7 @@ jobs:
           - name: lint (gateway)
             targets: packages/gateway
           - name: lint (other packages)
-            targets: eslint.config.ts vitest.config.ts packages/agent-setup packages/http packages/interceptor packages/platform packages/protocols packages/proxy packages/test-utils packages/translate packages/upstream packages/upstream-azure packages/upstream-chatgpt packages/upstream-claude-code packages/upstream-copilot packages/upstream-custom packages/upstream-kimi-code packages/upstream-ollama scripts tools
+            targets: eslint.config.ts vitest.config.ts packages/agent-setup packages/http packages/interceptor packages/pipeline packages/platform packages/protocols packages/proxy packages/test-utils packages/translate packages/upstream packages/upstream-azure packages/upstream-chatgpt packages/upstream-claude-code packages/upstream-copilot packages/upstream-custom packages/upstream-kimi-code packages/upstream-ollama scripts tools
     name: ${{ matrix.name }}
     steps:
       - name: Checkout
