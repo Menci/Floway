@@ -1,6 +1,9 @@
 import type { UsageQuantities } from '../../repo/types.ts';
-import { requestOnlyUsageMeasurement, tokenUsage, type UsageMeasurement } from '../shared/telemetry/usage.ts';
-import { parseDecimalString } from '@floway-dev/protocols/common';
+import { computeUsage } from '../pipeline/compute-usage.ts';
+import { requestOnlyUsageMeasurement, tokenUsage, tokenUsageMeasurement, type UsageMeasurement } from '../shared/telemetry/usage.ts';
+import { getHeader } from '@floway-dev/http';
+import { isJsonMediaType, isJsonObject, parseDecimalString } from '@floway-dev/protocols/common';
+import { isOpenAIAudioTranscriptionDoneEvent } from '@floway-dev/protocols/openai-audio';
 
 // OpenAI transcription responses discriminate usage by `type`. Token-based
 // models split input_token_details into text and audio metrics; without that
@@ -98,3 +101,39 @@ export const measureOpenAIAudioTranscriptionUsage = (value: unknown, sourceApi: 
     return requestOnlyUsageMeasurement();
   }
 };
+
+const transcriptionApi = '/audio/transcriptions';
+
+export const computeOpenAIAudioTranscriptionsUsage = computeUsage('openaiAudioTranscriptions', {
+  needs: ['response.http'] as const,
+  result(bytes, { 'response.http': http }) {
+    if (http === null) throw new Error('OpenAI Audio Transcriptions result requires an HTTP response');
+    const mediaType = getHeader(http.headers, 'content-type');
+    if (typeof mediaType !== 'string' || !isJsonMediaType(mediaType)) return [requestOnlyUsageMeasurement()];
+    const value: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    return [measureOpenAIAudioTranscriptionUsage(value, transcriptionApi)];
+  },
+  stream: () => ({
+    frame: ({ data }) => isOpenAIAudioTranscriptionDoneEvent(data) ? [measureOpenAIAudioTranscriptionUsage(data, transcriptionApi)] : undefined,
+    done: () => [requestOnlyUsageMeasurement()],
+  }),
+});
+
+export const computeOpenAIAudioSpeechUsage = computeUsage('openaiAudioSpeech', {
+  result: () => [requestOnlyUsageMeasurement()],
+  stream: () => ({
+    frame(event) {
+      // https://github.com/openai/openai-dotnet/blob/fa869ba7c906d954236c541b3a1e7920e79a12f0/OpenAI/src/Generated/Models/Audio/InternalSpeechAudioDoneEvent.cs
+      // https://github.com/openai/openai-dotnet/blob/fa869ba7c906d954236c541b3a1e7920e79a12f0/OpenAI/src/Generated/Models/Audio/SpeechTokenUsage.Serialization.cs
+      if (event.type !== 'speech.audio.done' || !isJsonObject(event.usage)) return undefined;
+      const { input_tokens: input, output_tokens: output, total_tokens: total } = event.usage;
+      if (typeof input !== 'number' || !Number.isSafeInteger(input) || input < 0
+        || typeof output !== 'number' || !Number.isSafeInteger(output) || output < 0
+        || total !== input + output) {
+        return undefined;
+      }
+      return [tokenUsageMeasurement({ input, output })];
+    },
+    done: () => [requestOnlyUsageMeasurement()],
+  }),
+});

@@ -5,7 +5,7 @@ import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
+import { UpstreamTransportError } from '@floway-dev/http';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 // A custom upstream is the easiest fixture to assert /completions against:
@@ -13,7 +13,6 @@ import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-ut
 // resolves to /v1/completions through the default pathOverrides table.
 const registerOpenAICompletionsUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_completions',
     name: 'Passthrough Completions Provider',
@@ -44,6 +43,36 @@ const completionStream = (): Response => {
     headers: { 'content-type': 'text/event-stream' },
   });
 };
+
+test.each([
+  { body: { prompt: 'hello' }, status: 400, model: null },
+  { body: { model: 'missing-completions-model', prompt: 'hello' }, status: 404, model: 'missing-completions-model' },
+])('/v1/completions archives local rejection with status $status and model $model', async ({ body, status, model }) => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  await registerOpenAICompletionsUpstream(repo);
+  const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withMockedFetch(
+    request => { throw new Error(`Unexpected upstream request ${request.url}`); },
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify(body),
+      });
+      assertEquals(response.status, status);
+      await response.json();
+    },
+  );
+  await flushAsyncWork();
+
+  assertEquals(dumpStubs.published.length, 1);
+  const { meta } = dumpStubs.published[0]!;
+  assertEquals(meta.error, { kind: 'gateway' });
+  assertEquals(meta.model, model);
+  assertEquals(meta.upstream, null);
+});
 
 test('/v1/completions streaming forwards usage chunk when the client opted in', async () => {
   const { apiKey, repo } = await setupAppTest();
@@ -77,12 +106,6 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
   );
 });
 
-// Dual-path coverage: usage + performance + dump telemetry must land
-// equivalently on both the non-streaming JSON and the streaming SSE
-// branches. The handler does not force `stream: true` upstream the way
-// openai-chat-completions does (no interceptor framework to feed), so the two
-// paths really do exercise different scaffold branches and the assertions
-// here keep them honest.
 test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/completions sends a data-only failure after partial output on %s', async mode => {
   const { apiKey, repo } = await setupAppTest();
   await registerOpenAICompletionsUpstream(repo);
@@ -107,7 +130,7 @@ test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/complet
       assertEquals(decode.decode((await reader.read()).value), partial);
       const message = 'upstream completion read failed';
       const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
-      if (mode === 'read error') upstream.error(new Error(message));
+      if (mode === 'read error') upstream.error(new UpstreamTransportError(new Error(message)));
       else if (mode === 'premature EOF') upstream.close();
       else upstream.enqueue(new TextEncoder().encode(native));
       const failure = decode.decode((await reader.read()).value);
@@ -122,7 +145,7 @@ test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/complet
   assertEquals(performance.errorsNoOutput, 1);
 });
 
-test('/v1/completions non-streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a bytes-body dump record', async () => {
+test('/v1/completions non-streaming records usage, performance, and a pipeline archive', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerOpenAICompletionsUpstream(repo);
@@ -161,31 +184,35 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(performance[0]?.requests, 1);
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
-  assertEquals(dumpStubs.stored.length, 1);
-  const dump = dumpStubs.stored[0]!.record;
-  assertEquals(dump.meta.path, '/v1/completions');
-  assertEquals(dump.meta.status, 200);
-  assertEquals(dump.meta.model, 'davinci-002');
-  assertEquals(dump.meta.inputTokens, 7);
-  assertEquals(dump.meta.outputTokens, 2);
-  // Non-streaming: the upstream sent a one-shot JSON, so the dump
-  // captures the bytes (not a frame log).
-  assertEquals(dump.response.body.type, 'bytes');
+  assertEquals(dumpStubs.published.length, 1);
+  const { meta } = dumpStubs.published[0]!;
+  assertEquals(meta.path, '/v1/completions');
+  assertEquals(meta.status, 200);
+  assertEquals(meta.model, 'davinci-002');
+  assertEquals(meta.inputTokens, 7);
+  assertEquals(meta.outputTokens, 2);
+  const archive = await dumpStubs.store.getArchive(apiKey.id, meta.id);
+  const ndjson = await new Response(archive).text();
+  assertEquals(ndjson.includes('openaiCompletions.compute-usage'), true);
 });
 
-test('/v1/completions streaming strips the unrequested usage chunk yet records usage and a frame-log dump', async () => {
+test('/v1/completions streaming omits unrequested usage from SSE and records it in the pipeline archive', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerOpenAICompletionsUpstream(repo);
   const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
 
   await withMockedFetch(
-    () => Promise.resolve(completionStream()),
+    async request => {
+      const body = await request.json() as { stream_options: unknown };
+      assertEquals(body.stream_options, { include_usage: true, vendor_option: 'preserved' });
+      return completionStream();
+    },
     async () => {
       const response = await requestAppWithWarmModels('/v1/completions', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true, stream_options: { include_usage: false, vendor_option: 'preserved' } }),
       });
       assertEquals(response.status, 200);
       const text = await response.text();
@@ -206,27 +233,15 @@ test('/v1/completions streaming strips the unrequested usage chunk yet records u
   assertEquals(performance[0]?.requests, 1);
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
-  assertEquals(dumpStubs.stored.length, 1);
-  const dump = dumpStubs.stored[0]!.record;
-  assertEquals(dump.meta.path, '/v1/completions');
-  assertEquals(dump.meta.status, 200);
-  assertEquals(dump.meta.model, 'davinci-002');
-  assertEquals(dump.meta.inputTokens, 4);
-  assertEquals(dump.meta.outputTokens, 2);
-  // Streaming: dump stores the protocol frames the gateway saw from
-  // upstream BEFORE transformFrame ran. The fixture stream emits two
-  // content events, one usage-only event (which the client did not opt
-  // into and so it was stripped from the forwarded stream), and a done
-  // terminator.
-  assertEquals(dump.response.body.type, 'stream');
-  if (dump.response.body.type === 'stream') {
-    const frames = dump.response.body.events.map(e => e.frame);
-    // Upstream's usage chunk is preserved in the dump even though it was
-    // stripped from the client-facing stream.
-    const usageFrame = frames[2];
-    if (usageFrame?.type === 'event') {
-      const event = usageFrame.event as { choices: unknown[]; usage: { prompt_tokens: number } };
-      assertEquals(event.usage.prompt_tokens, 4);
-    } else throw new Error('expected the usage event frame');
-  }
+  assertEquals(dumpStubs.published.length, 1);
+  const { meta } = dumpStubs.published[0]!;
+  assertEquals(meta.path, '/v1/completions');
+  assertEquals(meta.status, 200);
+  assertEquals(meta.model, 'davinci-002');
+  assertEquals(meta.inputTokens, 4);
+  assertEquals(meta.outputTokens, 2);
+  const archive = await dumpStubs.store.getArchive(apiKey.id, meta.id);
+  const ndjson = await new Response(archive).text();
+  assertEquals(ndjson.includes('"stream.frame"'), true);
+  assertEquals(ndjson.includes('"prompt_tokens":4'), true);
 });

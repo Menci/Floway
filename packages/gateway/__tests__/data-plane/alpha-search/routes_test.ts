@@ -1,22 +1,13 @@
 import { Hono } from 'hono';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { mountAlphaSearchRoutes } from '../../../src/data-plane/alpha-search/routes.ts';
-import { resolveConfiguredWebSearchProvider } from '../../../src/data-plane/tools/web-search/provider.ts';
-import type { WebSearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../../../src/data-plane/tools/web-search/types.ts';
+import type { WebSearchConfig } from '../../../src/data-plane/tools/web-search/types.ts';
 import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
 import { internalErrorResponse } from '../../../src/middleware/internal-error-response.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, flushAsyncWork, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { withMockedFetch } from '@floway-dev/test-utils';
-
-// Real provider construction (`createTavilyWebSearchProvider` etc.) hits the
-// network; replace the resolver so tests drive a stub backend instead. A
-// WebSearchConfig row is still seeded so `loadWebSearchConfig` returns a real
-// value; the mock ignores it and returns the configured state each test
-// wants.
-vi.mock('../../../src/data-plane/tools/web-search/provider.ts');
-const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchProvider);
 
 const TAVILY_CONFIG: WebSearchConfig = {
   provider: 'tavily',
@@ -44,39 +35,15 @@ const searchUpstream = (modelIds: readonly string[]) => buildCustomUpstreamRecor
   },
 });
 
-interface ProviderOverrides {
-  search?: (req: WebSearchProviderRequest) => Promise<WebSearchProviderResult> | WebSearchProviderResult;
-  fetchPage?: (req: WebSearchFetchPageRequest) => Promise<WebSearchFetchPageResult> | WebSearchFetchPageResult;
-}
-
-interface BackendCall {
-  kind: 'search' | 'fetchPage';
-  request: WebSearchProviderRequest | WebSearchFetchPageRequest;
-}
-
-const makeStubProvider = (overrides: ProviderOverrides = {}): { provider: WebSearchProvider; calls: BackendCall[] } => {
-  const calls: BackendCall[] = [];
-  const provider: WebSearchProvider = {
-    async search(request) {
-      calls.push({ kind: 'search', request });
-      if (overrides.search) return await overrides.search(request);
-      return {
-        type: 'ok',
-        results: [{ source: 'https://example.com/a', title: 'Example A', content: [{ type: 'text', text: 'snippet A' }] }],
-      };
+const withTavily = async (requests: unknown[], run: () => Promise<void>): Promise<void> =>
+  await withMockedFetch(
+    async request => {
+      expect(request.url).toBe('https://api.tavily.com/search');
+      requests.push(await request.json());
+      return Response.json({ results: [{ url: 'https://example.com/a', title: 'Example A', content: 'snippet A' }] });
     },
-    async fetchPage(request) {
-      calls.push({ kind: 'fetchPage', request });
-      if (overrides.fetchPage) return await overrides.fetchPage(request);
-      return {
-        type: 'ok',
-        pages: request.urls.map(url => ({ url, title: 'Page', content: `body of ${url}`, truncated: false, fullContentBytes: 12 })),
-        failures: [],
-      };
-    },
-  };
-  return { provider, calls };
-};
+    run,
+  );
 
 const buildAlphaSearchApp = () => {
   const app = new Hono<{ Variables: AuthVars }>();
@@ -108,10 +75,6 @@ interface SearchResponseBody {
   encrypted_output: string | null;
   output: string;
 }
-
-beforeEach(() => {
-  mockResolveConfigured.mockReset();
-});
 
 describe('/alpha/search data plane', () => {
   describe('passthrough model availability', () => {
@@ -163,7 +126,7 @@ describe('/alpha/search data plane', () => {
   });
 
   describe('command execution', () => {
-    it('raw-passthrough mode dispatches to the selected custom upstream and preserves its response', async () => {
+    it('dispatches to the selected custom upstream and preserves its response bytes', async () => {
       const { apiKey, repo } = await setupAppTest({ webSearchConfig: PASSTHROUGH_CONFIG });
       await repo.upstreams.deleteAll();
       await saveUpstreamForTest(repo.upstreams, searchUpstream(['gpt-search']));
@@ -172,7 +135,8 @@ describe('/alpha/search data plane', () => {
         output: 'upstream output',
         results: [{ type: 'text_result', ref_id: 'turn0search0', url: 'https://example.com', title: 'Example', snippet: 'Snippet' }],
       };
-      const immutableUpstreamResponse = await fetch(`data:application/json,${encodeURIComponent(JSON.stringify(upstreamPayload))}`);
+      const upstreamBytes = `${JSON.stringify(upstreamPayload, null, 2)}\n`;
+      const immutableUpstreamResponse = await fetch(`data:application/json,${encodeURIComponent(upstreamBytes)}`);
       let upstreamBody: Record<string, unknown> | undefined;
       await withMockedFetch(
         async request => {
@@ -190,7 +154,7 @@ describe('/alpha/search data plane', () => {
             commands: { search_query: [{ q: 'Floway' }] },
           });
           expect(response.status).toBe(200);
-          expect(await response.json()).toEqual(upstreamPayload);
+          expect(await response.text()).toBe(upstreamBytes);
         },
       );
       expect(upstreamBody).toMatchObject({
@@ -200,27 +164,44 @@ describe('/alpha/search data plane', () => {
       });
     });
 
+    it.each([
+      { status: 200, body: 'non-JSON result' },
+      { status: 200, body: '[]' },
+      { status: 204, body: null },
+    ])('relays upstream status $status and successful bytes $body verbatim', async ({ status, body }) => {
+      const { apiKey, repo } = await setupAppTest({ webSearchConfig: PASSTHROUGH_CONFIG });
+      await repo.upstreams.deleteAll();
+      await saveUpstreamForTest(repo.upstreams, searchUpstream(['gpt-search']));
+      await withMockedFetch(
+        () => new Response(body, { status, headers: { 'content-type': 'application/json', 'x-provider-trace': 'search' } }),
+        async () => {
+          await warmModelsForTest();
+          const response = await postSearch(buildAlphaSearchApp(), apiKey.key, { commands: {} });
+          expect(response.status).toBe(status);
+          expect(response.headers.get('x-provider-trace')).toBe('search');
+          if (body === null) expect(response.body).toBeNull();
+          else expect(await response.text()).toBe(body);
+        },
+      );
+      await flushAsyncWork();
+      expect(await repo.usage.listAll()).toEqual([]);
+      expect(await repo.performance.listAll()).toMatchObject([{ operation: 'alpha_search', requests: 1, errorsNoOutput: 0 }]);
+    });
+
     it('runs a search_query and returns rendered results as `output`', async () => {
       const { apiKey, repo } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, { commands: { search_query: [{ q: 'react hooks' }] } });
-      expect(response.status).toBe(200);
-      const body = await response.json() as SearchResponseBody;
-      expect(body.encrypted_output).toBeNull();
-      expect(body.output).toContain('Search results for "react hooks"');
-      expect(body.output).toContain('[1] Example A');
-      expect(body.output).toContain('https://example.com/a');
-      expect(body.output).toContain('snippet A');
-
-      // Query filters flow through from settings.search_context_size.
-      expect(stub.calls).toHaveLength(1);
-      expect(stub.calls[0].kind).toBe('search');
-      expect((stub.calls[0].request as WebSearchProviderRequest).query).toBe('react hooks');
-
-      // Usage accounted against the caller's key.
+      const requests: unknown[] = [];
+      await withTavily(requests, async () => {
+        const response = await postSearch(buildAlphaSearchApp(), apiKey.key, { commands: { search_query: [{ q: 'react hooks' }] } });
+        expect(response.status).toBe(200);
+        const body = await response.json() as SearchResponseBody;
+        expect(body.encrypted_output).toBeNull();
+        expect(body.output).toContain('Search results for "react hooks"');
+        expect(body.output).toContain('[1] Example A');
+        expect(body.output).toContain('https://example.com/a');
+        expect(body.output).toContain('snippet A');
+      });
+      expect(requests).toMatchObject([{ query: 'react hooks' }]);
       const usage = await repo.webSearchUsage.listAll();
       expect(usage).toHaveLength(1);
       expect(usage[0]).toMatchObject({ provider: 'tavily', keyId: apiKey.id, action: 'search', requests: 1 });
@@ -228,39 +209,66 @@ describe('/alpha/search data plane', () => {
 
     it('maps response_length and query-level filters onto the provider request', async () => {
       const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, {
-        settings: { filters: { allowed_domains: ['example.com', 'other.com'] } },
-        commands: {
-          search_query: [{ q: 'react', domains: ['example.com', 'blocked.com'], recency: 7 }],
-          response_length: 'short',
-        },
+      const requests: unknown[] = [];
+      await withTavily(requests, async () => {
+        const response = await postSearch(buildAlphaSearchApp(), apiKey.key, {
+          settings: { filters: { allowed_domains: ['example.com', 'other.com'] } },
+          commands: {
+            search_query: [{ q: 'react', domains: ['example.com', 'blocked.com'], recency: 7 }],
+            response_length: 'short',
+          },
+        });
+        expect(response.status).toBe(200);
+        await response.text();
       });
-      expect(response.status).toBe(200);
-      expect(stub.calls).toHaveLength(1);
-      const request = stub.calls[0].request as WebSearchProviderRequest;
-      expect(request.maxResults).toBe(10);
-      expect(request.allowedDomains).toEqual(['example.com']);
-      expect(request.recencyDays).toBe(7);
+      expect(requests).toMatchObject([{ query: 'react', max_results: 10, include_domains: ['example.com'], time_range: 'week' }]);
     });
 
     it('does not widen filtering when global and query domains do not intersect', async () => {
       const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, {
-        settings: { filters: { allowed_domains: ['example.com'] } },
-        commands: { search_query: [{ q: 'react', domains: ['other.com'] }] },
+      const requests: unknown[] = [];
+      await withTavily(requests, async () => {
+        const response = await postSearch(buildAlphaSearchApp(), apiKey.key, {
+          settings: { filters: { allowed_domains: ['example.com'] } },
+          commands: { search_query: [{ q: 'react', domains: ['other.com'] }] },
+        });
+        expect(response.status).toBe(200);
+        const body = await response.json() as SearchResponseBody;
+        expect(body.output).toContain('(no results)');
       });
-      expect(response.status).toBe(200);
-      const body = await response.json() as SearchResponseBody;
-      expect(body.output).toContain('(no results)');
-      expect(stub.calls).toHaveLength(0);
+      expect(requests).toHaveLength(0);
+    });
+
+    it('batches open and find URLs in one provider call and renders each command in order', async () => {
+      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
+      const open = 'https://example.com/open';
+      const find = 'https://example.com/find';
+      const requests: unknown[] = [];
+      await withMockedFetch(
+        async request => {
+          expect(request.url).toBe('https://api.tavily.com/extract');
+          requests.push(await request.json());
+          return Response.json({
+            results: [
+              { url: open, raw_content: 'opened page content' },
+              { url: find, raw_content: 'found search target on this page' },
+            ],
+          });
+        },
+        async () => {
+          const response = await postSearch(buildAlphaSearchApp(), apiKey.key, {
+            commands: {
+              open: [{ ref_id: open }],
+              find: [{ ref_id: find, pattern: 'search target' }],
+            },
+          });
+          expect(response.status).toBe(200);
+          const { output } = await response.json() as SearchResponseBody;
+          expect(output).toContain('found [search target] on this page');
+          expect(output.startsWith('opened page content')).toBe(true);
+        },
+      );
+      expect(requests).toMatchObject([{ urls: [open, find] }]);
     });
   });
 });

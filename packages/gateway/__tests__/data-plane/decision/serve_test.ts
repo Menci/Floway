@@ -1,24 +1,24 @@
 import { test } from 'vitest';
 
+import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import type { Repo } from '../../../src/repo/types.ts';
+import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { DecisionTarget, ModelPricing } from '@floway-dev/protocols/common';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-const saveDecisionUpstream = async (
-  repo: Repo,
+const decisionUpstream = (
   target: DecisionTarget,
   pricing?: ModelPricing,
-): Promise<void> => {
-  await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_decision',
+  identity = { id: 'up_decision', baseUrl: 'https://decision.example.com', sortOrder: 0 },
+) =>
+  buildCustomUpstreamRecord({
+    id: identity.id,
     name: 'Decision Provider',
+    sortOrder: identity.sortOrder,
     config: {
-      baseUrl: 'https://decision.example.com',
+      baseUrl: identity.baseUrl,
       ingressHeadersRules: [],
       apiKey: 'sk-decision',
       endpoints: {},
@@ -32,7 +32,11 @@ const saveDecisionUpstream = async (
         ...(pricing === undefined ? {} : { pricing }),
       }],
     },
-  }));
+  });
+
+const saveDecisionUpstream = async (repo: Repo, target: DecisionTarget, pricing?: ModelPricing): Promise<void> => {
+  await repo.upstreams.deleteAll();
+  await saveUpstreamForTest(repo.upstreams, decisionUpstream(target, pricing));
 };
 
 const requestHeaders = (apiKey: string) => ({
@@ -46,6 +50,16 @@ const choiceRequest = {
   questions: { team: { type: 'choice', instructions: 'Which team?', criteria: { billing: 'Charges', engineering: 'Bugs' } } },
 };
 
+test.each(['invalid JSON', '{"model":"public-decision"}'])('/v1/systemone rejects invalid ingress %s', async body => {
+  const { apiKey } = await setupAppTest();
+  const response = await requestAppWithWarmModels('/v1/systemone', {
+    method: 'POST',
+    headers: requestHeaders(apiKey.key),
+    body,
+  });
+  assertEquals(response.status, 400);
+});
+
 test('/v1/systemone forwards a System One request and records input tokens', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' }, { entries: [{ rates: { input_tokens: '0.000042' } }] });
@@ -54,11 +68,12 @@ test('/v1/systemone forwards a System One request and records input tokens', asy
   await withMockedFetch(
     async request => {
       upstreamRequest = request;
-      return jsonResponse({
+      const body = JSON.stringify({
         model: 'microsoft-decision-1',
         answers: { team: { type: 'choice', choice: 'engineering', confidence: 0.9997532109087481, probabilities: { billing: 0.00012339454562592273, engineering: 0.9998766054543741 } } },
         usage: { input_tokens: 56, output_tokens: 1 },
       });
+      return new Response(new TextEncoder().encode(body));
     },
     async () => {
       const response = await requestAppWithWarmModels('/v1/systemone', {
@@ -67,6 +82,7 @@ test('/v1/systemone forwards a System One request and records input tokens', asy
         body: JSON.stringify(choiceRequest),
       });
       assertEquals(response.status, 200);
+      assertEquals(response.headers.get('content-type'), 'application/json');
       assertEquals(await response.json(), {
         model: 'microsoft-decision-1',
         answers: { team: { type: 'choice', choice: 'engineering', confidence: 0.9997532109087481, probabilities: { billing: 0.00012339454562592273, engineering: 0.9998766054543741 } } },
@@ -88,6 +104,65 @@ test('/v1/systemone forwards a System One request and records input tokens', asy
   const performance = await repo.performance.listAll();
   assertEquals(performance[0]?.operation, 'decision');
   assertEquals(performance[0]?.requests, 1);
+});
+
+test('/v1/systemone archives the selected refusal and retains its usage without calling another candidate', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  await saveDecisionUpstream(repo, { protocol: 'openai-decisions' }, { entries: [{ rates: { input_tokens: '0.000042' } }] });
+  await saveUpstreamForTest(repo.upstreams, decisionUpstream({ protocol: 'typesafe-systemone' }, undefined, {
+    id: 'up_decision_next', baseUrl: 'https://next-decision.example.com', sortOrder: 100,
+  }));
+  const archive = installDumpStubs(initDumpStore, initDumpBroker);
+  const calls: string[] = [];
+
+  await withMockedFetch(
+    request => {
+      const { hostname } = new URL(request.url);
+      calls.push(hostname);
+      if (hostname === 'decision.example.com') {
+        return new Response(JSON.stringify({
+          model: 'raw-decision',
+          answers: [{ type: 'refusal', name: 'team' }],
+          usage: { input_tokens: 3 },
+        }), { headers: { 'content-type': 'application/json', 'x-provider-trace': 'decision-refusal' } });
+      }
+      assertEquals(hostname, 'next-decision.example.com');
+      return jsonResponse({
+        answers: { team: { type: 'choice', choice: 'engineering', confidence: 1, probabilities: { billing: 0, engineering: 1 } } },
+      });
+    },
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/systemone', {
+        method: 'POST',
+        headers: requestHeaders(apiKey.key),
+        body: JSON.stringify(choiceRequest),
+      });
+      assertEquals(calls, ['decision.example.com']);
+      assertEquals(response.status, 502);
+      assertEquals(response.headers.get('x-provider-trace'), 'decision-refusal');
+      assertEquals(await response.json(), {
+        error: { type: 'api_error', message: 'answers.team is a refusal, which System One cannot express' },
+      });
+    },
+  );
+  await flushAsyncWork();
+
+  assertEquals(archive.published.length, 1);
+  assertEquals(archive.published[0]?.meta.status, 502);
+  assertEquals(archive.published[0]?.meta.upstream?.id, 'up_decision');
+  assertEquals(archive.published[0]?.meta.error, { kind: 'upstream' });
+  const usageRows = await repo.usage.listAll();
+  assertEquals(usageRows.length, 1);
+  const [usage] = usageRows;
+  assertEquals(usage.requests, 1);
+  assertEquals(usage.metrics, [{ metric: 'input_tokens', quantity: '3', unitPrice: '0.000042' }]);
+  const performanceRows = await repo.performance.listAll();
+  assertEquals(performanceRows.length, 1);
+  const [performance] = performanceRows;
+  assertEquals(performance.requests, 1);
+  assertEquals(performance.neutral, 1);
+  assertEquals(performance.errorsNoOutput, 0);
 });
 
 test('/v1/decisions accepts the OpenAI shape and translates to a System One target', async () => {

@@ -20,6 +20,7 @@ const LIMIT_KEYS_BY_KIND: Readonly<Record<ModelKind, readonly ModelLimitKey[]>> 
   embedding: ['max_context_window_tokens'],
   rerank: ['max_context_window_tokens'],
   transcription: ['max_context_window_tokens'],
+  speech: [],
   decision: ['max_context_window_tokens'],
   image: [],
 };

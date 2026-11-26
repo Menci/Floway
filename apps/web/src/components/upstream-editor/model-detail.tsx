@@ -146,13 +146,17 @@ export function ModelDetail({
               <Input className="!w-full" placeholder={t('models.editor.displayNamePlaceholder')} readOnly={fieldsReadOnly} value={row.config.display_name ?? ''} onChange={(_, data) => patch({ display_name: data.value || undefined })} />
             </Field>
             <Field className="min-w-0" label={t('models.editor.kind')}>
-              <Dropdown readOnly={fieldsReadOnly} selectedOptions={[row.config.kind]} value={modelKindLabel(row.config.kind)} onOptionSelect={(_, data) => data.optionValue !== undefined && setKind(data.optionValue as UpstreamModelConfig['kind'])}>
-                <Option value="chat">Chat</Option><Option value="embedding">Embedding</Option><Option value="image">Image</Option><Option value="transcription">Transcription</Option>
+              <Dropdown readOnly={fieldsReadOnly} selectedOptions={[row.config.kind]} value={t(`models.editor.kindValue.${row.config.kind}`)} onOptionSelect={(_, data) => data.optionValue !== undefined && setKind(data.optionValue as UpstreamModelConfig['kind'])}>
+                <Option value="chat">{t('models.editor.kindValue.chat')}</Option>
+                <Option value="embedding">{t('models.editor.kindValue.embedding')}</Option>
+                <Option value="image">{t('models.editor.kindValue.image')}</Option>
+                <Option value="transcription">{t('models.editor.kindValue.transcription')}</Option>
+                {record.kind === 'custom' && <Option value="speech">{t('models.editor.kindValue.speech')}</Option>}
                 {/* The gateway only accepts a rerank target on a custom upstream, so the kind is offered only where it can be saved. */}
-                {record.kind === 'custom' && <Option value="rerank">Rerank</Option>}
+                {record.kind === 'custom' && <Option value="rerank">{t('models.editor.kindValue.rerank')}</Option>}
                 {/* Decision models are first-class on custom, Azure, Ollama, Copilot, and
                     every other upstream that serves a decision dialect. */}
-                <Option value="decision">Decision</Option>
+                <Option value="decision">{t('models.editor.kindValue.decision')}</Option>
               </Dropdown>
             </Field>
             {record.kind !== 'kimi-code' && <Field className="min-w-0" label={record.kind === 'azure' ? t('models.editor.deployment') : t('models.editor.upstreamId')} validationMessage={upstreamIdError} validationState={upstreamIdError ? 'error' : 'none'}>
@@ -289,17 +293,6 @@ function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; ef
     </Field>
   </div>;
 }
-
-const modelKindLabel = (kind: UpstreamModelConfig['kind']): string => {
-  switch (kind) {
-  case 'chat': return 'Chat';
-  case 'embedding': return 'Embedding';
-  case 'image': return 'Image';
-  case 'transcription': return 'Transcription';
-  case 'rerank': return 'Rerank';
-  case 'decision': return 'Decision';
-  }
-};
 
 const optionalNumber = (raw: string): number | undefined => raw === '' ? undefined : Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) : undefined;
 const cleanChat = (chat: UpstreamChatModelConfig): UpstreamChatModelConfig | undefined => chat.modalities || chat.image_detail_original !== undefined || chat.reasoning ? chat : undefined;

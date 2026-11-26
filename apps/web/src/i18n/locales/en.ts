@@ -788,6 +788,7 @@ const en = {
           image: 'Image',
           rerank: 'Rerank',
           transcription: 'Transcription',
+          speech: 'Speech',
           decision: 'Decision',
         },
         selection: {
@@ -922,6 +923,7 @@ const en = {
           embedding: 'Embedding',
           image: 'Image',
           transcription: 'Transcription',
+          speech: 'Speech',
           rerank: 'Rerank',
           decision: 'Decision',
         },
@@ -1479,6 +1481,7 @@ const en = {
         openAiImageGeneration: 'OpenAI Image Generations',
         openAiImageEdit: 'OpenAI Image Edits',
         openAiTranscription: 'OpenAI Audio Transcriptions',
+        openAiSpeech: 'OpenAI Audio Speech',
         cohereV1Rerank: 'Cohere Rerank v1',
         cohereV2Rerank: 'Cohere Rerank v2',
         jinaRerank: 'Jina Rerank',

@@ -3,13 +3,11 @@ import { test } from 'vitest';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 test('/v1/images/generations rejects model on custom upstream without /images/generations capability', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
 
   // Chat-only custom upstream. Its /models response advertises gpt-4o
   // (which the id heuristic leaves as the chat fallback), so the resolver
@@ -48,7 +46,6 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
 
 test('/v1/images/generations forwards a JSON request through a custom upstream and records usage', async () => {
   const { apiKey, repo } = await setupAppTest();
-  clearInProcessCopilotTokenCache();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_images',
     name: 'Custom Image Provider',
@@ -102,7 +99,6 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
 
 test('/v1/images/edits forwards a multipart request through an Azure model and records usage', async () => {
   const { apiKey, repo } = await setupAppTest();
-  clearInProcessCopilotTokenCache();
   await saveUpstreamForTest(repo.upstreams, {
     id: 'az-image',
     kind: 'azure',

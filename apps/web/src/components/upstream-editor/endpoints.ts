@@ -16,6 +16,7 @@ export const PATH_OVERRIDE_OPTIONS = [
   { path: '/alpha/search', label: 'OpenAI Search', defaultPath: '/v1/alpha/search' },
   { path: '/images/generations', label: 'OpenAI Images Generations', defaultPath: '/v1/images/generations' },
   { path: '/images/edits', label: 'OpenAI Images Edits', defaultPath: '/v1/images/edits' },
+  { path: '/audio/speech', labelKey: 'apiDocs.endpointNames.openAiSpeech', defaultPath: '/v1/audio/speech' },
 ] as const;
 
 export const CHAT_ENDPOINT_KEYS = ['openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'geminiGenerateContent'] as const satisfies readonly (keyof ModelEndpoints)[];
@@ -23,7 +24,7 @@ export const IMAGE_ENDPOINT_KEYS = ['openaiImagesGenerations', 'openaiImagesEdit
 
 // The endpoints the editor lets an operator pick. Rerank and decision rows
 // carry their wire on the target instead, and embeddings and audio
-// transcription have no picker, so none of them appear here.
+// transcription and speech have one endpoint each.
 type SelectableEndpointKey = (typeof CHAT_ENDPOINT_KEYS)[number] | (typeof IMAGE_ENDPOINT_KEYS)[number];
 
 // How the editor names an endpoint.
@@ -83,6 +84,7 @@ export const shapeForKind = (
 ): { endpoints: ModelEndpoints; rerankTarget?: RerankTarget; decisionTarget?: DecisionTarget } => {
   if (kind === 'embedding') return { endpoints: { openaiEmbeddings: {} } };
   if (kind === 'transcription') return { endpoints: { openaiAudioTranscriptions: {} } };
+  if (kind === 'speech') return { endpoints: { openaiAudioSpeech: {} } };
   if (kind === 'rerank') return { endpoints: { rerank: {} }, rerankTarget: current.rerankTarget ?? INITIAL_RERANK_TARGET };
   if (kind === 'decision') return providerKind === 'custom'
     ? { endpoints: { decision: {} }, decisionTarget: current.decisionTarget ?? INITIAL_DECISION_TARGET }

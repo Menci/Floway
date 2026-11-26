@@ -4,7 +4,6 @@ import type { Repo } from '../../../src/repo/types.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const saveRerankUpstream = async (
@@ -13,7 +12,6 @@ const saveRerankUpstream = async (
   pricing?: ModelPricing,
 ): Promise<void> => {
   await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_rerank',
     name: 'Rerank Provider',
@@ -38,6 +36,16 @@ const saveRerankUpstream = async (
 const requestHeaders = (apiKey: string) => ({
   'content-type': 'application/json',
   'x-api-key': apiKey,
+});
+
+test.each(['invalid JSON', '{"model":"public-reranker"}'])('/v1/rerank rejects invalid ingress %s', async body => {
+  const { apiKey } = await setupAppTest();
+  const response = await requestAppWithWarmModels('/v1/rerank', {
+    method: 'POST',
+    headers: requestHeaders(apiKey.key),
+    body,
+  });
+  assertEquals(response.status, 400);
 });
 
 test('/v1/rerank translates Cohere v1 to v2 and records Cohere search units', async () => {
@@ -120,10 +128,11 @@ test('/jina/v1/rerank preserves same-dialect extensions and records token usage'
     results: [{ index: 0, relevance_score: 0.8, document: { text: 'one' }, vendor_result: true }],
     vendor_response: true,
   };
+  const upstreamBytes = `${JSON.stringify(upstreamResponse, null, 2)}\n`;
   await withMockedFetch(
     async request => {
       upstreamBody = await request.json();
-      return jsonResponse(upstreamResponse);
+      return new Response(new TextEncoder().encode(upstreamBytes));
     },
     async () => {
       const response = await requestAppWithWarmModels('/jina/v1/rerank', {
@@ -137,7 +146,8 @@ test('/jina/v1/rerank preserves same-dialect extensions and records token usage'
         }),
       });
       assertEquals(response.status, 200);
-      assertEquals(await response.json(), upstreamResponse);
+      assertEquals(response.headers.get('content-type'), 'application/json');
+      assertEquals(await response.text(), upstreamBytes);
     },
   );
   assertEquals(upstreamBody, {
@@ -204,9 +214,7 @@ test('cross-protocol success still validates result items before rendering', asy
   );
 
   await flushAsyncWork();
-  const usage = await repo.usage.listAll();
-  assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '7', unitPrice: null }]);
+  assertEquals(await repo.usage.listAll(), []);
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
 });

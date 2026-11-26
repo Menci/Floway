@@ -3,15 +3,15 @@ import type { Hono } from 'hono';
 import { mountAlphaSearchRoutes } from './alpha-search/routes.ts';
 import { mountChatRoutes } from './chat/routes.ts';
 import { mountCodexRoutes } from './codex/routes.ts';
-import { decision } from './decision/serve.ts';
+import { decision } from './decision/http.ts';
 import { serveGeminiModelInfo } from './models/gemini.ts';
 import { serveModels } from './models/http.ts';
-import { openaiAudioTranscriptions } from './openai-audio/http.ts';
+import { openaiAudioSpeech, openaiAudioTranscriptions } from './openai-audio/http.ts';
 import { openaiCompletions } from './openai-completions/http.ts';
 import { openaiEmbeddings } from './openai-embeddings/http.ts';
 import { openaiImagesEdits, openaiImagesGenerations } from './openai-images/http.ts';
 import { mountPublicRoute } from './public-route.ts';
-import { rerank } from './rerank/serve.ts';
+import { rerank } from './rerank/http.ts';
 import type { AuthVars } from '../middleware/auth.ts';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
@@ -27,6 +27,7 @@ export const mountDataPlane = (app: Hono<{ Variables: AuthVars }>) => {
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiImagesGenerations, (method, path) => app.on(method, path, openaiImagesGenerations));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiImagesEdits, (method, path) => app.on(method, path, openaiImagesEdits));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiAudioTranscriptions, (method, path) => app.on(method, path, openaiAudioTranscriptions));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiAudioSpeech, (method, path) => app.on(method, path, openaiAudioSpeech));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.cohereV1Rerank, (method, path) => app.on(method, path, rerank('cohere-v1')));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.cohereV2Rerank, (method, path) => app.on(method, path, rerank('cohere-v2')));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.jinaV1Rerank, (method, path) => app.on(method, path, rerank('jina-v1')));
