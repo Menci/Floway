@@ -1221,21 +1221,46 @@ test.each([
   else expect(result.outcome).toMatchObject({ kind, source: 'upstream' });
 });
 
-test.each([false, true])('classifies the dial failure with cancelled=%s and retains no HTTP head', async cancelled => {
+test('omits dispatch identity when the request is aborted before fetching', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const { copilotUpstream } = await setupCopilotTest();
+  const fetcher = vi.fn<ProviderFetcher>(async () => { throw new Error('Already-aborted requests must not fetch'); });
+  const host = copilotHost(copilotUpstream, fetcher, fakeCopilot());
+  const result = await host.invoke('openaiChatCompletions', fakeModel(), { messages: [] }, { controller });
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(result.http).toBeNull();
+  expect(result.outcome).toMatchObject({ kind: 'error', source: 'local' });
+  expect(Object.hasOwn(result.answer, 'response.usageModelKey')).toBe(false);
+});
+
+test('omits dispatch identity when the request is cancelled while fetching', async () => {
   const controller = new AbortController();
   const { copilotUpstream } = await setupCopilotTest();
-  const host = copilotHost(copilotUpstream, async (_url, init) => {
-    if (!cancelled) throw new UpstreamTransportError(new Error('dial reset'));
+  const fetcher = vi.fn<ProviderFetcher>(async (_url, init) => {
     const signal = init.signal;
     if (!signal) throw new Error('HTTP transport must receive the run signal');
     return await new Promise((_, reject) => {
       signal.addEventListener('abort', () => { reject(signal.reason); }, { once: true });
       controller.abort();
     });
-  }, fakeCopilot());
+  });
+  const host = copilotHost(copilotUpstream, fetcher, fakeCopilot());
   const result = await host.invoke('openaiChatCompletions', fakeModel(), { messages: [] }, { controller });
+  expect(fetcher).toHaveBeenCalledOnce();
   expect(result.http).toBeNull();
-  expect(result.outcome).toMatchObject({ kind: 'error', source: cancelled ? 'local' : 'upstream' });
+  expect(result.outcome).toMatchObject({ kind: 'error', source: 'local' });
+  expect(Object.hasOwn(result.answer, 'response.usageModelKey')).toBe(false);
+});
+
+test('keeps dispatch identity for a transport failure before HTTP headers', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const fetcher = vi.fn<ProviderFetcher>(async () => { throw new UpstreamTransportError(new Error('dial reset')); });
+  const host = copilotHost(copilotUpstream, fetcher, fakeCopilot());
+  const result = await host.invoke('openaiChatCompletions', fakeModel(), { messages: [] });
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(result.http).toBeNull();
+  expect(result.outcome).toMatchObject({ kind: 'error', source: 'upstream' });
   expect(result.answer['response.usageModelKey']).toBe('raw-model');
 });
 

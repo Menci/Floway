@@ -32,7 +32,7 @@ const wireRequest = (http: HttpRequestFact, { path, contentType, body }: WireReq
 
 const dispatchedAnswer = <Answer extends { 'response.http.error'?: HttpStreamError }>(received: Answer, { modelId }: WireRequest) => {
   const { 'response.http.error': failure, ...answer } = received;
-  return { failure, answer: { ...answer, 'response.usageModelKey': modelId } };
+  return { failure, answer: failure?.kind === 'abort' ? answer : { ...answer, 'response.usageModelKey': modelId } };
 };
 
 export const dial = {
@@ -40,7 +40,7 @@ export const dial = {
     name: 'copilot.anthropicMessages.dial',
     through: {
       request: { needs: ['request.http', 'request.anthropicMessages'], provides: ['request.http'], consumes: [] },
-      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.anthropicMessages?', 'response.usageModelKey'], consumes: ['response.http.error'] },
+      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.anthropicMessages?', 'response.usageModelKey?'], consumes: ['response.http.error'] },
     },
     async execute(facts, scope) {
       const outbound = await serialize(facts['request.anthropicMessages']);
@@ -53,7 +53,7 @@ export const dial = {
     name: 'copilot.anthropicMessagesCountTokens.dial',
     through: {
       request: { needs: ['request.http', 'request.anthropicMessagesCountTokens'], provides: ['request.http'], consumes: [] },
-      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.anthropicMessagesCountTokens?', 'response.usageModelKey'], consumes: ['response.http.error'] },
+      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.anthropicMessagesCountTokens?', 'response.usageModelKey?'], consumes: ['response.http.error'] },
     },
     async execute(facts, scope) {
       const outbound = await serialize(facts['request.anthropicMessagesCountTokens']);
@@ -66,7 +66,7 @@ export const dial = {
     name: 'copilot.decision.dial',
     through: {
       request: { needs: ['request.http', 'request.decision', 'provider.model'], provides: ['request.http'], consumes: [] },
-      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.decision?', 'response.usageModelKey'], consumes: ['response.http.error'] },
+      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.decision?', 'response.usageModelKey?'], consumes: ['response.http.error'] },
     },
     async execute(facts, scope) {
       const outbound = serialize(facts['request.decision'], facts['provider.model']);
@@ -79,7 +79,7 @@ export const dial = {
     name: 'copilot.openaiChatCompletions.dial',
     through: {
       request: { needs: ['request.http', 'request.openaiChatCompletions'], provides: ['request.http'], consumes: [] },
-      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.openaiChatCompletions?', 'response.usageModelKey'], consumes: ['response.http.error'] },
+      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.openaiChatCompletions?', 'response.usageModelKey?'], consumes: ['response.http.error'] },
     },
     async execute(facts, scope) {
       const outbound = await serialize(facts['request.openaiChatCompletions']);
@@ -92,7 +92,7 @@ export const dial = {
     name: 'copilot.openaiEmbeddings.dial',
     through: {
       request: { needs: ['request.http', 'request.openaiEmbeddings'], provides: ['request.http'], consumes: [] },
-      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.openaiEmbeddings?', 'response.usageModelKey'], consumes: ['response.http.error'] },
+      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.openaiEmbeddings?', 'response.usageModelKey?'], consumes: ['response.http.error'] },
     },
     async execute(facts, scope) {
       const outbound = await serialize(facts['request.openaiEmbeddings']);
@@ -105,7 +105,7 @@ export const dial = {
     name: 'copilot.openaiImagesEdits.dial',
     through: {
       request: { needs: ['request.http', 'request.openaiImagesEdits'], provides: ['request.http'], consumes: [] },
-      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.openaiImagesEdits?', 'response.usageModelKey'], consumes: ['response.http.error'] },
+      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.openaiImagesEdits?', 'response.usageModelKey?'], consumes: ['response.http.error'] },
     },
     async execute(facts, scope) {
       const outbound = await serialize(facts['request.openaiImagesEdits']);
@@ -118,7 +118,7 @@ export const dial = {
     name: 'copilot.openaiImagesGenerations.dial',
     through: {
       request: { needs: ['request.http', 'request.openaiImagesGenerations'], provides: ['request.http'], consumes: [] },
-      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.openaiImagesGenerations?', 'response.usageModelKey'], consumes: ['response.http.error'] },
+      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.openaiImagesGenerations?', 'response.usageModelKey?'], consumes: ['response.http.error'] },
     },
     async execute(facts, scope) {
       const outbound = await serialize(facts['request.openaiImagesGenerations']);
@@ -131,7 +131,7 @@ export const dial = {
     name: 'copilot.openaiResponses.dial',
     through: {
       request: { needs: ['request.http', 'request.openaiResponses'], provides: ['request.http'], consumes: [] },
-      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.openaiResponses?', 'response.usageModelKey'], consumes: ['response.http.error'] },
+      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.openaiResponses?', 'response.usageModelKey?'], consumes: ['response.http.error'] },
     },
     async execute(facts, scope) {
       const outbound = await serialize(facts['request.openaiResponses']);
@@ -144,7 +144,7 @@ export const dial = {
     name: 'copilot.openaiResponsesCompact.dial',
     through: {
       request: { needs: ['request.http', 'request.openaiResponsesCompact'], provides: ['request.http'], consumes: [] },
-      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.openaiResponsesCompact?', 'response.usageModelKey'], consumes: ['response.http.error'] },
+      response: { needs: ['response.http', 'response.http.error?'], provides: ['response.openaiResponsesCompact?', 'response.usageModelKey?'], consumes: ['response.http.error'] },
     },
     async execute(facts, scope) {
       const outbound = await serialize(facts['request.openaiResponsesCompact']);
