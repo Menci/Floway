@@ -268,6 +268,7 @@ export interface ApiKeyRepo {
   getById(id: string): Promise<ApiKey | null>;
   save(key: ApiKey): Promise<void>;
   update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null>;
+  setLastUsedAt(id: string, lastUsedAt: string): Promise<void>;
   softDelete(id: string): Promise<boolean>;
   softDeleteByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;
@@ -275,7 +276,7 @@ export interface ApiKeyRepo {
 
 export type ApiKeyUpdate = Partial<Pick<
   ApiKey,
-  'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'randomizeUpstreams' | 'dumpRetentionSeconds' | 'openaiResponsesRetentionSeconds'
+  'name' | 'key' | 'upstreamIds' | 'randomizeUpstreams' | 'dumpRetentionSeconds' | 'openaiResponsesRetentionSeconds'
 >>;
 
 export interface UserPreferencesRepo {
