@@ -100,6 +100,20 @@ test.each([
       operations: ['chat'], runtimeLocations: ['HKG'],
     },
   })).toEqual(performance);
+  const [slice] = await repo.performance.querySlices({
+    ...options,
+    dimension: groupBy, ownedKeysOnly: groupBy === 'keyId',
+    bucket: { origin: options.start, hours: 24 }, hourlyBuckets: [],
+    includeTotals: true, includeFacets: true,
+    filters: { ...filters, operations: [], runtimeLocations: [] },
+  });
+  expect(slice?.rows[0]).toMatchObject({
+    group: groupBy === 'keyId' ? 'statistics-key' : 'statistics-model',
+    requests: 3, ttftSamples: 2, tpotSamples: 2,
+    buckets: expect.arrayContaining([expect.objectContaining({ metric: 'ttft_ms', count: 2 })]),
+  });
+  expect(slice?.total?.requests).toBe(3);
+  expect(slice?.dimensionValues.keyIds).toEqual(['statistics-key']);
 });
 
 test('D1 Usage overview reads a long window in one bounded query', async () => {

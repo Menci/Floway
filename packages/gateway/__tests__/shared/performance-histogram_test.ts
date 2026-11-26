@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  bucketForTtftMs,
-  percentileFromBuckets,
-  type HistogramBucket,
-} from '../../src/shared/performance-histogram.ts';
+import { bucketForTtftMs } from '../../src/shared/performance-histogram.ts';
+import { percentileFromBuckets, type HistogramBucket } from '@floway-dev/protocols/common';
 
 describe('bucketForTtftMs', () => {
 

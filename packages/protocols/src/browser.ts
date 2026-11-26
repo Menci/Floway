@@ -4,6 +4,7 @@
 // the browser runtime API without an explicit review.
 
 export type * from './common/index.ts';
+export { percentileFromBuckets } from './common/histogram-percentile.ts';
 export type * from './openai-completions/index.ts';
 export type * from './openai-chat-completions/index.ts';
 export type * from './openai-responses/index.ts';

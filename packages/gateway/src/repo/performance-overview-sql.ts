@@ -34,7 +34,7 @@ const overviewDimensions = new Set([
   'keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation',
 ]);
 
-const scopedRange = (table: string, scoped: boolean) => scoped
+export const scopedRange = (table: string, scoped: boolean) => scoped
   ? `${table}.key_id IN (SELECT id FROM api_keys WHERE user_id = ?) AND ${table}.hour >= ? AND ${table}.hour < ?`
   : `${table}.hour >= ? AND ${table}.hour < ?`;
 
@@ -50,7 +50,7 @@ const overviewHoursSql = (scoped: boolean) => `/* performance-overview-hours */
   ORDER BY performance_summary.hour`;
 
 const overviewGroupingSql = "CASE WHEN axes.axis = 'series' THEN settings.series_group_by ELSE axes.axis END";
-const overviewGroupSql = (source: string, grouping = overviewGroupingSql) => `CASE ${grouping}
+export const overviewGroupSql = (source: string, grouping = overviewGroupingSql) => `CASE ${grouping}
   WHEN 'none' THEN 'all'
   WHEN 'keyId' THEN ${source}.key_id
   WHEN 'userId' THEN CAST(${source}.user_id AS TEXT)
@@ -59,6 +59,15 @@ const overviewGroupSql = (source: string, grouping = overviewGroupingSql) => `CA
   WHEN 'operation' THEN ${source}.operation
   WHEN 'runtimeLocation' THEN ${source}.runtime_location
 END`;
+export const performanceVisibilitySql = `settings.is_admin = 1
+      OR api_keys.user_id IN (SELECT CAST(value AS INTEGER) FROM json_each(settings.visible_users_json))
+      OR performance_summary.upstream IN (SELECT CAST(value AS TEXT) FROM json_each(settings.visible_upstreams_json))`;
+export const performanceFiltersSql = `(json_array_length(settings.models_json) = 0 OR model IN (SELECT CAST(value AS TEXT) FROM json_each(settings.models_json)))
+    AND (json_array_length(settings.upstreams_json) = 0 OR upstream IN (SELECT CAST(value AS TEXT) FROM json_each(settings.upstreams_json)))
+    AND (json_array_length(settings.operations_json) = 0 OR operation IN (SELECT CAST(value AS TEXT) FROM json_each(settings.operations_json)))
+    AND (json_array_length(settings.runtimes_json) = 0 OR runtime_location IN (SELECT CAST(value AS TEXT) FROM json_each(settings.runtimes_json)))
+    AND (json_array_length(settings.users_json) = 0 OR user_id IN (SELECT CAST(value AS INTEGER) FROM json_each(settings.users_json)))
+    AND (json_array_length(settings.keys_json) = 0 OR key_id IN (SELECT CAST(value AS TEXT) FROM json_each(settings.keys_json)))`;
 const overviewWhereSql = (source: string) => `(axes.owned_only = 0 OR ${source}.owned = 1)
     AND (${overviewGroupingSql} != 'userId' OR ${source}.user_id IS NOT NULL)`;
 
@@ -152,23 +161,13 @@ authorized_summary AS MATERIALIZED (
   CROSS JOIN settings
   LEFT JOIN api_keys ON api_keys.id = performance_summary.key_id
   WHERE ${scoped ? 'api_keys.user_id = ? AND performance_summary.hour >= ? AND performance_summary.hour < ?' : scopedRange('performance_summary', false)}
-    AND (
-      settings.is_admin = 1
-      OR api_keys.user_id IN (SELECT CAST(value AS INTEGER) FROM json_each(settings.visible_users_json))
-      OR performance_summary.upstream IN (SELECT CAST(value AS TEXT) FROM json_each(settings.visible_upstreams_json))
-    )
+    AND (${performanceVisibilitySql})
 ),
 filtered_summary AS MATERIALIZED (
   SELECT authorized_summary.*
   FROM authorized_summary
   CROSS JOIN settings
-  WHERE
-    (json_array_length(settings.models_json) = 0 OR model IN (SELECT CAST(value AS TEXT) FROM json_each(settings.models_json)))
-    AND (json_array_length(settings.upstreams_json) = 0 OR upstream IN (SELECT CAST(value AS TEXT) FROM json_each(settings.upstreams_json)))
-    AND (json_array_length(settings.operations_json) = 0 OR operation IN (SELECT CAST(value AS TEXT) FROM json_each(settings.operations_json)))
-    AND (json_array_length(settings.runtimes_json) = 0 OR runtime_location IN (SELECT CAST(value AS TEXT) FROM json_each(settings.runtimes_json)))
-    AND (json_array_length(settings.users_json) = 0 OR user_id IN (SELECT CAST(value AS INTEGER) FROM json_each(settings.users_json)))
-    AND (json_array_length(settings.keys_json) = 0 OR key_id IN (SELECT CAST(value AS TEXT) FROM json_each(settings.keys_json)))
+  WHERE ${performanceFiltersSql}
 ),
 filtered_histogram AS MATERIALIZED (
   SELECT

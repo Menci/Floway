@@ -1642,6 +1642,8 @@ const en = {
         empty: 'No performance records in this range',
         actions: {
           refresh: 'Refresh performance',
+          refreshBreakdown: 'Loading performance breakdown',
+          retryBreakdown: 'Retry',
         },
         apiKeyScopeInfo: 'API key grouping and filters include only keys owned by your account. Choosing By API Key sets User to Only me; choosing another user clears API key filters and returns to By Model.',
         apiKeyScopeLabel: 'About API key telemetry scope',

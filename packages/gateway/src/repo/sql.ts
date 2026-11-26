@@ -6,6 +6,7 @@ import { MODEL_CATALOG_REVISION, storedModelErrorMessage } from './models-cache-
 import { matchesModelsRefreshInputs } from './models-refresh-inputs.ts';
 import { SqlOpenAIResponsesItemsRepo, SqlOpenAIResponsesSnapshotsRepo } from './openai-responses-state-sql.ts';
 import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
+import { querySqlPerformanceSlices } from './performance-slices-sql.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlScheduledMaintenanceRepo } from './scheduled-maintenance-sql.ts';
 import { generateSessionToken } from './session-tokens.ts';
@@ -35,6 +36,7 @@ import type {
   PerformanceMetric,
   PerformanceOverviewQueryOptions,
   PerformanceOverviewResult,
+  PerformanceSliceQuery,
   PerformanceRepo,
   PerformanceSample,
   PerformanceTelemetryRecord,
@@ -1073,6 +1075,10 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
   queryOverview(opts: PerformanceOverviewQueryOptions): Promise<PerformanceOverviewResult> {
     return querySqlPerformanceOverview(this.db, opts);
+  }
+
+  querySlices(opts: PerformanceSliceQuery) {
+    return querySqlPerformanceSlices(this.db, opts);
   }
 
   async listAll(): Promise<PerformanceTelemetryRecord[]> {

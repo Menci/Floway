@@ -913,6 +913,9 @@ export const tokenUsageOverviewQuery = z.object({
 export const performanceQuery = z.object({
   ...telemetryOverviewQuery,
   group_by: z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).exactOptional(),
+  format: z.literal('buckets').exactOptional(),
+  dimension: z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).exactOptional(),
+  cursor: z.string().max(13).exactOptional(),
   filter_operation: filterValues(z.string()),
   filter_runtime_location: filterValues(z.string()),
 });

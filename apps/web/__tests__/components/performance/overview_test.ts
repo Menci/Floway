@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPerformanceQuery, normalizePerformanceBreakdownForRuntime, normalizePerformanceDimensionsForRuntime, parsePerformanceUrlState, performanceLabels, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
+import { buildPerformanceQuery } from '../../../src/components/performance/data';
+import { normalizePerformanceBreakdownForRuntime, normalizePerformanceDimensionsForRuntime, parsePerformanceUrlState, performanceLabels, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewView } from '../../../src/components/performance/overview';
 import { buildPerformanceChart } from '../../../src/components/performance/plot';
 
-const emptyOverview = (): PerformanceOverviewResponse => ({
+const emptyOverview = (): PerformanceOverviewView => ({
   series: [],
-  axes: { none: [], keyId: [], userId: [], model: [], upstream: [], operation: [], runtimeLocation: [] },
+  rows: [], summary: null,
   dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: [], keyIds: [], userIds: [] },
   users: [],
   upstreams: [],
@@ -13,15 +14,13 @@ const emptyOverview = (): PerformanceOverviewResponse => ({
 });
 
 describe('performance overview query', () => {
-  it('requests UTC hours only for the range whose repeated hours stay separate', () => {
+  it('requests fixed-width Performance buckets at the dashboard granularity', () => {
     const filters = { model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] };
 
-    expect(buildPerformanceQuery('today', 'model', filters, Date.UTC(2026, 10, 1, 7))).toMatchObject({
-      bucket: 'hour',
-      timezone: 'UTC',
-      timezone_offset_minutes: '0',
+    expect(buildPerformanceQuery({ range: 'today', groupBy: 'model', filters }, 'model', Date.UTC(2026, 10, 1, 7))).toMatchObject({
+      bucket: 'hour', format: 'buckets', dimension: 'model',
     });
-    expect(buildPerformanceQuery('30d', 'model', filters, Date.UTC(2026, 10, 1, 7)).bucket).toBe('day');
+    expect(buildPerformanceQuery({ range: '30d', groupBy: 'model', filters }, 'model', Date.UTC(2026, 10, 1, 7)).bucket).toBe('day');
   });
 
   it('round-trips non-default dashboard state through the URL', () => {
