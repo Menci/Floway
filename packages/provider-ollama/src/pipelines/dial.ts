@@ -27,7 +27,7 @@ export const ollamaDial = <Op extends OllamaOperation>(
         ...facts,
         'request.http': { ...request, url: joinBaseAndPath(baseUrl, path), method: 'POST', headers, body },
       });
-      const answer = { ...response, 'response.usageModelKey': modelId };
+      const answer = failure?.kind === 'abort' ? response : { ...response, 'response.usageModelKey': modelId };
       return failure === undefined ? answer : { ...answer, [outcome]: httpDialError(failure, format) };
     },
   });

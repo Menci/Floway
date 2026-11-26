@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
 import { ollamaPipelines, toOllamaUpstream, type OllamaService, type OllamaServices } from '../../src/index.ts';
-import type { ProviderFetcher } from '@floway-dev/http';
+import { UpstreamTransportError, type ProviderFetcher } from '@floway-dev/http';
 import { run, type Pipeline, type RunEvent } from '@floway-dev/pipeline';
 import { DEFAULT_DECISION_PATHS, parseDecisionRequest } from '@floway-dev/protocols/decision';
 import { toProviderModelFact, type UpstreamRecord } from '@floway-dev/provider';
@@ -186,6 +186,63 @@ test('reports malformed transcription JSON as an upstream error and preserves th
     expect(answer['response.usageModelKey']).toBe('native-model');
     expect(fetch).toHaveBeenCalledOnce();
   });
+});
+
+test('retains the wire model identity for a pre-header transport failure', async () => {
+  const fetch = vi.fn<ProviderFetcher>(async (_url, init) => {
+    expect(await new Response(init.body as Uint8Array<ArrayBuffer>).json()).toMatchObject({ model: 'native-model' });
+    throw new UpstreamTransportError(new Error('connection reset'));
+  });
+  await withRun(ollamaPipelines.openaiChatCompletions, {
+    ...entry,
+    'request.openaiChatCompletions': { model: 'public-model', messages: [] },
+  }, fetch, async (running, pending) => {
+    expect(await running.result).toEqual({
+      'response.http': null,
+      'response.openaiChatCompletions': {
+        kind: 'error', source: 'upstream', error: { error: { type: 'api_error', message: 'connection reset' } },
+      },
+      'response.usageModelKey': 'native-model',
+    });
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(pending).toHaveLength(0);
+  });
+});
+
+test.each(['before fetch', 'during fetch'] as const)('omits model identity for local cancellation %s', async timing => {
+  const started = Promise.withResolvers<void>();
+  const fetch = vi.fn<ProviderFetcher>((_url, init) => new Promise((_resolve, reject) => {
+    const signal = init.signal;
+    if (signal == null) throw new Error('Expected the upstream request signal');
+    signal.addEventListener('abort', () => { reject(signal.reason); }, { once: true });
+    started.resolve();
+  }));
+  const { options, pending, abort } = host(fetch);
+  if (timing === 'before fetch') abort.abort();
+  const running = run(ollamaPipelines.openaiChatCompletions, {
+    ...entry,
+    'request.openaiChatCompletions': { model: 'public-model', messages: [] },
+  }, options);
+  try {
+    if (timing === 'during fetch') {
+      await started.promise;
+      abort.abort();
+    }
+    expect(await running.result).toEqual({
+      'response.http': null,
+      'response.openaiChatCompletions': {
+        kind: 'error',
+        source: 'local',
+        error: { error: { type: 'api_error', message: 'Upstream request cancelled' } },
+      },
+    });
+    expect(fetch).toHaveBeenCalledTimes(timing === 'before fetch' ? 0 : 1);
+    expect(pending).toHaveLength(0);
+    await running.done;
+  } finally {
+    abort.abort();
+    await Promise.all(pending);
+  }
 });
 
 test('counts messages with the protocol header and no Ollama probe', async () => {
