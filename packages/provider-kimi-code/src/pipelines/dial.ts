@@ -23,7 +23,7 @@ export const kimiCodeDial = (
     name: `kimi-code.${operation}.dial`,
     through: {
       request: { needs: ['request.http', 'provider.upstream', payload], provides: ['request.http'], consumes: [] },
-      response: { needs: ['response.http', 'response.http.error?'], provides: [`${outcome}?`, 'response.usageModelKey'], consumes: ['response.http.error'] },
+      response: { needs: ['response.http', 'response.http.error?'], provides: [`${outcome}?`, 'response.usageModelKey?'], consumes: ['response.http.error'] },
     },
     async execute(facts, scope) {
       const request = facts['request.http'];
@@ -40,7 +40,7 @@ export const kimiCodeDial = (
           body: new TextEncoder().encode(JSON.stringify(body)),
         },
       });
-      const answer = { ...response, 'response.usageModelKey': body.model };
+      const answer = failure?.kind === 'abort' ? response : { ...response, 'response.usageModelKey': body.model };
       return failure === undefined ? answer : { ...answer, [outcome]: httpDialError(failure, format) };
     },
   });

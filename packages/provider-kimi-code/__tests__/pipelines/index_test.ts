@@ -201,6 +201,42 @@ test('turns a pre-header transport failure into a protocol error and skips activ
   });
 });
 
+test.each(['before fetch', 'during fetch'] as const)('omits model identity for local cancellation %s', async timing => {
+  const started = Promise.withResolvers<void>();
+  const fetch = vi.fn<ProviderFetcher>((_url, init) => new Promise((_resolve, reject) => {
+    const signal = init.signal;
+    if (signal == null) throw new Error('Expected the upstream request signal');
+    signal.addEventListener('abort', () => { reject(signal.reason); }, { once: true });
+    started.resolve();
+  }));
+  const { options, pending, abort } = host(fetch);
+  if (timing === 'before fetch') abort.abort();
+  const running = run(kimiCodePipelines.openaiChatCompletions, {
+    ...entry,
+    'request.openaiChatCompletions': { model: 'public-model', messages: [] },
+  }, options);
+  try {
+    if (timing === 'during fetch') {
+      await started.promise;
+      abort.abort();
+    }
+    expect(await running.result).toEqual({
+      'response.http': null,
+      'response.openaiChatCompletions': {
+        kind: 'error',
+        source: 'local',
+        error: { error: { type: 'api_error', message: 'Upstream request cancelled' } },
+      },
+    });
+    expect(fetch).toHaveBeenCalledTimes(timing === 'before fetch' ? 0 : 1);
+    expect(pending).toHaveLength(0);
+    await running.done;
+  } finally {
+    abort.abort();
+    await Promise.all(pending);
+  }
+});
+
 test('counts with the requested Kimi lane and forwards Anthropic beta without scheduling probes', async () => {
   const fetch = vi.fn<ProviderFetcher>(async (_url, init) => {
     expect(new Headers(init.headers).get('anthropic-beta')).toBe('future-feature');
