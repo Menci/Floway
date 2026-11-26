@@ -152,7 +152,7 @@ const dial = async <ProtocolFacts>(scope: DialScope, options: DialOptions<Protoc
   while (true) {
     const child = options.next(authorizeRequest(request, access, accountId));
     const { 'response.http.error': error, ...dispatched } = await child;
-    const answer = modelId === undefined ? dispatched : { ...dispatched, 'response.usageModelKey': modelId };
+    const answer = modelId === undefined || error?.kind === 'abort' ? dispatched : { ...dispatched, 'response.usageModelKey': modelId };
     if (error !== undefined) return { ...answer, ...options.error(httpDialError(error, format)) };
     const http = answer['response.http'];
     if (http === null) throw new Error('ChatGPT HTTP terminal returned neither a response nor a dial error');

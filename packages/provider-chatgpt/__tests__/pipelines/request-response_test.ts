@@ -10,7 +10,7 @@ import { MAX_CHATGPT_OUTPUT_INDICES } from '../../src/pipelines/openai-responses
 import { createChatGPTService, type ChatGPTService } from '../../src/service.ts';
 import type { ChatGPTAccessTokenEntry, ChatGPTAccountCredential, ChatGPTQuotaSnapshotEntryMap, ChatGPTUpstreamState } from '../../src/state.ts';
 import { getHeader, UpstreamTransportError, type HttpRequestFact, type ProviderFetcher } from '@floway-dev/http';
-import { Secret } from '@floway-dev/pipeline';
+import { run, Secret } from '@floway-dev/pipeline';
 import type { OpenAIResponsesCompactionItemEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { initProviderRepo, toProviderModelFact, type FlagId, type UpstreamRecord } from '@floway-dev/provider';
 import { readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
@@ -1166,6 +1166,43 @@ describe('ChatGPT usage model identity', () => {
       'response.usageModelKey': wireId,
     });
     await running.done;
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
+
+  test('omits the key when cancellation precedes the fetch', async () => {
+    seedFreshAccessToken();
+    const fetcher = vi.fn<ProviderFetcher>();
+    const running = run(chatgptPipelines.openaiResponsesCompact, {
+      ...requestFacts(), 'request.openaiResponsesCompact': { model: callerId, input: [] },
+    }, { signal: AbortSignal.abort(), services: { fetcher: () => fetcher, chatgpt: service }, waitUntil: () => {} });
+    const answer = await running.result;
+    expect(answer).toMatchObject({ 'response.http': null, 'response.openaiResponsesCompact': { kind: 'error', source: 'local' } });
+    expect(Object.hasOwn(answer, 'response.usageModelKey')).toBe(false);
+    await running.done;
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  test('omits the key when an ongoing fetch is cancelled before response headers', async () => {
+    seedFreshAccessToken();
+    const started = Promise.withResolvers<AbortSignal>();
+    const fetcher = vi.fn<ProviderFetcher>(async (_url, { signal }) => {
+      if (!signal) throw new Error('Expected the HTTP fetch signal');
+      const { promise, reject } = Promise.withResolvers<never>();
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      started.resolve(signal);
+      return await promise;
+    });
+    const { running, controller } = runChatGPTPipeline(chatgptPipelines.openaiResponsesCompact, {
+      ...requestFacts(), 'request.openaiResponsesCompact': { model: callerId, input: [] },
+    }, service, { fetcher });
+    const signal = await started.promise;
+    expect(signal.aborted).toBe(false);
+    controller.abort();
+    const answer = await running.result;
+    expect(answer).toMatchObject({ 'response.http': null, 'response.openaiResponsesCompact': { kind: 'error', source: 'local' } });
+    expect(Object.hasOwn(answer, 'response.usageModelKey')).toBe(false);
+    await running.done;
+    expect(signal.aborted).toBe(true);
     expect(fetcher).toHaveBeenCalledOnce();
   });
 
