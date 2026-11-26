@@ -45,6 +45,7 @@ const gatewayPaths = new Set([
   '/models',
   '/images/generations',
   '/images/edits',
+  '/audio/speech',
 ]);
 
 const contentTypes: Record<string, string> = {

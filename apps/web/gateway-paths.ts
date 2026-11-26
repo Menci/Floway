@@ -33,4 +33,5 @@ export const wranglerProxiedPaths = [
   '/models',
   '/images/generations',
   '/images/edits',
+  '/audio/speech',
 ];
