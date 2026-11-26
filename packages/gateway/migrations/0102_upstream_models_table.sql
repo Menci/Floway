@@ -13,7 +13,7 @@ SELECT proxy_id, upstream_id, fail_count, expires_at, last_error, last_error_at
 FROM proxy_upstream_backoffs;
 
 CREATE TABLE _migration_0102_upstream_sources AS
-SELECT id, provider, config_json, models_cache_json
+SELECT id, provider, config_json, disabled_public_model_ids, models_cache_json
 FROM upstreams;
 
 DROP TABLE proxy_upstream_backoffs;
@@ -39,10 +39,8 @@ CREATE TABLE upstreams_new (
   models_cache_error_message TEXT NULL,
   models_cache_error_at INTEGER NULL,
   models_cache_failure_count INTEGER NOT NULL DEFAULT 0 CHECK (typeof(models_cache_failure_count) = 'integer' AND models_cache_failure_count >= 0),
-  models_cache_token TEXT NULL,
   hue INTEGER NOT NULL CHECK (hue >= 0 AND hue < 360),
-  row_version INTEGER NOT NULL DEFAULT 1 CHECK (typeof(row_version) = 'integer' AND row_version >= 1),
-  config_version INTEGER NOT NULL DEFAULT 1 CHECK (typeof(config_version) = 'integer' AND config_version >= 1),
+  version INTEGER NOT NULL DEFAULT 1 CHECK (typeof(version) = 'integer' AND version >= 1),
   usage_refresh_interval_minutes INTEGER NOT NULL DEFAULT 0 CHECK (usage_refresh_interval_minutes >= 0),
   CHECK (
     (model_prefix IS NULL AND model_prefix_addressable IS NULL AND model_prefix_listed IS NULL)
@@ -84,10 +82,8 @@ INSERT INTO upstreams_new (
   models_cache_error_message,
   models_cache_error_at,
   models_cache_failure_count,
-  models_cache_token,
   hue,
-  row_version,
-  config_version,
+  version,
   usage_refresh_interval_minutes
 )
 SELECT
@@ -173,9 +169,7 @@ SELECT
       THEN max(1, CAST(coalesce(json_extract(models_cache_json, '$.lastError.failureCount'), 1) AS INTEGER))
     ELSE 0
   END,
-  NULL,
   hue,
-  1,
   config_version,
   usage_refresh_interval_minutes
 FROM upstreams;
@@ -211,11 +205,12 @@ CREATE TABLE upstream_models (
   upstream_model_id TEXT NOT NULL,
   kind              TEXT NOT NULL,
   source            TEXT NOT NULL CHECK (source IN ('manual', 'auto')),
+  disabled          INTEGER NOT NULL DEFAULT 0 CHECK (disabled IN (0, 1)),
   model_json        TEXT NOT NULL,
   PRIMARY KEY (upstream_id, model_id, kind)
 );
 
-CREATE INDEX idx_upstream_models_model_id ON upstream_models (model_id, kind);
+CREATE INDEX idx_upstream_models_model_id ON upstream_models (model_id, disabled, kind);
 
 CREATE TABLE upstream_manual_models (
   upstream_id       TEXT NOT NULL REFERENCES upstreams(id) ON DELETE CASCADE,
@@ -227,11 +222,6 @@ CREATE TABLE upstream_manual_models (
   PRIMARY KEY (upstream_id, position)
 );
 
-CREATE TABLE custom_upstream_discovered_models (
-  upstream_id     TEXT PRIMARY KEY REFERENCES upstreams(id) ON DELETE CASCADE,
-  discovered_json TEXT NOT NULL
-);
-
 -- Expand persisted routable models from the legacy models_cache_json snapshot
 -- so existing deployments come up warm without a cold-start refresh burst.
 INSERT OR IGNORE INTO upstream_models (
@@ -240,6 +230,7 @@ INSERT OR IGNORE INTO upstream_models (
   upstream_model_id,
   kind,
   source,
+  disabled,
   model_json
 )
 SELECT
@@ -259,6 +250,17 @@ SELECT
       )
       THEN 'manual'
     ELSE 'auto'
+  END,
+  CASE
+    WHEN json_valid(s.disabled_public_model_ids)
+      AND json_type(s.disabled_public_model_ids) = 'array'
+      AND EXISTS (
+        SELECT 1
+        FROM json_each(s.disabled_public_model_ids) d
+        WHERE d.value = json_extract(m.value, '$.id')
+      )
+      THEN 1
+    ELSE 0
   END,
   m.value
 FROM _migration_0102_upstream_sources s,
@@ -301,18 +303,5 @@ WHERE s.provider IN ('custom', 'azure', 'ollama')
   AND json_valid(s.config_json)
   AND json_type(s.config_json, '$.models') = 'array'
   AND json_type(m.value, '$.upstreamModelId') = 'text';
-
--- Preserve custom upstream raw discovered model snapshots for the editor.
-INSERT INTO custom_upstream_discovered_models (upstream_id, discovered_json)
-SELECT
-  s.id,
-  json_extract(s.models_cache_json, '$.discovered')
-FROM _migration_0102_upstream_sources s
-WHERE s.provider = 'custom'
-  AND s.models_cache_json IS NOT NULL
-  AND json_valid(s.models_cache_json)
-  AND json_type(s.models_cache_json, '$.fetchedAt') IN ('integer', 'real')
-  AND json_extract(s.models_cache_json, '$.fetchedAt') > 0
-  AND json_type(s.models_cache_json, '$.discovered') = 'array';
 
 DROP TABLE _migration_0102_upstream_sources;

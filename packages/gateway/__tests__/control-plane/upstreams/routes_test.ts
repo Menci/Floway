@@ -104,7 +104,7 @@ test('PATCH /api/upstreams rejects kind changes and preserves the row', async ()
 
   const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
   const created = (await create.json()) as Record<string, string>;
-  assertEquals((await repo.upstreams.getById(created.id))?.configVersion, 1);
+  assertEquals(typeof (await repo.upstreams.getById(created.id))?.version, 'number');
 
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'PATCH',
@@ -147,7 +147,7 @@ test('PATCH /api/upstreams preserves omitted secrets and invalidates the old cat
   // A changed model configuration cannot serve the previous catalog.
   const storedBefore = await getRecord(repo, created.id);
   await seedModelsCache(repo.upstreams, created.id, {
-    configVersion: storedBefore.configVersion,
+    version: storedBefore.version,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
     models: [stubProviderModel({ id: 'stale-model', upstreamModelId: 'stale-model', endpoints: {} })],
@@ -179,7 +179,7 @@ test('PATCH /api/upstreams preserves omitted secrets and invalidates the old cat
 
   const updated = await repo.upstreams.getById(created.id);
   assertEquals((updated?.config as Record<string, unknown>).apiKey, 'sk-test');
-  assertEquals(updated?.configVersion, 2);
+  assertEquals(updated !== null && updated.version !== storedBefore.version, true);
   assertEquals((updated?.config as Record<string, unknown>).endpoints, { openaiResponses: {} });
   assertEquals((updated?.config as Record<string, unknown>).ingressHeadersRules, [{ key: 'x-route', value: 'patched' }]);
   assertEquals(updated?.modelsCache.fetchedAt, null);
@@ -212,7 +212,7 @@ test('GET /api/upstreams/:id exposes cached editor rows without an upstream requ
 
   const storedBefore = await getRecord(repo, created.id);
   await seedModelsCache(repo.upstreams, created.id, {
-    configVersion: storedBefore.configVersion,
+    version: storedBefore.version,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [
@@ -280,9 +280,7 @@ test('POST /api/upstreams/:id/list-models reads the saved config and publishes a
       assertEquals(typeof body.modelsCache.fetchedAt, 'number');
       assertEquals(upstreamCalls, 1);
       const cachedModels = await repo.upstreamModels.listByUpstream(savedRecord.id);
-      const discovered = await repo.upstreamModels.getCustomDiscovered(savedRecord.id);
       assertEquals(cachedModels.map(entry => entry.model.id), ['fresh-model']);
-      assertEquals(discovered?.map(model => model.upstreamModelId), ['fresh-model']);
       const stored = await requestApp(`/api/upstreams/${savedRecord.id}`, { headers: { 'x-floway-session': adminSession } });
       assertEquals(stored.status, 200);
       assertEquals(((await stored.json()) as JsonObject).cachedModels.map((model: { upstreamModelId: string }) => model.upstreamModelId), ['fresh-model']);
@@ -307,7 +305,6 @@ test('saved model fetch rejects a config edit that wins before a failed response
       await repo.upstreams.replace({
         previous: current,
         upstream: { ...current, config: { ...current.config as Record<string, unknown>, apiKey: 'changed' } },
-        bumpConfigVersion: true,
       });
       release!(new Response('old failure', { status: 503 }));
       assertEquals((await pending).status, 409);
@@ -626,27 +623,6 @@ test('DELETE /api/upstreams cascades to that upstream\'s proxy backoff rows', as
   const remaining = await repo.proxyBackoffs.listAll();
   assertEquals(remaining.length, 1);
   assertEquals(remaining[0]!.upstreamId, kept.id);
-});
-
-// The setup's SocketDial refuses every connection, so each preview fails at
-// the proxy dial. Neither a create-form draft nor an unsaved list edited on a
-// saved upstream may leave a cooldown row behind.
-test('POST /api/upstreams/preview-models dials an edit-form list without recording proxy backoff', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await repo.proxies.insert({ id: 'p_a', name: 'A', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
-  const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
-  const saved = await getRecord(repo, ((await create.json()) as { id: string }).id);
-  const discovery = { ...customConfig, modelsFetch: { enabled: true, authStyle: 'bearer' } };
-
-  for (const record of [
-    blueprintEnvelope('custom', { config: discovery, proxy_fallback_list: [{ id: 'p_a' }] }),
-    { ...envelopeFromRecord(saved), config: discovery, proxy_fallback_list: [{ id: 'p_a' }] },
-  ]) {
-    const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, { record }));
-    assertEquals(resp.status, 502);
-  }
-  assertEquals(await repo.proxyBackoffs.listAll(), []);
 });
 
 // The edit form's in-progress proxy_fallback_list travels on the action

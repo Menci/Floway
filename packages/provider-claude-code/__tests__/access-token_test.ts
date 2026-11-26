@@ -84,7 +84,7 @@ beforeEach(() => {
   repo = {
     getById: async id => {
       const record = await getByIdSpy(id);
-      return record === null ? null : { ...record, configVersion: 1 };
+      return record === null ? null : { ...record, version: 1 };
     },
     saveState: (id, mutate) => saveStateSpy(id, current => mutate(current, 1)),
   };

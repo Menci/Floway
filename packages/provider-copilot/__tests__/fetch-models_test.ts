@@ -28,7 +28,7 @@ const installRepoAndConfig = async () => {
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => ({ ...stub, configVersion: 1 }),
+      getById: async () => ({ ...stub, version: 1 }),
       saveState: async () => {},
     },
   }));

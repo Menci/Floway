@@ -13,7 +13,7 @@ const ACCOUNT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const persistProbe = async <T>(
   upstreamId: string,
-  configVersion: number,
+  version: number,
   slot: keyof KimiCodeUpstreamState,
   attemptedAt: number,
   observation: KimiCodeObservation<T> | null,
@@ -22,7 +22,7 @@ const persistProbe = async <T>(
   let accepted = false;
   await getProviderRepo().upstreams.saveState(upstreamId, (current, currentVersion) => {
     accepted = false;
-    if (currentVersion !== configVersion) return current;
+    if (currentVersion !== version) return current;
     const state = readKimiCodeUpstreamState(current);
     const previous = state[slot];
     if (previous !== null && previous.attemptedAt > attemptedAt) return current;
@@ -46,15 +46,15 @@ const refreshProbe = async <T>(
   // its version even when rotation occurs between the state read and write.
   const saved = upstreamId === '' ? null : await getProviderRepo().upstreams.getById(upstreamId);
   const savedConfig = saved === null ? null : assertKimiCodeUpstreamRecord(saved).config;
-  const configVersion = saved !== null && savedConfig?.apiKey === config.apiKey && savedConfig.region === config.region ? saved.configVersion : null;
+  const version = saved !== null && savedConfig?.apiKey === config.apiKey && savedConfig.region === config.region ? saved.version : null;
   let observation: KimiCodeObservation<T>;
   try {
     const response = await kimiCodeFetch(config, path, { method: 'GET', headers: new Headers({ accept: 'application/json' }) }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     observation = { fetchedAt: Date.now(), data: read(await readKimiCodeJson(response, path)) };
   } catch (error) {
-    if (configVersion !== null) {
+    if (version !== null) {
       try {
-        await persistProbe(upstreamId, configVersion, slot, attemptedAt, null, error instanceof Error ? error.message : String(error));
+        await persistProbe(upstreamId, version, slot, attemptedAt, null, error instanceof Error ? error.message : String(error));
       } catch (persistenceError) {
         // Both failures matter and neither may be dropped. The aggregate's
         // message is the read failure's, so a caller matching on the upstream
@@ -64,8 +64,8 @@ const refreshProbe = async <T>(
     }
     throw error;
   }
-  if (configVersion !== null) {
-    const accepted = await persistProbe(upstreamId, configVersion, slot, attemptedAt, observation, null);
+  if (version !== null) {
+    const accepted = await persistProbe(upstreamId, version, slot, attemptedAt, observation, null);
     if (slot === 'usageProbe' && accepted) await recordUpstreamMetrics(upstreamId, kimiCodeMetrics(observation.data), observation.fetchedAt);
   }
   return observation;

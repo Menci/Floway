@@ -64,7 +64,6 @@ function Harness({ discovered, editLevel, record }: {
           discovered={discovered}
           editLevel={editLevel}
           onPatch={vi.fn()}
-          onRefreshModels={vi.fn()}
           proxies={[]}
           record={record}
           runtime={{ kind: 'node', runtimeLocation: 'TEST' }}

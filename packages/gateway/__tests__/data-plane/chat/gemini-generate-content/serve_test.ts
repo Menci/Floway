@@ -7,7 +7,7 @@ import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type Proto
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the model
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -107,7 +107,7 @@ const makeCandidate = (overrides: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       instance: provider,
     },
-    model: stubInternalModel({ endpoints }, upstream),
+    model: stubProviderModel({ endpoints }),
     fetcher: directFetcher,
   };
 };

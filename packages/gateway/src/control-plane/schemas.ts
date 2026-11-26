@@ -579,24 +579,6 @@ export const claudeCodeSetupTokenExchangeBody = z.object({
 
 export const claudeCodeProbeBody = recordOnlyBody;
 
-// The editor sends every discovery input, including model projection policy,
-// while direct preview callers can omit unrelated display metadata.
-export const previewModelsBody = z.object({
-  record: upstreamRecordEnvelope.extend({
-    proxy_fallback_list: proxyFallbackListSchema,
-    name: z.string().exactOptional(),
-    enabled: z.boolean().exactOptional(),
-    usage_refresh_interval_minutes: z.number().int().nonnegative().exactOptional(),
-    sort_order: z.number().int().exactOptional(),
-    created_at: z.string().exactOptional(),
-    updated_at: z.string().exactOptional(),
-    hue: upstreamHueSchema.exactOptional(),
-    flag_overrides: flagOverridesSchema.exactOptional(),
-    disabled_public_model_ids: disabledPublicModelIdsSchema.exactOptional(),
-    model_prefix: modelPrefixSchema.exactOptional(),
-    manual_models: z.unknown().exactOptional(),
-  }),
-});
 // --- kimi-code ---
 
 export const kimiCodeUsageBody = recordOnlyBody;

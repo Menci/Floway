@@ -19,8 +19,8 @@ const createDatabase = async (): Promise<string> => {
     CREATE TABLE upstreams (
       id TEXT PRIMARY KEY, provider TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
       sort_order INTEGER NOT NULL, created_at TEXT NOT NULL, config_json TEXT NOT NULL,
-      row_version INTEGER NOT NULL DEFAULT 1,
-      models_cache_revision INTEGER, models_cache_fetched_at INTEGER, models_cache_token TEXT
+      version INTEGER NOT NULL DEFAULT 1,
+      models_cache_revision INTEGER, models_cache_fetched_at INTEGER
     );
     CREATE TABLE upstream_manual_models (
       upstream_id TEXT NOT NULL, position INTEGER NOT NULL,
@@ -31,7 +31,7 @@ const createDatabase = async (): Promise<string> => {
     CREATE TABLE upstream_models (
       upstream_id TEXT NOT NULL, model_id TEXT NOT NULL,
       upstream_model_id TEXT NOT NULL, kind TEXT NOT NULL,
-      source TEXT NOT NULL, model_json TEXT NOT NULL,
+      source TEXT NOT NULL, disabled INTEGER NOT NULL DEFAULT 0, model_json TEXT NOT NULL,
       PRIMARY KEY (upstream_id, model_id, kind)
     );
     CREATE TABLE usage (
@@ -44,8 +44,8 @@ const createDatabase = async (): Promise<string> => {
   `);
   const pricing = { entries: [{ rates: { input_tokens: '0.01' } }] };
   const manualModel = { kind: 'chat', endpoints: { openaiResponses: {} }, upstreamModelId: 'wire', pricing };
-  db.prepare('INSERT INTO upstreams VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run('azure-1', 'azure', 'Azure', 1, 0, '2026-01-01T00:00:00.000Z', JSON.stringify({}), 1, null, null, null);
+  db.prepare('INSERT INTO upstreams VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('azure-1', 'azure', 'Azure', 1, 0, '2026-01-01T00:00:00.000Z', JSON.stringify({}), 1, null, null);
   db.prepare('INSERT INTO upstream_manual_models VALUES (?, ?, ?, ?, ?, ?)')
     .run('azure-1', 0, 'wire', null, 'chat', JSON.stringify(manualModel));
   db.prepare('INSERT INTO usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
@@ -133,8 +133,8 @@ test('an unguarded plan keeps the stored catalog out of its apply statement', as
     CREATE TABLE upstreams (
       id TEXT PRIMARY KEY, provider TEXT NOT NULL, name TEXT NOT NULL, enabled INTEGER NOT NULL,
       sort_order INTEGER NOT NULL, created_at TEXT NOT NULL, config_json TEXT NOT NULL,
-      row_version INTEGER NOT NULL DEFAULT 1,
-      models_cache_revision INTEGER, models_cache_fetched_at INTEGER, models_cache_token TEXT
+      version INTEGER NOT NULL DEFAULT 1,
+      models_cache_revision INTEGER, models_cache_fetched_at INTEGER
     );
     CREATE TABLE upstream_manual_models (
       upstream_id TEXT NOT NULL, position INTEGER NOT NULL,
@@ -145,7 +145,7 @@ test('an unguarded plan keeps the stored catalog out of its apply statement', as
     CREATE TABLE upstream_models (
       upstream_id TEXT NOT NULL, model_id TEXT NOT NULL,
       upstream_model_id TEXT NOT NULL, kind TEXT NOT NULL,
-      source TEXT NOT NULL, model_json TEXT NOT NULL,
+      source TEXT NOT NULL, disabled INTEGER NOT NULL DEFAULT 0, model_json TEXT NOT NULL,
       PRIMARY KEY (upstream_id, model_id, kind)
     );
     CREATE TABLE usage (
@@ -158,12 +158,12 @@ test('an unguarded plan keeps the stored catalog out of its apply statement', as
   `);
   const pricing = { entries: [{ rates: { input_tokens: '0.01' } }] };
   const manualModel = { kind: 'chat', endpoints: { openaiResponses: {} }, upstreamModelId: 'wire', pricing };
-  db.prepare('INSERT INTO upstreams VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run('azure-1', 'azure', 'Azure', 1, 0, '2026-01-01T00:00:00.000Z', JSON.stringify({}), 1, 1, Date.now(), 'tok-1');
+  db.prepare('INSERT INTO upstreams VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run('azure-1', 'azure', 'Azure', 1, 0, '2026-01-01T00:00:00.000Z', JSON.stringify({}), 1, 1, Date.now());
   db.prepare('INSERT INTO upstream_manual_models VALUES (?, ?, ?, ?, ?, ?)')
     .run('azure-1', 0, 'wire', null, 'chat', JSON.stringify(manualModel));
-  db.prepare('INSERT INTO upstream_models VALUES (?, ?, ?, ?, ?, ?)')
-    .run('azure-1', 'public', 'wire', 'chat', 'manual', filler);
+  db.prepare('INSERT INTO upstream_models VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run('azure-1', 'public', 'wire', 'chat', 'manual', 0, filler);
   db.prepare('INSERT INTO usage VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run('key-1', 'public', 'azure-1', 'wire', '2026-01-01T00', '{}', 'input_tokens', '10', null);
   db.close();

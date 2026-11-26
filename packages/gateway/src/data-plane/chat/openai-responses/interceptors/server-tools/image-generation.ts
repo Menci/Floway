@@ -22,7 +22,7 @@ import {
   type OpenAIResponsesOutputImageGenerationCall,
   type OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf, type Fetcher, type OpenAIImagesEditsRequest, type Provider, type ProviderCallResult, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
+import { type Fetcher, type OpenAIImagesEditsRequest, type Provider, type ProviderCallResult, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -1252,7 +1252,7 @@ const streamImageGeneration = (
   const resolved = await resolveImageCandidate(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
   const { provider, fetcher } = resolved.candidate;
-  const model = providerModelOf(resolved.candidate);
+  const model = resolved.candidate.model;
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
   const attempt: AttemptState = { timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined };
@@ -1373,7 +1373,7 @@ export const expandImageGenerationCall = (
 };
 
 export const imageGenerationServerTool: ServerToolRegistration = async (invocation, gatewayCtx) => {
-  if (invocation.targetApi === 'openaiResponses' && !providerModelOf(invocation.candidate).enabledFlags.has('openai-responses-image-generation-shim')) {
+  if (invocation.targetApi === 'openaiResponses' && !invocation.candidate.model.enabledFlags.has('openai-responses-image-generation-shim')) {
     return { type: 'inactive' };
   }
 

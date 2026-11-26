@@ -19,9 +19,7 @@ export const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamMo
 export const loadCachedModelsForDashboard = async (record: StoredUpstreamRecord): Promise<UpstreamModelConfig[] | null> => {
   if (record.modelsCache.fetchedAt === null) return null;
   if (record.kind === 'azure') return [];
-  const repo = getRepo().upstreamModels;
-  if (record.kind === 'custom') return await repo.getCustomDiscovered(record.id);
-  const rows = await repo.listByUpstream(record.id);
+  const rows = await getRepo().upstreamModels.listByUpstream(record.id, { source: 'auto' });
   return rows.map(({ model }) => reshapeModelForDashboard(model));
 };
 

@@ -6,12 +6,13 @@ import { enumerateModelCandidates as enumerateModelCandidatesRaw } from '../../.
 import { enumerateAddressableModelIds } from '../../../src/data-plane/shared/listing/addressable.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, setupAppTest, testAdminUser, warmModelsForTest } from '../../test-utils/app.ts';
-import type { InternalModel, ProviderModel, UpstreamModelConfig } from '@floway-dev/provider';
+import type { UpstreamModelConfig } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
 
 const listCatalogModels = async (upstreamFilter: readonly string[] | null) => {
   const entries = (await enumerateAddressableModelIds(testAdminUser, upstreamFilter)).filter(entry => !entry.unlisted);
   return {
+    entries,
     models: entries.map(entry => entry.model),
     upstreamsByPublicId: new Map(entries.map(entry => [entry.id, entry.upstreams] as const)),
   };
@@ -24,11 +25,6 @@ const withMockedFetch = <T>(
   await warmModelsForTest();
   return await fn();
 });
-
-const realProviderModels = (model: InternalModel | undefined): Record<string, ProviderModel> => {
-  if (model?.providerModels === undefined) throw new Error(`expected real InternalModel with providerModels, got ${JSON.stringify(model)}`);
-  return model.providerModels;
-};
 
 const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareModelIds);
 
@@ -96,7 +92,8 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const { models, upstreamsByPublicId } = await listCatalogModels(null);
+      const { entries, models, upstreamsByPublicId } = await listCatalogModels(null);
+      const entry = entries.find(candidate => candidate.id === 'shared-model');
       const model = models.find(candidate => candidate.id === 'shared-model');
 
       assertEquals(model?.display_name, 'Shared Model');
@@ -110,14 +107,14 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       // enumeration order — copilot first, then custom.
       assertEquals(upstreamsByPublicId.get('shared-model')?.map(p => p.id), ['up_copilot', 'up_custom']);
       // Every contributing upstream keeps its own emitted `ProviderModel`
-      // verbatim under `providerModels[<upstream>]` — merge unions the
-      // outer `endpoints` but never rewrites the per-upstream capability
-      // each provider originally advertised.
-      assertEquals(Object.keys(realProviderModels(model)).sort(), ['up_copilot', 'up_custom']);
-      assertEquals(realProviderModels(model)['up_copilot']?.endpoints, { anthropicMessages: {} });
-      assertEquals(realProviderModels(model)['up_custom']?.endpoints, { openaiChatCompletions: {} });
-      assertEquals(realProviderModels(model)['up_copilot']?.chat?.image_detail_original, undefined);
-      assertEquals(realProviderModels(model)['up_custom']?.chat?.image_detail_original, true);
+      // verbatim under `entry.contributions` — merge unions the outer
+      // `endpoints` without rewriting per-upstream capabilities.
+      const byUpstream = new Map(entry?.contributions.map(c => [c.upstream.id, c.model]) ?? []);
+      assertEquals([...byUpstream.keys()].sort(), ['up_copilot', 'up_custom']);
+      assertEquals(byUpstream.get('up_copilot')?.endpoints, { anthropicMessages: {} });
+      assertEquals(byUpstream.get('up_custom')?.endpoints, { openaiChatCompletions: {} });
+      assertEquals(byUpstream.get('up_copilot')?.chat?.image_detail_original, undefined);
+      assertEquals(byUpstream.get('up_custom')?.chat?.image_detail_original, true);
 
       const resolved = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'shared-model', kind: 'chat', runtimeLocation: 'TEST' });
       assertEquals(resolved.candidates.map(m => m.provider.upstreamId), ['up_copilot', 'up_custom']);

@@ -20,7 +20,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_attempt_test';
 
@@ -68,9 +68,7 @@ const makeCandidate = (
       inboundHeaderAllowlist: [],
       instance: provider,
     },
-    model: stubInternalModel({
-      providerModels: { [upstream]: stubProviderModel({ enabledFlags }) },
-    }, upstream),
+    model: stubProviderModel({ enabledFlags }),
     fetcher: directFetcher,
   };
 };
@@ -277,15 +275,10 @@ test('generate defers the role rewrite until after translation to OpenAI Chat Co
       inboundHeaderAllowlist: [],
       instance: stubProvider({ callOpenAIChatCompletions }),
     },
-    model: stubInternalModel({
+    model: stubProviderModel({
       endpoints,
-      providerModels: {
-        [upstream]: stubProviderModel({
-          endpoints,
-          enabledFlags: new Set(['rewrite-system-to-developer']),
-        }),
-      },
-    }, upstream),
+      enabledFlags: new Set(['rewrite-system-to-developer']),
+    }),
     fetcher: directFetcher,
   };
 
@@ -320,7 +313,7 @@ test('generate strips disallowed headers and states a remote image URL to Anthro
   let observedHeaders: Headers | undefined;
   let observedAnthropicBeta: readonly string[] | undefined;
   let observedBody: Omit<AnthropicMessagesPayload, 'model'> | undefined;
-  const upstreamModel = stubInternalModel({ endpoints: { anthropicMessages: {} } }, 'up_test');
+  const upstreamModel = stubProviderModel({ endpoints: { anthropicMessages: {} } });
   const anthropicMessagesProvider = stubProvider({
     callAnthropicMessages: async (_model, body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
       observedHeaders = opts.headers;
@@ -479,7 +472,7 @@ test('namespace wire mapping follows compact expansion and is isolated from oute
   const endpoints = { openaiChatCompletions: {} };
   const candidate: ModelCandidate = {
     ...makeCandidate(async () => { throw new Error('native Responses must not be called'); }),
-    model: stubInternalModel({ endpoints, providerModels: { up_test: stubProviderModel({ endpoints }) } }, 'up_test'),
+    model: stubProviderModel({ endpoints }),
   };
   candidate.provider.instance.callOpenAIChatCompletions = async (_model, body) => {
     providerBodies.push(structuredClone(body));
@@ -564,10 +557,7 @@ test('generate lowers a standalone function_call_output to external context acro
         },
       }),
     },
-    model: stubInternalModel({
-      endpoints,
-      providerModels: { up_chat: stubProviderModel({ endpoints }) },
-    }, 'up_chat'),
+    model: stubProviderModel({ endpoints }),
     fetcher: directFetcher,
   };
 

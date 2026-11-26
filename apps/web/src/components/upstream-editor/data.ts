@@ -106,11 +106,11 @@ export const loadEditorAux = async (upstreamId?: string): Promise<EditorAuxData>
   };
 };
 
-// Whether a listing request has anything to ask with. It reads the edited
-// config rather than the stored one, so the switch and the base URL the
-// operator is typing decide, and it is the single answer behind the explicit
-// refresh actions and their buttons.
+// Whether a saved upstream has what it takes to fetch its model catalog.
+// Reads the edited config so typing a base URL or toggling fetch on a saved
+// upstream activates the Refresh action (which prompts to save first).
 export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEditorValues['config']): boolean => {
+  if (!isPersisted(record)) return false;
   switch (record.kind) {
   case 'custom': {
     const custom = config as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
@@ -118,12 +118,10 @@ export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEdi
   }
   case 'ollama':
     return Boolean((config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).baseUrl);
-  case 'kimi-code':
-    return isPersisted(record) || Boolean((config as Extract<UpstreamRecord, { kind: 'kimi-code' }>['config']).apiKey?.trim());
   case 'azure':
     return false;
   default:
-    return isPersisted(record);
+    return true;
   }
 };
 
@@ -168,19 +166,6 @@ const listingFailure = (error: { message: string; raw?: unknown }): ModelCatalog
     },
     modelsCache,
   };
-};
-
-export const previewDraftModelCatalog = async (
-  record: UpstreamRecord,
-  values: UpstreamEditorValues,
-  signal: AbortSignal,
-): Promise<ModelCatalogFetch> => {
-  if (!canFetchModelCatalog(record, values.config)) return { discovered: null, modelsError: null, modelsCache: null };
-  const result = await callApi(() => api.api.upstreams['preview-models'].$post({
-    json: { record: previewRecord(record, values) },
-  }, { init: { signal } }));
-  if (result.error) return listingFailure(result.error);
-  return { discovered: result.data.data, modelsError: null, modelsCache: null };
 };
 
 export const fetchSavedModelCatalog = async (
@@ -319,9 +304,6 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues,
     return {
       disabled_public_model_ids: values.disabledPublicModelIds,
       ...(manualModelsSupported(record) ? { manual_models: structuredClone(values.manualModels) } : {}),
-      ...(record.kind === 'custom'
-        ? { config: { modelsFetch: { enabled: (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled } } }
-        : {}),
     } as unknown as UpdateUpstreamBody;
   }
   return {

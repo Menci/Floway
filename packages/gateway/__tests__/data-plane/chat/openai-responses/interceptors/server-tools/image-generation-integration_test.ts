@@ -63,14 +63,11 @@ const defaultCandidates = vi.hoisted(() => () => [{
   },
   model: {
     id: 'gpt-image-2',
+    upstreamModelId: 'gpt-image-2',
+    limits: {},
+    kind: 'image',
     endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
-    providerModels: {
-      u: {
-        id: 'gpt-image-2', limits: {}, kind: 'image',
-        endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
-        enabledFlags: new Set<FlagId>(),
-      },
-    },
+    enabledFlags: new Set<FlagId>(),
   },
   fetcher: (request: Request) => fetch(request),
 }]);

@@ -51,30 +51,6 @@ const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): 
   return inferEndpointsFromModelId(model.id) ?? configured;
 };
 
-export const projectCustomDiscoveredModels = (
-  record: UpstreamRecord,
-  response: CustomModelsResponse,
-): UpstreamModelConfig[] => {
-  const { config } = assertCustomUpstreamRecord(record);
-  return response.data.map(model => {
-    const endpoints = model.kind === 'rerank' ? { rerank: {} } : autoModelEndpoints(model, config.endpoints);
-    const kind = model.kind === 'rerank' ? 'rerank' : kindForEndpoints(endpoints);
-    const projected: UpstreamModelConfig = {
-      upstreamModelId: model.id,
-      publicModelId: model.id,
-      kind,
-      endpoints,
-    };
-    const displayName = model.display_name ?? model.name;
-    if (displayName !== undefined) projected.display_name = displayName;
-    if (model.limits !== undefined) projected.limits = { ...model.limits };
-    if (model.pricing !== undefined) projected.pricing = model.pricing;
-    if (kind === 'chat' && model.chat !== undefined) projected.chat = model.chat;
-    projected.opaqueBlobCompatibilityScope = model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true };
-    return projected;
-  });
-};
-
 const finalizeCustomModels = (
   response: CustomModelsResponse,
   configuredEndpoints: ModelEndpoints,
@@ -129,44 +105,6 @@ export const projectCustomManualModels = (
     if (kind === 'chat' && model.chat) internal.chat = model.chat;
     return internal;
   });
-};
-
-export const projectCustomModelsFromDiscovered = (
-  record: UpstreamRecord,
-  manualModels: readonly UpstreamModelConfig[],
-  discovered: readonly UpstreamModelConfig[],
-): { readonly manual: ProviderModel[]; readonly auto: ProviderModel[] } => {
-  const { config } = assertCustomUpstreamRecord(record);
-  const fetchedPricing = new Map(
-    discovered.flatMap(model => model.pricing ? [[model.upstreamModelId, model.pricing] as const] : []),
-  );
-  const manual = projectCustomManualModels(record, manualModels, config.modelsFetch.enabled ? fetchedPricing : undefined);
-  if (!config.modelsFetch.enabled) return { manual, auto: [] };
-
-  const overriddenIds = new Set(manualModels.map(model => model.upstreamModelId));
-  const upstreamFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides]);
-  const auto: ProviderModel[] = [];
-  for (const model of discovered) {
-    if (!model.upstreamModelId || overriddenIds.has(model.upstreamModelId)) continue;
-    if (model.kind === 'rerank' || model.kind === 'decision') continue;
-    const endpoints = model.kind === 'chat' ? config.endpoints : model.endpoints;
-    const kind = kindForEndpoints(endpoints);
-    const projected: ProviderModel = {
-      id: publicModelId(model),
-      upstreamModelId: model.upstreamModelId,
-      limits: { ...(model.limits ?? {}) },
-      kind,
-      endpoints,
-      providerData: model.upstreamModelId,
-      enabledFlags: upstreamFlags,
-      opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
-    };
-    if (model.display_name !== undefined) projected.display_name = model.display_name;
-    if (model.pricing) projected.pricing = model.pricing;
-    if (kind === 'chat' && model.chat) projected.chat = model.chat;
-    auto.push(projected);
-  }
-  return { manual, auto };
 };
 
 export const projectCustomModels = (

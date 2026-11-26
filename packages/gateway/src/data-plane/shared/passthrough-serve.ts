@@ -17,13 +17,13 @@ import { iterateCandidates } from './iterate-candidates.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
 import { recordFailedRequest } from './telemetry/performance.ts';
 import { settle } from './telemetry/settle.ts';
-import { forwardUpstreamResponse, providerModelsUnavailableResponse } from './upstream-response.ts';
+import { forwardUpstreamResponse } from './upstream-response.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { toInternalDebugError } from '@floway-dev/provider';
-import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
+import type { PerformanceOperation, PerformanceTelemetryContext, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 type PassthroughResponseHandling =
   | {
@@ -58,11 +58,8 @@ interface PassthroughServeContext {
   // to `model.kind === kind`; `sawModel=true && candidates=[]` becomes
   // the "model exists but doesn't support this endpoint" 400.
   readonly kind: ModelKind;
-  // Endpoint-availability gate against a resolved candidate's `InternalModel`.
-  // Reads `.endpoints` on the candidate — the row narrows to exactly one
-  // contributing upstream, so those endpoints come verbatim from the emitting
-  // upstream's `ProviderModel`.
-  readonly modelServesEndpoint: (model: InternalModel) => boolean;
+  // Endpoint-availability gate against a resolved candidate's `ProviderModel`.
+  readonly modelServesEndpoint: (model: ProviderModel) => boolean;
   // Any throw here is preserved and becomes a 502 with the internal-debug
   // envelope. `model` is the emitting upstream's `ProviderModel`.
   readonly call: (provider: Provider, model: ProviderModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
@@ -155,11 +152,6 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     settle(ctx, performanceContext, identity, usage, false);
     return forwardUpstreamResponse(response);
   } catch (e) {
-    const forwarded = providerModelsUnavailableResponse(e);
-    if (forwarded) {
-      ctx.dump?.error('upstream');
-      return forwarded;
-    }
     // Attributes to whichever candidate iterateCandidates was on (or short-circuits if none started).
     recordFailedRequest(ctx, ctx.attempt.telemetry);
     ctx.dump?.failed(e);

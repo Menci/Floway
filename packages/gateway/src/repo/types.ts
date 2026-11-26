@@ -26,12 +26,11 @@ export interface StoredUpstreamMeta {
   hue: number;
 }
 
-// Provider config, flag overrides, manual models, and catalog transport advance
-// `configVersion`; every operator edit advances `rowVersion`; runtime state
-// writes advance neither.
+// Every control-plane edit, reorder, and successful models refresh advances
+// `version`; runtime state writes (`saveState`) and refresh failure recordings
+// check `version` without advancing it.
 export interface StoredUpstreamRecord extends UpstreamRecord {
-  rowVersion: number;
-  configVersion: number;
+  version: number;
   modelsCache: UpstreamModelsCacheState;
 }
 
@@ -485,15 +484,13 @@ export type UpstreamModelsCacheAction =
 export interface UpstreamModelsWritePayload {
   // Replace upstream_models rows for this upstream atomically with the upstream write.
   readonly models?: readonly UpstreamModelEntry[];
-  // Replace custom_upstream_discovered_models atomically (null deletes).
-  readonly discovered?: readonly UpstreamModelConfig[] | null;
   readonly cacheAction: UpstreamModelsCacheAction;
 }
 
 export interface DueModelsRefreshCandidate {
   readonly id: string;
   readonly kind: UpstreamProviderKind;
-  readonly configVersion: number;
+  readonly version: number;
   readonly proxyFallbackList: ProxyFallbackEntry[];
   readonly requiresNetwork: boolean;
 }
@@ -522,7 +519,6 @@ export interface UpstreamRepo {
   replace(input: {
     readonly previous: StoredUpstreamRecord;
     readonly upstream: UpstreamRecord;
-    readonly bumpConfigVersion: boolean;
     readonly replaceState?: boolean;
     readonly manualModels?: readonly UpstreamModelConfig[];
     readonly modelsWrite?: UpstreamModelsWritePayload;
@@ -535,23 +531,22 @@ export interface UpstreamRepo {
   // a CAS, retrying against the winner when it loses; exhausting the retries
   // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
   // is a function.
-  saveState(id: string, mutate: (current: unknown, configVersion: number) => unknown): Promise<void>;
-  publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean>;
+  saveState(id: string, mutate: (current: unknown, version: number) => unknown): Promise<void>;
+  publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<number | null>;
   recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean>;
 }
 
 export interface ModelsRefreshSuccessInput {
   readonly id: string;
-  readonly configVersion: number;
+  readonly version: number;
   readonly revision: number;
   readonly fetchedAt: number;
   readonly models: readonly UpstreamModelEntry[];
-  readonly discovered?: readonly UpstreamModelConfig[] | null;
 }
 
 export interface ModelsRefreshFailureInput {
   readonly id: string;
-  readonly configVersion: number;
+  readonly version: number;
   readonly error: { readonly message: string; readonly at: number };
 }
 
@@ -568,7 +563,6 @@ export interface CatalogUpstreamRow {
   readonly name: string;
   readonly hue: number;
   readonly sortOrder: number;
-  readonly disabledPublicModelIds: string[];
   readonly modelPrefix: ModelPrefixConfig | null;
 }
 
@@ -595,7 +589,6 @@ export interface UpstreamModelsRepo {
   getByKey(upstreamId: string, modelId: string, kind: ModelKind): Promise<ProviderModel | null>;
   listManualModels(upstreamId: string): Promise<UpstreamModelConfig[]>;
   listManualModelsByUpstreams(upstreamIds: readonly string[]): Promise<Map<string, UpstreamModelConfig[]>>;
-  getCustomDiscovered(upstreamId: string): Promise<UpstreamModelConfig[] | null>;
 }
 
 export interface ProxyRecord {

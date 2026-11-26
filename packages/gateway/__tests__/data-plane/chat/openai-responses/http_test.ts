@@ -10,7 +10,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesResultToEvents, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, assertStringIncludes, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertStringIncludes, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the http entry exactly the
 // provider candidates it wants, optionally with an alias-rules overlay
@@ -134,15 +134,10 @@ const makeCandidate = (overrides: {
       inboundHeaderAllowlist: [],
       instance: provider,
     },
-    model: stubInternalModel({
+    model: stubProviderModel({
       endpoints,
-      providerModels: {
-        [upstream]: stubProviderModel({
-          endpoints,
-          enabledFlags: overrides.enabledFlags ?? new Set(),
-        }),
-      },
-    }, upstream),
+      enabledFlags: overrides.enabledFlags ?? new Set(),
+    }),
     fetcher: directFetcher,
   };
 };

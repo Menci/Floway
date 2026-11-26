@@ -40,8 +40,9 @@ const ownValue = (value: unknown, key: string): unknown => {
 test('SQL upstream repo preserves opaque provider data while restoring only the model enabledFlags Set', async () => {
   const fullRepo = new SqlRepo(await createSqliteTestDb());
   await saveUpstreamForTest(fullRepo.upstreams, baseRecord());
+  const inserted = (await fullRepo.upstreams.getById('up_test'))!;
   await seedModelsCache(fullRepo.upstreams, 'up_test', {
-    configVersion: 1,
+    version: inserted.version,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({
@@ -147,9 +148,9 @@ for (const initialState of [null, { accounts: [goodAccount] }]) test(`SQL state 
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db).upstreams;
   await saveUpstreamForTest(repo, baseRecord({ state: initialState }));
-  const version = (await repo.getById('up_test'))!.configVersion;
+  const version = (await repo.getById('up_test'))!.version;
   const racing = new SqlRepo(withWriterRacingReads(db, () =>
-    db.prepare('UPDATE upstreams SET config_version = config_version + 1 WHERE id = ?').bind('up_test').run(), 1)).upstreams;
+    db.prepare('UPDATE upstreams SET version = version + 1 WHERE id = ?').bind('up_test').run(), 1)).upstreams;
   const seen: number[] = [];
   await racing.saveState('up_test', (current, currentVersion) => {
     seen.push(currentVersion);

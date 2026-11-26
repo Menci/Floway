@@ -9,7 +9,6 @@ import {
   type OpenAIResponsesTool,
   type OpenAIResponsesToolChoice,
 } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf } from '@floway-dev/provider';
 
 const CLIENT_NAMESPACE = 'collaboration';
 // Shared ordinary namespace spelling used by deployed Codex gateways.
@@ -325,7 +324,7 @@ const createClientEventRestorer = (upstreamNamespace: string, names: ReadonlySet
 // TODO: Stateful Responses must hydrate before alias allocation and persist
 // client-facing snapshots with the same full-history mapping on continuation.
 export const withOpenAIResponsesCollaborationShim: OpenAIResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-collaboration-shim')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('openai-responses-collaboration-shim')) return await run();
   const toolLists = toolInventories(ctx.payload);
   if (!hasCollaborationNamespace(ctx.payload)) return await run();
 

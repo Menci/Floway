@@ -22,20 +22,24 @@ const bundled = {
   ],
 };
 
-const chat = (id: string, displayName?: string, ctx = 100000): Extract<InternalModel, { providerModels: unknown }> => ({
+const chat = (id: string, displayName?: string, ctx = 100000): InternalModel => ({
   id,
   ...(displayName === undefined ? {} : { display_name: displayName }),
   kind: 'chat',
   limits: { max_context_window_tokens: ctx },
   endpoints: { openaiChatCompletions: {} },
-  providerModels: {},
 });
 
-const entry = (model: InternalModel, unlisted?: true): AddressableIdEntry => ({
+const entry = (
+  model: InternalModel,
+  unlisted?: true,
+  contributions: AddressableIdEntry['contributions'] = [],
+): AddressableIdEntry => ({
   id: model.id,
   unlisted,
   model,
-  upstreams: [],
+  upstreams: contributions.map(c => c.upstream),
+  contributions,
 });
 
 const entries = (...models: InternalModel[]): AddressableIdEntry[] => models.map(m => entry(m));
@@ -43,33 +47,31 @@ const entries = (...models: InternalModel[]): AddressableIdEntry[] => models.map
 describe('assembleCodexCatalog', () => {
   test('uses the primary ChatGPT provider default for a prefixed model without a matching client entry', () => {
     const provider = meta('primary', 'chatgpt');
-    const model = {
-      ...chat('codex/future-model', 'Future', 600000),
-      providerModels: {
-        [provider.id]: stubProviderModel({
-          limits: { max_context_window_tokens: 600000 },
-          providerData: { contextWindow: 80000, useResponsesLite: false },
-        }),
-      },
-    };
-    const out = assembleCodexCatalog(bundled, [{ ...entry(model), upstreams: [provider] }]);
+    const model = chat('codex/future-model', 'Future', 600000);
+    const out = assembleCodexCatalog(bundled, [entry(model, undefined, [{
+      upstream: provider,
+      model: stubProviderModel({
+        limits: { max_context_window_tokens: 600000 },
+        providerData: { contextWindow: 80000, useResponsesLite: false },
+      }),
+    }])]);
     expect(out.models[0]).toMatchObject({ slug: 'codex/future-model', context_window: 80000, max_context_window: 600000 });
   });
 
   test('a secondary ChatGPT provider cannot replace the primary provider budget', () => {
     const primary = meta('primary', 'copilot');
     const secondary = meta('secondary', 'chatgpt');
-    const model = {
-      ...chat('gpt-5.5', 'Primary', 200000),
-      providerModels: {
-        [primary.id]: stubProviderModel({ limits: { max_context_window_tokens: 200000 } }),
-        [secondary.id]: stubProviderModel({
+    const model = chat('gpt-5.5', 'Primary', 200000);
+    const out = assembleCodexCatalog(bundled, [entry(model, undefined, [
+      { upstream: primary, model: stubProviderModel({ limits: { max_context_window_tokens: 200000 } }) },
+      {
+        upstream: secondary,
+        model: stubProviderModel({
           limits: { max_context_window_tokens: 872000 },
           providerData: { contextWindow: 272000, useResponsesLite: false },
         }),
       },
-    };
-    const out = assembleCodexCatalog(bundled, [{ ...entry(model), upstreams: [primary, secondary] }]);
+    ])]);
     expect(out.models[0]).toMatchObject({ context_window: 200000, max_context_window: 200000 });
   });
 
@@ -82,20 +84,16 @@ describe('assembleCodexCatalog', () => {
     const native = meta('native', 'custom');
     const subscription = meta('subscription', 'chatgpt');
     const pricing = { entries: ['priority', 'ultrafast'].map(serviceTier => ({ selector: { serviceTier }, rates: { input_tokens: '1' } })) };
-    const model = {
-      ...chat('shared'), pricing,
-      providerModels: {
-        [native.id]: stubProviderModel({ pricing, endpoints: { openaiResponses: {} } }),
-        [subscription.id]: stubProviderModel({ providerData: { contextWindow: 100000, codex } }),
-      },
-    };
-    for (const upstreams of [[native, subscription], [subscription, native]]) {
-      const [row] = assembleCodexCatalog(bundled, [{ ...entry(model), upstreams }]).models;
+    const model: InternalModel = { ...chat('shared'), pricing };
+    const nativeContrib = { upstream: native, model: stubProviderModel({ pricing, endpoints: { openaiResponses: {} } }) };
+    const subContrib = { upstream: subscription, model: stubProviderModel({ providerData: { contextWindow: 100000, codex } }) };
+    for (const contributions of [[nativeContrib, subContrib], [subContrib, nativeContrib]]) {
+      const [row] = assembleCodexCatalog(bundled, [entry(model, undefined, contributions)]).models;
       expect(row.service_tiers?.map(tier => tier.id)).toEqual(expected);
       expect(row.additional_speed_tiers).toEqual(expected.some(id => id === 'priority') ? ['fast'] : []);
     }
-    model.providerModels[native.id] = stubProviderModel({ endpoints: { openaiResponses: {} } });
-    expect(assembleCodexCatalog(bundled, [{ ...entry(model), upstreams: [subscription, native] }]).models[0].service_tiers).toEqual([]);
+    const unpricedNative = { upstream: native, model: stubProviderModel({ endpoints: { openaiResponses: {} } }) };
+    expect(assembleCodexCatalog(bundled, [entry(model, undefined, [subContrib, unpricedNative])]).models[0].service_tiers).toEqual([]);
   });
 
   test('leaf-first segment match: trailing leaf beats colliding earlier segments', () => {

@@ -10,10 +10,10 @@ import { iterateCandidates } from '../shared/iterate-candidates.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
-import { forwardUpstreamResponse, providerModelsUnavailableResponse } from '../shared/upstream-response.ts';
+import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
 import { parseDecimalString, parseJSONWithRawNumbers, type DecisionProtocol } from '@floway-dev/protocols/common';
 import { parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, type ParsedDecisionRequest } from '@floway-dev/protocols/decision';
-import { providerModelOf, toInternalDebugError } from '@floway-dev/provider';
+import { toInternalDebugError } from '@floway-dev/provider';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 const apiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
@@ -93,7 +93,7 @@ export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context)
     }
 
     const routable = candidates.flatMap(candidate => {
-      const providerModel = providerModelOf(candidate);
+      const providerModel = candidate.model;
       return candidate.model.endpoints.decision === undefined || providerModel.decisionTarget === undefined
         ? []
         : [{ candidate, target: providerModel.decisionTarget }];
@@ -154,11 +154,6 @@ export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context)
       settleDecision(ctx, terminal.performance, terminal.identity, measuredUsage, true);
     } else if (terminal === undefined) {
       recordFailedRequest(ctx, ctx.attempt.telemetry);
-    }
-    const forwarded = providerModelsUnavailableResponse(error);
-    if (forwarded) {
-      ctx.dump?.error('upstream');
-      return finalizeGatewayResponse(ctx, forwarded);
     }
     ctx.dump?.failed(error);
     return finalizeGatewayResponse(ctx, c.json({ error: toInternalDebugError(error) }, 502));

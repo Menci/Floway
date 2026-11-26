@@ -1,6 +1,5 @@
 import { isEqual, uniqWith } from 'es-toolkit';
 
-import { internalModelFromProviderModel } from './catalog.ts';
 import { createProvider } from './registry.ts';
 import { checkMany } from '../../access-control/check.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
@@ -49,7 +48,7 @@ const buildTargetCandidates = (
     const provider = providerFor(match.upstream);
     const candidate: ModelCandidate = {
       provider,
-      model: internalModelFromProviderModel(match.model, provider.upstreamId),
+      model: match.model,
       fetcher: fetcherFor(provider.upstreamId),
     };
     let group = groupsByUpstream.get(provider.upstreamId);

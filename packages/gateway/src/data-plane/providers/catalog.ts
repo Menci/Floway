@@ -9,6 +9,11 @@ export interface CatalogUpstreamMeta {
   readonly hue: number;
 }
 
+export interface ModelContribution {
+  readonly upstream: CatalogUpstreamMeta;
+  readonly model: ProviderModel;
+}
+
 const mergedOpaqueBlobCompatibilityScope = (
   models: readonly ProviderModel[],
 ): OpaqueBlobCompatibilityScope => {
@@ -36,32 +41,34 @@ const mergedChatMetadata = (
   };
 };
 
-// Lift a provider-emitted `ProviderModel` into an `InternalModel`, seeding
-// `providerModels` with the sole entry keyed on the emitting upstream id.
-// The provider model is stored verbatim under that entry so dispatch hands
-// the same reference back to the provider's `callXxx`.
-export const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
-  const { providerData, upstreamModelId: _upstreamModelId, enabledFlags, flagOverrides, rerankTarget: _rerankTarget, decisionTarget: _decisionTarget, endpoints, ...metadata } = providerModel;
-  const providerModels = { [upstreamId]: providerModel };
+const internalModelFromSingle = (providerModel: ProviderModel, publicId: string): InternalModel => {
+  const {
+    providerData: _providerData,
+    upstreamModelId: _upstreamModelId,
+    enabledFlags: _enabledFlags,
+    flagOverrides: _flagOverrides,
+    rerankTarget: _rerankTarget,
+    decisionTarget: _decisionTarget,
+    endpoints,
+    ...metadata
+  } = providerModel;
   const chat = mergedChatMetadata(providerModel.chat, [providerModel]);
   return {
     ...metadata,
+    id: publicId,
     ...(chat === undefined ? {} : { chat }),
     endpoints: { ...endpoints },
-    providerModels,
   };
 };
 
 export interface CatalogAccumulator {
   readonly byId: Map<string, InternalModel>;
-  readonly upstreamsByPublicId: Map<string, CatalogUpstreamMeta[]>;
-  readonly contributionsByPublicId: Map<string, Map<string, ProviderModel[]>>;
+  readonly contributionsById: Map<string, ModelContribution[]>;
 }
 
 export const createCatalogAccumulator = (): CatalogAccumulator => ({
   byId: new Map(),
-  upstreamsByPublicId: new Map(),
-  contributionsByPublicId: new Map(),
+  contributionsById: new Map(),
 });
 
 // When multiple upstreams (or multiple kinds on one upstream) expose the same
@@ -69,11 +76,7 @@ export const createCatalogAccumulator = (): CatalogAccumulator => ({
 // their endpoint capability map. `chat.image_detail_original` is the safety
 // exception: it is true only when every chat contribution explicitly accepts it.
 // `kind` is recomputed from the union so a chat-only id that later acquires an
-// embedding-capable contribution gets correctly reclassified. When one upstream
-// contributes several kinds under the same public id, `providerModels[id]` keeps
-// the chat contribution ahead of non-chat ones (so Codex synthesis sees the chat
-// row) while `contributionsByPublicId` retains every contribution for rebuilding
-// authorized subsets.
+// embedding-capable contribution gets correctly reclassified.
 export const mergeIntoCatalog = (
   acc: CatalogAccumulator,
   upstream: CatalogUpstreamMeta,
@@ -82,33 +85,15 @@ export const mergeIntoCatalog = (
 ): void => {
   const existing = acc.byId.get(publicId);
   if (!existing) {
-    acc.byId.set(publicId, internalModelFromProviderModel(surfacedModel, upstream.id));
-    acc.upstreamsByPublicId.set(publicId, [upstream]);
-    acc.contributionsByPublicId.set(publicId, new Map([[upstream.id, [surfacedModel]]]));
+    acc.byId.set(publicId, internalModelFromSingle(surfacedModel, publicId));
+    acc.contributionsById.set(publicId, [{ upstream, model: surfacedModel }]);
     return;
   }
-  if (existing.providerModels === undefined) {
-    throw new Error(`mergeIntoCatalog: catalog row for '${publicId}' unexpectedly carries aliasedFrom instead of providerModels`);
-  }
-  const byUpstream = acc.contributionsByPublicId.get(publicId);
-  if (byUpstream === undefined) throw new Error(`invariant broken: contributionsByPublicId missing ${publicId}`);
-  const upstreamList = byUpstream.get(upstream.id);
-  if (upstreamList === undefined) {
-    byUpstream.set(upstream.id, [surfacedModel]);
-  } else {
-    upstreamList.push(surfacedModel);
-  }
+  const contributions = acc.contributionsById.get(publicId)!;
+  contributions.push({ upstream, model: surfacedModel });
 
-  const allModels = [...byUpstream.values()].flat();
+  const allModels = contributions.map(entry => entry.model);
   const endpoints = unionEndpoints([existing.endpoints, surfacedModel.endpoints]);
-  const currentSlot = existing.providerModels[upstream.id];
-  const preferredSlot = currentSlot?.kind === 'chat' && surfacedModel.kind !== 'chat'
-    ? currentSlot
-    : surfacedModel;
-  const providerModels = {
-    ...existing.providerModels,
-    [upstream.id]: preferredSlot,
-  };
   const chat = mergedChatMetadata(existing.chat ?? surfacedModel.chat, allModels);
   acc.byId.set(publicId, {
     ...existing,
@@ -116,14 +101,20 @@ export const mergeIntoCatalog = (
     opaqueBlobCompatibilityScope: mergedOpaqueBlobCompatibilityScope(allModels),
     endpoints,
     kind: kindForEndpoints(endpoints),
-    providerModels,
   });
+};
 
-  const upstreams = acc.upstreamsByPublicId.get(publicId);
-  if (upstreams === undefined) throw new Error(`invariant broken: upstreamsByPublicId missing ${publicId}`);
-  if (!upstreams.some(item => item.id === upstream.id)) {
-    upstreams.push(upstream);
+export const distinctUpstreamsFromContributions = (
+  contributions: readonly ModelContribution[],
+): CatalogUpstreamMeta[] => {
+  const seen = new Set<string>();
+  const out: CatalogUpstreamMeta[] = [];
+  for (const { upstream } of contributions) {
+    if (seen.has(upstream.id)) continue;
+    seen.add(upstream.id);
+    out.push(upstream);
   }
+  return out;
 };
 
 // Public-facing model-id ordering, applied to the real-model slice of the

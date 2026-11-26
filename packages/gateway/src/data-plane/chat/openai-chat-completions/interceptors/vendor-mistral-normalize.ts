@@ -35,7 +35,6 @@
 
 import type { OpenAIChatCompletionsInterceptor } from './types.ts';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
-import { providerModelOf } from '@floway-dev/provider';
 
 // ChatCompletionRequest:
 // https://github.com/mistralai/client-python/blob/d3da3bd3c63d0502449e1e765bc2d3c16d0d2f1d/src/mistralai/client/models/chatcompletionrequest.py
@@ -118,7 +117,7 @@ const narrowTool = (tool: unknown): unknown =>
   isDict(tool) ? narrowChild(pick(tool, TOOL_FIELDS), 'function', FUNCTION_FIELDS) : tool;
 
 export const withVendorMistralOpenAIChatCompletionsNormalize: OpenAIChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-mistral')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('vendor-mistral')) return await run();
 
   const source = ctx.payload as unknown as Dict;
   const narrowed = pick(source, REQUEST_FIELDS);

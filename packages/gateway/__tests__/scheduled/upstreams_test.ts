@@ -98,7 +98,7 @@ test('configured minutes control polling using existing usage observations', asy
   expect(mocks.fetch).toHaveBeenCalledTimes(1);
   const updateInterval = async (minutes: number) => {
     const stored = (await repo.upstreams.getById(record.id))!;
-    expect(await repo.upstreams.replace({ previous: stored, upstream: { ...stored, usageRefreshIntervalMinutes: minutes }, bumpConfigVersion: false })).not.toBeNull();
+    expect(await repo.upstreams.replace({ previous: stored, upstream: { ...stored, usageRefreshIntervalMinutes: minutes } })).not.toBeNull();
   };
   await updateInterval(1);
   await runUpstreamScheduledTasks('TEST');

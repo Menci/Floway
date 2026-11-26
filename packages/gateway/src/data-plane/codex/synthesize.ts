@@ -4,7 +4,7 @@
 
 import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel, CodexServiceTier } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
-import type { InternalModel } from '@floway-dev/provider';
+import type { InternalModel, ProviderModel } from '@floway-dev/provider';
 import type { ChatGPTCodexModelMetadata } from '@floway-dev/provider-chatgpt';
 
 // Keep the established 128K compaction policy for synthesized models whose
@@ -76,13 +76,14 @@ export const synthesizeCatalogEntry = (
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
   catalogServiceTiers: readonly CodexServiceTier[] = [],
-  { metadata: codexMetadata, serviceTiers }: { metadata?: ChatGPTCodexModelMetadata | undefined; serviceTiers?: CodexServiceTier[] | undefined } = {},
+  { metadata: codexMetadata, serviceTiers, chatProviderModels }: {
+    metadata?: ChatGPTCodexModelMetadata | undefined;
+    serviceTiers?: CodexServiceTier[] | undefined;
+    chatProviderModels?: readonly ProviderModel[] | undefined;
+  } = {},
 ): CatalogModel => {
   const { max_context_window: _sourceMaxContextWindow, ...source }: CatalogModel = { ...(base ?? BASELINE), ...codexMetadata };
 
-  const chatProviderModels = model.providerModels === undefined
-    ? undefined
-    : Object.values(model.providerModels).filter(providerModel => providerModel.kind === 'chat');
   const supportsAudio = capabilities.audioInput && model.endpoints.openaiResponses !== undefined && model.chat?.modalities?.input.includes('audio')
     && (chatProviderModels?.every(providerModel => providerModel.endpoints.openaiResponses !== undefined && providerModel.chat?.modalities?.input.includes('audio')) ?? true);
   const inputModalities = (model.chat?.modalities?.input ?? source.input_modalities ?? BASELINE.input_modalities)

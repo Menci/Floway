@@ -72,7 +72,6 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           display_name?: string;
           kind?: ModelKind;
           limits?: Record<string, number>;
-          providerModels?: unknown;
         }>;
       };
       assertEquals(body.object, 'list');
@@ -90,9 +89,6 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
       assertEquals(claude.display_name, 'Claude Sonnet 4');
       assertEquals(claude.kind, 'chat');
       assertEquals(claude.limits, {});
-      // The catalog row carries every upstream's ProviderModel; the public
-      // surface must not leak that per-upstream identity.
-      assertEquals(body.data.some(model => model.providerModels !== undefined), false);
 
       const anthropicResponse = await requestAppWithWarmModels('/models', {
         headers: { 'x-api-key': apiKey.key },

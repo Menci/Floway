@@ -14,7 +14,6 @@ import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../share
 import { foldsExclusiveCacheTokens } from '../../../shared/telemetry/usage.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf } from '@floway-dev/provider';
 
 const rewriteInboundUsage = (
   event: OpenAIResponsesStreamEventEx,
@@ -53,7 +52,7 @@ export const withExclusiveCachedTokensNormalized: OpenAIResponsesInterceptor = a
   // counterpart.
   if (ctx.targetApi !== 'openaiResponses') return await run();
 
-  const model = providerModelOf(ctx.candidate);
+  const model = ctx.candidate.model;
   const declaredExclusive = model.enabledFlags.has('usage-exclusive-cached-tokens');
   const identity = `${ctx.candidate.provider.upstreamId}/${model.id}`;
 

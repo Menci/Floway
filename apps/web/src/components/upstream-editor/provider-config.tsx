@@ -28,7 +28,7 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
 import { ChoiceGroup } from '../ui/choice-group';
-import { Input, Textarea } from '../ui/fluent-form-controls';
+import { Input, Switch, Textarea } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -50,7 +50,6 @@ const {
   MenuPopover,
   MenuTrigger,
   Spinner,
-  Switch,
   Tab,
   TabList,
   Text,
@@ -71,18 +70,14 @@ const DEVICE_FLOW_SLOW_DOWN_SECONDS = 5;
 
 export function ProviderConfigSection({
   readOnly = false,
-  modelsFetchReadOnly = readOnly,
   record,
   onPatch,
-  onRefreshModels,
 }: {
   readOnly?: boolean | undefined;
-  modelsFetchReadOnly?: boolean | undefined;
   record: UpstreamRecord;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
-  onRefreshModels: () => void;
 }) {
-  if (record.kind === 'custom') return <CustomConfig modelsFetchReadOnly={modelsFetchReadOnly} onRefreshModels={onRefreshModels} readOnly={readOnly} />;
+  if (record.kind === 'custom') return <CustomConfig readOnly={readOnly} />;
   if (record.kind === 'azure') return <AzureConfig readOnly={readOnly} />;
   if (record.kind === 'ollama') return <OllamaConfig readOnly={readOnly} record={record} />;
   if (record.kind === 'kimi-code') return <KimiCodeConfig readOnly={readOnly} record={record} />;
@@ -95,7 +90,7 @@ export function ApiPathsSection({ readOnly, record }: { readOnly: boolean; recor
   return <CustomApiPaths readOnly={readOnly} />;
 }
 
-function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { modelsFetchReadOnly: boolean; onRefreshModels: () => void; readOnly: boolean }) {
+function CustomConfig({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
   const { control } = useFormContext<ValuesForKind<'custom'>>();
   const fetchesCatalog = useWatch({ control, name: 'config.modelsFetch.enabled' });
@@ -132,11 +127,8 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
         <Switch
           checked={field.value}
           label={t('upstreams.editor.fields.fetchModels')}
-          readOnly={modelsFetchReadOnly}
-          onChange={(_, data) => {
-            field.onChange(data.checked);
-            if (data.checked) onRefreshModels();
-          }}
+          readOnly={readOnly}
+          onChange={(_, data) => field.onChange(data.checked)}
         />
       )} />
       {fetchesCatalog && (
@@ -151,14 +143,14 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
                 positioning={{ position: 'below', align: 'end' }}
                 checkedValues={{ authStyle: [field.value] }}
                 onCheckedValueChange={(_, data) => {
-                  if (!modelsFetchReadOnly && data.checkedItems[0] !== undefined) field.onChange(data.checkedItems[0]);
+                  if (!readOnly && data.checkedItems[0] !== undefined) field.onChange(data.checkedItems[0]);
                 }}
               >
                 <MenuTrigger disableButtonEnhancement>
                   <button
                     aria-label={t('upstreams.editor.fields.fetchModelsAuthStyle')}
                     className="winui-focus-rect floway-control-label inline-flex flex-none items-center gap-1.5 border-0 bg-transparent p-0 text-fui-fg1"
-                    disabled={modelsFetchReadOnly}
+                    disabled={readOnly}
                     type="button"
                   >
                     <span>{modelsFetchAuthStyleLabel(field.value)}</span>
@@ -176,7 +168,7 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
             )} />
           </span>,
         }}>
-          <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder={modelsFetchAuthStyle === 'x-goog-api-key' ? '/v1beta/models' : '/v1/models'} readOnly={modelsFetchReadOnly} ref={field.ref} value={field.value ?? ''} />} />
+          <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder={modelsFetchAuthStyle === 'x-goog-api-key' ? '/v1beta/models' : '/v1/models'} readOnly={readOnly} ref={field.ref} value={field.value ?? ''} />} />
         </Field>
       )}
       <CustomIngressHeaderRules readOnly={readOnly} />

@@ -29,16 +29,10 @@ const COMMON_COLO_LOCATIONS = [
   'SYD', 'AKL', 'GRU', 'JNB', 'DXB', 'BOM', 'DEL',
 ] as const;
 
-export const configReadOnly = (editLevel: UpstreamEditLevel) => ({
-  connection: editLevel !== 'full',
-  modelsFetch: editLevel === 'off',
-});
-
 export function UpstreamConfigSidebar({
   catalogAvailable,
   discovered,
   onPatch,
-  onRefreshModels,
   editLevel,
   proxies,
   record,
@@ -47,7 +41,6 @@ export function UpstreamConfigSidebar({
   catalogAvailable: boolean;
   discovered: UpstreamModelConfig[];
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
-  onRefreshModels: () => void;
   editLevel: UpstreamEditLevel;
   proxies: EditorAuxData['proxies'];
   record: UpstreamRecord;
@@ -58,8 +51,7 @@ export function UpstreamConfigSidebar({
   // Only a Full editor may change connection, metadata, proxies and flags.
   // Models-level and audit-only editors both read them; the difference between
   // the two lives in the model workspace, not in this sidebar.
-  const readOnly = configReadOnly(editLevel);
-  const immutable = readOnly.connection;
+  const immutable = editLevel !== 'full';
   const [config, state] = useWatch({ control, name: ['config', 'state'] });
   const usageRefreshDisabled = record.kind === 'claude-code'
     ? !(state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state']).accounts.some(account => account.tokenKind === 'oauth')
@@ -108,11 +100,9 @@ export function UpstreamConfigSidebar({
             title={t('upstreams.editor.sections.connection')}
           >
             <ProviderConfigSection
-              modelsFetchReadOnly={readOnly.modelsFetch}
               readOnly={immutable}
               record={record}
               onPatch={onPatch}
-              onRefreshModels={onRefreshModels}
             />
           </EditorSection>
           {(record.kind === 'copilot' || record.kind === 'chatgpt' || record.kind === 'claude-code' || record.kind === 'ollama' || record.kind === 'kimi-code') && <EditorSection

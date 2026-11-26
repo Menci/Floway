@@ -84,11 +84,10 @@ export interface BackfillPlan {
 
 interface PlanGuards {
   upstreamConfigJson: string;
-  upstreamRowVersion: number;
+  upstreamVersion: number;
   manualModelConfigJson: string | null;
   modelsCacheRevision: number | null;
   modelsCacheFetchedAt: number | null;
-  modelsCacheToken: string | null;
   cachedModelJson: string | null;
   guardModelsCache: boolean;
   pricedSiblingExists: boolean;
@@ -104,17 +103,15 @@ interface UpstreamRow {
   provider: string;
   enabled: number;
   config_json: string;
-  row_version: number;
+  version: number;
   models_cache_revision: number | null;
   models_cache_fetched_at: number | null;
-  models_cache_token: string | null;
 }
 
 interface LoadedUpstream {
   upstream: StoredUpstream;
-  rowVersion: number;
+  version: number;
   manualModelConfigJson: string | null;
-  modelsCacheToken: string | null;
 }
 
 interface PriceStateRow {
@@ -197,8 +194,8 @@ export const validateUsageSchema = async (database: ToolDatabase): Promise<void>
 const loadUpstream = async (database: ToolDatabase, intent: BackfillIntent): Promise<LoadedUpstream> => {
   const [upstreamResult, manualResult, cachedResult] = await Promise.all([
     database.query<UpstreamRow>({
-      sql: `SELECT id, provider, enabled, config_json, row_version,
-                   models_cache_revision, models_cache_fetched_at, models_cache_token
+      sql: `SELECT id, provider, enabled, config_json, version,
+                   models_cache_revision, models_cache_fetched_at
             FROM upstreams WHERE id = ?`,
       params: [intent.upstream],
     }),
@@ -218,10 +215,9 @@ const loadUpstream = async (database: ToolDatabase, intent: BackfillIntent): Pro
   if (
     typeof row.provider !== 'string'
     || typeof row.config_json !== 'string'
-    || typeof row.row_version !== 'number'
+    || typeof row.version !== 'number'
     || (row.models_cache_revision !== null && typeof row.models_cache_revision !== 'number')
     || (row.models_cache_fetched_at !== null && typeof row.models_cache_fetched_at !== 'number')
-    || (row.models_cache_token !== null && typeof row.models_cache_token !== 'string')
   ) {
     throw new ToolError('upstream-row', `Stored upstream ${intent.upstream} is malformed`, 1);
   }
@@ -248,9 +244,8 @@ const loadUpstream = async (database: ToolDatabase, intent: BackfillIntent): Pro
       modelsCacheFetchedAt: row.models_cache_fetched_at,
       cachedModelJson: cachedResult.rows[0]?.model_json ?? null,
     },
-    rowVersion: row.row_version,
+    version: row.version,
     manualModelConfigJson: matchingManualRow?.config_json ?? null,
-    modelsCacheToken: row.models_cache_token,
   };
 };
 
@@ -418,11 +413,10 @@ export const buildPlan = async (
     plan,
     guards: {
       upstreamConfigJson: upstream.configJson,
-      upstreamRowVersion: loaded.rowVersion,
+      upstreamVersion: loaded.version,
       manualModelConfigJson: loaded.manualModelConfigJson,
       modelsCacheRevision: upstream.modelsCacheRevision,
       modelsCacheFetchedAt: upstream.modelsCacheFetchedAt,
-      modelsCacheToken: loaded.modelsCacheToken,
       cachedModelJson: upstream.cachedModelJson,
       guardModelsCache: resolution.status !== 'unavailable' && resolution.guardsModelsCache,
       pricedSiblingExists,
@@ -500,11 +494,10 @@ const applyStatement = (plan: BackfillPlan, guards: PlanGuards): SqlStatement =>
         AND NOT EXISTS (SELECT 1 FROM drift)
         AND EXISTS (
           SELECT 1 FROM upstreams
-          WHERE id = ? AND config_json = ? AND row_version = ?
+          WHERE id = ? AND config_json = ? AND version = ?
             AND (? = 0 OR (
               models_cache_revision IS ?
               AND models_cache_fetched_at IS ?
-              AND models_cache_token IS ?
             ))
         )
         AND (
@@ -527,11 +520,10 @@ const applyStatement = (plan: BackfillPlan, guards: PlanGuards): SqlStatement =>
       ...scope,
       plan.intent.upstream,
       guards.upstreamConfigJson,
-      guards.upstreamRowVersion,
+      guards.upstreamVersion,
       guards.guardModelsCache ? 1 : 0,
       guards.guardModelsCache ? guards.modelsCacheRevision : null,
       guards.guardModelsCache ? guards.modelsCacheFetchedAt : null,
-      guards.guardModelsCache ? guards.modelsCacheToken : null,
       plan.intent.upstream,
       plan.intent.modelKey,
       guards.manualModelConfigJson,

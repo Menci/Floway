@@ -9,7 +9,7 @@ import { scheduleUpstreamModelsRefresh, supportsManualModels, upstreamRequiresNe
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { resolveEffectiveFlags, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import { projectAzureModels } from '@floway-dev/provider-azure';
-import { assertCustomUpstreamRecord, projectCustomManualModels, projectCustomModelsFromDiscovered } from '@floway-dev/provider-custom';
+import { assertCustomUpstreamRecord, projectCustomManualModels } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord, projectOllamaManualModels } from '@floway-dev/provider-ollama';
 
 export interface SaveRefreshContext {
@@ -24,21 +24,22 @@ export interface UpstreamChange {
   readonly refreshContext?: SaveRefreshContext;
 }
 
-const sameCustomRemoteConnection = (previous: UpstreamRecord, next: UpstreamRecord): boolean => {
-  if (previous.kind !== 'custom' || next.kind !== 'custom') return false;
-  const prevCfg = assertCustomUpstreamRecord(previous).config;
-  const nextCfg = assertCustomUpstreamRecord(next).config;
-  return prevCfg.baseUrl === nextCfg.baseUrl
-    && prevCfg.apiKey === nextCfg.apiKey
-    && serializeStoredConfig(prevCfg.modelsFetch) === serializeStoredConfig(nextCfg.modelsFetch);
-};
-
-const sameOllamaRemoteConnection = (previous: UpstreamRecord, next: UpstreamRecord): boolean => {
-  if (previous.kind !== 'ollama' || next.kind !== 'ollama') return false;
-  const prevCfg = assertOllamaUpstreamRecord(previous).config;
-  const nextCfg = assertOllamaUpstreamRecord(next).config;
-  return prevCfg.baseUrl === nextCfg.baseUrl
-    && prevCfg.apiKey === nextCfg.apiKey;
+const sameRemoteConnection = (previous: UpstreamRecord, next: UpstreamRecord): boolean => {
+  if (previous.kind !== next.kind) return false;
+  if (previous.kind === 'custom') {
+    const prevCfg = assertCustomUpstreamRecord(previous).config;
+    const nextCfg = assertCustomUpstreamRecord(next).config;
+    return prevCfg.baseUrl === nextCfg.baseUrl
+      && prevCfg.apiKey === nextCfg.apiKey
+      && serializeStoredConfig(prevCfg.endpoints) === serializeStoredConfig(nextCfg.endpoints)
+      && serializeStoredConfig(prevCfg.modelsFetch) === serializeStoredConfig(nextCfg.modelsFetch);
+  }
+  if (previous.kind === 'ollama') {
+    const prevCfg = assertOllamaUpstreamRecord(previous).config;
+    const nextCfg = assertOllamaUpstreamRecord(next).config;
+    return prevCfg.baseUrl === nextCfg.baseUrl && prevCfg.apiKey === nextCfg.apiKey;
+  }
+  return false;
 };
 
 const projectManualEntries = (
@@ -69,7 +70,6 @@ const planInsertModelsWrite = (
     return {
       modelsWrite: {
         models: projectManualEntries(next, effectiveManual),
-        ...(next.kind === 'custom' ? { discovered: null } : {}),
         cacheAction: { kind: 'set-fresh', revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() },
       },
       needsBackgroundRefresh: false,
@@ -92,7 +92,6 @@ const planReplaceModelsWrite = async (
   next: UpstreamRecord,
   nextManualModels: readonly UpstreamModelConfig[] | undefined,
 ): Promise<{
-  readonly bumpConfigVersion: boolean;
   readonly modelsWrite?: UpstreamModelsWritePayload;
   readonly needsBackgroundRefresh: boolean;
 }> => {
@@ -115,16 +114,13 @@ const planReplaceModelsWrite = async (
   const effectiveManual = nextManualModels ?? previousManualModels;
 
   const modelInputsChanged = kindChanged || configChanged || flagsChanged || manualModelsChanged;
-  const bumpConfigVersion = modelInputsChanged || transportChanged;
-
-  if (!bumpConfigVersion) {
-    return { bumpConfigVersion: false, needsBackgroundRefresh: false };
+  if (!modelInputsChanged && !transportChanged) {
+    return { needsBackgroundRefresh: false };
   }
 
   if (!modelInputsChanged && transportChanged) {
     const hadError = previous.modelsCache.lastError !== null;
     return {
-      bumpConfigVersion: true,
       modelsWrite: { cacheAction: { kind: hadError ? 'mark-stale' : 'preserve' } },
       needsBackgroundRefresh: hadError,
     };
@@ -134,58 +130,23 @@ const planReplaceModelsWrite = async (
   // materialize synchronously inside the save transaction — zero 404 window.
   if (!upstreamRequiresNetworkForModels(next)) {
     return {
-      bumpConfigVersion: true,
       modelsWrite: {
         models: projectManualEntries(next, effectiveManual),
-        ...(next.kind === 'custom' ? { discovered: null } : {}),
         cacheAction: { kind: 'set-fresh', revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() },
       },
       needsBackgroundRefresh: false,
     };
   }
 
-  if (next.kind === 'custom') {
-    if (!kindChanged && sameCustomRemoteConnection(previous, next)) {
-      const discovered = await repo.upstreamModels.getCustomDiscovered(next.id);
-      if (discovered !== null) {
-        const projected = projectCustomModelsFromDiscovered(next, effectiveManual, discovered);
-        return {
-          bumpConfigVersion: true,
-          modelsWrite: {
-            models: [
-              ...projected.manual.map(model => ({ source: 'manual' as const, model })),
-              ...projected.auto.map(model => ({ source: 'auto' as const, model })),
-            ],
-            cacheAction: { kind: 'preserve' },
-          },
-          needsBackgroundRefresh: false,
-        };
-      }
-      return {
-        bumpConfigVersion: true,
-        modelsWrite: {
-          models: projectManualEntries(next, effectiveManual),
-          cacheAction: { kind: 'clear-cache' },
-        },
-        needsBackgroundRefresh: true,
-      };
-    }
-    return {
-      bumpConfigVersion: true,
-      modelsWrite: {
-        models: projectManualEntries(next, effectiveManual),
-        discovered: null,
-        cacheAction: { kind: 'clear-cache' },
-      },
-      needsBackgroundRefresh: true,
-    };
-  }
-
-  if (next.kind === 'ollama') {
-    if (!kindChanged && sameOllamaRemoteConnection(previous, next)) {
+  // Hybrid upstreams (Custom with modelsFetch enabled, Ollama): when the remote
+  // connection stays unchanged, overlay manual edits onto the kept auto rows
+  // synchronously; removing a manual override marks stale and triggers a
+  // background refresh to restore any shadowed auto model.
+  if (next.kind === 'custom' || next.kind === 'ollama') {
+    if (sameRemoteConnection(previous, next)) {
       const existingAuto = await repo.upstreamModels.listByUpstream(next.id, { source: 'auto' });
       const overriddenIds = new Set(effectiveManual.map(model => model.upstreamModelId));
-      const upstreamFlags = resolveEffectiveFlags([flagDefaultsForKind('ollama'), next.flagOverrides]);
+      const upstreamFlags = resolveEffectiveFlags([flagDefaultsForKind(next.kind), next.flagOverrides]);
       const keptAuto: UpstreamModelEntry[] = existingAuto
         .filter(({ model }) => !overriddenIds.has(model.upstreamModelId))
         .map(({ model }) => ({
@@ -194,7 +155,6 @@ const planReplaceModelsWrite = async (
         }));
       const manualRemoved = previousManualModels.some(prev => !overriddenIds.has(prev.upstreamModelId));
       return {
-        bumpConfigVersion: true,
         modelsWrite: {
           models: [...projectManualEntries(next, effectiveManual), ...keptAuto],
           cacheAction: manualRemoved ? { kind: 'mark-stale' } : { kind: 'preserve' },
@@ -203,7 +163,6 @@ const planReplaceModelsWrite = async (
       };
     }
     return {
-      bumpConfigVersion: true,
       modelsWrite: {
         models: projectManualEntries(next, effectiveManual),
         cacheAction: { kind: 'clear-cache' },
@@ -217,13 +176,11 @@ const planReplaceModelsWrite = async (
   // credential/host/region edits clear stale rows and trigger immediate refresh.
   if (!kindChanged && !configChanged && flagsChanged) {
     return {
-      bumpConfigVersion: true,
       modelsWrite: { cacheAction: { kind: 'mark-stale' } },
       needsBackgroundRefresh: true,
     };
   }
   return {
-    bumpConfigVersion: true,
     modelsWrite: {
       models: [],
       cacheAction: { kind: 'clear-cache' },
@@ -253,7 +210,6 @@ export const saveUpstream = async ({ previous, next, manualModels, refreshContex
   const saved = await upstreams.replace({
     previous,
     upstream: next,
-    bumpConfigVersion: plan.bumpConfigVersion,
     replaceState,
     ...(manualModels !== undefined ? { manualModels } : {}),
     ...(plan.modelsWrite !== undefined ? { modelsWrite: plan.modelsWrite } : {}),

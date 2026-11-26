@@ -9,7 +9,7 @@ import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { serializeAnthropicMessagesStream, shouldSerializeStreamItems } from '../shared/stream-compatibility/index.ts';
 import { parseAnthropicBetaHeader, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { providerModelOf, type ExecuteResult, type PlainResult } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult } from '@floway-dev/provider';
 
 export interface AnthropicMessagesServeGenerateArgs {
   readonly payload: AnthropicMessagesPayload;
@@ -56,7 +56,7 @@ export const anthropicMessagesServe = {
         const result = await anthropicMessagesAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers, anthropicBeta });
         if (result.type !== 'events') return result;
         ctx.affinity.select(candidate);
-        const enabled = shouldSerializeStreamItems(providerModelOf(candidate).enabledFlags, 'anthropicMessages', headers.get('user-agent'));
+        const enabled = shouldSerializeStreamItems(candidate.model.enabledFlags, 'anthropicMessages', headers.get('user-agent'));
         return { ...result, events: serializeAnthropicMessagesStream(result.events, enabled) };
       },
     );

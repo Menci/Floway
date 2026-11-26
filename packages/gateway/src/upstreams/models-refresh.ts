@@ -1,5 +1,5 @@
 import { createProvider } from '../data-plane/providers/registry.ts';
-import { createDetachedFetcher, createPerRequestFetcher, createValidatedPerRequestFetcher, InvalidProxyConfigurationError } from '../dial/per-request.ts';
+import { createPerRequestFetcher, createValidatedPerRequestFetcher, InvalidProxyConfigurationError } from '../dial/per-request.ts';
 import { getRepo } from '../repo/index.ts';
 import { isModelsCacheDue, MODEL_CATALOG_REVISION } from '../repo/models-cache-contract.ts';
 import { modelsRefreshRetryAt } from '../repo/models-refresh-backoff.ts';
@@ -7,10 +7,11 @@ import type { StoredUpstreamRecord, UpstreamModelEntry } from '../repo/types.ts'
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { ProviderModelsUnavailableError, type Fetcher, type ProviderModel, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import { projectAzureModels } from '@floway-dev/provider-azure';
-import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomDiscoveredModels, projectCustomModels } from '@floway-dev/provider-custom';
+import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomModels } from '@floway-dev/provider-custom';
 
 export type ModelsRefreshResult =
-  | { readonly kind: 'discovered'; readonly models: ProviderModel[]; readonly discovered?: UpstreamModelConfig[]; readonly publication: 'published' | 'lost-race' | 'draft' }
+  | { readonly kind: 'discovered'; readonly entries: UpstreamModelEntry[]; readonly publication: 'published'; readonly version: number }
+  | { readonly kind: 'discovered'; readonly entries: UpstreamModelEntry[]; readonly publication: 'lost-race' }
   | { readonly kind: 'backoff' | 'not-due' | 'superseded' };
 
 export const supportsManualModels = (kind: UpstreamRecord['kind']): kind is 'custom' | 'azure' | 'ollama' =>
@@ -147,48 +148,30 @@ const discoverModels = async (
   manualModels: readonly UpstreamModelConfig[],
   fetcher: Fetcher,
   fetchCustomLive: boolean,
-): Promise<{
-  models: ProviderModel[];
-  discovered?: UpstreamModelConfig[];
-}> => await withRedactedCredentialEcho(fetcher, async trackedFetcher => {
+): Promise<ProviderModel[]> => await withRedactedCredentialEcho(fetcher, async trackedFetcher => {
   if (record.kind === 'azure') {
-    return { models: projectAzureModels(record, manualModels) };
+    return projectAzureModels(record, manualModels);
   }
   if (record.kind === 'custom') {
     const custom = assertCustomUpstreamRecord(record);
     if (!fetchCustomLive && !custom.config.modelsFetch.enabled) {
-      return { models: projectCustomModels(record, manualModels), discovered: [] };
+      return projectCustomModels(record, manualModels);
     }
     const response = await fetchCustomModels(custom.config, trackedFetcher);
-    return {
-      models: projectCustomModels(record, manualModels, response),
-      discovered: projectCustomDiscoveredModels(record, response),
-    };
+    return projectCustomModels(record, manualModels, response);
   }
-  return { models: [...await createProvider(record).instance.getProvidedModels(trackedFetcher, manualModels)] };
+  return [...await createProvider(record).instance.getProvidedModels(trackedFetcher, manualModels)];
 });
-
-export const discoverDraftModels = async (
-  record: UpstreamRecord,
-  manualModels: readonly UpstreamModelConfig[],
-  runtimeLocation: string | null,
-): Promise<ModelsRefreshResult> => {
-  if (record.kind !== 'custom' && record.kind !== 'ollama' && record.kind !== 'kimi-code') {
-    throw new TypeError('Draft model discovery requires custom, ollama or kimi-code');
-  }
-  const fetcher = await createDetachedFetcher(record.proxyFallbackList, runtimeLocation);
-  return { kind: 'discovered', ...await discoverModels(record, manualModels, fetcher, true), publication: 'draft' };
-};
 
 const runSavedRefresh = async (input: {
   readonly upstreamId: string;
-  readonly configVersion: number;
+  readonly version: number;
   readonly mode: 'automatic' | 'explicit';
   readonly runtimeLocation: string | null;
 }): Promise<ModelsRefreshResult> => {
   const repo = getRepo();
   const record = await repo.upstreams.getById(input.upstreamId);
-  if (record === null || record.configVersion !== input.configVersion) return { kind: 'superseded' };
+  if (record === null || record.version !== input.version) return { kind: 'superseded' };
 
   const requiresNetwork = upstreamRequiresNetworkForModels(record);
   const now = Date.now();
@@ -203,23 +186,23 @@ const runSavedRefresh = async (input: {
     ? await repo.upstreamModels.listManualModels(record.id)
     : [];
 
-  let result: { models: ProviderModel[]; discovered?: UpstreamModelConfig[] };
+  let models: ProviderModel[];
   try {
     if (!requiresNetwork && input.mode === 'automatic') {
-      result = record.kind === 'azure'
-        ? { models: projectAzureModels(record, manualModels) }
-        : { models: projectCustomModels(record, manualModels), discovered: [] };
+      models = record.kind === 'azure'
+        ? projectAzureModels(record, manualModels)
+        : projectCustomModels(record, manualModels);
     } else {
       const createFetcher = input.mode === 'explicit' ? createValidatedPerRequestFetcher : createPerRequestFetcher;
       const fetcher = (await createFetcher(input.runtimeLocation, [record]))(record.id);
-      result = await discoverModels(record, manualModels, fetcher, input.mode === 'explicit');
+      models = await discoverModels(record, manualModels, fetcher, input.mode === 'explicit');
     }
   } catch (error) {
     if (input.mode === 'explicit' && isModelsRefreshConfigurationError(error)) throw error;
     try {
       await repo.upstreams.recordModelsRefreshFailure({
         id: record.id,
-        configVersion: input.configVersion,
+        version: input.version,
         error: { message: modelsRefreshErrorMessage(error), at: Date.now() },
       });
     } catch (recordError) {
@@ -228,39 +211,39 @@ const runSavedRefresh = async (input: {
     throw error;
   }
 
-  const published = await repo.upstreams.publishModelsRefresh({
+  const entries = tagModelEntries(record.kind, manualModels, models);
+  const publishedVersion = await repo.upstreams.publishModelsRefresh({
     id: record.id,
-    configVersion: input.configVersion,
+    version: input.version,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: Date.now(),
-    models: tagModelEntries(record.kind, manualModels, result.models),
-    ...(record.kind === 'custom'
-      ? { discovered: result.discovered!.length > 0 || assertCustomUpstreamRecord(record).config.modelsFetch.enabled ? result.discovered! : null }
-      : {}),
+    models: entries,
   });
-  return { kind: 'discovered', ...result, publication: published ? 'published' : 'lost-race' };
+  return publishedVersion === null
+    ? { kind: 'discovered', entries, publication: 'lost-race' }
+    : { kind: 'discovered', entries, publication: 'published', version: publishedVersion };
 };
 
 export const refreshModels = (
-  target: { readonly upstreamId: string; readonly configVersion: number },
+  target: { readonly upstreamId: string; readonly version: number },
   runtimeLocation: string | null,
 ): Promise<ModelsRefreshResult> =>
   runSavedRefresh({ ...target, mode: 'automatic', runtimeLocation });
 
 export const refreshModelsExplicit = (
-  target: { readonly upstreamId: string; readonly configVersion: number },
+  target: { readonly upstreamId: string; readonly version: number },
   runtimeLocation: string | null,
 ): Promise<ModelsRefreshResult> =>
   runSavedRefresh({ ...target, mode: 'explicit', runtimeLocation });
 
 export const scheduleUpstreamModelsRefresh = (
-  record: Pick<StoredUpstreamRecord, 'id' | 'kind' | 'enabled' | 'configVersion' | 'config'>,
+  record: Pick<StoredUpstreamRecord, 'id' | 'kind' | 'enabled' | 'version' | 'config'>,
   runtimeLocation: string | null,
   scheduler: BackgroundScheduler,
 ): void => {
   if (!record.enabled || !upstreamRequiresNetworkForModels(record)) return;
   scheduler(
-    refreshModels({ upstreamId: record.id, configVersion: record.configVersion }, runtimeLocation)
+    refreshModels({ upstreamId: record.id, version: record.version }, runtimeLocation)
       .catch(error => console.error(`[models-refresh] background refresh failed for ${record.id}`, error)),
   );
 };

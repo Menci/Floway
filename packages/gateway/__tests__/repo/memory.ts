@@ -1155,7 +1155,6 @@ class MemoryUpstreamStore {
   readonly upstreams = new Map<string, StoredUpstreamRecord>();
   readonly models = new Map<string, UpstreamModelEntry[]>();
   readonly manualModels = new Map<string, UpstreamModelConfig[]>();
-  readonly customDiscovered = new Map<string, UpstreamModelConfig[]>();
 }
 
 class MemoryUpstreamRepo implements UpstreamRepo {
@@ -1210,7 +1209,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
       due.push({
         id: record.id,
         kind: record.kind,
-        configVersion: record.configVersion,
+        version: record.version,
         proxyFallbackList: normalizeProxyFallbackList(record.proxyFallbackList),
         requiresNetwork,
       });
@@ -1229,7 +1228,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const now = new Date().toISOString();
     const updated = assignments.map(({ id, sortOrder }) => {
       const record = this.shared.upstreams.get(id)!;
-      return cloneUpstreamRecord({ ...record, sortOrder, updatedAt: now, rowVersion: record.rowVersion + 1 });
+      return cloneUpstreamRecord({ ...record, sortOrder, updatedAt: now, version: record.version + 1 });
     });
     for (const record of updated) this.shared.upstreams.set(record.id, record);
     return updated.map(toUpstreamMeta);
@@ -1246,10 +1245,6 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     }
     if (modelsWrite?.models !== undefined) {
       this.shared.models.set(upstreamId, dedupeMemoryModels(modelsWrite.models));
-    }
-    if (modelsWrite?.discovered !== undefined) {
-      if (modelsWrite.discovered === null) this.shared.customDiscovered.delete(upstreamId);
-      else this.shared.customDiscovered.set(upstreamId, structuredClone([...modelsWrite.discovered]));
     }
   }
 
@@ -1272,8 +1267,7 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     const cacheAction = modelsWrite?.cacheAction ?? { kind: 'preserve' as const };
     const stored = cloneUpstreamRecord({
       ...upstream,
-      rowVersion: 1,
-      configVersion: 1,
+      version: 1,
       modelsCache: applyCacheAction(emptyModelsCacheState(), cacheAction),
     });
     this.shared.upstreams.set(upstream.id, stored);
@@ -1284,20 +1278,18 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   replace(input: {
     readonly previous: StoredUpstreamRecord;
     readonly upstream: UpstreamRecord;
-    readonly bumpConfigVersion: boolean;
     readonly replaceState?: boolean;
     readonly manualModels?: readonly UpstreamModelConfig[];
     readonly modelsWrite?: UpstreamModelsWritePayload;
   }): Promise<StoredUpstreamRecord | null> {
-    const { previous, upstream, bumpConfigVersion, manualModels, modelsWrite } = input;
+    const { previous, upstream, manualModels, modelsWrite } = input;
     const existing = this.shared.upstreams.get(upstream.id);
-    if (existing === undefined || existing.rowVersion !== previous.rowVersion) return Promise.resolve(null);
+    if (existing === undefined || existing.version !== previous.version) return Promise.resolve(null);
     const replaceState = input.replaceState ?? serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
     const next = cloneUpstreamRecord({
       ...upstream,
       createdAt: existing.createdAt,
-      rowVersion: existing.rowVersion + 1,
-      configVersion: previous.configVersion + (bumpConfigVersion ? 1 : 0),
+      version: existing.version + 1,
       state: replaceState ? upstream.state : existing.state,
       modelsCache: applyCacheAction(existing.modelsCache, modelsWrite?.cacheAction ?? { kind: 'preserve' }),
     });
@@ -1311,7 +1303,6 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     if (deleted) {
       this.shared.models.delete(id);
       this.shared.manualModels.delete(id);
-      this.shared.customDiscovered.delete(id);
       this.backoffs.deleteWhere(row => row.upstreamId === id);
     }
     return Promise.resolve(deleted);
@@ -1321,37 +1312,33 @@ class MemoryUpstreamRepo implements UpstreamRepo {
     this.shared.upstreams.clear();
     this.shared.models.clear();
     this.shared.manualModels.clear();
-    this.shared.customDiscovered.clear();
     this.backoffs.clear();
     return Promise.resolve();
   }
 
-  saveState(id: string, mutate: (current: unknown, configVersion: number) => unknown): Promise<void> {
+  saveState(id: string, mutate: (current: unknown, version: number) => unknown): Promise<void> {
     const existing = this.shared.upstreams.get(id);
     if (!existing) throw new UpstreamGoneError(id);
-    const next = mutate(existing.state, existing.configVersion);
+    const next = mutate(existing.state, existing.version);
     const serialized = serializeStoredState(next);
     existing.state = serialized === null ? null : (JSON.parse(serialized) as unknown);
     return Promise.resolve();
   }
 
-  publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
-    const { id, configVersion, revision, fetchedAt, models, discovered } = input;
+  publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<number | null> {
+    const { id, version, revision, fetchedAt, models } = input;
     const existing = this.shared.upstreams.get(id);
-    if (existing?.configVersion !== configVersion) return Promise.resolve(false);
+    if (existing?.version !== version) return Promise.resolve(null);
+    existing.version += 1;
     existing.modelsCache = { revision, fetchedAt, lastError: null };
     this.shared.models.set(id, dedupeMemoryModels(models));
-    if (discovered !== undefined) {
-      if (discovered === null) this.shared.customDiscovered.delete(id);
-      else this.shared.customDiscovered.set(id, structuredClone([...discovered]));
-    }
-    return Promise.resolve(true);
+    return Promise.resolve(existing.version);
   }
 
   recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
-    const { id, configVersion, error } = input;
+    const { id, version, error } = input;
     const existing = this.shared.upstreams.get(id);
-    if (existing?.configVersion !== configVersion) return Promise.resolve(false);
+    if (existing?.version !== version) return Promise.resolve(false);
     const previousCount = existing.modelsCache.lastError?.failureCount ?? 0;
     existing.modelsCache = {
       ...existing.modelsCache,
@@ -1440,7 +1427,6 @@ class MemoryUpstreamModelsRepo implements UpstreamModelsRepo {
       name: u.name,
       hue: u.hue,
       sortOrder: u.sortOrder,
-      disabledPublicModelIds: [...u.disabledPublicModelIds],
       modelPrefix: structuredClone(u.modelPrefix),
     }));
     const models: CatalogModelEntry[] = [];
@@ -1532,11 +1518,6 @@ class MemoryUpstreamModelsRepo implements UpstreamModelsRepo {
       map.set(id, structuredClone(this.shared.manualModels.get(id) ?? []));
     }
     return Promise.resolve(map);
-  }
-
-  getCustomDiscovered(upstreamId: string): Promise<UpstreamModelConfig[] | null> {
-    const found = this.shared.customDiscovered.get(upstreamId);
-    return Promise.resolve(found === undefined ? null : structuredClone(found));
   }
 }
 

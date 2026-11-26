@@ -46,7 +46,7 @@ test('resolves v1 affinity from the current provider-model cache', async () => {
   await saveUpstreamForTest(repo.upstreams, record);
   const stored = (await repo.upstreams.getById(record.id))!;
   await seedModelsCache(repo.upstreams, record.id, {
-    configVersion: stored.configVersion,
+    version: stored.version,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: Date.now(),
     models: [stubProviderModel({

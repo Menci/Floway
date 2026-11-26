@@ -63,18 +63,22 @@ export const assembleCodexCatalog = (
       if ((model.input_modalities?.length ?? 0) > 0) models.push(model);
       continue;
     }
-    const candidates = entry.upstreams.map(upstream => {
-      const providerModel = entry.model.providerModels?.[upstream.id];
-      if (providerModel === undefined) throw new Error(`Codex catalog model ${entry.id} has no provider model for ${upstream.id}`);
-      return { providerModel, metadata: upstream.kind === 'chatgpt' ? chatgptCodexModelMetadata(providerModel) : undefined };
-    });
+    const chatContributions = entry.contributions.filter(contribution => contribution.model.kind === 'chat');
+    const candidates = chatContributions.map(({ upstream, model: providerModel }) => ({
+      providerModel,
+      metadata: upstream.kind === 'chatgpt' ? chatgptCodexModelMetadata(providerModel) : undefined,
+    }));
     // A ChatGPT rate is not an entitlement. Only advertise tiers usable on every fallback.
     const chatgpt = candidates.find(candidate => candidate.metadata !== undefined)?.metadata;
     const serviceTiers = chatgpt === undefined ? undefined : (chatgpt.service_tiers ?? []).filter(tier => candidates.every(({ providerModel, metadata }) => {
       if (metadata !== undefined) return metadata.service_tiers?.some(other => other.id === tier.id);
       return providerModel.endpoints.openaiResponses !== undefined && providerModel.pricing?.entries.some(rate => rate.selector?.serviceTier === tier.id);
     }));
-    const model = synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers, { metadata: candidates[0]?.metadata, serviceTiers });
+    const model = synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers, {
+      metadata: candidates[0]?.metadata,
+      serviceTiers,
+      chatProviderModels: chatContributions.map(c => c.model),
+    });
     if (model.input_modalities?.length === 0) continue;
     models.push(model);
   }
@@ -102,7 +106,7 @@ export const loadCodexCatalog = async (
     .map(entry => [entry.model.id, entry] as const));
   const addressable = merged.map((model): AddressableIdEntry => {
     if (model.aliasedFrom !== undefined) {
-      return { id: model.id, model, unlisted: undefined, upstreams: [] };
+      return { id: model.id, model, unlisted: undefined, upstreams: [], contributions: [] };
     }
     const entry = listedRealById.get(model.id);
     if (entry === undefined) throw new Error(`Codex catalog model ${model.id} has no listed addressable entry`);

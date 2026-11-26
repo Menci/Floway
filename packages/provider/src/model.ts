@@ -115,29 +115,16 @@ interface ModelMetadata {
   opaqueBlobCompatibilityScope?: OpaqueBlobCompatibilityScope;
 }
 
-// The neutral internal model shape consumed across the gateway. Metadata fields
-// surface the public identity of the model; `endpoints` and `kind` reflect the
-// OR-union across every contributing upstream so the gateway as a whole reaches
-// the union.
+// The neutral catalog model shape consumed across listing pipelines (`/v1/models`,
+// `/v1beta/models`, `/api/models`, alias synthesis, Codex catalog). Metadata
+// fields surface the public identity of the model; `endpoints` and `kind`
+// reflect the OR-union across every contributing upstream so the gateway as a
+// whole reaches the union.
 //
-// A row is exactly one of two mutually-exclusive kinds:
-//   • Real row — carries `providerModels`, keyed on upstream id. Per-request
-//     dispatch reads the chosen upstream's `ProviderModel` off this map via
-//     `providerModelOf(candidate)`. A per-candidate row (from
-//     `enumerateRealModelCandidates`) narrows the map to the single dispatched
-//     upstream; the merged catalog row from `getModelsFromProviders`
-//     aggregates every contributing upstream.
-//   • Alias row — carries `aliasedFrom`, the operator-defined alias record.
-//     Alias rows appear in listings but never dispatch directly; the resolver
-//     walks the alias's targets and yields real-row candidates instead.
-//
-// The two carriers are exclusive: a row is either real or alias, never both.
-// `providerModelOf` throws with distinct messages for each miss so a mis-used
-// alias row surfaces the correct diagnostic.
-export type InternalModel = ModelMetadata & (
-  | { readonly providerModels: Record<string, ProviderModel>; readonly aliasedFrom?: never }
-  | { readonly providerModels?: never; readonly aliasedFrom: InternalAliasedFrom }
-);
+// Alias-synthesized rows carry `aliasedFrom`; real catalog rows omit it.
+export interface InternalModel extends ModelMetadata {
+  readonly aliasedFrom?: InternalAliasedFrom;
+}
 
 // Alias-side payload carried on alias-synthesized `InternalModel` rows.
 // Mirrors the operator's `ModelAliasRecord` at the point the row was

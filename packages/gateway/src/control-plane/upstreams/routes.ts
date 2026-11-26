@@ -413,29 +413,13 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
 
   const body = c.req.valid('json');
   if (editLevel === 'models') {
-    const allowedTopLevel = new Set(['disabled_public_model_ids', 'manual_models', 'config']);
+    const allowedTopLevel = new Set(['disabled_public_model_ids', 'manual_models']);
     const blockedTopLevel = Object.keys(body).filter(key => !allowedTopLevel.has(key));
     if (blockedTopLevel.length > 0) {
       return c.json({ error: `Upstream.Edit.Models cannot change: ${blockedTopLevel.join(', ')}` }, 403);
     }
     if (body.manual_models !== undefined && !supportsManualModels(existing.kind)) {
       return c.json({ error: `Upstream.Edit.Models cannot change ${existing.kind} manual_models` }, 403);
-    }
-    if (body.config !== undefined) {
-      if (!isRecord(body.config)) return c.json({ error: 'config must be an object' }, 400);
-      if (existing.kind !== 'custom') {
-        return c.json({ error: `Upstream.Edit.Models cannot change ${existing.kind} config` }, 403);
-      }
-      const blockedConfig = Object.keys(body.config).filter(key => key !== 'modelsFetch');
-      if (blockedConfig.length > 0) {
-        return c.json({ error: `Upstream.Edit.Models cannot change config: ${blockedConfig.join(', ')}` }, 403);
-      }
-      if ('modelsFetch' in body.config) {
-        const modelsFetch = body.config.modelsFetch;
-        if (!isRecord(modelsFetch) || Object.keys(modelsFetch).some(key => key !== 'enabled')) {
-          return c.json({ error: 'Upstream.Edit.Models can only change modelsFetch.enabled' }, 403);
-        }
-      }
     }
   }
   if (body.kind !== undefined && body.kind !== existing.kind) {
@@ -511,12 +495,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     if (patchedChatGPTConfig !== undefined) {
       next = { ...next, config: patchedChatGPTConfig };
     } else {
-      let configPatch = body.config;
-      if (editLevel === 'models' && existing.kind === 'custom' && isRecord(body.config.modelsFetch)) {
-        const custom = assertCustomUpstreamRecord(existing);
-        configPatch = { ...body.config, modelsFetch: { ...custom.config.modelsFetch, ...body.config.modelsFetch } };
-      }
-      const merged = mergeConfigPatch(existing.kind, existing.config, configPatch);
+      const merged = mergeConfigPatch(existing.kind, existing.config, body.config);
       if (!merged.ok) return c.json({ error: merged.error }, 400);
       next = { ...next, config: merged.value };
     }

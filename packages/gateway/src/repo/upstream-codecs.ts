@@ -120,8 +120,6 @@ const upstreamModelConfigSchema = z.object({
   flagOverrides: flagOverridesSchema.exactOptional(),
 }).passthrough();
 
-const discoveredModelsSchema = z.array(upstreamModelConfigSchema);
-
 const flagOverridesRecordSchema = z.record(z.string(), z.boolean());
 const disabledPublicModelIdsSchema = z.array(z.string());
 const proxyFallbackListSchema = z.array(z.object({
@@ -170,21 +168,6 @@ export const decodeUpstreamManualModel = (raw: string, upstreamId: string): Upst
 
 export const encodeUpstreamManualModel = (model: UpstreamModelConfig): string =>
   JSON.stringify(model);
-
-export const decodeCustomDiscoveredModels = (raw: string, upstreamId: string): UpstreamModelConfig[] => {
-  const messages = {
-    malformed: `Malformed custom discovered models JSON for ${upstreamId}`,
-    invalid: `Invalid custom discovered models JSON for ${upstreamId}`,
-  };
-  const parsed = parseStoredJson(raw, messages.malformed);
-  return preserveDecodedStoredJsonProperties(
-    parsed,
-    decodeStoredJsonValue(parsed, discoveredModelsSchema, messages.invalid),
-  );
-};
-
-export const encodeCustomDiscoveredModels = (models: readonly UpstreamModelConfig[]): string =>
-  JSON.stringify(models);
 
 export const decodeUpstreamFlagOverrides = (raw: string, id: string): Record<string, boolean> =>
   decodeUpstreamJson(raw, flagOverridesRecordSchema, 'flag_overrides JSON', id);

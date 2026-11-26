@@ -6,7 +6,6 @@ export type {
   ModelCandidate,
   OpenAIResponsesInvocation,
 } from './invocation.ts';
-export { providerModelOf } from './invocation.ts';
 
 export type { InternalDebugError } from './error.ts';
 export { internalDebugErrorFields, toInternalDebugError } from './error.ts';

@@ -6,7 +6,7 @@ import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinit
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { initProviderRepo, providerModelOf, type UpstreamRecord } from '@floway-dev/provider';
+import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache, copilotProviderModule } from '@floway-dev/provider-copilot';
 import { noopUpstreamCallOptions, sseResponse, stubModelCandidate, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -66,7 +66,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => ({ ...upstream, configVersion: 1 }),
+      getById: async () => ({ ...upstream, version: 1 }),
       saveState: async () => {},
     },
   }));
@@ -116,7 +116,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
     },
     async () => {
       const first = await provider.instance.callOpenAIResponses(
-        providerModelOf(candidate),
+        candidate.model,
         { input: [], stream: true, store: false },
         'generate',
         undefined,
@@ -154,7 +154,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
 
       const { model: _model, ...exactBody } = exact;
       const second = await provider.instance.callOpenAIResponses(
-        providerModelOf(candidate),
+        candidate.model,
         exactBody,
         'generate',
         undefined,

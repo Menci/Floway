@@ -6,7 +6,7 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -121,17 +121,11 @@ const makeCandidate = (overrides: {
       upstreamId: upstream, kind, name: upstream, inboundHeaderAllowlist: [],
       instance: provider,
     },
-    model: stubInternalModel({
+    model: stubProviderModel({
       id: modelId,
       ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-      providerModels: {
-        [upstream]: stubProviderModel({
-          id: modelId,
-          ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-          ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
-        }),
-      },
-    }, upstream),
+      ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
+    }),
     fetcher: directFetcher,
   };
 };

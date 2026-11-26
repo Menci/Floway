@@ -152,7 +152,6 @@ test('Upstream.Edit.Models returns a redacted record and only accepts model fiel
     body: JSON.stringify({
       disabled_public_model_ids: ['old-model'],
       manual_models: [],
-      config: { modelsFetch: { enabled: false } },
     }),
   });
   assertEquals(allowed.status, 200);
@@ -164,7 +163,7 @@ test('Upstream.Edit.Models returns a redacted record and only accepts model fiel
       baseUrl: 'https://secret.example.com',
       apiKey: 'sk-secret',
       pathOverrides: { '/chat/completions': '/private/chat' },
-      modelsFetch: { enabled: false, authStyle: 'bearer', endpoint: '/private/models' },
+      modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/private/models' },
     },
   });
 
@@ -173,10 +172,10 @@ test('Upstream.Edit.Models returns a redacted record and only accepts model fiel
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: JSON.stringify({ name: 'Renamed' }),
   });
-  const blockedEndpoint = await requestApp('/api/upstreams/up_restricted', {
+  const blockedModelsFetch = await requestApp('/api/upstreams/up_restricted', {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-    body: JSON.stringify({ config: { modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/stolen' } } }),
+    body: JSON.stringify({ config: { modelsFetch: { enabled: false } } }),
   });
   const blockedPrefix = await requestApp('/api/upstreams/up_restricted', {
     method: 'PATCH',
@@ -184,7 +183,7 @@ test('Upstream.Edit.Models returns a redacted record and only accepts model fiel
     body: JSON.stringify({ model_prefix: { prefix: 'team/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] } }),
   });
   assertEquals(blockedName.status, 403);
-  assertEquals(blockedEndpoint.status, 403);
+  assertEquals(blockedModelsFetch.status, 403);
   assertEquals(blockedPrefix.status, 403);
   const readableProxies = await requestApp('/api/proxy-options?upstream_id=up_restricted', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(readableProxies.status, 200);
@@ -246,7 +245,7 @@ test('upstream options apply key, audit, and all view predicates', async () => {
   const stored = await repo.upstreams.getById(upstream.id);
   if (!stored) throw new Error('upstream missing');
   await seedModelsCache(repo.upstreams, upstream.id, {
-    configVersion: stored.configVersion,
+    version: stored.version,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
     models: projectCustomModels(stored, customManualModels),

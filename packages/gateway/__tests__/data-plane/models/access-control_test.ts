@@ -36,7 +36,7 @@ test('restricted data-plane aliases keep gateway-wide metadata and caller-scoped
     const persisted = await repo.upstreams.getById(id);
     if (persisted === null) throw new Error(`Missing upstream ${id}`);
     await seedModelsCache(repo.upstreams, id, {
-      configVersion: persisted.configVersion,
+      version: persisted.version,
       revision: MODEL_CATALOG_REVISION,
       fetchedAt: 1,
       models: projectCustomModels(persisted, manualModels),

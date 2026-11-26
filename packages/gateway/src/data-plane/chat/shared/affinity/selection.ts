@@ -3,7 +3,7 @@ import { isEqual } from 'es-toolkit';
 import type { AffinityIdentity, AffinityTarget, DecodedAffinityBlob, OpaqueBlobCompatibilityIdentity } from './carrier.ts';
 import type { ChatServeFailure } from '../errors.ts';
 import { materializeOpaqueBlobCompatibilityIdentity } from '@floway-dev/protocols/common';
-import { providerModelOf, type ModelCandidate } from '@floway-dev/provider';
+import { type ModelCandidate } from '@floway-dev/provider';
 
 export interface AffinityRequestAnalysis<T> {
   readonly requiredTargets: readonly AffinityIdentity[];
@@ -47,7 +47,7 @@ const candidateMatchesPhysicalTarget = (candidate: ModelCandidate, affinity: Aff
   candidate.provider.upstreamId === affinity.upstreamId && candidate.model.id === affinity.modelId;
 
 export const compatibilityIdentityForCandidate = (candidate: ModelCandidate): OpaqueBlobCompatibilityIdentity => {
-  const model = providerModelOf(candidate);
+  const model = candidate.model;
   return materializeOpaqueBlobCompatibilityIdentity(
     model.opaqueBlobCompatibilityScope,
     candidate.provider.upstreamId,

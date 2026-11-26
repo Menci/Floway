@@ -10,6 +10,6 @@ export const scheduleModelsCacheRefreshes = async (runtimeLocation: string | nul
     if (candidate.requiresNetwork && runtimeLocation === null && !hasLocationIndependentEgress(candidate.proxyFallbackList)) {
       continue;
     }
-    scheduler(refreshModels({ upstreamId: candidate.id, configVersion: candidate.configVersion }, runtimeLocation));
+    scheduler(refreshModels({ upstreamId: candidate.id, version: candidate.version }, runtimeLocation));
   }
 };

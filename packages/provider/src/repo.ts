@@ -16,8 +16,8 @@ import type { UpstreamMetricLabels } from './upstream-metric-identity.ts';
 // read atomically with state and participates in the CAS, so a caller can
 // reject observations produced by a configuration that has since changed.
 export interface UpstreamsRepoSlim {
-  getById(id: string): Promise<(UpstreamRecord & { configVersion: number }) | null>;
-  saveState(id: string, mutate: (current: unknown, configVersion: number) => unknown): Promise<void>;
+  getById(id: string): Promise<(UpstreamRecord & { version: number }) | null>;
+  saveState(id: string, mutate: (current: unknown, version: number) => unknown): Promise<void>;
 }
 
 // Thrown when the row a write targets no longer exists. Distinct from a

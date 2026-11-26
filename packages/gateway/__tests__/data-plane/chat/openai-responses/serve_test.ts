@@ -10,7 +10,7 @@ import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthr
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { decodeResponseBody, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -118,12 +118,12 @@ const makeCandidate = (overrides: {
       inboundHeaderAllowlist: [],
       instance: provider,
     },
-    // Default keeps stubInternalModel's three-endpoint map intact; tests that
+    // Default keeps stubProviderModel's three-endpoint map intact; tests that
     // need a rejected candidate pass an explicit `endpoints` override.
-    model: stubInternalModel({
+    model: stubProviderModel({
       id: overrides.modelId ?? 'test-model',
       ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-    }, upstream),
+    }),
     fetcher: directFetcher,
   };
 };

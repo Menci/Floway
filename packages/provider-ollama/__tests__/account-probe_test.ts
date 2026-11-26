@@ -51,7 +51,7 @@ const withStateRepo = (state: unknown = null) => {
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => ({ ...cloudRecord(), state: current, configVersion: 1 }),
+      getById: async () => ({ ...cloudRecord(), state: current, version: 1 }),
       saveState: async (_id, mutate) => {
         current = mutate(current, 1);
       },

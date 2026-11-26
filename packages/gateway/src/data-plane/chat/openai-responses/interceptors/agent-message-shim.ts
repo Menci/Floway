@@ -2,7 +2,6 @@ import type { OpenAIResponsesInterceptor } from './types.ts';
 import { tryCatchChatServeFailure, type InputErrorDetails } from '../../shared/errors.ts';
 import { inputErrorResult } from '../errors.ts';
 import { agentMessageContent } from '../items/agent-message-content.ts';
-import { providerModelOf } from '@floway-dev/provider';
 
 // Codex delivers sub-agent tasks and inter-agent messages as `agent_message`
 // input items. Only a native OpenAI Responses upstream can understand the item,
@@ -18,7 +17,7 @@ import { providerModelOf } from '@floway-dev/provider';
 // https://github.com/openai/codex/blob/0a2eb4696c26ac33204bcd255721ab30220a4774/codex-rs/protocol/src/models.rs#L1036-L1046
 export const withOpenAIResponsesAgentMessageShim: OpenAIResponsesInterceptor = async (ctx, gatewayCtx, run) => {
   if (ctx.targetApi === 'openaiResponses'
-    && !providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-agent-message-shim')) return await run();
+    && !ctx.candidate.model.enabledFlags.has('openai-responses-agent-message-shim')) return await run();
   if (!ctx.payload.input.some(item => item.type === 'agent_message')) return await run();
 
   try {

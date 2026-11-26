@@ -123,7 +123,7 @@ test('migration 0102 splits catalogs, manual models, prefixes, and preserves pro
     expect('models' in (custom!.config as Record<string, unknown>)).toBe(false);
     expect(custom!.modelPrefix).toEqual({ prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] });
     expect(custom!.modelsCache).toEqual({ revision: MODEL_CATALOG_REVISION, fetchedAt: 1_780_000_000_000, lastError: null });
-    expect(custom!.configVersion).toBe(3);
+    expect(custom!.version).toBe(3);
 
     const models = await repo.upstreamModels.listByUpstream('up_custom');
     expect(models.map(entry => [entry.model.id, entry.source])).toEqual([
@@ -132,8 +132,6 @@ test('migration 0102 splits catalogs, manual models, prefixes, and preserves pro
     ]);
     const manual = await repo.upstreamModels.listManualModels('up_custom');
     expect(manual.map(m => m.upstreamModelId)).toEqual(['gpt-manual-wire']);
-    const discovered = await repo.upstreamModels.getCustomDiscovered('up_custom');
-    expect(discovered?.map(m => m.upstreamModelId)).toEqual(['gpt-manual-wire', 'gpt-auto-wire']);
 
     const coldFail = await repo.upstreams.getById('up_cold_fail');
     expect(coldFail!.modelsCache).toEqual({
@@ -146,12 +144,11 @@ test('migration 0102 splits catalogs, manual models, prefixes, and preserves pro
     expect(backoffs).toHaveLength(1);
     expect(backoffs[0]!.failCount).toBe(2);
 
-    // Deleting the upstream cascades to backoffs and all 3 new child tables.
+    // Deleting the upstream cascades to backoffs and both model child tables.
     expect(await repo.upstreams.delete('up_custom')).toBe(true);
     expect(await repo.proxyBackoffs.listForUpstream('up_custom')).toEqual([]);
     expect(await repo.upstreamModels.listByUpstream('up_custom')).toEqual([]);
     expect(await repo.upstreamModels.listManualModels('up_custom')).toEqual([]);
-    expect(await repo.upstreamModels.getCustomDiscovered('up_custom')).toBeNull();
   } finally {
     db.close();
   }
@@ -167,9 +164,10 @@ describe.each(factories)('%s upstream models repository', (_name, createRepo) =>
       disabledPublicModelIds: ['blocked'],
       modelPrefix: { prefix: 'p/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
     }));
+    const insertedDual = (await repo.upstreams.getById('up_dual_kind'))!;
     await repo.upstreams.publishModelsRefresh({
       id: 'up_dual_kind',
-      configVersion: 1,
+      version: insertedDual.version,
       revision: MODEL_CATALOG_REVISION,
       fetchedAt: 1000,
       models: [
@@ -199,6 +197,16 @@ describe.each(factories)('%s upstream models repository', (_name, createRepo) =>
     const counts = await repo.upstreamModels.countListedByUpstream(['up_dual_kind']);
     expect(counts.get('up_dual_kind')).toBe(2);
 
+    // Updating disabledPublicModelIds syncs upstream_models.disabled immediately without rewriting rows.
+    const stored = (await repo.upstreams.getById('up_dual_kind'))!;
+    await repo.upstreams.replace({
+      previous: stored,
+      upstream: { ...stored, disabledPublicModelIds: ['shared-id'] },
+    });
+    expect(await repo.upstreamModels.resolve({ modelIds: ['shared-id'], upstreamIds: null })).toEqual([]);
+    expect((await repo.upstreamModels.resolve({ modelIds: ['blocked'], upstreamIds: null })).map(h => h.model.id)).toEqual(['blocked']);
+    expect((await repo.upstreamModels.countListedByUpstream(['up_dual_kind'])).get('up_dual_kind')).toBe(2);
+
     // getByKey distinguishes kinds on the same (upstream_id, model_id).
     expect((await repo.upstreamModels.getByKey('up_dual_kind', 'shared-id', 'chat'))?.kind).toBe('chat');
     expect((await repo.upstreamModels.getByKey('up_dual_kind', 'shared-id', 'embedding'))?.kind).toBe('embedding');
@@ -225,9 +233,10 @@ describe.each(factories)('%s upstream models repository', (_name, createRepo) =>
 
     const t0 = 1_800_000_000_000;
     for (const id of ['up_azure', 'up_local_custom', 'up_net_custom']) {
+      const stored = (await repo.upstreams.getById(id))!;
       await repo.upstreams.publishModelsRefresh({
         id,
-        configVersion: 1,
+        version: stored.version,
         revision: MODEL_CATALOG_REVISION,
         fetchedAt: t0,
         models: [],
@@ -256,6 +265,7 @@ test('SQLite resolve queries use indexes without scanning upstream_models', asyn
      FROM upstream_models m
      JOIN upstreams u ON u.id = m.upstream_id
      WHERE m.model_id = ?
+       AND m.disabled = 0
        AND u.enabled = 1
        AND (u.model_prefix IS NULL OR u.model_prefix_addressable IN ('unprefixed', 'both'))`,
   ).bind('gpt-5').all<{ detail: string }>();
@@ -279,7 +289,8 @@ test('SQLite resolve queries use indexes without scanning upstream_models', asyn
       AND u.model_prefix_addressable IN ('prefixed', 'both')
      JOIN upstream_models m
        ON m.upstream_id = u.id
-      AND m.model_id = p.rest`,
+      AND m.model_id = p.rest
+      AND m.disabled = 0`,
   ).bind(JSON.stringify([{ inputId: 'or/gpt-5', prefix: 'or/', rest: 'gpt-5' }])).all<{ detail: string }>();
   expect(planPrefixed.results.some(row => row.detail.includes('SEARCH m USING INDEX'))).toBe(true);
   expect(planPrefixed.results.some(row => row.detail.includes('SEARCH u USING INDEX'))).toBe(true);
@@ -394,7 +405,7 @@ test('saving manual models materializes immediately with zero 404 window and res
       expect(afterOverride[0]!.source).toBe('manual');
       expect(afterOverride[0]!.model.display_name).toBe('Manual Name');
 
-      // Remove the manual override -> auto model is immediately restored from custom_upstream_discovered_models!
+      // Remove the manual override -> manual row is removed and cache is marked stale for the next refresh.
       const clearResp = await requestApp(`/api/upstreams/${custom.id}`, {
         method: 'PATCH',
         headers,
@@ -403,10 +414,23 @@ test('saving manual models materializes immediately with zero 404 window and res
         }),
       });
       expect(clearResp.status).toBe(200);
-      const afterClear = await repo.upstreamModels.listByUpstream(custom.id);
-      expect(afterClear).toHaveLength(1);
-      expect(afterClear[0]!.source).toBe('auto');
-      expect(afterClear[0]!.model.id).toBe('shared-model');
+      expect(await repo.upstreamModels.listByUpstream(custom.id)).toEqual([]);
+      expect((await repo.upstreams.getById(custom.id))?.modelsCache.revision).toBeNull();
+    },
+  );
+  // Next catalog refresh restores the unshadowed auto model.
+  await withMockedFetch(
+    () => Response.json({ object: 'list', data: [{ id: 'shared-model', display_name: 'Auto Name' }] }),
+    async () => {
+      const fetchResp = await requestApp(`/api/upstreams/${custom.id}/list-models`, {
+        method: 'POST',
+        headers: { 'x-floway-session': adminSession },
+      });
+      expect(fetchResp.status).toBe(200);
+      const afterRefresh = await repo.upstreamModels.listByUpstream(custom.id);
+      expect(afterRefresh).toHaveLength(1);
+      expect(afterRefresh[0]!.source).toBe('auto');
+      expect(afterRefresh[0]!.model.id).toBe('shared-model');
     },
   );
 });

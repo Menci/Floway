@@ -1,6 +1,7 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { AUTOMATIC_REFRESH_INTERVAL_MS, storedModelErrorMessage } from './models-cache-contract.ts';
+import { MODELS_REFRESH_BACKOFF_DELAYS_MS } from './models-refresh-backoff.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { runStatements } from './sql-batch.ts';
 import type {
@@ -20,7 +21,6 @@ import type {
   UpstreamRepo,
 } from './types.ts';
 import {
-  decodeCustomDiscoveredModels,
   decodeDisabledPublicModelIds,
   decodeProxyFallbackList,
   decodeUpstreamConfig,
@@ -28,7 +28,6 @@ import {
   decodeUpstreamManualModel,
   decodeUpstreamModel,
   decodeUpstreamState,
-  encodeCustomDiscoveredModels,
   encodeUpstreamManualModel,
   encodeUpstreamModel,
 } from './upstream-codecs.ts';
@@ -148,8 +147,7 @@ interface UpstreamRow extends UpstreamMetaRow {
   usage_refresh_interval_minutes: number;
   created_at: string;
   updated_at: string;
-  row_version: number;
-  config_version: number;
+  version: number;
   config_json: string;
   state_json: string | null;
   flag_overrides: string;
@@ -175,8 +173,7 @@ const UPSTREAM_COLUMNS = [
   'sort_order',
   'created_at',
   'updated_at',
-  'row_version',
-  'config_version',
+  'version',
   'config_json',
   'state_json',
   'flag_overrides',
@@ -210,11 +207,8 @@ const toUpstreamMeta = (row: UpstreamMetaRow): StoredUpstreamMeta => ({
 const toUpstreamRecord = (row: UpstreamRow): StoredUpstreamRecord => {
   const config = decodeUpstreamConfig(row.config_json, row.id);
   const state = row.state_json === null ? null : decodeUpstreamState(row.state_json, row.id);
-  if (!Number.isSafeInteger(row.row_version) || row.row_version < 1) {
-    throw new Error(`Invalid upstream row version for ${row.id}`);
-  }
-  if (!Number.isSafeInteger(row.config_version) || row.config_version < 1) {
-    throw new Error(`Invalid upstream config version for ${row.id}`);
+  if (!Number.isSafeInteger(row.version) || row.version < 1) {
+    throw new Error(`Invalid upstream version for ${row.id}`);
   }
 
   return {
@@ -226,8 +220,7 @@ const toUpstreamRecord = (row: UpstreamRow): StoredUpstreamRecord => {
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    rowVersion: row.row_version,
-    configVersion: row.config_version,
+    version: row.version,
     config,
     state,
     flagOverrides: normalizeFlagOverrides(decodeUpstreamFlagOverrides(row.flag_overrides, row.id)),
@@ -258,18 +251,23 @@ const dedupeModelsForStorage = (entries: readonly UpstreamModelEntry[]): Upstrea
   return out;
 };
 
+const BACKOFF_DELAY_SQL = `CASE ${MODELS_REFRESH_BACKOFF_DELAYS_MS
+  .slice(0, -1)
+  .map((delay, index) => `WHEN models_cache_failure_count = ${index + 1} THEN ${delay}`)
+  .join(' ')} ELSE ${MODELS_REFRESH_BACKOFF_DELAYS_MS[MODELS_REFRESH_BACKOFF_DELAYS_MS.length - 1]} END`;
+
 const buildModelsReplacementStatements = (
   db: SqlDatabase,
   upstreamId: string,
-  token: string,
+  version: number,
   models: readonly UpstreamModelEntry[],
 ): SqlPreparedStatement[] => {
   const stmts: SqlPreparedStatement[] = [
     db.prepare(
       `DELETE FROM upstream_models
        WHERE upstream_id = ?
-         AND EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND models_cache_token = ?)`,
-    ).bind(upstreamId, upstreamId, token),
+         AND EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND version = ?)`,
+    ).bind(upstreamId, upstreamId, version),
   ];
   const deduped = dedupeModelsForStorage(models);
   for (const group of chunk(deduped, JSON_INSERT_CHUNK_SIZE)) {
@@ -282,17 +280,25 @@ const buildModelsReplacementStatements = (
     })));
     stmts.push(
       db.prepare(
-        `INSERT INTO upstream_models (upstream_id, model_id, upstream_model_id, kind, source, model_json)
+        `INSERT INTO upstream_models (upstream_id, model_id, upstream_model_id, kind, source, disabled, model_json)
          SELECT
-           ?,
-           CAST(json_extract(value, '$.modelId') AS TEXT),
-           CAST(json_extract(value, '$.upstreamModelId') AS TEXT),
-           CAST(json_extract(value, '$.kind') AS TEXT),
-           CAST(json_extract(value, '$.source') AS TEXT),
-           CAST(json_extract(value, '$.modelJson') AS TEXT)
-         FROM json_each(?)
-         WHERE EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND models_cache_token = ?)`,
-      ).bind(upstreamId, payload, upstreamId, token),
+           u.id,
+           CAST(json_extract(j.value, '$.modelId') AS TEXT),
+           CAST(json_extract(j.value, '$.upstreamModelId') AS TEXT),
+           CAST(json_extract(j.value, '$.kind') AS TEXT),
+           CAST(json_extract(j.value, '$.source') AS TEXT),
+           CASE
+             WHEN EXISTS (
+               SELECT 1 FROM json_each(u.disabled_public_model_ids) d
+               WHERE d.value = CAST(json_extract(j.value, '$.modelId') AS TEXT)
+             ) THEN 1
+             ELSE 0
+           END,
+           CAST(json_extract(j.value, '$.modelJson') AS TEXT)
+         FROM upstreams u
+         JOIN json_each(?) j
+         WHERE u.id = ? AND u.version = ?`,
+      ).bind(payload, upstreamId, version),
     );
   }
   return stmts;
@@ -301,15 +307,15 @@ const buildModelsReplacementStatements = (
 const buildManualModelsReplacementStatements = (
   db: SqlDatabase,
   upstreamId: string,
-  token: string,
+  version: number,
   manualModels: readonly UpstreamModelConfig[],
 ): SqlPreparedStatement[] => {
   const stmts: SqlPreparedStatement[] = [
     db.prepare(
       `DELETE FROM upstream_manual_models
        WHERE upstream_id = ?
-         AND EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND models_cache_token = ?)`,
-    ).bind(upstreamId, upstreamId, token),
+         AND EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND version = ?)`,
+    ).bind(upstreamId, upstreamId, version),
   ];
   for (const [groupIndex, group] of chunk(manualModels, JSON_INSERT_CHUNK_SIZE).entries()) {
     const offset = groupIndex * JSON_INSERT_CHUNK_SIZE;
@@ -331,37 +337,28 @@ const buildManualModelsReplacementStatements = (
            CAST(json_extract(value, '$.kind') AS TEXT),
            CAST(json_extract(value, '$.configJson') AS TEXT)
          FROM json_each(?)
-         WHERE EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND models_cache_token = ?)`,
-      ).bind(upstreamId, payload, upstreamId, token),
+         WHERE EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND version = ?)`,
+      ).bind(upstreamId, payload, upstreamId, version),
     );
   }
   return stmts;
 };
 
-const buildCustomDiscoveredStatements = (
+const buildSyncDisabledStatement = (
   db: SqlDatabase,
   upstreamId: string,
-  token: string,
-  discovered: readonly UpstreamModelConfig[] | null,
-): SqlPreparedStatement[] => {
-  if (discovered === null) {
-    return [
-      db.prepare(
-        `DELETE FROM custom_upstream_discovered_models
-         WHERE upstream_id = ?
-           AND EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND models_cache_token = ?)`,
-      ).bind(upstreamId, upstreamId, token),
-    ];
-  }
-  return [
-    db.prepare(
-      `INSERT INTO custom_upstream_discovered_models (upstream_id, discovered_json)
-       SELECT ?, ?
-       WHERE EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND models_cache_token = ?)
-       ON CONFLICT (upstream_id) DO UPDATE SET discovered_json = excluded.discovered_json`,
-    ).bind(upstreamId, encodeCustomDiscoveredModels(discovered), upstreamId, token),
-  ];
-};
+  version: number,
+  disabledPublicModelIdsJson: string,
+): SqlPreparedStatement =>
+  db.prepare(
+    `UPDATE upstream_models
+     SET disabled = CASE
+       WHEN model_id IN (SELECT CAST(value AS TEXT) FROM json_each(?)) THEN 1
+       ELSE 0
+     END
+     WHERE upstream_id = ?
+       AND EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND version = ?)`,
+  ).bind(disabledPublicModelIdsJson, upstreamId, upstreamId, version);
 
 const cacheSetClause = (action: UpstreamModelsCacheAction): { sql: string; binds: SqlBindValue[] } => {
   switch (action.kind) {
@@ -388,21 +385,37 @@ const cacheSetClause = (action: UpstreamModelsCacheAction): { sql: string; binds
 const appendChildWriteStatements = (
   db: SqlDatabase,
   upstreamId: string,
-  token: string,
+  version: number,
   manualModels: readonly UpstreamModelConfig[] | undefined,
   modelsWrite: UpstreamModelsWritePayload | undefined,
+  syncDisabledJson?: string,
 ): SqlPreparedStatement[] => {
   const stmts: SqlPreparedStatement[] = [];
   if (manualModels !== undefined) {
-    stmts.push(...buildManualModelsReplacementStatements(db, upstreamId, token, manualModels));
+    stmts.push(...buildManualModelsReplacementStatements(db, upstreamId, version, manualModels));
   }
   if (modelsWrite?.models !== undefined) {
-    stmts.push(...buildModelsReplacementStatements(db, upstreamId, token, modelsWrite.models));
-  }
-  if (modelsWrite?.discovered !== undefined) {
-    stmts.push(...buildCustomDiscoveredStatements(db, upstreamId, token, modelsWrite.discovered));
+    stmts.push(...buildModelsReplacementStatements(db, upstreamId, version, modelsWrite.models));
+  } else if (syncDisabledJson !== undefined) {
+    stmts.push(buildSyncDisabledStatement(db, upstreamId, version, syncDisabledJson));
   }
   return stmts;
+};
+
+// Random 48-bit positive integer (well within JS Number.MAX_SAFE_INTEGER and
+// SQLite signed 64-bit INTEGER). Non-sequential versions guarantee that two
+// concurrent writers starting from the same `version` never choose the same
+// target version, so a losing writer's child statements in a D1 `batch()`
+// (`WHERE EXISTS (SELECT 1 FROM upstreams WHERE id = ? AND version = ?)`)
+// match 0 rows and leave the winning writer's child rows intact.
+const nextRowVersion = (previous?: number): number => {
+  const bytes = new Uint32Array(2);
+  let candidate: number;
+  do {
+    crypto.getRandomValues(bytes);
+    candidate = (bytes[0]! & 0xFFFF) * 0x1_0000_0000 + bytes[1]!;
+  } while (candidate === 0 || candidate === previous);
+  return candidate;
 };
 
 export class SqlUpstreamRepo implements UpstreamRepo {
@@ -459,7 +472,7 @@ export class SqlUpstreamRepo implements UpstreamRepo {
         `SELECT
            id,
            provider,
-           config_version,
+           version,
            proxy_fallback_list_json,
            CASE
              WHEN provider = 'azure' THEN 0
@@ -479,12 +492,7 @@ export class SqlUpstreamRepo implements UpstreamRepo {
            )
            AND (
              models_cache_failure_count = 0
-             OR models_cache_error_at + CASE
-               WHEN models_cache_failure_count = 1 THEN 60000
-               WHEN models_cache_failure_count = 2 THEN 300000
-               WHEN models_cache_failure_count = 3 THEN 1800000
-               ELSE 7200000
-             END <= ?
+             OR models_cache_error_at + ${BACKOFF_DELAY_SQL} <= ?
            )
          ORDER BY sort_order, created_at, id`,
       )
@@ -492,14 +500,14 @@ export class SqlUpstreamRepo implements UpstreamRepo {
       .all<{
       id: string;
       provider: string;
-      config_version: number;
+      version: number;
       proxy_fallback_list_json: string;
       requires_network: number;
     }>();
     return results.map(row => ({
       id: row.id,
       kind: parseUpstreamKind(row.id, row.provider),
-      configVersion: row.config_version,
+      version: row.version,
       proxyFallbackList: normalizeProxyFallbackList(decodeProxyFallbackList(row.proxy_fallback_list_json, row.id)),
       requiresNetwork: row.requires_network !== 0,
     }));
@@ -525,10 +533,10 @@ export class SqlUpstreamRepo implements UpstreamRepo {
        UPDATE upstreams SET
          sort_order = (SELECT sort_order FROM assignments WHERE assignments.id = upstreams.id),
          updated_at = ?,
-         row_version = row_version + 1
+         version = ?
        WHERE id IN (SELECT id FROM assignments) AND (SELECT valid FROM valid_order)
        RETURNING ${UPSTREAM_META_COLUMNS}`,
-    ).bind(JSON.stringify(expectedIds), JSON.stringify(assignments), new Date().toISOString()).all<UpstreamMetaRow>();
+    ).bind(JSON.stringify(expectedIds), JSON.stringify(assignments), new Date().toISOString(), nextRowVersion()).all<UpstreamMetaRow>();
     if (results.length !== assignments.length) return null;
     const byId = new Map(results.map(row => [row.id, toUpstreamMeta(row)]));
     return assignments.map(({ id }) => byId.get(id)!);
@@ -543,7 +551,7 @@ export class SqlUpstreamRepo implements UpstreamRepo {
     },
   ): Promise<StoredUpstreamRecord | null> {
     const { upstream, manualModels, modelsWrite } = input;
-    const token = crypto.randomUUID();
+    const version = nextRowVersion();
     const prefix = encodeModelPrefixColumns(upstream.modelPrefix);
     const cacheAction = modelsWrite?.cacheAction ?? { kind: 'preserve' as const };
     const revision = cacheAction.kind === 'set-fresh' ? cacheAction.revision : null;
@@ -561,6 +569,7 @@ export class SqlUpstreamRepo implements UpstreamRepo {
       ...(mode === 'explicit' ? [upstream.sortOrder] : []),
       upstream.createdAt,
       upstream.updatedAt,
+      version,
       serializeStoredConfig(upstream.config),
       serializeStoredState(upstream.state),
       JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
@@ -571,7 +580,6 @@ export class SqlUpstreamRepo implements UpstreamRepo {
       prefix.listed,
       revision,
       fetchedAt,
-      token,
       upstream.hue,
     ];
 
@@ -579,27 +587,27 @@ export class SqlUpstreamRepo implements UpstreamRepo {
       .prepare(
         `INSERT INTO upstreams (
            id, provider, name, enabled, usage_refresh_interval_minutes, sort_order,
-           created_at, updated_at, row_version, config_version,
+           created_at, updated_at, version,
            config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json,
            model_prefix, model_prefix_addressable, model_prefix_listed,
            models_cache_revision, models_cache_fetched_at,
            models_cache_error_message, models_cache_error_at, models_cache_failure_count,
-           models_cache_token, hue
+           hue
          ) VALUES (
            ?, ?, ?, ?, ?, ${sortOrderSql},
-           ?, ?, 1, 1,
+           ?, ?, ?,
            ?, ?, ?, ?, ?,
            ?, ?, ?,
            ?, ?,
            NULL, NULL, 0,
-           ?, ?
+           ?
          ) ON CONFLICT (id) DO NOTHING`,
       )
       .bind(...baseBinds);
 
     const stmts = [
       insertStmt,
-      ...appendChildWriteStatements(this.db, upstream.id, token, manualModels, modelsWrite),
+      ...appendChildWriteStatements(this.db, upstream.id, version, manualModels, modelsWrite),
     ];
     const results = await runStatements(this.db, stmts);
     if ((results[0]?.meta.changes ?? 0) === 0) return null;
@@ -625,17 +633,18 @@ export class SqlUpstreamRepo implements UpstreamRepo {
   async replace(input: {
     readonly previous: StoredUpstreamRecord;
     readonly upstream: UpstreamRecord;
-    readonly bumpConfigVersion: boolean;
     readonly replaceState?: boolean;
     readonly manualModels?: readonly UpstreamModelConfig[];
     readonly modelsWrite?: UpstreamModelsWritePayload;
   }): Promise<StoredUpstreamRecord | null> {
-    const { previous, upstream, bumpConfigVersion, manualModels, modelsWrite } = input;
+    const { previous, upstream, manualModels, modelsWrite } = input;
     const replaceState = input.replaceState ?? serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
-    const token = crypto.randomUUID();
+    const nextVersion = nextRowVersion(previous.version);
     const prefix = encodeModelPrefixColumns(upstream.modelPrefix);
-    const nextConfigVersion = previous.configVersion + (bumpConfigVersion ? 1 : 0);
     const cachePatch = cacheSetClause(modelsWrite?.cacheAction ?? { kind: 'preserve' });
+    const prevDisabledJson = JSON.stringify(normalizeDisabledPublicModelIds(previous.disabledPublicModelIds));
+    const nextDisabledJson = JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds));
+    const syncDisabledJson = prevDisabledJson !== nextDisabledJson ? nextDisabledJson : undefined;
 
     const updateStmt = this.db
       .prepare(
@@ -646,8 +655,7 @@ export class SqlUpstreamRepo implements UpstreamRepo {
            usage_refresh_interval_minutes = ?,
            sort_order = ?,
            updated_at = ?,
-           row_version = row_version + 1,
-           config_version = ?,
+           version = ?,
            config_json = ?,
            state_json = CASE WHEN ? THEN ? ELSE state_json END,
            flag_overrides = ?,
@@ -656,10 +664,9 @@ export class SqlUpstreamRepo implements UpstreamRepo {
            model_prefix = ?,
            model_prefix_addressable = ?,
            model_prefix_listed = ?,
-           hue = ?,
-           models_cache_token = ?${cachePatch.sql}
+           hue = ?${cachePatch.sql}
          WHERE id = ?
-           AND row_version = ?`,
+           AND version = ?`,
       )
       .bind(
         upstream.kind,
@@ -668,26 +675,25 @@ export class SqlUpstreamRepo implements UpstreamRepo {
         upstream.usageRefreshIntervalMinutes,
         upstream.sortOrder,
         upstream.updatedAt,
-        nextConfigVersion,
+        nextVersion,
         serializeStoredConfig(upstream.config),
         sqliteBoolean(replaceState),
         serializeStoredState(upstream.state),
         JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
-        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
+        nextDisabledJson,
         JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
         prefix.prefix,
         prefix.addressable,
         prefix.listed,
         upstream.hue,
-        token,
         ...cachePatch.binds,
         upstream.id,
-        previous.rowVersion,
+        previous.version,
       );
 
     const stmts = [
       updateStmt,
-      ...appendChildWriteStatements(this.db, upstream.id, token, manualModels, modelsWrite),
+      ...appendChildWriteStatements(this.db, upstream.id, nextVersion, manualModels, modelsWrite, syncDisabledJson),
     ];
     const results = await runStatements(this.db, stmts);
     if ((results[0]?.meta.changes ?? 0) === 0) return null;
@@ -703,9 +709,9 @@ export class SqlUpstreamRepo implements UpstreamRepo {
     await this.db.prepare('DELETE FROM upstreams').run();
   }
 
-  async publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
-    const { id, configVersion, revision, fetchedAt, models, discovered } = input;
-    const token = crypto.randomUUID();
+  async publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<number | null> {
+    const { id, version, revision, fetchedAt, models } = input;
+    const nextVersion = nextRowVersion(version);
     const stmts: SqlPreparedStatement[] = [
       this.db
         .prepare(
@@ -715,28 +721,27 @@ export class SqlUpstreamRepo implements UpstreamRepo {
                models_cache_error_message = NULL,
                models_cache_error_at = NULL,
                models_cache_failure_count = 0,
-               models_cache_token = ?
-           WHERE id = ? AND config_version = ?`,
+               version = ?
+           WHERE id = ? AND version = ?`,
         )
-        .bind(revision, fetchedAt, token, id, configVersion),
-      ...buildModelsReplacementStatements(this.db, id, token, models),
-      ...(discovered !== undefined ? buildCustomDiscoveredStatements(this.db, id, token, discovered) : []),
+        .bind(revision, fetchedAt, nextVersion, id, version),
+      ...buildModelsReplacementStatements(this.db, id, nextVersion, models),
     ];
     const results = await runStatements(this.db, stmts);
-    return (results[0]?.meta.changes ?? 0) > 0;
+    return (results[0]?.meta.changes ?? 0) > 0 ? nextVersion : null;
   }
 
   async recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
-    const { id, configVersion, error } = input;
+    const { id, version, error } = input;
     const result = await this.db
       .prepare(
         `UPDATE upstreams
          SET models_cache_error_message = ?,
              models_cache_error_at = ?,
              models_cache_failure_count = models_cache_failure_count + 1
-         WHERE id = ? AND config_version = ?`,
+         WHERE id = ? AND version = ?`,
       )
-      .bind(storedModelErrorMessage(error.message), error.at, id, configVersion)
+      .bind(storedModelErrorMessage(error.message), error.at, id, version)
       .run();
     return (result.meta.changes ?? 0) > 0;
   }
@@ -747,19 +752,19 @@ export class SqlUpstreamRepo implements UpstreamRepo {
   // re-serialized form, so the CAS holds against a row written by anything —
   // including a migration, which has no way to reproduce the canonical
   // encoder's output.
-  async saveState(id: string, mutate: (current: unknown, configVersion: number) => unknown): Promise<void> {
+  async saveState(id: string, mutate: (current: unknown, version: number) => unknown): Promise<void> {
     for (let attempt = 0; attempt < UPSTREAM_STATE_WRITE_ATTEMPTS; attempt++) {
       const row = await this.db
-        .prepare('SELECT state_json, config_version FROM upstreams WHERE id = ?')
+        .prepare('SELECT state_json, version FROM upstreams WHERE id = ?')
         .bind(id)
-        .first<{ state_json: string | null; config_version: number }>();
+        .first<{ state_json: string | null; version: number }>();
       if (!row) throw new UpstreamGoneError(id);
       const current = row.state_json === null ? null : decodeUpstreamState(row.state_json, id);
-      const next = serializeStoredState(mutate(current, row.config_version));
+      const next = serializeStoredState(mutate(current, row.version));
       if (next === row.state_json) return;
       const result = await this.db
-        .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ? AND config_version = ?')
-        .bind(next, id, row.state_json, row.config_version)
+        .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ? AND version = ?')
+        .bind(next, id, row.state_json, row.version)
         .run();
       if ((result.meta.changes ?? 0) > 0) return;
     }
@@ -826,9 +831,9 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
       FROM upstream_models m
       JOIN upstreams u ON u.id = m.upstream_id
       WHERE ${unprefixedPredicate}
+        AND m.disabled = 0
         AND u.enabled = 1
-        AND (u.model_prefix IS NULL OR u.model_prefix_addressable IN ('unprefixed', 'both'))
-        AND NOT EXISTS (SELECT 1 FROM json_each(u.disabled_public_model_ids) d WHERE d.value = m.model_id)${upstreamFilterSql}`;
+        AND (u.model_prefix IS NULL OR u.model_prefix_addressable IN ('unprefixed', 'both'))${upstreamFilterSql}`;
 
     let query: string;
     if (prefixPairs.length === 0) {
@@ -857,7 +862,8 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
         JOIN upstream_models m
           ON m.upstream_id = u.id
          AND m.model_id = p.rest
-        WHERE NOT EXISTS (SELECT 1 FROM json_each(u.disabled_public_model_ids) d WHERE d.value = m.model_id)${upstreamFilterSql}`;
+         AND m.disabled = 0
+        WHERE 1 = 1${upstreamFilterSql}`;
 
       query = `
         SELECT * FROM (
@@ -913,7 +919,6 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
         .prepare(
           `SELECT
              u.id, u.provider, u.name, u.hue, u.sort_order,
-             u.disabled_public_model_ids,
              u.model_prefix, u.model_prefix_addressable, u.model_prefix_listed
            FROM upstreams u
            WHERE u.enabled = 1${filterSql}
@@ -926,7 +931,6 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
         name: string;
         hue: number;
         sort_order: number;
-        disabled_public_model_ids: string;
         model_prefix: string | null;
         model_prefix_addressable: string | null;
         model_prefix_listed: string | null;
@@ -937,7 +941,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
            FROM upstream_models m
            JOIN upstreams u ON u.id = m.upstream_id
            WHERE u.enabled = 1
-             AND NOT EXISTS (SELECT 1 FROM json_each(u.disabled_public_model_ids) d WHERE d.value = m.model_id)${filterSql}
+             AND m.disabled = 0${filterSql}
            ORDER BY u.sort_order, u.created_at, u.id, m.kind, m.model_id`,
         )
         .bind(...filterBinds)
@@ -950,7 +954,6 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
       name: row.name,
       hue: parseUpstreamHue(row.id, row.hue),
       sortOrder: row.sort_order,
-      disabledPublicModelIds: normalizeDisabledPublicModelIds(decodeDisabledPublicModelIds(row.disabled_public_model_ids, row.id)),
       modelPrefix: parseModelPrefixColumns(row.id, row.model_prefix, row.model_prefix_addressable, row.model_prefix_listed),
     }));
 
@@ -983,8 +986,8 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
          FROM upstream_models m
          JOIN upstreams u ON u.id = m.upstream_id
          WHERE u.enabled = 1
-           AND u.id IN (SELECT CAST(value AS TEXT) FROM json_each(?))
-           AND NOT EXISTS (SELECT 1 FROM json_each(u.disabled_public_model_ids) d WHERE d.value = m.model_id)`,
+           AND m.disabled = 0
+           AND u.id IN (SELECT CAST(value AS TEXT) FROM json_each(?))`,
       )
       .bind(JSON.stringify(uniqueIds))
       .all<{
@@ -1027,10 +1030,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
              SELECT COUNT(DISTINCT m.model_id)
              FROM upstream_models m
              WHERE m.upstream_id = u.id
-               AND NOT EXISTS (
-                 SELECT 1 FROM json_each(u.disabled_public_model_ids) d
-                 WHERE d.value = m.model_id
-               )
+               AND m.disabled = 0
            ) AS active_model_count
          FROM upstreams u${whereSql}`,
       )
@@ -1109,13 +1109,5 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
       map.get(row.upstream_id)!.push(decodeUpstreamManualModel(row.config_json, row.upstream_id));
     }
     return map;
-  }
-
-  async getCustomDiscovered(upstreamId: string): Promise<UpstreamModelConfig[] | null> {
-    const row = await this.db
-      .prepare('SELECT discovered_json FROM custom_upstream_discovered_models WHERE upstream_id = ?')
-      .bind(upstreamId)
-      .first<{ discovered_json: string }>();
-    return row ? decodeCustomDiscoveredModels(row.discovered_json, upstreamId) : null;
   }
 }

@@ -36,7 +36,7 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
     const stored = await repo.upstreams.getById(upstream.id);
     if (stored === null) throw new Error(`Upstream ${upstream.id} was not saved`);
     assertEquals(await seedModelsCache(repo.upstreams, upstream.id, {
-      configVersion: stored.configVersion,
+      version: stored.version,
       revision: MODEL_CATALOG_REVISION,
       fetchedAt: Date.now(),
       models: projectCustomModels(stored, manualModels),

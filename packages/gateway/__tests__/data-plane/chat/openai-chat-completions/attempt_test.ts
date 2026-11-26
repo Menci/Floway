@@ -10,7 +10,7 @@ import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent }
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
-import { assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_chat_completions_attempt_test';
 
@@ -79,12 +79,7 @@ const makeCandidate = (overrides: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       instance: provider,
     },
-    model: stubInternalModel({
-      endpoints,
-      providerModels: {
-        [upstream]: stubProviderModel({ endpoints, enabledFlags: new Set<FlagId>(overrides.enabledFlags ?? []) }),
-      },
-    }, upstream),
+    model: stubProviderModel({ endpoints, enabledFlags: new Set<FlagId>(overrides.enabledFlags ?? []) }),
     fetcher: directFetcher,
   };
 };

@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import type { AddressableIdEntry } from '../../../../src/data-plane/shared/listing/addressable.ts';
 import { synthesizeListedAliases } from '../../../../src/data-plane/shared/listing/alias.ts';
 import type { ModelAliasRecord } from '../../../../src/repo/types.ts';
-import type { InternalModel, ProviderModel } from '@floway-dev/provider';
+import type { InternalModel } from '@floway-dev/provider';
 
 const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasRecord => ({
   id: `alias_${overrides.name ?? 'gpt-fast'}`,
@@ -21,24 +21,23 @@ const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasReco
 });
 
 const realModel = (
-  overrides: Partial<Omit<InternalModel, 'aliasedFrom' | 'providerModels'>> & { id: string; providerModels?: Record<string, ProviderModel> },
+  overrides: Partial<Omit<InternalModel, 'aliasedFrom'>> & { id: string },
 ): InternalModel => ({
   kind: 'chat',
   limits: {},
   endpoints: { openaiChatCompletions: {}, anthropicMessages: {}, openaiResponses: {} },
-  providerModels: {},
   ...overrides,
 });
 
 // Adapt the fixtures' "list of real models" view to the addressable surface
 // the synthesizer now consumes — every fixture entry is a listed catalog row.
 const listed = (models: readonly InternalModel[]): AddressableIdEntry[] =>
-  models.map(model => ({ id: model.id, unlisted: undefined, model, upstreams: [] }));
+  models.map(model => ({ id: model.id, unlisted: undefined, model, upstreams: [], contributions: [] }));
 
 // Test-only addressable surface that pretends a model is reachable through
 // a prefix-only addressable form. The synthesizer should treat such targets
 // as available even though they never appear in the listed catalog.
-const unlisted = (id: string, model: InternalModel): AddressableIdEntry => ({ id, unlisted: true, model, upstreams: [] });
+const unlisted = (id: string, model: InternalModel): AddressableIdEntry => ({ id, unlisted: true, model, upstreams: [], contributions: [] });
 
 describe('synthesizeListedAliases', () => {
   test('publishes a common opaque-blob scope and falls back for mixed targets', () => {

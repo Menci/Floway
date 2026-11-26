@@ -20,7 +20,6 @@
 
 import type { OpenAIResponsesInterceptor } from './types.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf } from '@floway-dev/provider';
 
 interface DeepSeekDisableField {
   thinking?: { type: 'disabled' };
@@ -36,7 +35,7 @@ const stripCanonicalReasoningSentinel = (payload: CanonicalOpenAIResponsesPayloa
 };
 
 export const withVendorDeepSeekOpenAIResponsesNormalize: OpenAIResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-deepseek')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('vendor-deepseek')) return await run();
 
   ctx.payload = stripCanonicalReasoningSentinel(ctx.payload);
 

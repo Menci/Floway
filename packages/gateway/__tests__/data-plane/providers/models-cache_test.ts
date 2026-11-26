@@ -7,7 +7,7 @@ import { buildChatGPTUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } f
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-const targetFor = (record: StoredUpstreamRecord) => ({ upstreamId: record.id, configVersion: record.configVersion });
+const targetFor = (record: StoredUpstreamRecord) => ({ upstreamId: record.id, version: record.version });
 
 const setupCustom = async () => {
   const { repo } = await setupAppTest();
@@ -31,10 +31,9 @@ test('a config edit during discovery returns its models without publishing the o
       await repo.upstreams.replace({
         previous: current,
         upstream: { ...current, config: { ...current.config as Record<string, unknown>, baseUrl: 'https://next.example.com' } },
-        bumpConfigVersion: true,
       });
       release!(jsonResponse({ object: 'list', data: [{ id: 'old-model' }] }));
-      await expect(pending).resolves.toMatchObject({ kind: 'discovered', publication: 'lost-race', discovered: [{ upstreamModelId: 'old-model' }] });
+      await expect(pending).resolves.toMatchObject({ kind: 'discovered', publication: 'lost-race', entries: [{ source: 'auto', model: expect.objectContaining({ upstreamModelId: 'old-model' }) }] });
     },
   );
   expect((await repo.upstreams.getById(record.id))?.modelsCache).toEqual({ revision: null, fetchedAt: null, lastError: null });
@@ -66,7 +65,6 @@ test.each([
   const configured = await repo.upstreams.replace({
     previous: record,
     upstream: { ...record, config: { ...record.config as Record<string, unknown>, apiKey } },
-    bumpConfigVersion: true,
   });
   if (configured === null) throw new Error('credential update failed');
   await withMockedFetch(
@@ -108,7 +106,6 @@ test('model discovery redacts an endpoint query credential', async () => {
   const configured = await repo.upstreams.replace({
     previous: record,
     upstream: { ...record, config: { ...config, apiKey: '', modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: `/v1/models?limit=1&monkey=banana&${parameter}=query-secret-42` } } },
-    bumpConfigVersion: true,
   });
   if (configured === null) throw new Error('query-auth update failed');
   await withMockedFetch(
@@ -130,7 +127,6 @@ test('model discovery redacts userinfo from a URL construction failure', async (
   const configured = await repo.upstreams.replace({
     previous: record,
     upstream: { ...record, config: { ...record.config as Record<string, unknown>, baseUrl: 'https://user:secret@custom.example.com' } },
-    bumpConfigVersion: true,
   });
   if (configured === null) throw new Error('userinfo update failed');
   await withMockedFetch(

@@ -110,7 +110,7 @@ test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses st
   if (storedUpstream === null) throw new Error('expected stored upstream fixture');
   await repo.upstreams.publishModelsRefresh({
     id: 'up_node',
-    configVersion: storedUpstream.configVersion,
+    version: storedUpstream.version,
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_786_000_000_000,
     models: [{ source: 'auto', model: stubProviderModel({ id: 'node-model', enabledFlags: new Set(['vendor-kimi'] as const) }) }],

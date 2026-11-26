@@ -7,7 +7,6 @@ export const saveUpstreamForTest = async (
   options: {
     readonly manualModels?: readonly UpstreamModelConfig[];
     readonly modelsWrite?: UpstreamModelsWritePayload;
-    readonly bumpConfigVersion?: boolean;
   } = {},
 ): Promise<void> => {
   const previous = await repo.getById(upstream.id);
@@ -20,7 +19,6 @@ export const saveUpstreamForTest = async (
     : await repo.replace({
         previous,
         upstream,
-        bumpConfigVersion: options.bumpConfigVersion ?? true,
         ...optional,
       });
   if (saved === null) throw new Error(`Failed to save test upstream ${upstream.id}`);

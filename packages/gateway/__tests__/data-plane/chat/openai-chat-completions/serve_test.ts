@@ -6,7 +6,7 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the model
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -95,10 +95,10 @@ const makeCandidate = (overrides: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       instance: provider,
     },
-    model: stubInternalModel({
+    model: stubProviderModel({
       id: overrides.modelId ?? 'test-model',
       ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-    }, upstream),
+    }),
     fetcher: directFetcher,
   };
 };

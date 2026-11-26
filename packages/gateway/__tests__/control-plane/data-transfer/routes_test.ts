@@ -79,8 +79,7 @@ const CUSTOM_UPSTREAM: StoredUpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  rowVersion: 1,
-  configVersion: 1,
+  version: 1,
   modelsCache: EMPTY_MODELS_CACHE,
   hue: 210,
   config: {
@@ -109,8 +108,7 @@ const COPILOT_UPSTREAM: StoredUpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  rowVersion: 1,
-  configVersion: 1,
+  version: 1,
   modelsCache: EMPTY_MODELS_CACHE,
   hue: 210,
   config: {
@@ -153,8 +151,7 @@ const AZURE_UPSTREAM: StoredUpstreamRecord = {
   disabledPublicModelIds: ['gpt-public'],
   proxyFallbackList: [],
   modelPrefix: null,
-  rowVersion: 1,
-  configVersion: 1,
+  version: 1,
   modelsCache: EMPTY_MODELS_CACHE,
   hue: 210,
   config: {
@@ -177,8 +174,7 @@ const CHATGPT_UPSTREAM: StoredUpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  rowVersion: 1,
-  configVersion: 1,
+  version: 1,
   modelsCache: EMPTY_MODELS_CACHE,
   hue: 210,
   config: {

@@ -1,5 +1,5 @@
 import type { GatewayCtx } from '../gateway-ctx.ts';
-import { providerModelOf, type ModelCandidate, type PerformanceOperation, type PerformanceTelemetryContext, type TelemetryModelIdentity } from '@floway-dev/provider';
+import { type ModelCandidate, type PerformanceOperation, type PerformanceTelemetryContext, type TelemetryModelIdentity } from '@floway-dev/provider';
 
 export const upstreamPerformanceContext = (
   ctx: GatewayCtx,
@@ -23,5 +23,5 @@ export const telemetryModelIdentity = (candidate: ModelCandidate, modelKey: stri
   model: candidate.model.id,
   upstream: candidate.provider.upstreamId,
   modelKey,
-  pricing: providerModelOf(candidate).pricing ?? null,
+  pricing: candidate.model.pricing ?? null,
 });

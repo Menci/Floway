@@ -166,7 +166,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identit
   await saveUpstreamForTest(repo.upstreams, existing);
   const storedBefore = (await repo.upstreams.getById(existing.id))!;
   await seedModelsCache(repo.upstreams, existing.id, {
-    configVersion: storedBefore.configVersion,
+    version: storedBefore.version,
     revision: 1,
     fetchedAt: 1_700_000_000_000,
     models: [stubProviderModel({ id: 'old-tenant-model' })],

@@ -9,7 +9,6 @@ import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } fr
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
-import { providerModelsUnavailableResponse } from '../../shared/upstream-response.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { jsonResponseInit } from '../shared/respond.ts';
 import type { OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
@@ -34,17 +33,13 @@ const previousResponseNotFoundResponse = (id: string): Response =>
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
 // etc.) as an OpenAI-Responses-shaped 502 with the same internal-error envelope the
-// in-flow `internal-error` ExecuteResult produces. A
-// `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
-// that body verbatim — the upstream's `/models` 401 IS the diagnostic. The
+// in-flow `internal-error` ExecuteResult produces. The
 // caller passes its outer `ctx` when one was already constructed (so the
 // dump row preserves the model attribution the request-time
 // `requestedModel` stamped, and the throwing-candidate telemetry stamped
 // in serve.ts survives onto the error row); a fresh ctx is minted only
 // for pre-parse failures where no payload was available to read model from.
 const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
-  const verbatim = providerModelsUnavailableResponse(error);
-  if (verbatim !== null) return verbatim;
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
   const response = respondOpenAIResponsesFailure(result, effectiveCtx);
