@@ -87,7 +87,6 @@ test('[sql] targeted API key updates use SQLite-bindable scalar values', async (
   const updated = await repo.apiKeys.update('key_dump', {
     name: 'Updated key',
     key: 'updated_raw_key',
-    lastUsedAt: '2026-07-29T00:00:00.000Z',
     upstreamIds: ['upstream-a'],
     randomizeUpstreams: true,
     dumpRetentionSeconds: 3600,
@@ -96,7 +95,6 @@ test('[sql] targeted API key updates use SQLite-bindable scalar values', async (
 
   assertEquals(updated?.name, 'Updated key');
   assertEquals(updated?.key, 'updated_raw_key');
-  assertEquals(updated?.lastUsedAt, '2026-07-29T00:00:00.000Z');
   assertEquals(updated?.upstreamIds, ['upstream-a']);
   assertEquals(updated?.randomizeUpstreams, true);
   assertEquals(updated?.dumpRetentionSeconds, 3600);

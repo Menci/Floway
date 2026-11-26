@@ -15,6 +15,7 @@ const flagGroupById = {
   'vendor-deepseek': 'vendor',
   'vendor-qwen': 'vendor',
   'vendor-kimi': 'vendor',
+  'vendor-mistral': 'vendor',
   'anthropic-messages-web-search-shim': 'shims',
   'openai-responses-web-search-shim': 'shims',
   'openai-responses-image-generation-shim': 'shims',

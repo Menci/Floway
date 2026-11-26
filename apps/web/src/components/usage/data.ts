@@ -1,4 +1,4 @@
-import { mergeUsageOverview, usageOverviewCursor, usageOverviewForDisplay } from './overview';
+import { usageOverviewForDisplay } from './overview';
 import type {
   SearchUsageResponse,
   SearchUsageView,
@@ -8,7 +8,8 @@ import type {
   UsageRange,
 } from './types';
 import { api, callApi, type ApiResult } from '../../api/client';
-import { dashboardRangeQuery } from '../charts/dashboard-time';
+import { dashboardFixedRangeQuery } from '../charts/dashboard-time';
+import { canContinueTelemetrySnapshot, mergeTelemetrySnapshot, sameTelemetryBucketGrid, sameTelemetryScope } from '../telemetry/snapshot';
 import type {
   SearchUsageByKeyResponse,
   SearchUsageByUserResponse,
@@ -31,8 +32,8 @@ export const buildUsageOverviewQuery = (
   filters: UsageFilters,
   nowMs: number,
 ) => ({
-  ...dashboardRangeQuery(range, nowMs),
-  format: 'buckets' as const,
+  ...dashboardFixedRangeQuery(range, nowMs),
+  format: 'fixed-buckets' as const,
   group_by: groupBy,
   filter_model: filters.model,
   filter_upstream: filters.upstream,
@@ -53,8 +54,7 @@ const sameMembers = <T>(left: readonly T[], right: readonly T[]): boolean => {
 };
 
 const sameUsageQuery = (left: UsageOverviewQuery, right: UsageOverviewQuery): boolean =>
-  left.bucket === right.bucket && left.timezone === right.timezone
-  && (!left.bucket.endsWith('d') || left.start === right.start)
+  sameTelemetryBucketGrid(left, right)
   && (left.group_by === 'keyId') === (right.group_by === 'keyId')
   && sameMembers(left.filter_model, right.filter_model)
   && sameMembers(left.filter_upstream, right.filter_upstream)
@@ -66,17 +66,17 @@ export const createUsageOverviewLoader = (): UsageOverviewLoader => {
   return async (range, groupBy, filters, loadedAt, signal) => {
     const query = buildUsageOverviewQuery(range, groupBy, filters, loadedAt);
     let previous = latest && sameUsageQuery(latest.query, query) ? latest.snapshot : undefined;
-    const cursor = usageOverviewCursor(previous, query.start, query.end);
+    const cursor = canContinueTelemetrySnapshot(previous, query) ? previous.cursor : undefined;
     const load = (cursor: string | undefined) => callApi(() => api.api['token-usage'].overview.$get({ query: cursor === undefined ? query : { ...query, cursor } }, { init: { signal } }));
     let result = await load(cursor);
     if (result.error) return result;
-    if (previous && !result.data.reset && JSON.stringify(previous.scope) !== JSON.stringify(result.data.scope)) {
+    if (previous && !result.data.reset && !sameTelemetryScope(previous.scope, result.data.scope)) {
       previous = undefined;
       if (!signal.aborted) latest = undefined;
       result = await load(undefined);
       if (result.error) return result;
     }
-    const snapshot = mergeUsageOverview(previous, result.data, query.start);
+    const snapshot = mergeTelemetrySnapshot(previous, result.data, query.start);
     const data = usageOverviewForDisplay(snapshot, groupBy);
     if (!signal.aborted) latest = { query, snapshot };
     return { data };
@@ -93,7 +93,7 @@ export const loadUsagePageData = async (
   signal: AbortSignal,
   knownAuditableUserIds?: readonly number[],
 ) => {
-  const { start, end } = dashboardRangeQuery(range, loadedAt);
+  const { start, end } = dashboardFixedRangeQuery(range, loadedAt);
   const searchViewFor = (ids: readonly number[] | undefined): SearchUsageView => ids?.some(id => String(id) !== currentUserId)
     ? 'all-by-user'
     : 'self-by-key';

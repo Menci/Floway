@@ -352,6 +352,7 @@ const en = {
         },
         tabs: {
           label: 'Upstream sections',
+          config: 'Configuration',
           models: 'Models',
           flags: 'Upstream feature flags',
         },
@@ -379,6 +380,10 @@ const en = {
             'vendor-kimi': {
               label: 'Kimi Compatibility',
               description: 'Kimi\'s API uses a non-standard format for cached-token usage statistics.\nEnable this option to normalize the flat cached-token field (`cached_tokens`) in Kimi responses to the OpenAI canonical format (`prompt_tokens_details.cached_tokens`).\nEnable this when the upstream is the **Kimi (Moonshot AI) Chat Completions API**.',
+            },
+            'vendor-mistral': {
+              label: 'Mistral Compatibility',
+              description: 'Mistral\'s Chat Completions API rejects every request field its schema does not define (`422 extra_forbidden`), such as `stream_options.continuous_usage_stats` or a replayed assistant turn\'s `reasoning_content`.\nEnable this option to send only the fields Mistral\'s API defines, moving `max_completion_tokens` to Mistral\'s `max_tokens` and leaving out the client\'s `metadata`.\nEnable this when the upstream is the **Mistral Chat Completions API**.',
             },
             'anthropic-messages-web-search-shim': {
               label: 'Anthropic Messages Web Search Shim',
@@ -1547,6 +1552,8 @@ const en = {
       exportRecord: 'Export record',
       search: 'Search ID, model, path, upstream, status or error',
       failuresOnly: 'Failures only',
+      tools: 'Filters',
+      toolsActive: 'Filters ({{active}})',
       applyFilters: 'Search history',
       selectExport: 'Select for export',
       exportCombined: 'Combined JSON',
@@ -1678,6 +1685,8 @@ const en = {
         empty: 'No performance records in this range',
         actions: {
           refresh: 'Refresh performance',
+          refreshBreakdown: 'Loading performance breakdown',
+          retryBreakdown: 'Retry',
         },
         apiKeyScopeInfo: 'API key grouping and filters include only keys owned by your account. Choosing By API Key sets User to Only me; choosing another user clears API key filters and returns to By Model.',
         apiKeyScopeLabel: 'About API key telemetry scope',

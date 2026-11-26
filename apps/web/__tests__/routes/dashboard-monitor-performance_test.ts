@@ -14,12 +14,13 @@ afterEach(() => {
 // The gateway admin-gates every /api/upstreams route; an operator's session
 // gets 403 there while the overview supplies the authorized upstream metadata.
 const gatewayForOperator = (input: RequestInfo | URL) => {
-  const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
+  const { pathname: path, searchParams } = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
   if (path === '/api/upstreams') return Promise.resolve(Response.json({ error: 'Admin privileges required' }, { status: 403 }));
   if (path === '/api/runtime-info') return Promise.resolve(Response.json({ kind: 'node', runtimeLocation: 'LOCAL' }));
   return Promise.resolve(Response.json({
-    series: [], axes: { none: [], model: [], upstream: [], operation: [], runtimeLocation: [], keyId: [], userId: [] },
-    dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: [], userIds: [], keyIds: [] },
+    reset: true, start: searchParams.get('start'), end: searchParams.get('end'), cursor: searchParams.get('start'),
+    buckets: [], edges: { ttft_ms: [], tpot_us: [] }, scope: { actorId: 2, ownedKeyIds: [], visibility: { userIds: [2], upstreamIds: ['up-1'] } },
+    metadataVisibility: { complete: false, userIds: [2], upstreamIds: ['up-1'] },
     users: [], upstreams: [{ id: 'up-1', name: 'Copilot seat', hue: 210 }], keys: [],
   }));
 };

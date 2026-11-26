@@ -902,7 +902,7 @@ const telemetryOverviewQuery = {
 
 export const tokenUsageOverviewQuery = z.object({
   ...telemetryOverviewQuery,
-  format: z.literal('buckets'),
+  format: z.literal('fixed-buckets'),
   // Token Usage overview exposes unattributed hard-deleted-key records through
   // the synthetic user bucket.
   filter_user_id: filterValues(filterTokenUsageOverviewUserId),
@@ -910,9 +910,14 @@ export const tokenUsageOverviewQuery = z.object({
   cursor: z.string().max(13).exactOptional(),
 });
 
+const performanceDimension = z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).exactOptional();
+
 export const performanceQuery = z.object({
   ...telemetryOverviewQuery,
-  group_by: z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).exactOptional(),
+  group_by: performanceDimension,
+  format: z.literal('buckets').exactOptional(),
+  dimension: performanceDimension,
+  cursor: z.string().max(13).exactOptional(),
   filter_operation: filterValues(z.string()),
   filter_runtime_location: filterValues(z.string()),
 });

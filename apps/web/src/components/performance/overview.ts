@@ -1,5 +1,5 @@
 import { oneOf, repeatedValues } from '../../lib/search-params';
-import { dashboardRangeQuery, parseDashboardRange, serializeDashboardRange, type DashboardRange } from '../charts/dashboard-time';
+import { parseDashboardRange, serializeDashboardRange, type DashboardRange } from '../charts/dashboard-time';
 import { clearGroupedTelemetryFilters } from '../telemetry/filter-state';
 import { parseHiddenSeries, serializeHiddenSeries } from '../telemetry/hidden-series-url';
 
@@ -61,9 +61,10 @@ export interface PerformanceUrlState {
   hidden: string[];
 }
 
-export interface PerformanceOverviewResponse {
+export interface PerformanceOverviewView {
   series: PerformanceDisplayRecord[];
-  axes: Record<PerformanceGroupBy | 'none', PerformanceDisplayRecord[]>;
+  rows: PerformanceDisplayRecord[];
+  summary: PerformanceDisplayRecord | null;
   dimensionValues: {
     models: string[];
     upstreams: string[];
@@ -76,26 +77,6 @@ export interface PerformanceOverviewResponse {
   upstreams: Array<{ id: string; name: string; hue: number }>;
   keys: Array<{ id: string; name: string; createdAt: string }>;
 }
-
-// The Hono client appends one occurrence per array entry and nothing at all for
-// an empty array, so an unset filter leaves the query string untouched.
-export const buildPerformanceQuery = (
-  range: PerformanceRange,
-  groupBy: PerformanceGroupBy,
-  filters: PerformanceFilters,
-  nowMs: number,
-): Record<string, string | string[]> => {
-  return {
-    ...dashboardRangeQuery(range, nowMs),
-    group_by: groupBy,
-    filter_model: filters.model,
-    filter_upstream: filters.upstream,
-    filter_operation: filters.operation,
-    filter_runtime_location: filters.runtimeLocation,
-    filter_user_id: filters.userId,
-    filter_key_id: filters.keyId,
-  };
-};
 
 export const performanceValue = (
   record: PerformanceDisplayRecord,
@@ -124,7 +105,7 @@ export interface PerformanceLabels {
 }
 
 export const performanceLabels = (
-  overview: PerformanceOverviewResponse,
+  overview: Pick<PerformanceOverviewView, 'users' | 'keys'>,
   upstreams: readonly { id: string; name: string; hue: number }[],
 ): PerformanceLabels => ({
   upstreams: new Map(upstreams.map(upstream => [upstream.id, upstream.name])),

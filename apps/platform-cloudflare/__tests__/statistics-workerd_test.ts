@@ -7,7 +7,7 @@ import { getPlatformProxy, type PlatformProxy, unstable_splitSqlQuery as splitSq
 
 import { SqlRepo } from '@floway-dev/gateway';
 import { migrationsDir } from '@floway-dev/gateway/migrations-dir';
-import type { SqlDatabase } from '@floway-dev/platform';
+import type { SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 
 let directory: string;
 let platform: PlatformProxy<{ DB: SqlDatabase }> | undefined;
@@ -71,10 +71,10 @@ test.each([
 ] as const)('D1 statistics compile and retain exact results for $groupBy (admin: $isAdmin)', async ({ groupBy, isAdmin }) => {
   const options = {
     actorUserId: 1, isAdmin, visibleUserIds: [1], visibleUpstreams: ['statistics-upstream'],
-    start: '2026-11-01T00', end: '2026-11-01T01', bucketForHour: (hour: string) => hour,
+    start: '2026-11-01T00', end: '2026-11-01T01',
   };
   const filters = { models: [], upstreams: [], userIds: [], keyIds: [] };
-  const usageOptions = { ...options, ownedKeysOnly: groupBy === 'keyId' };
+  const usageOptions = { ...options, ownedKeysOnly: groupBy === 'keyId', bucket: { origin: options.start, hours: 1 }, hourlyBuckets: [] };
   const [usage] = await repo.usage.queryOverview({ ...usageOptions, filters });
   expect(usage!.axes.none[0]).toEqual({
     group: 'all', requests: 3,
@@ -86,7 +86,7 @@ test.each([
     filters: { models: ['statistics-model'], upstreams: usage!.dimensionValues.upstreams, userIds: [1], keyIds: ['statistics-key'] },
   })).toEqual([usage]);
 
-  const performanceOptions = { ...options, groupBy };
+  const performanceOptions = { ...options, groupBy, bucketForHour: (hour: string) => hour };
   const performance = await repo.performance.queryOverview({ ...performanceOptions, filters: { ...filters, operations: [], runtimeLocations: [] } });
   expect(performance.axes.none[0]).toMatchObject({
     bucket: 'all', group: 'all', requests: 3, errors: 1, ttftSamples: 2, tpotSamples: 2,
@@ -100,4 +100,157 @@ test.each([
       operations: ['chat'], runtimeLocations: ['HKG'],
     },
   })).toEqual(performance);
+  const [slice] = await repo.performance.querySlices({
+    ...options,
+    dimension: groupBy, ownedKeysOnly: groupBy === 'keyId',
+    bucket: { origin: options.start, hours: 24 }, hourlyBuckets: [],
+    includeTotals: true, includeFacets: true,
+    filters: { ...filters, operations: [], runtimeLocations: [] },
+  });
+  expect(slice?.rows[0]).toMatchObject({
+    group: groupBy === 'keyId' ? 'statistics-key' : 'statistics-model',
+    requests: 3, ttftSamples: 2, tpotSamples: 2,
+    buckets: expect.arrayContaining([expect.objectContaining({ metric: 'ttft_ms', count: 2 })]),
+  });
+  expect(slice?.total?.requests).toBe(3);
+  expect(slice?.dimensionValues.keyIds).toEqual(['statistics-key']);
+});
+
+test('D1 Usage overview reads a long window in one bounded query', async () => {
+  const db = platform!.env.DB;
+  const hours = 30 * 24;
+  const slotsPerHour = 8;
+  const seed = `WITH RECURSIVE hours(i) AS (
+    VALUES (0) UNION ALL SELECT i + 1 FROM hours WHERE i + 1 < ${hours}
+  ), slots(i) AS (
+    VALUES (0) UNION ALL SELECT i + 1 FROM slots WHERE i + 1 < ${slotsPerHour}
+  )
+  INSERT INTO usage_requests (key_id, model, model_key, hour, requests)
+  SELECT 'statistics-key', 'long-window-model', 'slot-' || slots.i,
+    strftime('%Y-%m-%dT%H', '2026-11-02', '+' || hours.i || ' hours'), 1
+  FROM hours CROSS JOIN slots`;
+  await db.prepare(seed).run();
+  await db.prepare(`INSERT INTO usage (key_id, model, model_key, hour, metric, quantity, unit_price)
+    SELECT key_id, model, model_key, hour, metric, '2', '0.5'
+    FROM usage_requests CROSS JOIN (
+      SELECT 'input_tokens' AS metric UNION ALL SELECT 'output_tokens' UNION ALL SELECT 'input_cache_read_tokens'
+    ) WHERE model = 'long-window-model'`).run();
+
+  const rowsRead: number[] = [];
+  const measure = (statement: SqlPreparedStatement): SqlPreparedStatement => ({
+    bind: (...values) => measure(statement.bind(...values)),
+    first: () => statement.first(),
+    run: () => statement.run(),
+    all: async <T>() => {
+      const result = await statement.all<T>();
+      const meta = result.meta;
+      if (!('rows_read' in meta) || typeof meta.rows_read !== 'number') throw new Error('D1 did not report rows read');
+      rowsRead.push(meta.rows_read);
+      return result;
+    },
+  });
+  const measured = new SqlRepo({
+    prepare: sql => measure(db.prepare(sql)),
+    exec: sql => db.exec(sql),
+  });
+  const buckets = await measured.usage.queryOverview({
+    actorUserId: 1, isAdmin: true, visibleUserIds: [1], visibleUpstreams: [],
+    start: '2026-11-02T00', end: '2026-12-02T00', ownedKeysOnly: false,
+    filters: { models: [], upstreams: [], userIds: [], keyIds: [] },
+    bucket: { origin: '2026-11-02T00', hours: 24 },
+    hourlyBuckets: [29],
+  });
+
+  expect(buckets).toHaveLength(29 + 24);
+  expect(buckets[0]).toMatchObject({
+    firstHour: '2026-11-02T00',
+    lastHour: '2026-11-02T23',
+    axes: { none: [{ requests: 24 * slotsPerHour, cost: String(24 * slotsPerHour * 3) }] },
+    dimensionValues: { models: ['long-window-model'] },
+  });
+  expect(buckets.at(-1)).toMatchObject({
+    firstHour: '2026-12-01T23',
+    lastHour: '2026-12-01T23',
+    axes: { none: [{ requests: slotsPerHour, cost: String(slotsPerHour * 3) }] },
+  });
+  expect(rowsRead).toHaveLength(1);
+  const factCount = hours * slotsPerHour * 4;
+  expect(rowsRead[0]).toBeGreaterThanOrEqual(factCount);
+  expect(rowsRead[0]).toBeLessThan(factCount * 100);
+});
+
+test('D1 Usage increments integers in a batch and applies only skipped metrics through exact arithmetic', async () => {
+  const db = platform!.env.DB;
+  const batches: (number | undefined)[][] = [];
+  const meter = new SqlRepo({
+    prepare: sql => db.prepare(sql),
+    exec: sql => db.exec(sql),
+    async batch(statements) {
+      const results = await db.batch!(statements);
+      batches.push(results.map(result => result.meta.changes));
+      return results;
+    },
+  });
+  const identity = {
+    keyId: 'statistics-key', model: 'integer-model', modelKey: 'integer-model',
+    upstream: null, hour: '2026-11-01T01', pricingSelector: {},
+  };
+  await repo.usage.set({
+    ...identity,
+    requests: 1,
+    metrics: [
+      { metric: 'input_tokens', quantity: '9223372036854775806', unitPrice: '0.5' },
+      { metric: 'output_tokens', quantity: '9007199254740993', unitPrice: null },
+    ],
+  });
+  await meter.usage.record({
+    ...identity,
+    requests: 1,
+    metrics: [
+      { metric: 'input_tokens', quantity: '1', unitPrice: '1' },
+      { metric: 'output_tokens', quantity: '2', unitPrice: '1' },
+      { metric: 'input_audio_seconds', quantity: '0.1', unitPrice: '0.3' },
+    ],
+  });
+  expect(batches).toEqual([[1, 1, 1, 1]]);
+
+  await Promise.all(Array.from({ length: 5 }, () => meter.usage.record({
+    ...identity,
+    requests: 1,
+    metrics: [
+      { metric: 'input_tokens', quantity: '1', unitPrice: '1' },
+      { metric: 'output_tokens', quantity: '3', unitPrice: '1' },
+      { metric: 'input_audio_seconds', quantity: '0.2', unitPrice: '1' },
+    ],
+  })));
+  expect(batches.slice(1)).toEqual(Array.from({ length: 5 }, () => [1, 0, 1, 0]));
+  const [record] = await repo.usage.query({ start: identity.hour, end: '2026-11-01T02' });
+  expect(record!.requests).toBe(7);
+  expect(record!.metrics).toEqual([
+    { metric: 'input_tokens', quantity: '9223372036854775812', unitPrice: '0.5' },
+    { metric: 'output_tokens', quantity: '9007199254741010', unitPrice: null },
+    { metric: 'input_audio_seconds', quantity: '1.1', unitPrice: '0.3' },
+  ]);
+});
+
+test('D1 rolls back the Usage request count and earlier metrics on a hard batch failure', async () => {
+  await platform!.env.DB.prepare(`
+    CREATE TRIGGER reject_test_usage_metric BEFORE INSERT ON usage
+    WHEN NEW.model = 'rejected-batch' AND NEW.metric = 'output_tokens'
+      AND EXISTS (SELECT 1 FROM usage_requests WHERE model = NEW.model AND requests = 1)
+      AND EXISTS (SELECT 1 FROM usage WHERE model = NEW.model AND metric = 'input_tokens')
+    BEGIN
+      SELECT RAISE(ABORT, 'Usage metric insert rejected');
+    END`).run();
+
+  await expect(repo.usage.record({
+    keyId: 'statistics-key', model: 'rejected-batch', modelKey: 'rejected-batch',
+    upstream: null, hour: '2026-11-01T02', pricingSelector: {},
+    requests: 1,
+    metrics: [
+      { metric: 'input_tokens', quantity: '3', unitPrice: null },
+      { metric: 'output_tokens', quantity: '2', unitPrice: null },
+    ],
+  })).rejects.toThrow('Usage metric insert rejected');
+  expect(await repo.usage.query({ start: '2026-11-01T02', end: '2026-11-01T03' })).toEqual([]);
 });

@@ -1,3 +1,4 @@
+import type { OverviewBucket, OverviewBucketId } from './telemetry-bucket-sql.ts';
 import type { AccessPrincipal, AccessRecord, AccessRecordInput } from '../access-control/types.ts';
 import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
@@ -98,11 +99,11 @@ export interface UsageOverviewQueryOptions {
   end: string;
   ownedKeysOnly: boolean;
   filters: UsageOverviewFilters;
-  bucketForHour: (hour: string) => string;
+  bucket: OverviewBucket;
+  hourlyBuckets: readonly OverviewBucketId[];
 }
 
 export interface UsageOverviewResult {
-  bucket: string;
   firstHour: string;
   lastHour: string;
   axes: Record<UsageOverviewAxis, UsageOverviewRecord[]>;
@@ -255,6 +256,27 @@ export interface PerformanceOverviewResult {
   };
 }
 
+export interface PerformanceSliceQuery extends Omit<PerformanceOverviewQueryOptions, 'groupBy' | 'bucketForHour'> {
+  dimension: PerformanceGroupBy;
+  ownedKeysOnly: boolean;
+  bucket: OverviewBucket;
+  hourlyBuckets: readonly OverviewBucketId[];
+  includeTotals: boolean;
+  includeFacets: boolean;
+}
+
+export interface PerformanceSliceRecord extends Pick<PerformanceDisplayRecord, 'group' | 'requests' | 'errors' | 'ttftSamples' | 'tpotSamples' | 'neutral'> {
+  buckets: PerformanceBucketRow[];
+}
+
+export interface PerformanceQuerySlice {
+  firstHour: string;
+  lastHour: string;
+  rows: PerformanceSliceRecord[];
+  total?: PerformanceSliceRecord;
+  dimensionValues: PerformanceOverviewResult['dimensionValues'];
+}
+
 export interface ApiKeyRepo {
   list(): Promise<ApiKey[]>;
   // Includes soft-deleted rows so the user_id behind a historical key stays
@@ -268,6 +290,7 @@ export interface ApiKeyRepo {
   getById(id: string): Promise<ApiKey | null>;
   save(key: ApiKey): Promise<void>;
   update(id: string, patch: ApiKeyUpdate): Promise<ApiKey | null>;
+  setLastUsedAt(id: string, lastUsedAt: string): Promise<void>;
   softDelete(id: string): Promise<boolean>;
   softDeleteByUserId(userId: number): Promise<number>;
   deleteAll(): Promise<void>;
@@ -275,7 +298,7 @@ export interface ApiKeyRepo {
 
 export type ApiKeyUpdate = Partial<Pick<
   ApiKey,
-  'name' | 'key' | 'lastUsedAt' | 'upstreamIds' | 'randomizeUpstreams' | 'dumpRetentionSeconds' | 'openaiResponsesRetentionSeconds'
+  'name' | 'key' | 'upstreamIds' | 'randomizeUpstreams' | 'dumpRetentionSeconds' | 'openaiResponsesRetentionSeconds'
 >>;
 
 export interface UserPreferencesRepo {
@@ -399,6 +422,7 @@ export interface PerformanceRepo {
   // upstream call.
   recordNeutral(dims: PerformanceDimensions): Promise<void>;
   queryOverview(opts: PerformanceOverviewQueryOptions): Promise<PerformanceOverviewResult>;
+  querySlices(opts: PerformanceSliceQuery): Promise<PerformanceQuerySlice[]>;
   listAll(): Promise<PerformanceTelemetryRecord[]>;
   // Replacement upsert used by admin restore paths.
   set(record: PerformanceTelemetryRecord): Promise<void>;

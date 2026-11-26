@@ -4,7 +4,7 @@
 // copy, while this package owns the ids shared by providers and persisted
 // overrides.
 //
-// Vendor-style flags (`vendor-deepseek`, `vendor-qwen`, `vendor-kimi`) are
+// Vendor-style flags (`vendor-deepseek`, `vendor-qwen`, `vendor-kimi`, `vendor-mistral`) are
 // mutually exclusive per model: a vendor interceptor translates the
 // gateway's OpenAI-canonical request and response shape into the vendor's
 // wire dialect; with no vendor flag set, behavior defaults to the OpenAI
@@ -23,6 +23,7 @@ export const OPTIONAL_FLAG_IDS = [
   'vendor-deepseek',
   'vendor-qwen',
   'vendor-kimi',
+  'vendor-mistral',
   'anthropic-messages-web-search-shim',
   'openai-responses-web-search-shim',
   'openai-responses-image-generation-shim',

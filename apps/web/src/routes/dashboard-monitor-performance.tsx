@@ -7,10 +7,10 @@ import type { Route } from './+types/dashboard-monitor-performance';
 import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi, type GlobalError } from '../api/client';
-import { sameDashboardRange } from '../components/charts/dashboard-time';
+import { dashboardChartBuckets, sameDashboardRange } from '../components/charts/dashboard-time';
 import { PerformanceChartSection } from '../components/performance/chart';
+import { createPerformanceLoader, performanceOverviewForDisplay, performanceRanking, type PerformanceDataset, type PerformanceQuery } from '../components/performance/data';
 import {
-  buildPerformanceQuery,
   normalizePerformanceBreakdownForRuntime,
   normalizePerformanceDimensionsForRuntime,
   parsePerformanceUrlState,
@@ -21,13 +21,13 @@ import {
   type PerformanceFilters,
   type PerformanceGroupBy,
   type PerformanceMetric,
-  type PerformanceOverviewResponse,
+  type PerformanceOverviewView,
   type PerformancePercentile,
   type PerformanceRange,
   type PerformanceTableSort,
   type PerformanceUrlState,
 } from '../components/performance/overview';
-import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
+import { buildPerformanceChart } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
 import { TelemetryFilterFields, TelemetryGroupByField, type TelemetryDimension } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
@@ -41,14 +41,14 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { ScrollArea } from '../components/ui/scroll-area';
-import { useRefreshOnChange } from '../components/ui/use-refresh';
+import { useRefresh, useRefreshOnChange } from '../components/ui/use-refresh';
 import { fluentComponents } from '../fluent';
 import { formatDuration } from '../lib/format-duration';
 import { formatCount, formatTokenRateFromTpot } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
 
-const { Button, Tab, TabList, Text, Tooltip } = fluentComponents;
+const { Button, Spinner, Tab, TabList, Text, Tooltip } = fluentComponents;
 
 interface LoaderData {
   currentUserId: string;
@@ -56,7 +56,8 @@ interface LoaderData {
   loadedAt: number;
   // `null` is a failed fetch, not a quiet gateway: an empty overview would
   // render zeroes the page does not know to be true.
-  overview: PerformanceOverviewResponse | null;
+  overview: PerformanceOverviewView | null;
+  dataset?: PerformanceDataset | undefined;
   state: PerformanceUrlState;
   regionAvailable: boolean | null;
 }
@@ -71,9 +72,9 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   });
   const loadedAt = Date.now();
   const requestedState = { ...parsed, ...scoped };
-  const query = buildPerformanceQuery(requestedState.range, requestedState.groupBy, requestedState.filters, loadedAt);
+  const performanceLoader = createPerformanceLoader();
   const [initialOverview, runtime] = await Promise.all([
-    callApi(() => api.api.performance.overview.$get({ query })),
+    performanceLoader.load(requestedState, requestedState.groupBy, loadedAt),
     callApi(() => api.api['runtime-info'].$get()),
   ]);
   const regionAvailable = runtime.error ? null : runtime.data.kind === 'cloudflare';
@@ -86,14 +87,13 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   };
   const overview = !normalization.changed
     ? initialOverview
-    : await callApi(() => api.api.performance.overview.$get({
-        query: buildPerformanceQuery(normalization.state.range, normalization.state.groupBy, normalization.state.filters, loadedAt),
-      }));
+    : await performanceLoader.load(normalization.state, normalization.state.groupBy, loadedAt);
   return {
     currentUserId: String(user.id),
     error: overview.error ?? runtime.error ?? null,
     loadedAt,
-    overview: overview.data ?? null,
+    overview: overview.data === undefined ? null : performanceOverviewForDisplay(overview.data),
+    dataset: overview.data,
     regionAvailable,
     state,
   };
@@ -106,6 +106,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [, setSearchParams] = useSearchParams();
   const rewrite = useEntryRewrite();
   const initialState = loaderData.state;
+  const [performanceLoader] = useState(() => createPerformanceLoader(loaderData.dataset));
   const [regionAvailable, setRegionAvailable] = useState(loaderData.regionAvailable);
   const [query, setQuery] = useState(() => ({
     filters: initialState.filters,
@@ -117,9 +118,12 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [breakdownGroup, setBreakdownGroup] = useState<PerformanceGroupBy>(initialState.breakdown);
   const [sort, setSort] = useState<PerformanceTableSort>(initialState.sort);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
-  const [overview, setOverview] = useState<PerformanceOverviewResponse | null>(loaderData.overview);
+  const [overview, setOverview] = useState<PerformanceOverviewView | null>(loaderData.overview);
+  const [scope, setScope] = useState(() => loaderData.dataset?.snapshot.scope);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
+  const [ranking, setRanking] = useState<{ dimension: PerformanceGroupBy; query: PerformanceQuery; requestedAt: number; scopeKey: string | undefined; error: GlobalError | null }>();
   const pendingRegionAvailableRef = useRef<boolean | null>(null);
+  const pageWindow = useRef<{ query: PerformanceQuery; requestedAt: number } | undefined>(undefined);
   const locale = useLocale();
   const identityContext = {
     currentUserId: loaderData.currentUserId,
@@ -130,37 +134,34 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   // A background poll must not clear a failure the operator has not read.
   const reload = useCallback(async (signal: AbortSignal, { background, requestedAt }: { background: boolean; requestedAt: number }) => {
     if (!background) setError(null);
-    const search = buildPerformanceQuery(query.range, query.groupBy, query.filters, requestedAt);
+    const window = { query, requestedAt };
+    pageWindow.current = window;
+    const failed = (error?: GlobalError) => {
+      if (pageWindow.current === window) pageWindow.current = undefined;
+      if (error !== undefined) setError(error);
+      return false;
+    };
     if (regionAvailable !== null) {
-      const result = await callApi(() => api.api.performance.overview.$get(
-        { query: search },
-        { init: { signal } },
-      ));
-      if (signal.aborted) return false;
-      if (result.error) {
-        setError(result.error);
-        return false;
-      }
-      setOverview(result.data);
+      const result = await performanceLoader.load(query, query.groupBy, requestedAt);
+      if (signal.aborted) return failed();
+      if (result.error) return failed(result.error);
+      setOverview(performanceOverviewForDisplay(result.data));
+      setScope(result.data.snapshot.scope);
       return true;
     }
 
     const discovery = pendingRegionAvailableRef.current === null
       ? await Promise.all([
-          callApi(() => api.api.performance.overview.$get(
-            { query: search },
-            { init: { signal } },
-          )),
+          performanceLoader.load(query, query.groupBy, requestedAt),
           callApi(() => api.api['runtime-info'].$get({}, { init: { signal } })),
         ]).then(([overviewResult, runtimeResult]) => ({ overviewResult, runtimeResult }))
       : null;
-    if (signal.aborted) return false;
+    if (signal.aborted) return failed();
     let nextRegionAvailable: boolean;
     if (pendingRegionAvailableRef.current === null) {
       if (discovery === null) throw new Error('Runtime capability discovery was not started');
       if (discovery.runtimeResult.error) {
-        setError(discovery.overviewResult.error ?? discovery.runtimeResult.error);
-        return false;
+        return failed(discovery.overviewResult.error ?? discovery.runtimeResult.error);
       }
       nextRegionAvailable = discovery.runtimeResult.data.kind === 'cloudflare';
       pendingRegionAvailableRef.current = nextRegionAvailable;
@@ -180,29 +181,26 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       : query;
     let result;
     if (normalization.changed) {
-      result = await callApi(() => api.api.performance.overview.$get(
-        { query: buildPerformanceQuery(committedQuery.range, committedQuery.groupBy, committedQuery.filters, requestedAt) },
-        { init: { signal } },
-      ));
+      result = await performanceLoader.load(committedQuery, committedQuery.groupBy, requestedAt);
     } else {
       if (discovery === null) throw new Error('Overview was not loaded with runtime capability discovery');
       result = discovery.overviewResult;
     }
-    if (signal.aborted) return false;
+    if (signal.aborted) return failed();
     if (result.error) {
       if (!normalization.changed) {
         pendingRegionAvailableRef.current = null;
         setRegionAvailable(nextRegionAvailable);
       }
-      setError(result.error);
-      return false;
+      return failed(result.error);
     }
     pendingRegionAvailableRef.current = null;
     setRegionAvailable(nextRegionAvailable);
     setBreakdownGroup(current => normalizePerformanceBreakdownForRuntime(current, nextRegionAvailable));
-    setOverview(result.data);
+    setOverview(performanceOverviewForDisplay(result.data));
+    setScope(result.data.snapshot.scope);
     return normalization.changed ? committedQuery : true;
-  }, [query, regionAvailable]);
+  }, [query, regionAvailable, performanceLoader]);
 
   const onQueryCommit = useCallback((previous: typeof query, next: typeof query) => {
     if (previous.groupBy !== next.groupBy) setHiddenSeries(new Set());
@@ -217,6 +215,23 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
 
   const [editingRange, setEditingRange] = useState(false);
   useTelemetryPolling(poll, loadedQuery.range, !editingRange && !refreshing);
+
+  const needsRanking = overview !== null && regionAvailable !== null && breakdownGroup !== loadedQuery.groupBy;
+  const scopeKey = scope === undefined ? undefined : JSON.stringify(scope);
+  const rankingReload = useCallback(async (signal: AbortSignal) => {
+    const requestedAt = pageWindow.current?.query === loadedQuery ? pageWindow.current.requestedAt : loadedAt;
+    const result = await performanceLoader.load(loadedQuery, breakdownGroup, requestedAt, scopeKey);
+    if (signal.aborted) return;
+    setRanking({ dimension: breakdownGroup, query: loadedQuery, requestedAt, scopeKey, error: result.error ?? null });
+  }, [performanceLoader, loadedQuery, breakdownGroup, loadedAt, scopeKey]);
+  const {
+    cancel: cancelRanking, refresh: refreshRanking, refreshInBackground: refreshRankingInBackground,
+    backgroundRefreshing: rankingPolling, refreshing: rankingRefreshing,
+  } = useRefresh(rankingReload);
+  useEffect(() => {
+    if (needsRanking) void refreshRankingInBackground();
+    return cancelRanking;
+  }, [needsRanking, refreshRankingInBackground, cancelRanking]);
 
   const urlState = useMemo<PerformanceUrlState>(
     () => ({ ...loadedQuery, metric, percentile, breakdown: breakdownGroup, sort, hidden: [...hiddenSeries] }),
@@ -253,12 +268,24 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     ...current,
     ...changeTelemetryFilter(current, key, value, identityContext),
   }));
-  const buckets = useMemo(() => performanceBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
+  const buckets = useMemo(() => dashboardChartBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
   const labels = useMemo(() => overview && performanceLabels(overview, overview.upstreams), [overview]);
   const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range), [buckets, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentile]);
 
-  const changeBreakdown = (key: PerformanceGroupBy) => setBreakdownGroup(key);
-  const summary = overview?.axes.none[0];
+  const changeBreakdown = (key: PerformanceGroupBy) => {
+    if (key === breakdownGroup) return;
+    setRanking(undefined);
+    setBreakdownGroup(key);
+  };
+  const activeRanking = ranking?.dimension === breakdownGroup && ranking.query === loadedQuery && ranking.scopeKey === scopeKey
+    ? ranking : undefined;
+  const rankingWindow = Math.max(loadedAt, activeRanking?.requestedAt ?? loadedAt);
+  const rankingDataset = needsRanking ? performanceLoader.get(loadedQuery, breakdownGroup, rankingWindow, scopeKey) : undefined;
+  const rankingRows = useMemo(() => rankingDataset === undefined ? undefined : performanceRanking(rankingDataset), [rankingDataset]);
+  const tableRows = needsRanking ? rankingRows : overview?.rows;
+  const rankingError = activeRanking?.error ?? null;
+  const rankingBusy = needsRanking && (rankingPolling || rankingRefreshing || (rankingRows === undefined && rankingError === null));
+  const summary = overview?.summary;
   const summaryCards = [
     ['requests', formatCount(summary?.requests ?? 0, locale)],
     ['errors', formatCount(summary?.errors ?? 0, locale)],
@@ -299,8 +326,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       const availableDimensions = dimensions.filter(dimension => (
         (dimension.key !== 'runtimeLocation' || regionAvailable)
       ));
-      const breakdowns = availableDimensions.map(({ key }) => ({ key, rows: overview.axes[key] }));
-      const activeBreakdown = breakdowns.find(item => item.key === breakdownGroup) ?? breakdowns[0];
+      const activeBreakdown = availableDimensions.find(item => item.key === breakdownGroup) ?? availableDimensions[0];
       if (activeBreakdown === undefined) throw new RangeError('Performance overview has no available breakdown dimension');
       return <>
         <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
@@ -364,10 +390,21 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
           {/* The scrollport clips the 2px ring a focused tab paints, so it takes
             a gutter and the host removes the same distance again to keep the
             row aligned. An inward ring would land on the tab's selection pipe. */}
-          <ScrollArea axes="horizontal" className="min-w-0 -m-0.5" viewportClassName="p-0.5"><TabList aria-label={t('monitoring.performance.breakdown')} selectedValue={activeBreakdown.key} onTabSelect={(_, data) => changeBreakdown(data.value as PerformanceGroupBy)}>
-            {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`monitoring.performance.groupBy.${key}`)}</Tab>)}
-          </TabList></ScrollArea>
-          <PerformanceTable groupBy={activeBreakdown.key} labels={labels} onSortChange={setSort} percentile={percentile} rows={activeBreakdown.rows} sort={sort} />
+          <div className="flex items-center gap-2 min-w-0" aria-busy={rankingBusy}>
+            <ScrollArea axes="horizontal" className="min-w-0 flex-1 -m-0.5" viewportClassName="p-0.5"><TabList aria-label={t('monitoring.performance.breakdown')} selectTabOnFocus={false} selectedValue={activeBreakdown.key} onTabSelect={(_, data) => changeBreakdown(data.value as PerformanceGroupBy)}>
+              {availableDimensions.map(({ key }) => <Tab key={key} value={key}>{t(`monitoring.performance.groupBy.${key}`)}</Tab>)}
+            </TabList></ScrollArea>
+            {rankingBusy && <Spinner size="tiny" className="flex-none" aria-label={t('monitoring.performance.actions.refreshBreakdown')} />}
+          </div>
+          {rankingError !== null && <OutcomeMessageBar action={<Button size="small" appearance="subtle" onClick={() => void refreshRanking()}>{t('monitoring.performance.actions.retryBreakdown')}</Button>}>
+            {rankingError.message}
+          </OutcomeMessageBar>}
+          {tableRows !== undefined && <PerformanceTable groupBy={activeBreakdown.key}
+            labels={rankingDataset === undefined ? labels : performanceLabels({
+              users: [...overview.users, ...rankingDataset.snapshot.users],
+              keys: rankingDataset.snapshot.keys,
+            }, [...overview.upstreams, ...rankingDataset.snapshot.upstreams])}
+            onSortChange={setSort} percentile={percentile} rows={tableRows} sort={sort} />}
         </Panel>
       </>;
     })()}

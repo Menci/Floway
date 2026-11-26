@@ -26,13 +26,7 @@ export const TPOT_UPPER_EDGES_US = [
   250_000, 500_000, 1_000_000, 2_500_000, 10_000_000,
 ] as const;
 
-export interface HistogramBucket {
-  lower: number;
-  upper: number | null;
-  count: number;
-}
-
-const bucketForValue = (edges: readonly number[], value: number): Omit<HistogramBucket, 'count'> => {
+const bucketForValue = (edges: readonly number[], value: number): { lower: number; upper: number | null } => {
   if (!Number.isFinite(value) || value < 0) throw new Error(`bucketForValue: expected finite non-negative number, got ${value}`);
   const clamped = Math.ceil(value);
   let lower = 0;
@@ -45,37 +39,3 @@ const bucketForValue = (edges: readonly number[], value: number): Omit<Histogram
 
 export const bucketForTtftMs = (ttftMs: number) => bucketForValue(TTFT_UPPER_EDGES_MS, ttftMs);
 export const bucketForTpotUs = (tpotUs: number) => bucketForValue(TPOT_UPPER_EDGES_US, tpotUs);
-
-// Nearest-rank selects one global order statistic. Within a finite bucket,
-// only its interval and sample count survive aggregation, so we estimate the
-// selected sample as the corresponding uniform order statistic: the x-th of
-// n samples from Uniform(lower, upper) has expectation
-// lower + (upper - lower) * x / (n + 1). This preserves the selected sample's
-// position instead of collapsing every percentile in the bucket to one value.
-// The overflow bucket has no finite distribution to interpolate, so it returns
-// its lower bound.
-export const percentileFromBuckets = (buckets: readonly HistogramBucket[], percentile: number): number | null => {
-  const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0);
-  if (total <= 0) return null;
-
-  // Small epsilon guard so IEEE-754 drift like `200 * 0.29 === 58.00000000000001`
-  // doesn't push the rank past the intended sample.
-  const rank = Math.max(1, Math.min(total, Math.ceil(total * percentile - 1e-9)));
-  const ordered = [...buckets].sort((a, b) => {
-    if (a.upper === null && b.upper === null) return 0;
-    if (a.upper === null) return 1;
-    if (b.upper === null) return -1;
-    return a.upper - b.upper;
-  });
-
-  let seen = 0;
-  for (const bucket of ordered) {
-    if (seen + bucket.count >= rank) {
-      if (bucket.upper === null) return bucket.lower;
-      const rankWithinBucket = rank - seen;
-      return bucket.lower + (bucket.upper - bucket.lower) * rankWithinBucket / (bucket.count + 1);
-    }
-    seen += bucket.count;
-  }
-  throw new Error('percentileFromBuckets: unreachable — total>0 and rank<=total should have terminated the loop');
-};

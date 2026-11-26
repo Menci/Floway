@@ -3,7 +3,8 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
-import { parsePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../src/components/performance/overview';
+import { buildPerformanceQuery, type PerformanceDataset } from '../../src/components/performance/data';
+import { parsePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewView } from '../../src/components/performance/overview';
 import { i18n } from '../../src/i18n';
 import DashboardMonitorPerformance from '../../src/routes/dashboard-monitor-performance';
 import { stubLocalStorage } from '../local-storage-stub';
@@ -33,27 +34,20 @@ const record = (group: string, values: Partial<PerformanceDisplayRecord> = {}): 
   ...values,
 });
 
-const overview: PerformanceOverviewResponse = {
+const overview: PerformanceOverviewView = {
   series: [record('model-a'), record('model-b')],
-  axes: {
-    none: [record('')],
-    keyId: [],
-    userId: [],
-    model: [
-      record('model-a', { requests: 2, ttftMsP50: 100, ttftMsP95: 400, ttftMsP99: 450, tpotUsP50: 10_000, tpotUsP95: 50_000, tpotUsP99: 60_000 }),
-      record('model-b', { requests: 9, ttftMsP50: 200, ttftMsP95: 300, ttftMsP99: 500 }),
-    ],
-    upstream: [],
-    operation: [],
-    runtimeLocation: [],
-  },
+  summary: record(''),
+  rows: [
+    record('model-a', { requests: 2, ttftMsP50: 100, ttftMsP95: 400, ttftMsP99: 450, tpotUsP50: 10_000, tpotUsP95: 50_000, tpotUsP99: 60_000 }),
+    record('model-b', { requests: 9, ttftMsP50: 200, ttftMsP95: 300, ttftMsP99: 500 }),
+  ],
   dimensionValues: { models: ['model-a', 'model-b'], upstreams: [], operations: [], runtimeLocations: [], keyIds: [], userIds: [] },
   users: [],
   upstreams: [],
   keys: [],
 };
 
-const renderPage = (search: string, data = overview) => {
+const renderPage = (search: string, data = overview, dataset?: PerformanceDataset) => {
   const state = parsePerformanceUrlState(new URLSearchParams(search));
   const router = createMemoryRouter([{
     path: '/',
@@ -63,6 +57,7 @@ const renderPage = (search: string, data = overview) => {
         error: null,
         loadedAt,
         overview: data,
+        dataset,
         regionAvailable: true,
         state,
       }}
@@ -84,8 +79,102 @@ const chartTitle = (metric: { ttft: string } | { tail: number }) => i18n.t('moni
 });
 
 describe('Performance table state', () => {
+  it('uses the in-progress page window for a tab opened during refresh', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(loadedAt + 3_600_000);
+    const queries: URLSearchParams[] = [];
+    let finishChart: (() => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const { searchParams } = new URL(String(input), 'http://localhost');
+      queries.push(searchParams);
+      const dimension = searchParams.get('dimension');
+      if (dimension === 'model') await new Promise<void>(resolve => { finishChart = resolve; });
+      return Response.json({
+        reset: true, start: searchParams.get('start'), end: searchParams.get('end'), cursor: searchParams.get('start'),
+        edges: { ttft_ms: [], tpot_us: [] }, scope: { actorId: 1, ownedKeyIds: [], visibility: 'all' },
+        metadataVisibility: { complete: true, userIds: [], upstreamIds: [] }, users: [], upstreams: [], keys: [],
+        buckets: [{
+          start: searchParams.get('start'), end: searchParams.get('end'), bucket: searchParams.get('start'),
+          rows: [{ group: dimension === 'upstream' ? 'upstream-a' : 'model-a', requests: 1, errors: 0, ttftSamples: 0, tpotSamples: 0, neutral: 1, ttft: [], tpot: [] }],
+          dimensionValues: { models: ['model-a'], upstreams: [], operations: [], runtimeLocations: [], userIds: [], keyIds: [] },
+        }],
+      });
+    }));
+    try {
+      renderPage('');
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));
+      await waitFor(() => expect(finishChart).toBeTypeOf('function'));
+      const upstreamTab = screen.getByRole('tab', { name: i18n.t('monitoring.performance.groupBy.upstream') });
+      fireEvent.click(upstreamTab);
+      expect(upstreamTab.getAttribute('aria-selected')).toBe('true');
+      const tableName = i18n.t('monitoring.performance.groupBy.upstream');
+      expect(within(await screen.findByRole('table', { name: tableName })).getByText('upstream-a')).toBeTruthy();
+      expect(queries[1]?.get('end')).toBe(queries[0]?.get('end'));
+      await act(async () => { finishChart?.(); });
+      expect(within(screen.getByRole('table', { name: tableName })).getByText('upstream-a')).toBeTruthy();
+      expect(queries.map(query => query.get('dimension'))).toEqual(['model', 'upstream']);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('discards the visible ranking when the same page refresh confirms a revoked scope', async () => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(loadedAt + 3_600_000);
+    const scope = (upstream: string) => ({ actorId: 1, ownedKeyIds: [], visibility: { userIds: [1], upstreamIds: [upstream] } });
+    const request = buildPerformanceQuery(parsePerformanceUrlState(new URLSearchParams()), 'model', loadedAt);
+    const initial: PerformanceDataset = {
+      request, loadedAt,
+      snapshot: {
+        start: request.start, end: request.end, cursor: '2026-08-05T11', reset: true, buckets: [],
+        scope: scope('upstream-a'),
+        metadataVisibility: { complete: false, userIds: [1], upstreamIds: ['upstream-a'] },
+        users: [], upstreams: [], keys: [],
+      },
+    };
+    const rankings: URLSearchParams[] = [];
+    let finishChart: (() => void) | undefined;
+    let finishRanking: (() => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const { searchParams } = new URL(String(input), 'http://localhost');
+      const dimension = searchParams.get('dimension');
+      const ranking = dimension === 'upstream';
+      if (ranking) rankings.push(searchParams);
+      if (!ranking && searchParams.has('cursor')) await new Promise<void>(resolve => { finishChart = resolve; });
+      if (ranking && rankings.length === 2) await new Promise<void>(resolve => { finishRanking = resolve; });
+      const upstream = ranking && rankings.length === 1 ? 'upstream-a' : 'upstream-b';
+      return Response.json({
+        ...initial.snapshot, reset: !searchParams.has('cursor'),
+        start: searchParams.get('cursor') ?? searchParams.get('start'), end: searchParams.get('end'),
+        edges: { ttft_ms: [], tpot_us: [] }, scope: scope(upstream),
+        metadataVisibility: { complete: false, userIds: [1], upstreamIds: [upstream] },
+        buckets: [{
+          start: searchParams.get('start'), end: searchParams.get('end'), bucket: searchParams.get('start'),
+          rows: [{ group: ranking ? upstream : 'model-a', requests: 1, errors: 0, ttftSamples: 0, tpotSamples: 0, neutral: 1, ttft: [], tpot: [] }],
+          dimensionValues: { models: ['model-a'], upstreams: [upstream], operations: [], runtimeLocations: [], userIds: [], keyIds: [] },
+        }],
+      });
+    }));
+    try {
+      renderPage('', overview, initial);
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));
+      await waitFor(() => expect(finishChart).toBeTypeOf('function'));
+      const tableName = i18n.t('monitoring.performance.groupBy.upstream');
+      fireEvent.click(screen.getByRole('tab', { name: tableName }));
+      expect(within(await screen.findByRole('table', { name: tableName })).getByText('upstream-a')).toBeTruthy();
+      await act(async () => { finishChart?.(); });
+      expect(screen.queryByRole('table', { name: tableName })).toBeNull();
+      await waitFor(() => expect(finishRanking).toBeTypeOf('function'));
+      expect(rankings[1]?.get('end')).toBe(rankings[0]?.get('end'));
+      expect(rankings[1]?.has('cursor')).toBe(false);
+      await act(async () => { finishRanking?.(); });
+      expect(within(await screen.findByRole('table', { name: tableName })).getByText('upstream-b')).toBeTruthy();
+      expect(screen.queryByText('upstream-a')).toBeNull();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it.each(['ttft', 'tokPerSec'] as const)('updates both table metrics for every percentile with chart %s', async metric => {
-    const data = { ...overview, axes: { ...overview.axes, model: [record('model-a')] } };
+    const data = { ...overview, rows: [record('model-a')] };
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
     renderPage(`m=${metric}`, data);
@@ -111,7 +200,11 @@ describe('Performance table state', () => {
   });
 
   it('preserves the shared percentile across metric switches, links, refresh and reload', async () => {
-    const fetch = vi.fn(async () => Response.json(overview));
+    const fetch = vi.fn(async () => Response.json({
+      reset: true, start: '2026-08-04T13', end: '2026-08-05T13', cursor: '2026-08-05T11',
+      buckets: [], edges: { ttft_ms: [], tpot_us: [] }, scope: { actorId: 1, ownedKeyIds: [], visibility: 'all' },
+      metadataVisibility: { complete: true, userIds: [], upstreamIds: [] }, users: [], upstreams: [], keys: [],
+    }));
     vi.stubGlobal('fetch', fetch);
     const { router, unmount } = renderPage('ttft_p=p99&speed_p=p50');
 

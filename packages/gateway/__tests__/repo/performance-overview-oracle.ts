@@ -1,5 +1,5 @@
-import type { PerformanceDisplayRecord, PerformanceGroupBy, PerformanceMetric, PerformanceTelemetryRecord } from '../../src/repo/types.ts';
-import { type HistogramBucket, percentileFromBuckets } from '../../src/shared/performance-histogram.ts';
+import type { PerformanceDisplayRecord, PerformanceGroupBy, PerformanceMetric, PerformanceSliceRecord, PerformanceTelemetryRecord } from '../../src/repo/types.ts';
+import { type HistogramBucket, percentileFromBuckets } from '@floway-dev/protocols/common';
 
 export interface AggregateOptions {
   groupBy: PerformanceGroupBy;
@@ -93,6 +93,32 @@ const toDisplayRecord = (aggregate: MutableAggregate): PerformanceDisplayRecord 
     tpotUsP95: percentileFromBuckets(tpotBuckets, 0.95),
     tpotUsP99: percentileFromBuckets(tpotBuckets, 0.99),
   };
+};
+
+export const aggregatePerformanceSlice = (
+  records: readonly PerformanceTelemetryRecord[],
+  groupBy: PerformanceGroupBy,
+  keyToUser: ReadonlyMap<string, number>,
+  visibleKeyIds: ReadonlySet<string>,
+): PerformanceSliceRecord[] => {
+  const aggregates = new Map<string, MutableAggregate>();
+  const all = () => 'all';
+  for (const record of records) {
+    if (groupBy === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
+    updateAggregate(aggregates, record, all, { groupBy, bucketForHour: all }, keyToUser);
+  }
+  return [...aggregates.values()].map(aggregate => ({
+    group: aggregate.group,
+    requests: aggregate.requests,
+    errors: aggregate.errorsWithOutput + aggregate.errorsNoOutput,
+    ttftSamples: aggregate.ttftSamplesOk + aggregate.errorsWithOutput,
+    tpotSamples: aggregate.tpotSamples,
+    neutral: aggregate.neutral,
+    buckets: [
+      ...[...aggregate.bucketsByMetric.ttft_ms.values()].map(bucket => ({ ...bucket, metric: 'ttft_ms' as const })),
+      ...[...aggregate.bucketsByMetric.tpot_us.values()].map(bucket => ({ ...bucket, metric: 'tpot_us' as const })),
+    ],
+  }));
 };
 
 export const aggregatePerformanceForDisplay = <K extends string>(

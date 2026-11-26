@@ -51,6 +51,8 @@ export function SectionHeader({ actions, description, info, level, title, titleI
   if (actions === undefined) return block;
   return <div className={mergeClasses(HEADER_ROW_CLASS, 'gap-3')}>
     {block}
-    <div className="flex items-center gap-2 flex-none">{actions}</div>
+    {/* Wraps rather than shrinks: once HEADER_ROW_CLASS stacks the row, a
+        narrow card squeezes each action below its label instead. */}
+    <div className="flex flex-wrap items-center gap-2 flex-none">{actions}</div>
   </div>;
 }

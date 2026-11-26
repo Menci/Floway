@@ -1,4 +1,4 @@
-import { aggregatePerformanceForDisplay } from './performance-overview-oracle.ts';
+import { aggregatePerformanceForDisplay, aggregatePerformanceSlice } from './performance-overview-oracle.ts';
 import { partitionTelemetryOverviewRecords } from './telemetry-overview-oracle.ts';
 import {
   accessScopeDepth,
@@ -28,6 +28,7 @@ import { quantizeOpenAIResponsesRefreshedAt, OPENAI_RESPONSES_REFRESH_GRANULARIT
 import { normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
 import { SEED_ADMIN_USER_ID } from '../../src/repo/seed-admin.ts';
 import { generateSessionToken } from '../../src/repo/session-tokens.ts';
+import { overviewBucketId } from '../../src/repo/telemetry-bucket-sql.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -57,6 +58,7 @@ import type {
   PerformanceMetric,
   PerformanceOverviewQueryOptions,
   PerformanceOverviewResult,
+  PerformanceSliceQuery,
   ProxyBackoffRepo,
   ProxyRecord,
   ProxyRepo,
@@ -547,6 +549,12 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     return { ...next };
   }
 
+  setLastUsedAt(id: string, lastUsedAt: string): Promise<void> {
+    const key = this.keys.find(key => key.id === id && key.deletedAt === null);
+    if (key) key.lastUsedAt = lastUsedAt;
+    return Promise.resolve();
+  }
+
   async softDelete(id: string): Promise<boolean> {
     const i = this.keys.findIndex(k => k.id === id && k.deletedAt === null);
     if (i < 0) return false;
@@ -729,8 +737,12 @@ class MemoryUsageRepo implements UsageRepo {
     const visibleKeyIds = new Set([...keyToUser]
       .filter(([, userId]) => userId === opts.actorUserId)
       .map(([keyId]) => keyId));
-    const buckets = Map.groupBy(authorized, record => opts.bucketForHour(record.hour));
-    return [...buckets].sort(([left], [right]) => left.localeCompare(right)).map(([bucket, bucketRecords]) => {
+    const hourlyBuckets = new Set(opts.hourlyBuckets);
+    const buckets = Map.groupBy(authorized, ({ hour }) => {
+      const bucket = overviewBucketId(opts.bucket, hour);
+      return hourlyBuckets.has(bucket) ? hour : bucket;
+    });
+    return [...buckets.values()].map(bucketRecords => {
       const partitioned = partitionTelemetryOverviewRecords(bucketRecords, {
         keyId: {
           value: record => record.keyId,
@@ -751,7 +763,6 @@ class MemoryUsageRepo implements UsageRepo {
       const aggregates = aggregateMemoryOverview(partitioned.filtered, keyToUser, visibleKeyIds);
       const hours = bucketRecords.map(record => record.hour).sort();
       return {
-        bucket,
         firstHour: hours[0]!,
         lastHour: hours.at(-1)!,
         axes: {
@@ -768,7 +779,7 @@ class MemoryUsageRepo implements UsageRepo {
           upstreams: partitioned.dimensionValues.upstream,
         },
       };
-    });
+    }).sort((left, right) => left.firstHour.localeCompare(right.firstHour));
   }
 
   listAll(): Promise<UsageRecord[]> {
@@ -902,6 +913,42 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   }
 
   async queryOverview(opts: PerformanceOverviewQueryOptions): Promise<PerformanceOverviewResult> {
+    const { authorized, keyToUser, visibleKeyIds } = await this.authorizedRows(opts, opts.groupBy === 'keyId');
+    const partitioned = this.partitionOverview(authorized, opts.filters, keyToUser, visibleKeyIds);
+    const { series, ...axes } = aggregatePerformanceForDisplay(partitioned.filtered, {
+      series: { groupBy: opts.groupBy, bucketForHour: opts.bucketForHour },
+      none: { groupBy: 'none', bucketForHour: () => 'all' },
+      model: { groupBy: 'model', bucketForHour: () => 'all' },
+      upstream: { groupBy: 'upstream', bucketForHour: () => 'all' },
+      runtimeLocation: { groupBy: 'runtimeLocation', bucketForHour: () => 'all' },
+      operation: { groupBy: 'operation', bucketForHour: () => 'all' },
+      keyId: { groupBy: 'keyId', bucketForHour: () => 'all' },
+      userId: { groupBy: 'userId', bucketForHour: () => 'all' },
+    }, keyToUser, visibleKeyIds);
+    return { series, axes, dimensionValues: partitioned.dimensionValues };
+  }
+
+  async querySlices(opts: PerformanceSliceQuery) {
+    const { authorized, keyToUser, visibleKeyIds } = await this.authorizedRows(opts, opts.ownedKeysOnly);
+    return [...Map.groupBy(authorized, record => {
+      const bucket = overviewBucketId(opts.bucket, record.hour);
+      return opts.hourlyBuckets.includes(bucket) ? record.hour : bucket;
+    }).values()].flatMap(records => {
+      const partitioned = this.partitionOverview(records, opts.filters, keyToUser, visibleKeyIds);
+      const rows = aggregatePerformanceSlice(partitioned.filtered, opts.dimension, keyToUser, visibleKeyIds);
+      const [total] = opts.includeTotals ? aggregatePerformanceSlice(partitioned.filtered, 'none', keyToUser, visibleKeyIds) : [];
+      if (rows.length === 0 && total === undefined && !opts.includeFacets) return [];
+      return [{
+        firstHour: records[0]!.hour, lastHour: records.at(-1)!.hour, rows,
+        ...(total === undefined ? {} : { total }),
+        dimensionValues: opts.includeFacets ? partitioned.dimensionValues : {
+          models: [], upstreams: [], operations: [], runtimeLocations: [], userIds: [], keyIds: [],
+        },
+      }];
+    });
+  }
+
+  private async authorizedRows(opts: Pick<PerformanceOverviewQueryOptions, 'actorUserId' | 'start' | 'end' | 'isAdmin' | 'visibleUserIds' | 'visibleUpstreams'>, ownedKeysOnly: boolean) {
     const keyToUser = buildKeyToUserMap(await this.apiKeys.listIncludingDeleted());
     const visibleKeyIds = new Set([...keyToUser]
       .filter(([, userId]) => userId === opts.actorUserId)
@@ -910,7 +957,7 @@ class MemoryPerformanceRepo implements PerformanceRepo {
       .filter(record => record.hour >= opts.start && record.hour < opts.end)
       .sort(comparePerformanceRow)
       .map(freezePerformanceRow);
-    const scoped = opts.groupBy === 'keyId'
+    const scoped = ownedKeysOnly
       ? records.filter(record => visibleKeyIds.has(record.keyId))
       : records;
     const visibleUserIds = new Set(opts.visibleUserIds);
@@ -918,6 +965,15 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     const authorized = scoped.filter(record => opts.isAdmin
       || visibleUserIds.has(keyToUser.get(record.keyId) ?? tokenUsageUnattributedUserId)
       || visibleUpstreams.has(record.upstream));
+    return { authorized, keyToUser, visibleKeyIds };
+  }
+
+  private partitionOverview(
+    authorized: readonly PerformanceTelemetryRecord[],
+    filters: PerformanceOverviewQueryOptions['filters'],
+    keyToUser: ReadonlyMap<string, number>,
+    visibleKeyIds: ReadonlySet<string>,
+  ) {
     const partitioned = partitionTelemetryOverviewRecords(authorized, {
       model: { value: record => record.model },
       upstream: { value: record => record.upstream },
@@ -932,26 +988,15 @@ class MemoryPerformanceRepo implements PerformanceRepo {
         includeFacet: record => visibleKeyIds.has(record.keyId),
       },
     }, {
-      model: new Set(opts.filters.models),
-      upstream: new Set(opts.filters.upstreams),
-      operation: new Set(opts.filters.operations),
-      runtimeLocation: new Set(opts.filters.runtimeLocations),
-      userId: new Set(opts.filters.userIds.map(String)),
-      keyId: new Set(opts.filters.keyIds),
+      model: new Set(filters.models),
+      upstream: new Set(filters.upstreams),
+      operation: new Set(filters.operations),
+      runtimeLocation: new Set(filters.runtimeLocations),
+      userId: new Set(filters.userIds.map(String)),
+      keyId: new Set(filters.keyIds),
     });
-    const { series, ...axes } = aggregatePerformanceForDisplay(partitioned.filtered, {
-      series: { groupBy: opts.groupBy, bucketForHour: opts.bucketForHour },
-      none: { groupBy: 'none', bucketForHour: () => 'all' },
-      model: { groupBy: 'model', bucketForHour: () => 'all' },
-      upstream: { groupBy: 'upstream', bucketForHour: () => 'all' },
-      runtimeLocation: { groupBy: 'runtimeLocation', bucketForHour: () => 'all' },
-      operation: { groupBy: 'operation', bucketForHour: () => 'all' },
-      keyId: { groupBy: 'keyId', bucketForHour: () => 'all' },
-      userId: { groupBy: 'userId', bucketForHour: () => 'all' },
-    }, keyToUser, visibleKeyIds);
     return {
-      series,
-      axes,
+      filtered: partitioned.filtered,
       dimensionValues: {
         models: partitioned.dimensionValues.model,
         upstreams: partitioned.dimensionValues.upstream,

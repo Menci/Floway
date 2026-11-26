@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { PerformanceOverviewResponse } from '../../src/components/performance/overview';
+import type { PerformanceOverviewView } from '../../src/components/performance/overview';
 import { i18n } from '../../src/i18n';
 import DashboardMonitorPerformance from '../../src/routes/dashboard-monitor-performance';
 import { stubLocalStorage } from '../local-storage-stub';
@@ -12,9 +12,9 @@ stubLocalStorage();
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
-const overview: PerformanceOverviewResponse = {
+const overview: PerformanceOverviewView = {
   series: [],
-  axes: { none: [], keyId: [], userId: [], model: [], upstream: [], operation: [], runtimeLocation: [] },
+  rows: [], summary: null,
   dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: ['LOCAL'], keyIds: [], userIds: [] },
   users: [{ id: 5, username: 'Dana' }],
   upstreams: [],
@@ -87,7 +87,11 @@ describe('Performance Region dimensions', () => {
       if (path === '/api/performance/overview') {
         overviewRequests += 1;
         return overviewRequests === 1
-          ? Response.json(overview)
+          ? Response.json({
+              reset: true, start: '2026-08-04T13', end: '2026-08-05T13', cursor: '2026-08-05T11',
+              buckets: [], edges: { ttft_ms: [], tpot_us: [] }, scope: { actorId: 1, ownedKeyIds: [], visibility: 'all' },
+              metadataVisibility: { complete: true, userIds: [], upstreamIds: [] }, users: [], upstreams: [], keys: [],
+            })
           : Response.json({ error: 'Corrected overview failed' }, { status: 500 });
       }
       throw new Error(`Unexpected request to ${path}`);
