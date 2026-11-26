@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
 import { createUsageOverviewLoader } from '../../src/components/usage/data';
+import { USAGE_HISTORY_START } from '../../src/components/usage/heatmap/data';
 import { i18n } from '../../src/i18n';
 import DashboardMonitorUsage, { clientLoader } from '../../src/routes/dashboard-monitor-usage';
 import { useAuthStore } from '../../src/stores/auth-store';
@@ -124,7 +125,7 @@ describe('usage dimension controls', () => {
     const requestedGroups: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
-      if (url.pathname === '/api/token-usage/overview') {
+      if (url.pathname === '/api/token-usage/overview' && url.searchParams.get('start') !== USAGE_HISTORY_START) {
         overviewRequests += 1;
         const groupBy = url.searchParams.get('group_by') ?? 'model';
         requestedGroups.push(groupBy);
