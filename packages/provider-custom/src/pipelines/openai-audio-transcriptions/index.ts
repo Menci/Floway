@@ -25,8 +25,8 @@ export const openaiAudioTranscriptions = customOperation('openaiAudioTranscripti
     result: bytes => ({ ok: true, value: bytes }),
     format: openAIError,
   }),
-  prepare: async (payload, model, config) => ({
+  prepare: async (payload, modelId, config) => ({
     path: customOperationPath(config, '/audio/transcriptions'),
-    ...await formBody(transcriptionForm(payload, model.upstreamModelId)),
+    ...await formBody(transcriptionForm(payload, modelId)),
   }),
 });

@@ -11,6 +11,7 @@ const { compose, defineStage } = factSpace<ProviderOperationFacts<ProviderOperat
 type Stage = Parameters<typeof compose>[1]['stages'][number];
 type RequestKey = `request.${ProviderOperation}`;
 type ResponseKey = `response.${ProviderOperation}`;
+type UsageModelOutput = readonly [] | readonly ['response.usageModelKey?'];
 
 interface SerializedBody {
   contentType: string;
@@ -22,7 +23,9 @@ interface DialRequest extends SerializedBody {
 }
 
 type Payload<Op extends ProviderOperation> = GatewayFacts[`request.${Op}`];
-type Prepare<Op extends ProviderOperation> = (payload: Payload<Op>, model: ProviderModelFact, config: CustomUpstream['config']) => DialRequest | Promise<DialRequest>;
+type Prepare<Op extends ProviderOperation> = (
+  payload: Payload<Op>, modelId: string, config: CustomUpstream['config'], model: ProviderModelFact,
+) => DialRequest | Promise<DialRequest>;
 
 export const openAIError: FormatProtocolError = (status, message) => ({
   error: { type: status !== null && status >= 400 && status < 500 ? 'invalid_request_error' : 'server_error', message },
@@ -63,11 +66,17 @@ const authenticatedHeaders = (
     : authenticated;
 };
 
-const customDial = <Op extends ProviderOperation>(operation: Op, auth: CustomAuthStyle, prepare: Prepare<NoInfer<Op>>) => {
+const customDial = <Op extends ProviderOperation>(
+  operation: Op,
+  auth: CustomAuthStyle,
+  prepare: Prepare<NoInfer<Op>>,
+  selectModelId: ((upstreamModelId: string) => string) | undefined,
+  usageModelOutput: UsageModelOutput,
+) => {
   const payload: RequestKey = `request.${operation}`;
   const outcome: ResponseKey = `response.${operation}`;
   const requestNeeds: readonly ['request.http', 'provider.upstream', 'provider.model', RequestKey] = ['request.http', 'provider.upstream', 'provider.model', payload];
-  const responseProvides: readonly [`${ResponseKey}?`] = [`${outcome}?`];
+  const responseProvides: readonly [`${ResponseKey}?`, ...UsageModelOutput] = [`${outcome}?`, ...usageModelOutput];
   return defineStage({
     name: `custom.${operation}.dial`,
     through: {
@@ -77,13 +86,16 @@ const customDial = <Op extends ProviderOperation>(operation: Op, auth: CustomAut
     async execute(facts, scope) {
       const request = facts['request.http'];
       const { config } = facts['provider.upstream'];
-      const { path, contentType, body } = await prepare(facts[payload] as Payload<Op>, facts['provider.model'], config);
+      const model = facts['provider.model'];
+      const modelId = selectModelId === undefined ? model.upstreamModelId : selectModelId(model.upstreamModelId);
+      const { path, contentType, body } = await prepare(facts[payload] as Payload<Op>, modelId, config, model);
       const url = joinBaseAndPath(config.baseUrl, path);
       const headers = setHeader(authenticatedHeaders(request.headers, auth, config.apiKey), 'content-type', contentType);
-      const { 'response.http.error': error, ...answer } = await scope.next({
+      const { 'response.http.error': error, ...response } = await scope.next({
         ...facts,
         'request.http': { ...request, method: 'POST', url, headers, body },
       });
+      const answer = usageModelOutput.length === 0 ? response : { ...response, 'response.usageModelKey': modelId };
       return error === undefined ? answer : { ...answer, [outcome]: httpDialError(error, errorFormats[auth]) };
     },
   });
@@ -93,18 +105,20 @@ interface CustomOperation<Op extends ProviderOperation> {
   parse: Stage;
   prepare: Prepare<Op>;
   auth?: CustomAuthStyle;
+  selectModelId?: (upstreamModelId: string) => string;
   stages?: readonly Stage[];
 }
 
 export const customOperation = <Op extends ProviderOperation>(
   operation: Op,
-  { parse, prepare, auth = 'bearer', stages = [] }: CustomOperation<NoInfer<Op>>,
+  { parse, prepare, selectModelId, auth = 'bearer', stages = [] }: CustomOperation<NoInfer<Op>>,
 ) => {
   const filter = auth === 'x-api-key' ? applyCustomAnthropicMessagesIngressHeaderRules : applyCustomIngressHeaderRules;
+  const usageModelOutput: UsageModelOutput = operation === 'alphaSearch' ? [] : ['response.usageModelKey?'];
   return compose(`custom.${operation}`, {
     entry: ['request.http', 'provider.upstream', 'provider.model', `request.${operation}`] as const,
-    exit: ['response.http', `response.${operation}`] as const,
-    stages: [filter, ...stages, parse, customDial(operation, auth, prepare)],
+    exit: ['response.http', `response.${operation}`, ...usageModelOutput] as const,
+    stages: [filter, ...stages, parse, customDial(operation, auth, prepare, selectModelId, usageModelOutput)],
     ending: httpTerminal,
   });
 };

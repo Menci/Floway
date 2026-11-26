@@ -4,8 +4,8 @@ import { parseResultResponse } from '@floway-dev/provider';
 
 export const alphaSearch = customOperation('alphaSearch', {
   parse: parseResultResponse('alphaSearch', bytes => ({ ok: true, value: bytes }), openAIError),
-  prepare: (payload, model, config) => ({
+  prepare: (payload, modelId, config) => ({
     path: customOperationPath(config, '/alpha/search'),
-    ...jsonBody({ ...payload, model: model.upstreamModelId }),
+    ...jsonBody({ ...payload, model: modelId }),
   }),
 });

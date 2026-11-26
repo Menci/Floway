@@ -10,8 +10,8 @@ export const openaiAudioSpeech = customOperation('openaiAudioSpeech', {
     result: bytes => ({ ok: true, value: bytes }),
     format: openAIError,
   }),
-  prepare: (payload, model, config) => ({
+  prepare: (payload, modelId, config) => ({
     path: customOperationPath(config, '/audio/speech'),
-    ...jsonBody({ ...payload, model: model.upstreamModelId }),
+    ...jsonBody({ ...payload, model: modelId }),
   }),
 });

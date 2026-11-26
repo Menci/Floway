@@ -22,11 +22,11 @@ export const decision = customOperation('decision', {
         : decoded;
     },
   }),
-  prepare: (payload, model) => {
+  prepare: (payload, modelId, _config, model) => {
     const { protocol, path } = targetOf(model);
     return {
       path: path ?? DEFAULT_DECISION_PATHS[protocol],
-      ...jsonBody(serializeDecisionRequest(protocol, model.upstreamModelId, payload)),
+      ...jsonBody(serializeDecisionRequest(protocol, modelId, payload)),
     };
   },
 });

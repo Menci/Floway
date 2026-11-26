@@ -13,8 +13,8 @@ export const openaiCompletions = customOperation('openaiCompletions', {
     },
     format: openAIError,
   }),
-  prepare: (payload, model, config) => ({
+  prepare: (payload, modelId, config) => ({
     path: customOperationPath(config, '/completions'),
-    ...jsonBody({ ...payload, model: model.upstreamModelId }),
+    ...jsonBody({ ...payload, model: modelId }),
   }),
 });

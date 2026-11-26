@@ -5,8 +5,8 @@ import { parseResultResponse } from '@floway-dev/provider';
 
 export const openaiEmbeddings = customOperation('openaiEmbeddings', {
   parse: parseResultResponse('openaiEmbeddings', parseJsonObject, openAIError),
-  prepare: (payload, model, config) => ({
+  prepare: (payload, modelId, config) => ({
     path: customOperationPath(config, '/embeddings'),
-    ...jsonBody({ ...payload, model: model.upstreamModelId }),
+    ...jsonBody({ ...payload, model: modelId }),
   }),
 });

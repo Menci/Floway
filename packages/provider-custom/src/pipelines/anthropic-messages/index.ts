@@ -6,9 +6,9 @@ import { parseJsonBody, parseResultResponse, parseSseResponse } from '@floway-de
 export const anthropicMessages = customOperation('anthropicMessages', {
   auth: 'x-api-key',
   parse: parseSseResponse('anthropicMessages', decodeAnthropicMessagesStream, anthropicMessagesError),
-  prepare: (payload, model, config) => ({
+  prepare: (payload, modelId, config) => ({
     path: customOperationPath(config, '/messages'),
-    ...jsonBody({ ...payload, stream: true, model: model.upstreamModelId }),
+    ...jsonBody({ ...payload, stream: true, model: modelId }),
   }),
 });
 
@@ -18,8 +18,8 @@ export const anthropicMessagesCountTokens = customOperation('anthropicMessagesCo
     const parsed = parseJsonBody(bytes);
     return parsed.ok ? decodeAnthropicMessagesCountTokensResult(parsed.value) : parsed;
   }, anthropicMessagesError),
-  prepare: (payload, model, config) => ({
+  prepare: (payload, modelId, config) => ({
     path: `${customOperationPath(config, '/messages')}/count_tokens`,
-    ...jsonBody({ ...payload, model: model.upstreamModelId }),
+    ...jsonBody({ ...payload, model: modelId }),
   }),
 });

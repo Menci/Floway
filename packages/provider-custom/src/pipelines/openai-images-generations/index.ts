@@ -11,8 +11,8 @@ export const openaiImagesGenerations = customOperation('openaiImagesGenerations'
     result: parseJsonObject,
     format: openAIError,
   }),
-  prepare: (payload, model, config) => ({
+  prepare: (payload, modelId, config) => ({
     path: customOperationPath(config, '/images/generations'),
-    ...jsonBody({ ...payload, model: model.upstreamModelId }),
+    ...jsonBody({ ...payload, model: modelId }),
   }),
 });

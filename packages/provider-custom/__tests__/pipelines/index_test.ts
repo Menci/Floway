@@ -87,7 +87,9 @@ test.each([
     upstream: record({ ingressHeadersRules: rules }),
     headers: [...values.map((value): [string, string] => ['X-Route', value]), ['x-untouched', 'unused'], ['authorization', 'client-key'], ['content-type', 'client-type']],
   }), fetcher, event => events.push(event));
-  const outcome = (await running.result)['response.openaiChatCompletions'];
+  const facts = await running.result;
+  expect(facts['response.usageModelKey']).toBe('private-model');
+  const outcome = facts['response.openaiChatCompletions'];
   if (outcome.kind !== 'stream') throw new Error('Expected Chat Completions stream');
   expect(await Array.fromAsync(running.read(outcome.stream))).toEqual([{ ok: true, value: { choices: [] } }]);
   await running.done;
@@ -191,13 +193,18 @@ test('Gemini places its model in the path and preserves the full count-tokens en
     return count ? Response.json({ totalTokens: 7 }) : sse(event);
   });
   using generate = invoke(customPipelines.geminiGenerateContent, input('geminiGenerateContent', { contents }, options), fetcher);
-  const outcome = (await generate.result)['response.geminiGenerateContent'];
+  const generated = await generate.result;
+  expect(generated['response.usageModelKey']).toBe('private model');
+  const outcome = generated['response.geminiGenerateContent'];
   if (outcome.kind !== 'stream') throw new Error('Expected Gemini stream');
   expect(await Array.fromAsync(generate.read(outcome.stream))).toEqual([{ ok: true, value: event }]);
   using count = invoke(customPipelines.geminiGenerateContentCountTokens, input('geminiGenerateContentCountTokens', {
     generateContentRequest: { model: 'models/public-model', contents, systemInstruction: { parts: [{ text: 'system' }] } },
   }, options), fetcher);
-  expect((await count.result)['response.geminiGenerateContentCountTokens']).toEqual({ kind: 'result', result: { totalTokens: 7 } });
+  expect(await count.result).toMatchObject({
+    'response.usageModelKey': 'private model',
+    'response.geminiGenerateContentCountTokens': { kind: 'result', result: { totalTokens: 7 } },
+  });
   expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
     'https://custom.example.com/gemini/models/private%20model:streamGenerateContent?alt=sse',
     'https://custom.example.com/gemini/models/private%20model:countTokens',
@@ -273,7 +280,10 @@ test('Audio Transcriptions keeps repeated multipart values and replaces the mode
       { name: 'timestamp_granularities[]', value: 'word' }, { name: 'timestamp_granularities[]', value: 'segment' },
     ],
   }), fetcher);
-  expect((await running.result)['response.openaiAudioTranscriptions']).toEqual({ kind: 'result', result: new TextEncoder().encode('transcript') });
+  expect(await running.result).toMatchObject({
+    'response.usageModelKey': 'private-model',
+    'response.openaiAudioTranscriptions': { kind: 'result', result: new TextEncoder().encode('transcript') },
+  });
   await running.done;
 });
 
@@ -304,6 +314,7 @@ test('Embeddings consumes a pre-header transport failure and publishes an upstre
   using running = invoke(customPipelines.openaiEmbeddings, input('openaiEmbeddings', { model: 'public-model', input: 'example' }), fetcher);
   expect(await running.result).toEqual({
     'response.http': null,
+    'response.usageModelKey': 'private-model',
     'response.openaiEmbeddings': { kind: 'error', source: 'upstream', error: { error: { type: 'server_error', message: 'connection reset' } } },
   });
   await running.done;
@@ -382,6 +393,7 @@ test.each([
   const fetcher: Fetcher = () => Promise.resolve(new Response(body, { status, headers: { 'content-type': 'application/json' } }));
   using running = invoke(customPipelines.alphaSearch, input('alphaSearch', { query: 'example' }), fetcher);
   const facts = await running.result;
+  expect(Object.hasOwn(facts, 'response.usageModelKey')).toBe(false);
   expect(facts['response.http']).toMatchObject({ status, body: null, headers: [['content-type', 'application/json']] });
   expect(facts['response.alphaSearch']).toEqual({ kind: 'result', result: new TextEncoder().encode(body ?? '') });
   await running.done;

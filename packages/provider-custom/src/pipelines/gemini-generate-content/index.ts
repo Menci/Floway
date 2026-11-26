@@ -9,9 +9,10 @@ const bareModelId = (id: string) => id.replace(/^models\//, '');
 
 export const geminiGenerateContent = customOperation('geminiGenerateContent', {
   auth: 'x-goog-api-key',
+  selectModelId: bareModelId,
   parse: parseSseResponse('geminiGenerateContent', decodeGeminiGenerateContentStream, geminiGenerateContentError),
-  prepare: (payload, model, config) => ({
-    path: customGeminiModelActionPath(config, bareModelId(model.upstreamModelId), 'streamGenerateContent'),
+  prepare: (payload, modelId, config) => ({
+    path: customGeminiModelActionPath(config, modelId, 'streamGenerateContent'),
     ...jsonBody(payload),
   }),
 });
@@ -27,15 +28,13 @@ const countTokensBody = ({ contents, generateContentRequest }: GeminiCountTokens
 
 export const geminiGenerateContentCountTokens = customOperation('geminiGenerateContentCountTokens', {
   auth: 'x-goog-api-key',
+  selectModelId: bareModelId,
   parse: parseResultResponse('geminiGenerateContentCountTokens', bytes => {
     const parsed = parseJsonBody(bytes);
     return parsed.ok ? decodeGeminiGenerateContentCountTokensResult(parsed.value) : parsed;
   }, geminiGenerateContentError),
-  prepare: (payload, model, config) => {
-    const modelId = bareModelId(model.upstreamModelId);
-    return {
-      path: customGeminiModelActionPath(config, modelId, 'countTokens'),
-      ...jsonBody(countTokensBody(payload, modelId)),
-    };
-  },
+  prepare: (payload, modelId, config) => ({
+    path: customGeminiModelActionPath(config, modelId, 'countTokens'),
+    ...jsonBody(countTokensBody(payload, modelId)),
+  }),
 });

@@ -27,11 +27,11 @@ export const rerank = customOperation('rerank', {
       }
     },
   }),
-  prepare: (payload, model) => {
+  prepare: (payload, modelId, _config, model) => {
     const { protocol, path } = targetOf(model);
     return {
       path: path ?? DEFAULT_RERANK_PATHS[protocol],
-      ...jsonBody(serializeRerankRequest(protocol, model.upstreamModelId, payload)),
+      ...jsonBody(serializeRerankRequest(protocol, modelId, payload)),
     };
   },
 });

@@ -8,9 +8,9 @@ import { parseJsonBody, parseResultResponse, parseSseResponse } from '@floway-de
 export const openaiResponses = customOperation('openaiResponses', {
   stages: [normalizeDeepSeek, normalizeQwen],
   parse: parseSseResponse('openaiResponses', decodeOpenAIResponsesStream, openAIError),
-  prepare: (payload, model, config) => ({
+  prepare: (payload, modelId, config) => ({
     path: customOperationPath(config, '/responses'),
-    ...jsonBody({ ...payload, stream: true, model: model.upstreamModelId }),
+    ...jsonBody({ ...payload, stream: true, model: modelId }),
   }),
 });
 
@@ -19,8 +19,8 @@ export const openaiResponsesCompact = customOperation('openaiResponsesCompact', 
     const parsed = parseJsonBody(bytes);
     return parsed.ok ? decodeOpenAIResponsesCompactionResult(parsed.value) : parsed;
   }, openAIError),
-  prepare: (payload, model, config) => ({
+  prepare: (payload, modelId, config) => ({
     path: `${customOperationPath(config, '/responses')}/compact`,
-    ...jsonBody({ ...toCompactPayloadShape(payload), model: model.upstreamModelId }),
+    ...jsonBody({ ...toCompactPayloadShape(payload), model: modelId }),
   }),
 });

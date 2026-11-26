@@ -11,8 +11,8 @@ export const openaiImagesEdits = customOperation('openaiImagesEdits', {
     result: parseJsonObject,
     format: openAIError,
   }),
-  prepare: async (payload, model, config) => ({
+  prepare: async (payload, modelId, config) => ({
     path: customOperationPath(config, '/images/edits'),
-    ...await serializeOpenAIImagesEditsBody(payload, model.upstreamModelId),
+    ...await serializeOpenAIImagesEditsBody(payload, modelId),
   }),
 });
