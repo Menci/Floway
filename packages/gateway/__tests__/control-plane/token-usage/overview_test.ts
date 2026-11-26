@@ -49,7 +49,7 @@ test('/api/token-usage/overview returns filtered axes and authorized facets per 
   await seedUsage(repo, { keyId: apiKey.id, model: 'claude', upstream: 'up-b', hour: '2026-04-30T11', requests: 3 });
   await seedUsage(repo, { keyId: adminKey.id, model: 'gpt-5', upstream: 'up-b', hour: '2026-04-30T10', requests: 5 });
 
-  const response = await requestApp('/api/token-usage/overview?format=buckets&start=2026-04-30T00&end=2026-05-01T00&group_by=model&filter_model=gpt-5&filter_model=claude&filter_upstream=upstream%3Aup-b', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/token-usage/overview?format=fixed-buckets&start=2026-04-30T00&end=2026-05-01T00&group_by=model&filter_model=gpt-5&filter_model=claude&filter_upstream=upstream%3Aup-b', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
   const body = await response.json() as TokenUsageOverviewResponse;
@@ -72,7 +72,7 @@ test('/api/token-usage/overview preserves hard-deleted key usage under synthetic
   await repo.apiKeys.save(adminKey);
   await seedUsage(repo, { keyId: 'hard-deleted-key', model: 'gpt-5', upstream: 'up-a', hour: '2026-04-30T10', requests: 3 });
 
-  const response = await requestApp('/api/token-usage/overview?format=buckets&start=2026-04-30T00&end=2026-05-01T00&group_by=userId&filter_user_id=0', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/token-usage/overview?format=fixed-buckets&start=2026-04-30T00&end=2026-05-01T00&group_by=userId&filter_user_id=0', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
   const body = await response.json() as TokenUsageOverviewResponse;
@@ -99,7 +99,7 @@ test('/api/token-usage/overview shows the union of visible user rows and upstrea
   await seedUsage(repo, { keyId: adminKey.id, model: 'visible-column', upstream: 'up-b', hour: '2026-04-30T10', requests: 5 });
   await seedUsage(repo, { keyId: adminKey.id, model: 'hidden', upstream: 'up-c', hour: '2026-04-30T10', requests: 7 });
 
-  const response = await requestApp('/api/token-usage/overview?format=buckets&start=2026-04-30T00&end=2026-05-01T00&group_by=userId', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/token-usage/overview?format=fixed-buckets&start=2026-04-30T00&end=2026-05-01T00&group_by=userId', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(response.status, 200);
   const body = await response.json() as TokenUsageOverviewResponse;
   expect(body.scope).toEqual({ actorId: apiKey.userId, ownedKeyIds: [apiKey.id], visibility: { userIds: [apiKey.userId], upstreamIds: ['up-b'] } });
@@ -115,7 +115,7 @@ test('a cursor resumes one hour before the previous read and splits only the bou
   const { repo, adminSession, apiKey } = await setupAppTest();
   const query = vi.spyOn(repo.usage, 'queryOverview');
   const read = async (cursor?: string) => {
-    const params = new URLSearchParams({ format: 'buckets', start: '2026-04-01T00', end: '2026-05-04T00', bucket: 'day' });
+    const params = new URLSearchParams({ format: 'fixed-buckets', start: '2026-04-01T00', end: '2026-05-04T00', bucket: 'day' });
     if (cursor) params.set('cursor', cursor);
     const response = await requestApp(`/api/token-usage/overview?${params}`, { headers: { 'x-floway-session': adminSession } });
     expect(response.status).toBe(200);
@@ -149,7 +149,7 @@ test('a cursor resumes one hour before the previous read and splits only the bou
 
 test('an empty historical overview does not evaluate out-of-window bucket labels', async () => {
   const { adminSession } = await setupAppTest();
-  const response = await requestApp('/api/token-usage/overview?format=buckets&start=0000-01-01T00&end=0000-01-02T00&bucket=2d&timezone_offset_minutes=60', {
+  const response = await requestApp('/api/token-usage/overview?format=fixed-buckets&start=0000-01-01T00&end=0000-01-02T00&bucket=2d&timezone_offset_minutes=60', {
     headers: { 'x-floway-session': adminSession },
   });
   expect(response.status).toBe(200);
@@ -160,10 +160,12 @@ test('rejects a legacy Usage overview request before loading its query scope or 
   const { repo, adminSession } = await setupAppTest();
   const listUpstreams = vi.spyOn(repo.upstreams, 'list');
   const query = vi.spyOn(repo.usage, 'queryOverview');
-  const response = await requestApp('/api/token-usage/overview?start=2026-04-01T00&end=2026-05-01T00&bucket=day', {
-    headers: { 'x-floway-session': adminSession },
-  });
-  expect(response.status).toBe(400);
+  for (const format of ['', '&format=buckets']) {
+    const response = await requestApp(`/api/token-usage/overview?start=2026-04-01T00&end=2026-05-01T00&bucket=day${format}`, {
+      headers: { 'x-floway-session': adminSession },
+    });
+    expect(response.status).toBe(400);
+  }
   expect(listUpstreams).not.toHaveBeenCalled();
   expect(query).not.toHaveBeenCalled();
 });

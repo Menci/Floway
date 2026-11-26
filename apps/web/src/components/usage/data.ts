@@ -33,7 +33,7 @@ export const buildUsageOverviewQuery = (
   nowMs: number,
 ) => ({
   ...dashboardFixedRangeQuery(range, nowMs),
-  format: 'buckets' as const,
+  format: 'fixed-buckets' as const,
   group_by: groupBy,
   filter_model: filters.model,
   filter_upstream: filters.upstream,
