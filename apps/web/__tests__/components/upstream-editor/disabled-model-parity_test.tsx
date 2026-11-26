@@ -42,8 +42,8 @@ const customRecord = upstreamRecord('up_custom', {
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models: [listed('model-a')],
   },
+  manual_models: [listed('model-a')],
   state: null,
 });
 

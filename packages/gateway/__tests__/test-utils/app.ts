@@ -1,10 +1,10 @@
 import { trackBackground } from './background-tracker.ts';
 import { app } from '../../src/app.ts';
 import type { WebSearchConfig } from '../../src/data-plane/tools/web-search/types.ts';
-import { refreshModels } from '../../src/execution/models-refresh.ts';
 import { getRepo, initRepo } from '../../src/repo/index.ts';
 import type { ApiKey, User } from '../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../src/runtime/background.ts';
+import { refreshModels } from '../../src/upstreams/models-refresh.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileStore, initImageProcessor, initSocketDial, MemoryFileStore } from '@floway-dev/platform';

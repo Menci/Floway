@@ -43,8 +43,8 @@ const record = upstreamRecord('up_test', {
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models: [model('model-a'), model('model-b')],
   },
+  manual_models: [model('model-a'), model('model-b')],
   state: null,
 });
 if (record.kind !== 'custom') throw new Error('test fixture must be a custom upstream');
@@ -152,7 +152,7 @@ describe('upstream model workspace field-array transitions', () => {
   it('initializes, preserves, and clears original-detail support with image input', () => {
     const withChat = (chat: UpstreamChatModelConfig): UpstreamRecord => ({
       ...record,
-      config: { ...record.config, models: [model('model-a', chat)] },
+      manual_models: [model('model-a', chat)],
     });
 
     const first = renderInApp(<Harness />);

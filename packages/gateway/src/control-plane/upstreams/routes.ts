@@ -6,7 +6,6 @@ import { isValidProviderKind, upstreamErrorMessage as errorMessage } from './sha
 import type { FullSerializedUpstreamRecord, ModelsCacheStatus, RedactedSerializedUpstreamRecord } from './types.ts';
 import { checkMany } from '../../access-control/check.ts';
 import { type UpstreamAccess, resolveUpstreamAccesses, resolveUpstreamEditLevel } from '../../access-control/upstream-edit.ts';
-import { supportsManualModels } from '../../execution/models-refresh.ts';
 import { type AuthedContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -15,6 +14,7 @@ import type { StoredUpstreamMeta, StoredUpstreamRecord } from '../../repo/types.
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
+import { supportsManualModels } from '../../upstreams/models-refresh.ts';
 import type { createUpstreamBody, reorderUpstreamsBody, updateUpstreamBody, upstreamOptionsQuery } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { appendUpstream, saveUpstream } from '../shared/save-upstreams.ts';
@@ -132,23 +132,17 @@ const modelUseForUpstreams = async (
 
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
-const extractAndValidateManualModels = (
+const validateManualModelsForKind = (
   kind: UpstreamProviderKind,
-  rawConfig: unknown,
-  fallbackManualModels?: readonly UpstreamModelConfig[],
-): ValidationResult<{ readonly config: unknown; readonly manualModels?: UpstreamModelConfig[] }> => {
-  if (!supportsManualModels(kind)) return { ok: true, value: { config: rawConfig } };
-  if (!isRecord(rawConfig)) return { ok: false, error: `Malformed ${kind} upstream config: config must be an object` };
-  const hasModelsKey = Object.prototype.hasOwnProperty.call(rawConfig, 'models');
-  const { models: rawModels, ...restConfig } = rawConfig;
-  const candidateModels = hasModelsKey ? rawModels : fallbackManualModels;
+  rawManualModels: unknown,
+): ValidationResult<UpstreamModelConfig[]> => {
   try {
     const manualModels = kind === 'azure'
-      ? validateAzureManualModels(candidateModels)
+      ? validateAzureManualModels(rawManualModels)
       : kind === 'custom'
-        ? validateCustomManualModels(candidateModels)
-        : validateOllamaManualModels(candidateModels);
-    return { ok: true, value: { config: restConfig, manualModels } };
+        ? validateCustomManualModels(rawManualModels)
+        : validateOllamaManualModels(rawManualModels);
+    return { ok: true, value: manualModels };
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
   }
@@ -358,8 +352,12 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   if (!modelPrefixResult.ok) return c.json({ error: modelPrefixResult.error }, 400);
   const modelPrefix = modelPrefixResult.value;
 
-  const extracted = extractAndValidateManualModels(body.kind, body.config);
-  if (!extracted.ok) return c.json({ error: extracted.error }, 400);
+  let manualModels: UpstreamModelConfig[] | undefined;
+  if (body.kind === 'custom' || body.kind === 'azure' || body.kind === 'ollama') {
+    const validated = validateManualModelsForKind(body.kind, body.manual_models);
+    if (!validated.ok) return c.json({ error: validated.error }, 400);
+    manualModels = validated.value;
+  }
 
   const now = new Date().toISOString();
   const stateFromBody = body.kind === 'copilot' || body.kind === 'chatgpt' || body.kind === 'claude-code' ? body.state ?? null : null;
@@ -377,7 +375,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     proxyFallbackList,
     modelPrefix,
     hue: body.hue,
-    config: extracted.value.config,
+    config: body.config,
     state: stateFromBody,
   };
 
@@ -393,7 +391,6 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   }
 
   const record = { ...upstream, config: config.value };
-  const manualModels = extracted.value.manualModels;
   const saved = await appendUpstream(record, {
     ...(manualModels !== undefined ? { manualModels } : {}),
     refreshContext: {
@@ -416,22 +413,24 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
 
   const body = c.req.valid('json');
   if (editLevel === 'models') {
-    const allowedTopLevel = new Set(['disabled_public_model_ids', 'config']);
+    const allowedTopLevel = new Set(['disabled_public_model_ids', 'manual_models', 'config']);
     const blockedTopLevel = Object.keys(body).filter(key => !allowedTopLevel.has(key));
     if (blockedTopLevel.length > 0) {
       return c.json({ error: `Upstream.Edit.Models cannot change: ${blockedTopLevel.join(', ')}` }, 403);
     }
+    if (body.manual_models !== undefined && !supportsManualModels(existing.kind)) {
+      return c.json({ error: `Upstream.Edit.Models cannot change ${existing.kind} manual_models` }, 403);
+    }
     if (body.config !== undefined) {
       if (!isRecord(body.config)) return c.json({ error: 'config must be an object' }, 400);
-      const allowedConfig = existing.kind === 'custom' ? new Set(['models', 'modelsFetch']) : new Set(['models']);
-      const blockedConfig = Object.keys(body.config).filter(key => !allowedConfig.has(key));
+      if (existing.kind !== 'custom') {
+        return c.json({ error: `Upstream.Edit.Models cannot change ${existing.kind} config` }, 403);
+      }
+      const blockedConfig = Object.keys(body.config).filter(key => key !== 'modelsFetch');
       if (blockedConfig.length > 0) {
         return c.json({ error: `Upstream.Edit.Models cannot change config: ${blockedConfig.join(', ')}` }, 403);
       }
-      if (existing.kind !== 'custom' && existing.kind !== 'azure' && existing.kind !== 'ollama') {
-        return c.json({ error: `Upstream.Edit.Models cannot change ${existing.kind} config` }, 403);
-      }
-      if (existing.kind === 'custom' && 'modelsFetch' in body.config) {
+      if ('modelsFetch' in body.config) {
         const modelsFetch = body.config.modelsFetch;
         if (!isRecord(modelsFetch) || Object.keys(modelsFetch).some(key => key !== 'enabled')) {
           return c.json({ error: 'Upstream.Edit.Models can only change modelsFetch.enabled' }, 403);
@@ -441,6 +440,9 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   }
   if (body.kind !== undefined && body.kind !== existing.kind) {
     return c.json({ error: 'kind cannot be changed' }, 400);
+  }
+  if (body.manual_models !== undefined && !supportsManualModels(existing.kind)) {
+    return c.json({ error: `${existing.kind} upstream does not support manual_models` }, 400);
   }
 
   let patchedChatGPTConfig: ChatGPTUpstreamConfig | undefined;
@@ -500,6 +502,11 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   if (body.hue !== undefined) next = { ...next, hue: body.hue };
 
   let nextManualModels: UpstreamModelConfig[] | undefined;
+  if (body.manual_models !== undefined) {
+    const validated = validateManualModelsForKind(existing.kind, body.manual_models);
+    if (!validated.ok) return c.json({ error: validated.error }, 400);
+    nextManualModels = validated.value;
+  }
   if (body.config !== undefined) {
     if (patchedChatGPTConfig !== undefined) {
       next = { ...next, config: patchedChatGPTConfig };
@@ -511,10 +518,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
       }
       const merged = mergeConfigPatch(existing.kind, existing.config, configPatch);
       if (!merged.ok) return c.json({ error: merged.error }, 400);
-      const extracted = extractAndValidateManualModels(existing.kind, merged.value, existingManualModels);
-      if (!extracted.ok) return c.json({ error: extracted.error }, 400);
-      next = { ...next, config: extracted.value.config };
-      nextManualModels = extracted.value.manualModels;
+      next = { ...next, config: merged.value };
     }
   }
 

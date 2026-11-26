@@ -23,8 +23,8 @@ const customRecord = (
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
     modelsFetch: { authStyle: 'bearer', ...modelsFetch },
-    models: [],
   },
+  manual_models: [],
   state: null,
   proxy_fallback_list: proxyFallbackList,
 });

@@ -478,7 +478,6 @@ export interface UpstreamModelEntry {
 
 export type UpstreamModelsCacheAction =
   | { readonly kind: 'preserve' }
-  | { readonly kind: 'clear-error' }
   | { readonly kind: 'mark-stale' }
   | { readonly kind: 'clear-cache' }
   | { readonly kind: 'set-fresh'; readonly revision: number; readonly fetchedAt: number };

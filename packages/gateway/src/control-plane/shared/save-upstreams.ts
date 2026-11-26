@@ -1,11 +1,11 @@
 import { HTTPException } from 'hono/http-exception';
 
 import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
-import { scheduleUpstreamModelsRefresh, supportsManualModels, upstreamRequiresNetworkForModels } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
 import type { StoredUpstreamRecord, UpstreamModelEntry, UpstreamModelsWritePayload } from '../../repo/types.ts';
 import { serializeStoredConfig, serializeStoredState } from '../../repo/upstream-json.ts';
+import { scheduleUpstreamModelsRefresh, supportsManualModels, upstreamRequiresNetworkForModels } from '../../upstreams/models-refresh.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { resolveEffectiveFlags, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import { projectAzureModels } from '@floway-dev/provider-azure';
@@ -122,10 +122,11 @@ const planReplaceModelsWrite = async (
   }
 
   if (!modelInputsChanged && transportChanged) {
+    const hadError = previous.modelsCache.lastError !== null;
     return {
       bumpConfigVersion: true,
-      modelsWrite: { cacheAction: { kind: 'clear-error' } },
-      needsBackgroundRefresh: previous.modelsCache.lastError !== null,
+      modelsWrite: { cacheAction: { kind: hadError ? 'mark-stale' : 'preserve' } },
+      needsBackgroundRefresh: hadError,
     };
   }
 

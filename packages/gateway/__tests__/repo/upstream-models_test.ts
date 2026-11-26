@@ -317,8 +317,8 @@ test('saving manual models materializes immediately with zero 404 window and res
         config: {
           endpoint: 'https://example.openai.azure.com',
           apiKey: 'az-key',
-          models: [manualModel('az-v1', 'Azure V1')],
         },
+        manual_models: [manualModel('az-v1', 'Azure V1')],
         proxy_fallback_list: [{ id: 'direct_fetch' }],
       }),
     }),
@@ -336,7 +336,7 @@ test('saving manual models materializes immediately with zero 404 window and res
       method: 'PATCH',
       headers,
       body: JSON.stringify({
-        config: { models: [manualModel('az-v2', 'Azure V2')] },
+        manual_models: [manualModel('az-v2', 'Azure V2')],
       }),
     }),
   );
@@ -358,8 +358,8 @@ test('saving manual models materializes immediately with zero 404 window and res
         endpoints: { openaiChatCompletions: {} },
         ingressHeadersRules: [],
         modelsFetch: { enabled: true, authStyle: 'bearer' },
-        models: [],
       },
+      manual_models: [],
       proxy_fallback_list: [{ id: 'direct_fetch' }],
     }),
   });
@@ -385,7 +385,7 @@ test('saving manual models materializes immediately with zero 404 window and res
         method: 'PATCH',
         headers,
         body: JSON.stringify({
-          config: { models: [manualModel('shared-model', 'Manual Name')] },
+          manual_models: [manualModel('shared-model', 'Manual Name')],
         }),
       });
       expect(overrideResp.status).toBe(200);
@@ -399,7 +399,7 @@ test('saving manual models materializes immediately with zero 404 window and res
         method: 'PATCH',
         headers,
         body: JSON.stringify({
-          config: { models: [] },
+          manual_models: [],
         }),
       });
       expect(clearResp.status).toBe(200);

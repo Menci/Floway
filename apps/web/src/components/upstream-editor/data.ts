@@ -136,8 +136,8 @@ export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEdi
 // ownership on the other) and the two drifted apart.
 export const modelsEditable = (editLevel: UpstreamEditLevel): boolean => editLevel !== 'off';
 
-// Manual entries exist only for the kinds whose stored config carries a model
-// list. For the rest the catalog is the provider's, and the editor can only
+// Manual entries exist only for the kinds that support operator-defined
+// models. For the rest the catalog is the provider's, and the editor can only
 // enable and disable what it lists.
 export const manualModelsSupported = (record: UpstreamRecord): record is Extract<UpstreamRecord, { kind: 'custom' | 'azure' | 'ollama' }> =>
   record.kind === 'custom' || record.kind === 'azure' || record.kind === 'ollama';
@@ -235,7 +235,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
     : record.kind === 'azure' || record.kind === 'ollama' || record.kind === 'kimi-code'
       ? withApiKeyField(record.config)
       : structuredClone(record.config);
-  const manualModels = manualModelsSupported(record) ? structuredClone(record.config.models) : [];
+  const manualModels = manualModelsSupported(record) ? structuredClone(record.manual_models) : [];
   return {
     name: record.name,
     enabled: record.enabled,
@@ -258,7 +258,6 @@ const configFromValues = (record: UpstreamRecord, values: UpstreamEditorValues):
   // An emptied key must reach the provider as a cleared credential; omitting
   // it would let the config merge restore the stored key.
   if (typeof config.apiKey === 'string') config.apiKey = config.apiKey.trim();
-  if (manualModelsSupported(record)) config.models = structuredClone(values.manualModels);
   if (record.kind === 'custom') {
     const custom = config as Record<string, unknown>;
     const ingressHeadersRules = custom.ingressHeadersRules as { key: string; value: string | null }[];
@@ -285,6 +284,7 @@ export const previewRecord = (record: UpstreamRecord, values: UpstreamEditorValu
     usage_refresh_interval_minutes: values.usageRefreshIntervalMinutes,
     hue: values.hue,
     config: configFromValues(record, values),
+    ...(manualModelsSupported(record) ? { manual_models: structuredClone(values.manualModels) } : {}),
     state: values.state,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
@@ -307,6 +307,7 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
     config: configFromValues(record, values),
+    ...(manualModelsSupported(record) ? { manual_models: structuredClone(values.manualModels) } : {}),
     ...(isOAuthUpstream(record)
       ? { state: values.state }
       : {}),
@@ -315,15 +316,13 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues)
 
 export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues, editLevel: 'models' | 'full'): UpdateUpstreamBody => {
   if (editLevel === 'models') {
-    const config = manualModelsSupported(record)
-      ? record.kind === 'custom'
-        ? { models: structuredClone(values.manualModels), modelsFetch: { enabled: (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled } }
-        : { models: structuredClone(values.manualModels) }
-      : undefined;
     return {
       disabled_public_model_ids: values.disabledPublicModelIds,
-      ...(config === undefined ? {} : { config }),
-    } as UpdateUpstreamBody;
+      ...(manualModelsSupported(record) ? { manual_models: structuredClone(values.manualModels) } : {}),
+      ...(record.kind === 'custom'
+        ? { config: { modelsFetch: { enabled: (values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']).modelsFetch.enabled } } }
+        : {}),
+    } as unknown as UpdateUpstreamBody;
   }
   return {
     name: values.name.trim(),
@@ -335,7 +334,8 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
     ...(!isOAuthUpstream(record) ? { config: configFromValues(record, values) } : {}),
-  } as UpdateUpstreamBody;
+    ...(manualModelsSupported(record) ? { manual_models: structuredClone(values.manualModels) } : {}),
+  } as unknown as UpdateUpstreamBody;
 };
 
 export const modelPrefixIsValid = (prefix: string) =>

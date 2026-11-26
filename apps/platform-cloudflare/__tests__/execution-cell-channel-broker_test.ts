@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { ExecutionCellChannelBroker } from '../src/execution-cell-channel-broker.ts';
-import type { ChannelCodec, ExecutionCellNamespace } from '@floway-dev/platform';
+import { ExecutionCellChannelBroker, type ExecutionDurableObjectNamespace } from '../src/execution-cell-channel-broker.ts';
+import type { ChannelCodec } from '@floway-dev/platform';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // Identity string codec: every test below drives the generic broker through
@@ -44,12 +44,13 @@ const buildNamespace = (
   broadcasts: string[] = [],
   closeAlls: string[] = [],
   fetches?: { count: number; cellIds?: string[] },
-) => {
-  const ns: ExecutionCellNamespace = {
-    async fetch(cellId, request) {
+): ExecutionDurableObjectNamespace => ({
+  idFromName: name => name,
+  get: id => ({
+    async fetch(request) {
       if (fetches) {
         fetches.count += 1;
-        fetches.cellIds?.push(cellId);
+        fetches.cellIds?.push(String(id));
       }
       const url = new URL(request.url);
       if (url.pathname === '/broadcast' && request.method === 'POST') {
@@ -67,9 +68,8 @@ const buildNamespace = (
       Object.defineProperty(response, 'webSocket', { value: socket, configurable: true });
       return response;
     },
-  };
-  return ns;
-};
+  }),
+});
 
 test('ExecutionCellChannelBroker.subscribe drives payloads through the broadcast socket', async () => {
   const socket = new FakeServerSocket();

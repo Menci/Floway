@@ -21,8 +21,8 @@ const customRecord = (apiKey: string, modelsFetchEnabled = false) => upstreamRec
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
     modelsFetch: { enabled: modelsFetchEnabled, authStyle: 'bearer' },
-    models: [],
   },
+  manual_models: [],
   state: null,
 });
 

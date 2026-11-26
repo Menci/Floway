@@ -18,8 +18,8 @@ const record = upstreamRecord('up_custom', {
       { key: 'x-route', value: 'fast' },
     ],
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models: [],
   },
+  manual_models: [],
   state: null,
 }) as CustomRecord;
 

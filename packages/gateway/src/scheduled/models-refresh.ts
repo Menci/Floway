@@ -1,7 +1,7 @@
-import { refreshModels } from '../execution/models-refresh.ts';
 import { getRepo } from '../repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../repo/models-cache-contract.ts';
 import { hasLocationIndependentEgress } from '../repo/proxy-fallback-list.ts';
+import { refreshModels } from '../upstreams/models-refresh.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 
 export const scheduleModelsCacheRefreshes = async (runtimeLocation: string | null, scheduler: BackgroundScheduler): Promise<void> => {

@@ -1,13 +1,12 @@
 import { modelsCacheStatus, reshapeModelForDashboard } from './models-cache-projection.ts';
 import { upstreamErrorMessage as errorMessage } from './shared.ts';
 import { fullUpstreamActionError, resolveUpstreamEditLevel } from '../../access-control/upstream-edit.ts';
-import { discoverDraftModels, isModelsRefreshConfigurationError, modelsRefreshErrorMessage, refreshModelsExplicit } from '../../execution/models-refresh.ts';
 import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
+import { discoverDraftModels, isModelsRefreshConfigurationError, modelsRefreshErrorMessage, refreshModelsExplicit } from '../../upstreams/models-refresh.ts';
 import type { previewModelsBody } from '../schemas.ts';
-import { isRecord } from '../shared/field-validators.ts';
 import { ProviderModelsUnavailableError, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import { validateCustomManualModels } from '@floway-dev/provider-custom';
 import { validateOllamaManualModels } from '@floway-dev/provider-ollama';
@@ -17,18 +16,14 @@ const MODEL_LISTING_FAILURE_CODE = 'upstream_model_listing_failed';
 const malformedConfigResponse = (error: unknown): boolean =>
   error instanceof Error && /Malformed .* upstream config/.test(error.message);
 
-const splitDraftConfigAndManualModels = (
+const validateDraftManualModels = (
   kind: 'custom' | 'ollama' | 'kimi-code',
-  rawConfig: unknown,
-): { readonly config: unknown; readonly manualModels: UpstreamModelConfig[] } => {
-  if (kind === 'kimi-code' || !isRecord(rawConfig)) {
-    return { config: rawConfig, manualModels: [] };
-  }
-  const { models, ...rest } = rawConfig;
-  const manualModels = kind === 'custom'
-    ? validateCustomManualModels(models)
-    : validateOllamaManualModels(models);
-  return { config: rest, manualModels };
+  rawManualModels: unknown,
+): UpstreamModelConfig[] => {
+  if (kind === 'kimi-code') return [];
+  return kind === 'custom'
+    ? validateCustomManualModels(rawManualModels)
+    : validateOllamaManualModels(rawManualModels);
 };
 
 // A draft never reads or writes its upstream row or that row's proxy backoff
@@ -41,10 +36,9 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
   if (kind !== 'custom' && kind !== 'ollama' && kind !== 'kimi-code') {
     return c.json({ error: { message: `Draft model discovery requires custom, ollama or kimi-code: ${kind}`, type: 'invalid_request_error' } }, 400);
   }
-  let config: unknown;
   let manualModels: UpstreamModelConfig[];
   try {
-    ({ config, manualModels } = splitDraftConfigAndManualModels(kind, record.config));
+    manualModels = validateDraftManualModels(kind, record.manual_models);
   } catch (e) {
     if (malformedConfigResponse(e)) return c.json({ error: errorMessage(e) }, 400);
     throw e;
@@ -63,7 +57,7 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
     proxyFallbackList: record.proxy_fallback_list,
     modelPrefix: record.model_prefix ?? null,
     hue: record.hue ?? 0,
-    config,
+    config: record.config,
     state: record.state,
   };
   try {

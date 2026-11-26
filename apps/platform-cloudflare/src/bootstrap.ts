@@ -1,5 +1,4 @@
-import { DurableObjectExecutionCellNamespace, type ExecutionDurableObjectNamespace } from './durable-object-execution-cell.ts';
-import { ExecutionCellChannelBroker } from './execution-cell-channel-broker.ts';
+import { ExecutionCellChannelBroker, type ExecutionDurableObjectNamespace } from './execution-cell-channel-broker.ts';
 import { createCloudflareExternalResourceFetcher } from './external-resource-fetcher.ts';
 import { cloudflareFetch } from './fetch.ts';
 import { cloudflareHttpContentDecoders } from './http-content-decoders.ts';
@@ -66,7 +65,6 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initImageProcessor(createCloudflareImageProcessor(env.IMAGES));
   initSocketDial(cloudflareSocketDial);
   initDumpStore(new FileDumpStore(env.DB, files));
-  const executionCells = new DurableObjectExecutionCellNamespace(env.EXECUTION_DO);
-  initDumpBroker(new ExecutionCellChannelBroker<DumpMetadata>(executionCells, dumpCodec));
+  initDumpBroker(new ExecutionCellChannelBroker<DumpMetadata>(env.EXECUTION_DO, dumpCodec));
   return { db: env.DB };
 };

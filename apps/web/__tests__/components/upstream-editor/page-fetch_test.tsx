@@ -69,8 +69,9 @@ const customRecord = upstreamRecord('up_custom', {
   kind: 'custom',
   config: {
     baseUrl: 'https://custom.example.com', apiKey: '', ingressHeadersRules: [],
-    endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true, authStyle: 'bearer' }, models: [],
+    endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true, authStyle: 'bearer' },
   },
+  manual_models: [],
   state: null,
 });
 const discovered = [{ upstreamModelId: 'new-model', publicModelId: 'new-model', kind: 'chat' as const, endpoints: { openaiChatCompletions: {} } }];
@@ -111,8 +112,8 @@ test('editing Ollama manual models fetches the draft instead of the saved catalo
     config: {
       baseUrl: 'https://ollama.example.com',
       cloudUsage: false,
-      models: [{ upstreamModelId: 'old-manual', publicModelId: 'old-manual', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
     },
+    manual_models: [{ upstreamModelId: 'old-manual', publicModelId: 'old-manual', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
     state: null,
   });
   renderPage(ollama);
@@ -120,7 +121,7 @@ test('editing Ollama manual models fetches the draft instead of the saved catalo
   fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
   await waitFor(() => expect(apiMocks.previewModels).toHaveBeenCalledTimes(1));
   expect(apiMocks.listModels).not.toHaveBeenCalled();
-  expect(apiMocks.previewModels.mock.calls[0]?.[0].json.record.config.models).toEqual([]);
+  expect(apiMocks.previewModels.mock.calls[0]?.[0].json.record.manual_models).toEqual([]);
 });
 
 test('saving a pending YAML edit discards an older explicit Fetch result', async () => {

@@ -782,7 +782,7 @@ test('manual Ollama usage refresh commits activity and current balance together'
   const { repo, adminSession } = await setupAppTest();
   const record = buildCustomUpstreamRecord({
     id: 'up_ollama_manual', kind: 'ollama',
-    config: { baseUrl: 'https://ollama.com', apiKey: 'key', cloudUsage: true, models: [] }, state: null,
+    config: { baseUrl: 'https://ollama.com', apiKey: 'key', cloudUsage: true }, state: null,
   });
   await saveUpstreamForTest(repo.upstreams, record);
   const paths: string[] = [];

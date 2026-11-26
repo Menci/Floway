@@ -302,7 +302,7 @@ const doExport = async (app: Hono, includePerformance = false) => {
   return (await resp.json()) as Record<string, any>;
 };
 
-const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 25) => {
+const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 26) => {
   const resp = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -365,8 +365,8 @@ test('import rejects any version other than the current one before deleting data
   await repo.apiKeys.save(KEY_A);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
 
-  const VERSION_ERROR = 'version must be 25 — older export formats are not supported; re-export from the current deployment';
-  const previousV24 = await doImport(app, 'replace', latestImportData(), 24);
+  const VERSION_ERROR = 'version must be 26 — older export formats are not supported; re-export from the current deployment';
+  const previousV25 = await doImport(app, 'replace', latestImportData(), 25);
   const previousV11 = await doImport(app, 'replace', latestImportData(), 11);
   const ancientVersion = await doImport(app, 'replace', { apiKeys: [] }, 1);
   const missingVersionResponse = await app.request('/import', {
@@ -376,8 +376,8 @@ test('import rejects any version other than the current one before deleting data
   });
   const missingVersion = { status: missingVersionResponse.status, body: (await missingVersionResponse.json()) as Record<string, any> };
 
-  assertEquals(previousV24.status, 400);
-  assertEquals(previousV24.body.error, VERSION_ERROR);
+  assertEquals(previousV25.status, 400);
+  assertEquals(previousV25.body.error, VERSION_ERROR);
   assertEquals(previousV11.status, 400);
   assertEquals(previousV11.body.error, VERSION_ERROR);
   assertEquals(ancientVersion.status, 400);
@@ -775,7 +775,7 @@ test('replace-mode import clears sessions before writing users', async () => {
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
     siteSettings: { siteName: null },
-  }, 25);
+  }, 26);
 
   assertEquals(result.status, 200);
   // No public listAll on sessions; create a fresh session and check the
@@ -784,7 +784,7 @@ test('replace-mode import clears sessions before writing users', async () => {
   assertEquals(await repo.sessions.deleteByUserId(USER_BOB.id), 0);
 });
 
-test('v25 replace import refuses payload missing user 1', async () => {
+test('v26 replace import refuses payload missing user 1', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
     ...EMPTY_ACCESS_TRANSFER,
@@ -797,12 +797,12 @@ test('v25 replace import refuses payload missing user 1', async () => {
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
     siteSettings: { siteName: null },
-  }, 25);
+  }, 26);
   assertEquals(result.status, 400);
   expect(result.body.error).toContain('user 1');
 });
 
-test('a full v25 export re-imports verbatim — the export→import round trip is closed', async () => {
+test('a full v26 export re-imports verbatim — the export→import round trip is closed', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
@@ -828,12 +828,12 @@ test('a full v25 export re-imports verbatim — the export→import round trip i
   await repo.webSearchConfig.save(config);
 
   const exported = await doExport(app, true);
-  assertEquals(exported.version, 25);
+  assertEquals(exported.version, 26);
 
   // Replace-import the export's own `data`, verbatim. If the export emits any
   // shape the import parser rejects, this 400s — the round trip is the
   // invariant, so this test fails the moment the two sides drift.
-  const result = await doImport(app, 'replace', exported.data, 25);
+  const result = await doImport(app, 'replace', exported.data, 26);
   assertEquals(result.status, 200);
   assertEquals(result.body.imported, { users: 2, userPreferences: 0, groups: 0, accessRecords: 0, apiKeys: 2, upstreams: 4, proxies: 0, usage: 2, searchUsage: 2, upstreamMetrics: 0, performance: 2 });
 

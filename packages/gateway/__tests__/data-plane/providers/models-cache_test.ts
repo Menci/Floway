@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
-import { refreshModels, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
 import type { StoredUpstreamRecord } from '../../../src/repo/types.ts';
+import { refreshModels, refreshModelsExplicit } from '../../../src/upstreams/models-refresh.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildChatGPTUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';

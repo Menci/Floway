@@ -165,17 +165,13 @@ const upstreamWireSchema = parsedBy((value): ImportedUpstream => {
     throw new Error('id must use a raw upstream id, not a legacy provider-prefixed identity');
   }
 
-  let rawConfig = wire.config;
   let manualModels: UpstreamModelConfig[] | undefined;
   if (kind === 'custom' || kind === 'azure' || kind === 'ollama') {
-    if (!isRecord(rawConfig)) throw new Error(`Malformed ${kind} upstream config: config must be an object`);
-    const { models, ...rest } = rawConfig;
-    rawConfig = rest;
     manualModels = kind === 'azure'
-      ? validateAzureManualModels(models)
+      ? validateAzureManualModels(wire.manual_models)
       : kind === 'custom'
-        ? validateCustomManualModels(models)
-        : validateOllamaManualModels(models);
+        ? validateCustomManualModels(wire.manual_models)
+        : validateOllamaManualModels(wire.manual_models);
   }
 
   const record: UpstreamRecord = {
@@ -192,7 +188,7 @@ const upstreamWireSchema = parsedBy((value): ImportedUpstream => {
     proxyFallbackList: parseValue(proxyFallbackListSchema, wire.proxy_fallback_list),
     modelPrefix: parseValue(parsedBy(normalizeModelPrefix).optional().default(null), wire.model_prefix),
     hue: parseValue(parsedBy(normalizeUpstreamHue), wire.hue),
-    config: rawConfig,
+    config: wire.config,
     state: normalizeUpstreamState(kind, wire.state),
   };
   return {

@@ -367,11 +367,6 @@ const cacheSetClause = (action: UpstreamModelsCacheAction): { sql: string; binds
   switch (action.kind) {
   case 'preserve':
     return { sql: '', binds: [] };
-  case 'clear-error':
-    return {
-      sql: ', models_cache_error_message = NULL, models_cache_error_at = NULL, models_cache_failure_count = 0',
-      binds: [],
-    };
   case 'mark-stale':
     return {
       sql: ', models_cache_revision = NULL, models_cache_error_message = NULL, models_cache_error_at = NULL, models_cache_failure_count = 0',

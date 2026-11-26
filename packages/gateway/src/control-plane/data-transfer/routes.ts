@@ -24,7 +24,7 @@ import { type FullSerializedUpstreamRecord, upstreamRecordToFullJson } from '../
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 
 interface ExportPayload {
-  version: 25;
+  version: 26;
   exportedAt: string;
   data: {
     users: User[];
@@ -44,7 +44,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 25;
+const EXPORT_VERSION = 26;
 
 const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
   const ids = new Map<string, number>();

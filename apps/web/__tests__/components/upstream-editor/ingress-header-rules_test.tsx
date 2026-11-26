@@ -23,8 +23,8 @@ const record = (ingressHeadersRules: { key: string; value: string | null }[]): C
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules,
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models: [],
   },
+  manual_models: [],
   state: null,
 }) as CustomRecord;
 

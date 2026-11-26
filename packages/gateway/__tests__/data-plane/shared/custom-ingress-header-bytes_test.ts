@@ -115,9 +115,10 @@ const embeddingsThroughUpstream = async (egress: ProxyFallbackEntry[], origin: s
       endpoints: {},
       ingressHeadersRules: INGRESS_HEADERS_RULES,
       modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{ upstreamModelId: 'embedding-model', endpoints: { openaiEmbeddings: {} } }],
     },
-  }));
+  }), {
+    manualModels: [{ upstreamModelId: 'embedding-model', kind: 'embedding', endpoints: { openaiEmbeddings: {} } }],
+  });
   await warmModelsForTest();
 
   const headers = new Headers({ 'content-type': 'application/json', 'x-api-key': apiKey.key });

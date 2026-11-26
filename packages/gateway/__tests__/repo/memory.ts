@@ -1119,8 +1119,6 @@ const applyCacheAction = (
   switch (action.kind) {
   case 'preserve':
     return structuredClone(current);
-  case 'clear-error':
-    return { ...current, lastError: null };
   case 'mark-stale':
     return { revision: null, fetchedAt: current.fetchedAt, lastError: null };
   case 'clear-cache':

@@ -50,7 +50,7 @@ export type { ProviderModelsFailureResponse } from '@floway-dev/provider';
 type CustomConfigFields = Pick<
   StoredCustomUpstreamConfig,
   'baseUrl' | 'endpoints' | 'ingressHeadersRules' | 'modelsFetch' | 'pathOverrides'
-> & { models: UpstreamModelConfig[] };
+>;
 
 export type CustomUpstreamConfig = CustomConfigFields & {
   apiKey?: string;
@@ -58,7 +58,6 @@ export type CustomUpstreamConfig = CustomConfigFields & {
 };
 
 export type AzureUpstreamConfig = Omit<StoredAzureUpstreamConfig, 'apiKey'> & {
-  models: UpstreamModelConfig[];
   apiKey?: string;
   apiKeySet?: boolean;
 };
@@ -90,7 +89,6 @@ export type ChatGPTUpstreamConfig = Omit<StoredChatGPTUpstreamConfig, 'accounts'
 export type KimiCodeUpstreamConfig = Omit<StoredKimiCodeUpstreamConfig, 'apiKey'> & { apiKey?: string; apiKeySet?: boolean };
 
 export type OllamaUpstreamConfig = Omit<StoredOllamaUpstreamConfig, 'apiKey'> & {
-  models: UpstreamModelConfig[];
   apiKey?: string | null;
   apiKeySet?: boolean;
 };
@@ -151,13 +149,10 @@ interface SerializedUpstreamRecordBase {
 }
 
 type RedactedCustomConfig = CustomConfigFields & { apiKeySet: boolean };
-type RedactedAzureConfig = Omit<StoredAzureUpstreamConfig, 'apiKey'> & { models: UpstreamModelConfig[]; apiKeySet: boolean };
+type RedactedAzureConfig = Omit<StoredAzureUpstreamConfig, 'apiKey'> & { apiKeySet: boolean };
 type RedactedCopilotConfig = Omit<StoredCopilotUpstreamConfig, 'githubToken'> & { githubTokenSet: boolean };
 type RedactedKimiCodeConfig = Omit<StoredKimiCodeUpstreamConfig, 'apiKey'> & { apiKeySet: boolean };
-type RedactedOllamaConfig = Omit<StoredOllamaUpstreamConfig, 'apiKey'> & { models: UpstreamModelConfig[]; apiKeySet: boolean };
-type FullCustomConfig = StoredCustomUpstreamConfig & { models: UpstreamModelConfig[] };
-type FullAzureConfig = StoredAzureUpstreamConfig & { models: UpstreamModelConfig[] };
-type FullOllamaConfig = StoredOllamaUpstreamConfig & { models: UpstreamModelConfig[] };
+type RedactedOllamaConfig = Omit<StoredOllamaUpstreamConfig, 'apiKey'> & { apiKeySet: boolean };
 
 type RedactedChatGPTCredential = Pick<
   ChatGPTAccountCredential,
@@ -175,35 +170,35 @@ type RedactedClaudeCodeCredential = Pick<
 };
 
 export type RedactedSerializedUpstreamRecord =
-  | (SerializedUpstreamRecordBase & { kind: 'custom'; config: RedactedCustomConfig; state: null })
-  | (SerializedUpstreamRecordBase & { kind: 'azure'; config: RedactedAzureConfig; state: null })
+  | (SerializedUpstreamRecordBase & { kind: 'custom'; config: RedactedCustomConfig; manual_models: UpstreamModelConfig[]; state: null })
+  | (SerializedUpstreamRecordBase & { kind: 'azure'; config: RedactedAzureConfig; manual_models: UpstreamModelConfig[]; state: null })
   | (SerializedUpstreamRecordBase & { kind: 'copilot'; config: RedactedCopilotConfig; state: CopilotUpstreamState | null })
   | (SerializedUpstreamRecordBase & { kind: 'chatgpt'; config: StoredChatGPTUpstreamConfig; state: { accounts: RedactedChatGPTCredential[] } })
   | (SerializedUpstreamRecordBase & { kind: 'claude-code'; config: StoredClaudeCodeUpstreamConfig; state: { accounts: RedactedClaudeCodeCredential[] } })
   | (SerializedUpstreamRecordBase & { kind: 'kimi-code'; config: RedactedKimiCodeConfig; state: StoredKimiCodeUpstreamState | null })
-  | (SerializedUpstreamRecordBase & { kind: 'ollama'; config: RedactedOllamaConfig; state: StoredOllamaUpstreamState | null });
+  | (SerializedUpstreamRecordBase & { kind: 'ollama'; config: RedactedOllamaConfig; manual_models: UpstreamModelConfig[]; state: StoredOllamaUpstreamState | null });
 
 export type FullSerializedUpstreamRecord =
-  | (SerializedUpstreamRecordBase & { kind: 'custom'; config: FullCustomConfig; state: null })
-  | (SerializedUpstreamRecordBase & { kind: 'azure'; config: FullAzureConfig; state: null })
+  | (SerializedUpstreamRecordBase & { kind: 'custom'; config: StoredCustomUpstreamConfig; manual_models: UpstreamModelConfig[]; state: null })
+  | (SerializedUpstreamRecordBase & { kind: 'azure'; config: StoredAzureUpstreamConfig; manual_models: UpstreamModelConfig[]; state: null })
   | (SerializedUpstreamRecordBase & { kind: 'copilot'; config: StoredCopilotUpstreamConfig; state: StoredCopilotUpstreamState | null })
   | (SerializedUpstreamRecordBase & { kind: 'chatgpt'; config: StoredChatGPTUpstreamConfig; state: StoredChatGPTUpstreamState })
   | (SerializedUpstreamRecordBase & { kind: 'claude-code'; config: StoredClaudeCodeUpstreamConfig; state: StoredClaudeCodeUpstreamState })
   | (SerializedUpstreamRecordBase & { kind: 'kimi-code'; config: StoredKimiCodeUpstreamConfig; state: StoredKimiCodeUpstreamState | null })
-  | (SerializedUpstreamRecordBase & { kind: 'ollama'; config: FullOllamaConfig; state: StoredOllamaUpstreamState | null });
+  | (SerializedUpstreamRecordBase & { kind: 'ollama'; config: StoredOllamaUpstreamConfig; manual_models: UpstreamModelConfig[]; state: StoredOllamaUpstreamState | null });
 
 // A blueprint is an unsaved upstream, so it carries no hue: the dashboard
 // picks one distinct from the hues already in use and sends it on create.
 type BlueprintUpstreamRecordBase = Omit<SerializedUpstreamRecordBase, 'hue'>;
 
 export type BlueprintSerializedUpstreamRecord =
-  | (BlueprintUpstreamRecordBase & { kind: 'custom'; config: FullCustomConfig; state: null })
-  | (BlueprintUpstreamRecordBase & { kind: 'azure'; config: FullAzureConfig; state: null })
+  | (BlueprintUpstreamRecordBase & { kind: 'custom'; config: StoredCustomUpstreamConfig; manual_models: UpstreamModelConfig[]; state: null })
+  | (BlueprintUpstreamRecordBase & { kind: 'azure'; config: StoredAzureUpstreamConfig; manual_models: UpstreamModelConfig[]; state: null })
   | (BlueprintUpstreamRecordBase & { kind: 'copilot'; config: StoredCopilotUpstreamConfig; state: null })
   | (BlueprintUpstreamRecordBase & { kind: 'chatgpt'; config: { accounts: ChatGPTAccountIdentity[] }; state: { accounts: ChatGPTAccountCredential[] } })
   | (BlueprintUpstreamRecordBase & { kind: 'claude-code'; config: { accounts: ClaudeCodeAccountIdentity[] }; state: { accounts: ClaudeCodeAccountCredential[] } })
   | (BlueprintUpstreamRecordBase & { kind: 'kimi-code'; config: StoredKimiCodeUpstreamConfig; state: null })
-  | (BlueprintUpstreamRecordBase & { kind: 'ollama'; config: FullOllamaConfig; state: null });
+  | (BlueprintUpstreamRecordBase & { kind: 'ollama'; config: StoredOllamaUpstreamConfig; manual_models: UpstreamModelConfig[]; state: null });
 
 export interface ModelsCacheStatus {
   fetchedAt: number | null;
@@ -226,13 +221,13 @@ interface DashboardUpstreamRecordBase extends SerializedUpstreamRecordBase {
 }
 
 export type UpstreamRecord =
-  | (DashboardUpstreamRecordBase & { kind: 'custom'; config: CustomUpstreamConfig; state: null })
-  | (DashboardUpstreamRecordBase & { kind: 'azure'; config: AzureUpstreamConfig; state: null })
+  | (DashboardUpstreamRecordBase & { kind: 'custom'; config: CustomUpstreamConfig; manual_models: UpstreamModelConfig[]; state: null })
+  | (DashboardUpstreamRecordBase & { kind: 'azure'; config: AzureUpstreamConfig; manual_models: UpstreamModelConfig[]; state: null })
   | (DashboardUpstreamRecordBase & { kind: 'copilot'; config: CopilotUpstreamConfig; state: CopilotUpstreamState | StoredCopilotUpstreamState | null })
   | (DashboardUpstreamRecordBase & { kind: 'chatgpt'; config: ChatGPTUpstreamConfig; state: ChatGPTUpstreamState; chatgpt_quota?: ChatGPTQuotaSnapshotMap | null })
   | (DashboardUpstreamRecordBase & { kind: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState })
   | (DashboardUpstreamRecordBase & { kind: 'kimi-code'; config: KimiCodeUpstreamConfig; state: StoredKimiCodeUpstreamState | null })
-  | (DashboardUpstreamRecordBase & { kind: 'ollama'; config: OllamaUpstreamConfig; state: StoredOllamaUpstreamState | null });
+  | (DashboardUpstreamRecordBase & { kind: 'ollama'; config: OllamaUpstreamConfig; manual_models: UpstreamModelConfig[]; state: StoredOllamaUpstreamState | null });
 
 export interface ListedUpstreamModel extends UpstreamModelConfig {
   upstreamModelId: string;

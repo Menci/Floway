@@ -151,7 +151,8 @@ test('Upstream.Edit.Models returns a redacted record and only accepts model fiel
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
     body: JSON.stringify({
       disabled_public_model_ids: ['old-model'],
-      config: { models: [], modelsFetch: { enabled: false } },
+      manual_models: [],
+      config: { modelsFetch: { enabled: false } },
     }),
   });
   assertEquals(allowed.status, 200);

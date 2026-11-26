@@ -121,11 +121,11 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
       previous: renamed,
       upstream: { ...renamed, proxyFallbackList: [{ id: 'direct_fetch' }] },
       bumpConfigVersion: true,
-      modelsWrite: { cacheAction: { kind: 'clear-error' } },
+      modelsWrite: { cacheAction: { kind: 'mark-stale' } },
     });
     const transported = await repo.getById(record.id);
     expect(transported?.configVersion).toBe(2);
-    expect(transported?.modelsCache).toEqual({ revision: MODEL_CATALOG_REVISION, fetchedAt: 10, lastError: null });
+    expect(transported?.modelsCache).toEqual({ revision: null, fetchedAt: 10, lastError: null });
     expect((await fullRepo.upstreamModels.listByUpstream(record.id)).map(entry => entry.model.id)).toEqual(['kept']);
   });
 
