@@ -6,20 +6,24 @@ export interface ProtocolDecodeError {
   kind: 'protocol';
   cause: unknown;
   event?: JsonObject;
+  eventName?: string;
 }
 
 export type ProtocolByteStream<Failure> = AsyncIterable<Result<Uint8Array, Failure>>;
 export type ProtocolEventStream<Event, Failure> = AsyncGenerator<Result<Event, Failure | ProtocolDecodeError>, void, unknown>;
 
-export const protocolDecodeError = (message: string, cause?: unknown, event?: JsonObject): Result<never, ProtocolDecodeError> => ({
+export const protocolDecodeError = (message: string, cause?: unknown, event?: JsonObject, eventName?: string): Result<never, ProtocolDecodeError> => ({
   ok: false,
-  error: { kind: 'protocol', cause: new Error(message, { cause }), ...(event === undefined ? {} : { event }) },
+  error: {
+    kind: 'protocol', cause: new Error(message, { cause }),
+    ...(event === undefined ? {} : { event }), ...(eventName === undefined ? {} : { eventName }),
+  },
 });
 
-export const protocolSseError = (protocol: string, event: JsonObject): Result<never, ProtocolDecodeError> => {
+export const protocolSseError = (protocol: string, event: JsonObject, eventName?: string): Result<never, ProtocolDecodeError> => {
   const details = isJsonObject(event.error) ? event.error : event;
   const message = typeof details.message === 'string' ? `: ${details.message}` : '';
-  return protocolDecodeError(`Upstream ${protocol} SSE error${message}`, undefined, event);
+  return protocolDecodeError(`Upstream ${protocol} SSE error${message}`, undefined, event, eventName);
 };
 
 interface DecodeSseEventsOptions {
@@ -94,7 +98,7 @@ export const decodeOpenAISseWireEvents = async function* <Event, Failure>(
     }
     const { data, eventName } = item.value;
     if (eventName === 'error' || data.type === 'error' || isJsonObject(data.error)) {
-      yield protocolSseError(protocol, data);
+      yield protocolSseError(protocol, data, eventName);
       return;
     }
     ended = completion?.event?.(data) === true;

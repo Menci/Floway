@@ -31,6 +31,17 @@ test('retains the original SSE name when present and reads through the terminal 
   ]);
 });
 
+test.each(['vendor.transcription_error', undefined])('retains the terminating error wire name %s only when present', async eventName => {
+  const event = { type: 'error', message: 'transcription unavailable' };
+  const prefix = eventName === undefined ? '' : `event: ${eventName}\n`;
+  const source = chunks(`${prefix}data: ${JSON.stringify(event)}\n\n`);
+
+  expect(await Array.fromAsync(decodeOpenAIAudioTranscriptionsStream(source))).toStrictEqual([{
+    ok: false,
+    error: { kind: 'protocol', cause: expect.any(Error), event, ...(eventName === undefined ? {} : { eventName }) },
+  }]);
+});
+
 test.each([
   ['application/json; charset=utf-8', ' { "text" : "hello", "example" : 1.00 }\n'],
   ['application/vnd.example+json', 'null'],
