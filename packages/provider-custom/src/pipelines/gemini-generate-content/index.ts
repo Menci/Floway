@@ -29,10 +29,15 @@ const countTokensBody = ({ contents, generateContentRequest }: GeminiCountTokens
 export const geminiGenerateContentCountTokens = customOperation('geminiGenerateContentCountTokens', {
   auth: 'x-goog-api-key',
   selectModelId: bareModelId,
-  parse: parseResultResponse('geminiGenerateContentCountTokens', bytes => {
-    const parsed = parseJsonBody(bytes);
-    return parsed.ok ? decodeGeminiGenerateContentCountTokensResult(parsed.value) : parsed;
-  }, geminiGenerateContentError),
+  parse: parseResultResponse('geminiGenerateContentCountTokens', {
+    needs: [],
+    decode(bytes) {
+      const parsed = parseJsonBody(bytes);
+      return parsed.ok ? decodeGeminiGenerateContentCountTokensResult(parsed.value) : parsed;
+    },
+    format: geminiGenerateContentError,
+    noContent: null,
+  }),
   prepare: (payload, modelId, config) => ({
     path: customGeminiModelActionPath(config, modelId, 'countTokens'),
     ...jsonBody(countTokensBody(payload, modelId)),

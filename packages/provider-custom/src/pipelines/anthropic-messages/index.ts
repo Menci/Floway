@@ -14,10 +14,15 @@ export const anthropicMessages = customOperation('anthropicMessages', {
 
 export const anthropicMessagesCountTokens = customOperation('anthropicMessagesCountTokens', {
   auth: 'x-api-key',
-  parse: parseResultResponse('anthropicMessagesCountTokens', bytes => {
-    const parsed = parseJsonBody(bytes);
-    return parsed.ok ? decodeAnthropicMessagesCountTokensResult(parsed.value) : parsed;
-  }, anthropicMessagesError),
+  parse: parseResultResponse('anthropicMessagesCountTokens', {
+    needs: [],
+    decode(bytes) {
+      const parsed = parseJsonBody(bytes);
+      return parsed.ok ? decodeAnthropicMessagesCountTokensResult(parsed.value) : parsed;
+    },
+    format: anthropicMessagesError,
+    noContent: null,
+  }),
   prepare: (payload, modelId, config) => ({
     path: `${customOperationPath(config, '/messages')}/count_tokens`,
     ...jsonBody({ ...payload, model: modelId }),

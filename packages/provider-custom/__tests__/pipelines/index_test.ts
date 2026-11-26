@@ -320,6 +320,36 @@ test('Embeddings consumes a pre-header transport failure and publishes an upstre
   await running.done;
 });
 
+test.each([
+  { status: 204, body: null, outcome: { kind: 'result', result: null } },
+  { status: 205, body: null, outcome: { kind: 'result', result: null } },
+  { status: 200, body: '', outcome: { kind: 'error', source: 'upstream' } },
+  { status: 200, body: 'null', outcome: { kind: 'error', source: 'upstream' } },
+])('count-tokens preserves status $status and classifies body $body', async ({ status, body, outcome }) => {
+  const fetcher: Fetcher = () => Promise.resolve(new Response(body, {
+    status,
+    statusText: 'Count response',
+    headers: { 'content-type': 'application/json', 'x-upstream-count': 'preserved' },
+  }));
+  using anthropic = invoke(customPipelines.anthropicMessagesCountTokens, input('anthropicMessagesCountTokens', {
+    model: 'public-model', messages: [],
+  }), fetcher);
+  const head = {
+    status, statusText: 'Count response', body: null,
+    headers: [['content-type', 'application/json'], ['x-upstream-count', 'preserved']],
+  };
+  expect(await anthropic.result).toMatchObject({
+    'response.http': head,
+    'response.anthropicMessagesCountTokens': outcome,
+  });
+  using gemini = invoke(customPipelines.geminiGenerateContentCountTokens, input('geminiGenerateContentCountTokens', { contents: [] }), fetcher);
+  expect(await gemini.result).toMatchObject({
+    'response.http': head,
+    'response.geminiGenerateContentCountTokens': outcome,
+  });
+  await Promise.all([anthropic.done, gemini.done]);
+});
+
 test('Gemini counts require a numeric token count even when the upstream returns 2xx', async () => {
   const fetcher: Fetcher = () => Promise.resolve(Response.json({ totalTokens: '7' }));
   using running = invoke(customPipelines.geminiGenerateContentCountTokens, input('geminiGenerateContentCountTokens', {
