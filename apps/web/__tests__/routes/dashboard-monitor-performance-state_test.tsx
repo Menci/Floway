@@ -79,15 +79,17 @@ const chartTitle = (metric: { ttft: string } | { tail: number }) => i18n.t('moni
 });
 
 describe('Performance table state', () => {
-  it('uses the in-progress page window for a tab opened during refresh', async () => {
+  it('keeps the active tab and table until the new ranking loads in the in-progress page window', async () => {
     const clock = vi.spyOn(Date, 'now').mockReturnValue(loadedAt + 3_600_000);
     const queries: URLSearchParams[] = [];
     let finishChart: (() => void) | undefined;
+    let finishRanking: (() => void) | undefined;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const { searchParams } = new URL(String(input), 'http://localhost');
       queries.push(searchParams);
       const dimension = searchParams.get('dimension');
       if (dimension === 'model') await new Promise<void>(resolve => { finishChart = resolve; });
+      if (dimension === 'upstream') await new Promise<void>(resolve => { finishRanking = resolve; });
       return Response.json({
         reset: true, start: searchParams.get('start'), end: searchParams.get('end'), cursor: searchParams.get('start'),
         edges: { ttft_ms: [], tpot_us: [] }, scope: { actorId: 1, ownedKeyIds: [], visibility: 'all' },
@@ -100,14 +102,22 @@ describe('Performance table state', () => {
       });
     }));
     try {
-      renderPage('');
+      const { router } = renderPage('');
       fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));
       await waitFor(() => expect(finishChart).toBeTypeOf('function'));
       const upstreamTab = screen.getByRole('tab', { name: i18n.t('monitoring.performance.groupBy.upstream') });
       fireEvent.click(upstreamTab);
+      await waitFor(() => expect(finishRanking).toBeTypeOf('function'));
+      const modelName = i18n.t('monitoring.performance.groupBy.model');
+      expect(screen.getByRole('tab', { name: modelName }).getAttribute('aria-selected')).toBe('true');
+      expect(within(screen.getByRole('table', { name: modelName })).getByText('model-a')).toBeTruthy();
+      expect(screen.getByLabelText(i18n.t('monitoring.performance.actions.refreshBreakdown'))).toBeTruthy();
+      expect(urlSearch(router).get('tab')).toBeNull();
+      await act(async () => { finishRanking?.(); });
       expect(upstreamTab.getAttribute('aria-selected')).toBe('true');
       const tableName = i18n.t('monitoring.performance.groupBy.upstream');
       expect(within(await screen.findByRole('table', { name: tableName })).getByText('upstream-a')).toBeTruthy();
+      expect(urlSearch(router).get('tab')).toBe('upstream');
       expect(queries[1]?.get('end')).toBe(queries[0]?.get('end'));
       await act(async () => { finishChart?.(); });
       expect(within(screen.getByRole('table', { name: tableName })).getByText('upstream-a')).toBeTruthy();
@@ -115,6 +125,34 @@ describe('Performance table state', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+
+  it('keeps the active ranking after a failed switch and commits a successful retry', async () => {
+    let attempts = 0;
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const { searchParams } = new URL(String(input), 'http://localhost');
+      if (++attempts === 1) return Response.json({ error: 'Ranking unavailable' }, { status: 500 });
+      return Response.json({
+        reset: true, start: searchParams.get('start'), end: searchParams.get('end'), cursor: searchParams.get('start'),
+        buckets: [], edges: { ttft_ms: [], tpot_us: [] }, scope: { actorId: 1, ownedKeyIds: [], visibility: 'all' },
+        metadataVisibility: { complete: true, userIds: [], upstreamIds: [] }, users: [], upstreams: [], keys: [],
+      });
+    }));
+    const { router } = renderPage('');
+    const modelName = i18n.t('monitoring.performance.groupBy.model');
+    const upstreamTab = screen.getByRole('tab', { name: i18n.t('monitoring.performance.groupBy.upstream') });
+    fireEvent.click(upstreamTab);
+
+    await screen.findByText('Ranking unavailable');
+    expect(screen.getByRole('tab', { name: modelName }).getAttribute('aria-selected')).toBe('true');
+    expect(within(screen.getByRole('table', { name: modelName })).getByText('model-a')).toBeTruthy();
+    expect(urlSearch(router).get('tab')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('monitoring.performance.actions.retryBreakdown') }));
+    await waitFor(() => expect(upstreamTab.getAttribute('aria-selected')).toBe('true'));
+    expect(urlSearch(router).get('tab')).toBe('upstream');
+    expect(screen.queryByText('Ranking unavailable')).toBeNull();
+    expect(attempts).toBe(2);
   });
 
   it('discards the visible ranking when the same page refresh confirms a revoked scope', async () => {

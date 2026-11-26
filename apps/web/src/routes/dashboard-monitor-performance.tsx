@@ -62,6 +62,13 @@ interface LoaderData {
   regionAvailable: boolean | null;
 }
 
+type RankingRead = {
+  dimension: PerformanceGroupBy;
+  query: PerformanceQuery;
+  requestedAt: number;
+  scopeKey: string | undefined;
+};
+
 export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise<LoaderData> {
   const user = await requireDashboardUser();
   const parsed = parsePerformanceUrlState(new URL(request.url).searchParams);
@@ -116,12 +123,14 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [metric, setMetric] = useState<PerformanceMetric>(initialState.metric);
   const [percentile, setPercentile] = useState<PerformancePercentile>(initialState.percentile);
   const [breakdownGroup, setBreakdownGroup] = useState<PerformanceGroupBy>(initialState.breakdown);
+  const [pendingBreakdown, setPendingBreakdown] = useState<PerformanceGroupBy>();
   const [sort, setSort] = useState<PerformanceTableSort>(initialState.sort);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [overview, setOverview] = useState<PerformanceOverviewView | null>(loaderData.overview);
   const [scope, setScope] = useState(() => loaderData.dataset?.snapshot.scope);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
-  const [ranking, setRanking] = useState<{ dimension: PerformanceGroupBy; query: PerformanceQuery; requestedAt: number; scopeKey: string | undefined; error: GlobalError | null }>();
+  const [ranking, setRanking] = useState<RankingRead>();
+  const [rankingFailure, setRankingFailure] = useState<RankingRead & { error: GlobalError }>();
   const pendingRegionAvailableRef = useRef<boolean | null>(null);
   const pageWindow = useRef<{ query: PerformanceQuery; requestedAt: number } | undefined>(undefined);
   const locale = useLocale();
@@ -197,6 +206,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     pendingRegionAvailableRef.current = null;
     setRegionAvailable(nextRegionAvailable);
     setBreakdownGroup(current => normalizePerformanceBreakdownForRuntime(current, nextRegionAvailable));
+    setPendingBreakdown(current => current === undefined ? undefined : normalizePerformanceBreakdownForRuntime(current, nextRegionAvailable));
     setOverview(performanceOverviewForDisplay(result.data));
     setScope(result.data.snapshot.scope);
     return normalization.changed ? committedQuery : true;
@@ -216,14 +226,30 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [editingRange, setEditingRange] = useState(false);
   useTelemetryPolling(poll, loadedQuery.range, !editingRange && !refreshing);
 
-  const needsRanking = overview !== null && regionAvailable !== null && breakdownGroup !== loadedQuery.groupBy;
+  const rankingDimension = pendingBreakdown ?? breakdownGroup;
+  const needsRanking = overview !== null && regionAvailable !== null
+    && (rankingDimension !== loadedQuery.groupBy || pendingBreakdown !== undefined);
   const scopeKey = scope === undefined ? undefined : JSON.stringify(scope);
   const rankingReload = useCallback(async (signal: AbortSignal) => {
+    if (rankingDimension === loadedQuery.groupBy) {
+      setBreakdownGroup(rankingDimension);
+      setPendingBreakdown(undefined);
+      return;
+    }
     const requestedAt = pageWindow.current?.query === loadedQuery ? pageWindow.current.requestedAt : loadedAt;
-    const result = await performanceLoader.load(loadedQuery, breakdownGroup, requestedAt, scopeKey);
+    const read = { dimension: rankingDimension, query: loadedQuery, requestedAt, scopeKey };
+    const result = await performanceLoader.load(loadedQuery, rankingDimension, requestedAt, scopeKey);
     if (signal.aborted) return;
-    setRanking({ dimension: breakdownGroup, query: loadedQuery, requestedAt, scopeKey, error: result.error ?? null });
-  }, [performanceLoader, loadedQuery, breakdownGroup, loadedAt, scopeKey]);
+    if (result.error) {
+      setRankingFailure({ ...read, error: result.error });
+    } else {
+      if (performanceLoader.get(loadedQuery, rankingDimension, requestedAt, scopeKey) === undefined) return;
+      setRanking(read);
+      setRankingFailure(current => current?.dimension === rankingDimension ? undefined : current);
+      setBreakdownGroup(rankingDimension);
+    }
+    setPendingBreakdown(undefined);
+  }, [performanceLoader, loadedQuery, rankingDimension, loadedAt, scopeKey]);
   const {
     cancel: cancelRanking, refresh: refreshRanking, refreshInBackground: refreshRankingInBackground,
     backgroundRefreshing: rankingPolling, refreshing: rankingRefreshing,
@@ -273,18 +299,26 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range), [buckets, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentile]);
 
   const changeBreakdown = (key: PerformanceGroupBy) => {
-    if (key === breakdownGroup) return;
-    setRanking(undefined);
-    setBreakdownGroup(key);
+    if (key === rankingDimension) return;
+    cancelRanking();
+    setRankingFailure(undefined);
+    if (key === breakdownGroup || key === loadedQuery.groupBy) {
+      setPendingBreakdown(undefined);
+      setBreakdownGroup(key);
+    } else {
+      setPendingBreakdown(key);
+    }
   };
   const activeRanking = ranking?.dimension === breakdownGroup && ranking.query === loadedQuery && ranking.scopeKey === scopeKey
     ? ranking : undefined;
   const rankingWindow = Math.max(loadedAt, activeRanking?.requestedAt ?? loadedAt);
-  const rankingDataset = needsRanking ? performanceLoader.get(loadedQuery, breakdownGroup, rankingWindow, scopeKey) : undefined;
+  const showRanking = breakdownGroup !== loadedQuery.groupBy;
+  const rankingDataset = showRanking ? performanceLoader.get(loadedQuery, breakdownGroup, rankingWindow, scopeKey) : undefined;
   const rankingRows = useMemo(() => rankingDataset === undefined ? undefined : performanceRanking(rankingDataset), [rankingDataset]);
-  const tableRows = needsRanking ? rankingRows : overview?.rows;
-  const rankingError = activeRanking?.error ?? null;
-  const rankingBusy = needsRanking && (rankingPolling || rankingRefreshing || (rankingRows === undefined && rankingError === null));
+  const tableRows = showRanking ? rankingRows : overview?.rows;
+  const rankingError = rankingFailure?.query === loadedQuery && rankingFailure.scopeKey === scopeKey ? rankingFailure : undefined;
+  const rankingBusy = pendingBreakdown !== undefined
+    || (needsRanking && (rankingPolling || rankingRefreshing || (tableRows === undefined && rankingError === undefined)));
   const summary = overview?.summary;
   const summaryCards = [
     ['requests', formatCount(summary?.requests ?? 0, locale)],
@@ -396,8 +430,11 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
             </TabList></ScrollArea>
             {rankingBusy && <Spinner size="tiny" className="flex-none" aria-label={t('monitoring.performance.actions.refreshBreakdown')} />}
           </div>
-          {rankingError !== null && <OutcomeMessageBar action={<Button size="small" appearance="subtle" onClick={() => void refreshRanking()}>{t('monitoring.performance.actions.retryBreakdown')}</Button>}>
-            {rankingError.message}
+          {rankingError !== undefined && <OutcomeMessageBar action={<Button size="small" appearance="subtle" onClick={() => {
+            if (rankingError.dimension === breakdownGroup) void refreshRanking();
+            else changeBreakdown(rankingError.dimension);
+          }}>{t('monitoring.performance.actions.retryBreakdown')}</Button>}>
+            {rankingError.error.message}
           </OutcomeMessageBar>}
           {tableRows !== undefined && <PerformanceTable groupBy={activeBreakdown.key}
             labels={rankingDataset === undefined ? labels : performanceLabels({
