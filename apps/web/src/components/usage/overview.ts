@@ -2,36 +2,6 @@ import type { DisplayUsageRecord, UsageGroupBy, UsageOverviewResponse } from './
 import type { TokenUsageOverviewBucket, TokenUsageOverviewResponse } from '@floway-dev/gateway/browser';
 import { addDecimalStrings, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/browser';
 
-export const usageOverviewCursor = (previous: TokenUsageOverviewResponse | undefined, start: string, end: string): string | undefined =>
-  previous && previous.start <= start && previous.end <= end
-    && !previous.buckets.some(bucket => bucket.start < start && start < bucket.end)
-    ? previous.cursor : undefined;
-
-const mergeMetadata = <T>(previous: readonly T[], next: readonly T[], key: (value: T) => string | number): T[] =>
-  [...new Map([...previous, ...next].map(value => [key(value), value])).values()];
-
-export const mergeUsageOverview = (
-  previous: TokenUsageOverviewResponse | undefined,
-  response: TokenUsageOverviewResponse,
-  start: string,
-): TokenUsageOverviewResponse => {
-  if (response.reset) return response;
-  if (!previous) throw new Error('Usage overview patch requires a snapshot');
-  if (previous.buckets.some(bucket => bucket.start < response.start && response.start < bucket.end)) {
-    throw new Error('Usage overview patch crosses a retained bucket');
-  }
-  return {
-    ...response,
-    start,
-    buckets: [
-      ...previous.buckets.filter(bucket => bucket.start >= start && bucket.end <= response.start),
-      ...response.buckets,
-    ],
-    users: response.metadataVisibility.complete ? response.users : mergeMetadata(previous.users, response.users, user => user.id),
-    upstreams: response.metadataVisibility.complete ? response.upstreams : mergeMetadata(previous.upstreams, response.upstreams, upstream => upstream.id),
-  };
-};
-
 type UsageAxis = keyof TokenUsageOverviewBucket['axes'];
 
 const sumAxis = (buckets: readonly TokenUsageOverviewBucket[], axis: UsageAxis, series: boolean): DisplayUsageRecord[] => {

@@ -256,6 +256,27 @@ export interface PerformanceOverviewResult {
   };
 }
 
+export interface PerformanceSliceQuery extends Omit<PerformanceOverviewQueryOptions, 'groupBy' | 'bucketForHour'> {
+  dimension: PerformanceGroupBy;
+  ownedKeysOnly: boolean;
+  bucket: OverviewBucket;
+  hourlyBuckets: readonly OverviewBucketId[];
+  includeTotals: boolean;
+  includeFacets: boolean;
+}
+
+export interface PerformanceSliceRecord extends Pick<PerformanceDisplayRecord, 'group' | 'requests' | 'errors' | 'ttftSamples' | 'tpotSamples' | 'neutral'> {
+  buckets: PerformanceBucketRow[];
+}
+
+export interface PerformanceQuerySlice {
+  firstHour: string;
+  lastHour: string;
+  rows: PerformanceSliceRecord[];
+  total?: PerformanceSliceRecord;
+  dimensionValues: PerformanceOverviewResult['dimensionValues'];
+}
+
 export interface ApiKeyRepo {
   list(): Promise<ApiKey[]>;
   // Includes soft-deleted rows so the user_id behind a historical key stays
@@ -401,6 +422,7 @@ export interface PerformanceRepo {
   // upstream call.
   recordNeutral(dims: PerformanceDimensions): Promise<void>;
   queryOverview(opts: PerformanceOverviewQueryOptions): Promise<PerformanceOverviewResult>;
+  querySlices(opts: PerformanceSliceQuery): Promise<PerformanceQuerySlice[]>;
   listAll(): Promise<PerformanceTelemetryRecord[]>;
   // Replacement upsert used by admin restore paths.
   set(record: PerformanceTelemetryRecord): Promise<void>;

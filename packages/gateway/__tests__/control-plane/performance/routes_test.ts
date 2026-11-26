@@ -46,6 +46,28 @@ test('/api/performance/overview keeps only the none axis global for a non-admin'
   assertEquals(body.users.map((user: { id: number }) => user.id), [2]);
   assertEquals(body.dimensionValues.userIds, [2]);
   assertEquals(body.upstreams, [{ id: 'copilot:1', name: 'Self visible', hue: 210 }]);
+
+  const useSlice = (query: string) => requestApp(
+    `/api/performance/overview?format=buckets&start=2026-04-30T00&end=2026-05-01T00&bucket=day&${query}`,
+    { headers: { 'x-api-key': apiKey.key } },
+  );
+  const sliced = await useSlice('group_by=model');
+  assertEquals(sliced.status, 200);
+  const slices = await sliced.json();
+  assertEquals(slices.globalSummary.requests, 2);
+  assertEquals(slices.globalSummary.buckets, undefined);
+  assertEquals(slices.buckets[0].rows[0].requests, 1);
+  assertEquals(slices.buckets[0].total, undefined);
+  const ranking = await useSlice('group_by=model&dimension=keyId');
+  const rank = await ranking.json();
+  assertEquals(rank.globalSummary, undefined);
+  assertEquals(rank.buckets[0].rows.map((row: { group: string }) => row.group), [apiKey.id]);
+  const continued = await useSlice('group_by=model&cursor=2026-04-30T11');
+  const delta = await continued.json();
+  assertEquals(delta.start, '2026-04-30T11');
+  assertEquals(delta.reset, false);
+  assertEquals(delta.buckets, []);
+  assertEquals(delta.globalSummary.requests, 2);
 });
 
 test('/api/performance/overview narrows an administrator to their own keys under group_by=keyId too', async () => {

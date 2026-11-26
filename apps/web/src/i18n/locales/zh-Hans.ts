@@ -1631,6 +1631,8 @@ const zhHansCN = {
         empty: '此时间范围内没有性能记录',
         actions: {
           refresh: '刷新性能数据',
+          refreshBreakdown: '正在加载性能细分',
+          retryBreakdown: '重试',
         },
         apiKeyScopeInfo: 'API 密钥分组和筛选仅包含当前账号拥有的密钥。选择“按 API 密钥”会将用户设为“仅自己”；选择其他用户会清空 API 密钥筛选并回到“按模型”。',
         apiKeyScopeLabel: '关于 API 密钥遥测范围',

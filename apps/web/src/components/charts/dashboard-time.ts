@@ -204,11 +204,14 @@ export const chartTickValues = <T extends { date: Date }>(buckets: T[], desired 
 
 export const formatAxisDate = numericDateTime;
 
-export const formatBucketInterval = (frame: DashboardBucketFrame): string => {
+const formatBucketInterval = (frame: DashboardBucketFrame): string => {
   const start = new Date(frame.start);
   const end = new Date(frame.end);
   return `${numericDateTime(start)} - ${calendarDate(start) === calendarDate(end) ? numericTime(end) : numericDateTime(end)}`;
 };
+
+export const dashboardChartBuckets = (range: DashboardRange, nowMs: number): ChartBucket[] =>
+  dashboardFixedBucketFrames(range, nowMs).map(frame => ({ ...frame, label: formatBucketInterval(frame) }));
 
 export const formatCalloutTitle = (
   value: Date | number | string,
