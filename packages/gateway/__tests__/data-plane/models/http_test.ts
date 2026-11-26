@@ -2,9 +2,19 @@ import { test } from 'vitest';
 
 import type { OmpModel } from '../../../src/data-plane/models/omp-catalog.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, copilotModels, requestApp, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
+
+test.each([
+  { reason: 'missing', headers: new Headers() },
+  { reason: 'invalid', headers: new Headers({ 'x-api-key': 'invalid-floway-key' }) },
+])('/v1/models rejects a $reason API key', async ({ headers }) => {
+  await setupAppTest();
+  const response = await requestApp('/v1/models', { headers });
+  assertEquals(response.status, 401);
+  assertEquals(await response.json(), { error: 'Unauthorized' });
+});
 
 test('/v1/models returns merged model list from Copilot and custom upstreams', async () => {
   const { repo, apiKey } = await setupAppTest();

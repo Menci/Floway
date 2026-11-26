@@ -12,7 +12,7 @@ import { generateServerSecret } from '../../../src/shared/server-secret.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import { run } from '@floway-dev/pipeline';
 
-const performancePipeline = (release: Promise<void>) =>
+const performancePipeline = (ending: ReturnType<typeof meteredStream>, readUsageEarly = true) =>
   compose('performance-fixture', {
     entry: ['request.auth.apiKeyId', 'serve.runtimeLocation'],
     exit: ['response.usage', 'response.performance', 'response.http', 'response.openaiCompletions'],
@@ -21,10 +21,13 @@ const performancePipeline = (release: Promise<void>) =>
       measurePerformance('openaiCompletions', 'chat', frame => frame.choices.some(choice => Boolean(choice.text))),
       storeUsage,
       computeUsage('openaiCompletions', {
-        stream: () => ({ frame: () => [tokenUsageMeasurement({ output: 2 })], done: () => [] }),
+        stream: () => ({
+          frame: () => readUsageEarly ? [tokenUsageMeasurement({ output: 2 })] : undefined,
+          done: () => [tokenUsageMeasurement({ output: 2 })],
+        }),
       }),
     ],
-    ending: meteredStream({ release }),
+    ending,
   });
 
 test.each(['native done', 'panic'] as const)('stores authoritative stream usage before %s', async completion => {
@@ -33,7 +36,7 @@ test.each(['native done', 'panic'] as const)('stores authoritative stream usage 
   const services = await createGatewayServices('TEST', { id: 'key', serverSecret: generateServerSecret(), openaiResponsesRetentionSeconds: 0 });
   const release = Promise.withResolvers<void>();
   const detached: Promise<unknown>[] = [];
-  const pipeline = performancePipeline(release.promise);
+  const pipeline = performancePipeline(meteredStream({ release: release.promise }));
   const controller = new AbortController();
   const running = run(pipeline, {
     'request.auth.apiKeyId': 'key',
@@ -91,7 +94,7 @@ test('records TPOT at stream completion while the usage write is pending', async
   const clock = vi.spyOn(performance, 'now').mockImplementation(() => time);
   const controller = new AbortController();
   try {
-    const running = run(performancePipeline(release.promise), {
+    const running = run(performancePipeline(meteredStream({ release: release.promise })), {
       'request.auth.apiKeyId': 'key',
       'serve.runtimeLocation': 'TEST',
     }, {
@@ -127,4 +130,36 @@ test('records TPOT at stream completion while the usage write is pending', async
     await Promise.all(detached);
   }
   expect(await repo.usage.listAll()).toMatchObject([{ modelKey: 'native-fast-variant', requests: 1 }]);
+});
+
+test('stream abort before usage is local and writes neither usage nor performance', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const services = await createGatewayServices('TEST', { id: 'key', serverSecret: generateServerSecret(), openaiResponsesRetentionSeconds: 0 });
+  const cause = new Error('local cancellation before usage');
+  const controller = new AbortController();
+  const detached: Promise<unknown>[] = [];
+  const ending = meteredStream({ failure: { kind: 'abort', cause } });
+  const running = run(performancePipeline(ending, false), {
+    'request.auth.apiKeyId': 'key',
+    'serve.runtimeLocation': 'TEST',
+  }, {
+    services,
+    signal: controller.signal,
+    waitUntil: work => { detached.push(work); },
+  });
+  const answer = await running.result;
+  const outcome = answer['response.openaiCompletions'];
+  if (outcome.kind !== 'stream') throw new Error('Expected the fixture stream');
+  const reader = running.read(outcome.stream);
+  expect((await reader.next()).value).toMatchObject({ ok: true });
+  expect((await reader.next()).value).toMatchObject({ ok: false, error: { kind: 'abort', cause } });
+  expect((await reader.next()).done).toBe(true);
+  expect(await running.read(answer['response.usage'])).toEqual({ kind: 'local' });
+  await running.read(answer['response.performance']);
+  controller.abort(cause);
+  await running.done;
+  await Promise.all(detached);
+  expect(await repo.usage.listAll()).toEqual([]);
+  expect(await repo.performance.listAll()).toEqual([]);
 });
