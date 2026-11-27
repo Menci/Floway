@@ -13,7 +13,7 @@ interface ChatLegacyCalls {
   readonly callIds: ReadonlyMap<ChatRestoredAssistantTurn, string>;
   /** The legacy call each of those ids answers, by that id. */
   readonly names: ReadonlyMap<string, string>;
-  /** The selected id-less result for each legacy call, before modern matching. */
+  /** The selected result for each legacy call, before modern matching. */
   readonly results: ReadonlyMap<IRInputToolResultItem, string>;
 }
 
@@ -36,9 +36,11 @@ const statedCallIds = <Restored extends ChatRestoredAssistantTurn>(
 };
 
 /**
- * Native legacy function_call has no ID. It consumes the unique later id-less
- * result that states the same function name before modern calls consume the
- * remaining results. A tail call may remain pending.
+ * Native legacy `function_call` has no wire ID. When the sidecar carries a
+ * synthesized call ID, it pairs with the first later result carrying that ID
+ * (leaving the call pending if unanswered); otherwise it consumes the unique
+ * later id-less result stating the same function name (where only a tail call
+ * may remain pending), before modern calls consume the remaining results.
  * Internal pairing IDs never change the legacy wire's name-based result correlation.
  */
 export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
@@ -50,41 +52,53 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
   const names = new Map<string, string>();
   const results = new Map<IRInputToolResultItem, string>();
   let allocated = 0;
+
+  const matchingResults = (
+    start: number,
+    stopsAt: (turn: RestoredAssistantTurn<Restored>) => boolean,
+    matches: (item: IRInputToolResultItem) => boolean,
+  ): IRInputToolResultItem[] => {
+    const found: IRInputToolResultItem[] = [];
+    for (let cursor = start; cursor < turns.length; cursor++) {
+      const turn = turns[cursor];
+      if (turn.kind === 'restored') {
+        if (stopsAt(turn)) break;
+        continue;
+      }
+      if (turn.kind !== 'client') continue;
+      for (const item of turn.items) if (item.type === 'tool_result' && matches(item)) found.push(item);
+    }
+    return found;
+  };
+
   for (const [index, piece] of turns.entries()) {
     if (piece.kind !== 'restored') continue;
     const name = piece.turn.function_call?.name;
     if (name === undefined) continue;
-    const synthesizedId = piece.synthesizedCallIds?.[0] ?? undefined;
-    if (synthesizedId !== undefined) {
-      const nextSameIdOffset = turns.slice(index + 1).findIndex(turn =>
-        turn.kind === 'restored' && (turn.synthesizedCallIds?.[0] ?? undefined) === synthesizedId);
-      const end = nextSameIdOffset < 0 ? turns.length : index + 1 + nextSameIdOffset;
-      const answer = turns.slice(index + 1, end).flatMap(turn => turn.kind !== 'client' ? [] : turn.items.flatMap(item =>
-        item.type === 'tool_result' && item.call_id === synthesizedId ? [item] : []))[0];
-      let callId: string;
-      do {
-        allocated += 1;
-        callId = `legacy_call_${allocated}`;
-      } while (claimed.has(callId));
-      claimed.add(callId);
-      callIds.set(piece.turn, callId);
-      names.set(callId, name);
-      if (answer !== undefined) results.set(answer, callId);
-      continue;
-    }
-    const nextLegacyOffset = turns.slice(index + 1).findIndex(turn => turn.kind === 'restored' && turn.turn.function_call?.name === name);
-    const end = nextLegacyOffset < 0 ? turns.length : index + 1 + nextLegacyOffset;
-    const candidates = turns.slice(index + 1, end).flatMap(turn => turn.kind !== 'client' ? [] : turn.items.flatMap(item =>
-      item.type === 'tool_result' && item.call_id === undefined && item.name === name ? [item] : []));
-    if (candidates.length > 1) {
-      throw new TranslateInputException(`Cannot translate the answer to the legacy call '${name}': ${candidates.length} id-less results state that function name.`);
-    }
-    const [answer] = candidates;
-    if (answer === undefined) {
-      if (index < turns.length - 1) {
-        throw new TranslateInputException(`Cannot translate the legacy call '${name}': no unique id-less result states that function name.`);
+    const synthesizedId = piece.synthesizedCallIds?.[0];
+    let answer: IRInputToolResultItem | undefined;
+    if (synthesizedId != null) {
+      [answer] = matchingResults(
+        index + 1,
+        turn => turn.synthesizedCallIds?.[0] === synthesizedId,
+        item => item.call_id === synthesizedId,
+      );
+    } else {
+      const candidates = matchingResults(
+        index + 1,
+        turn => turn.turn.function_call?.name === name,
+        item => item.call_id === undefined && item.name === name,
+      );
+      if (candidates.length > 1) {
+        throw new TranslateInputException(`Cannot translate the answer to the legacy call '${name}': ${candidates.length} id-less results state that function name.`);
       }
-      continue;
+      [answer] = candidates;
+      if (answer === undefined) {
+        if (index < turns.length - 1) {
+          throw new TranslateInputException(`Cannot translate the legacy call '${name}': no unique id-less result states that function name.`);
+        }
+        continue;
+      }
     }
     let callId: string;
     do {
@@ -94,7 +108,7 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
     claimed.add(callId);
     callIds.set(piece.turn, callId);
     names.set(callId, name);
-    results.set(answer, callId);
+    if (answer !== undefined) results.set(answer, callId);
   }
   return { callIds, names, results };
 };

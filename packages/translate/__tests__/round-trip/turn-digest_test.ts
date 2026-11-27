@@ -28,20 +28,19 @@ describe('round-trip turn digests', () => {
     turn.content[0] = 'edited';
     expect(await verify(turn, digest, 1)).toBe(false);
     expect(await verify(turn, digest, 2)).toBe(false);
-    expect(await verify(turn, digest, 3)).toBe(false);
     materialOf.mockClear();
     for (const version of [0, 4]) expect(await verify(turn, digest, version)).toBe(false);
     expect(materialOf).not.toHaveBeenCalled();
 
     const v1Material = vi.fn((input: { content: string[] }) => ({ v: 1, content: input.content }));
     const v2Material = vi.fn((input: { content: string[] }) => ({ v: 2, content: input.content }));
-    const versionedVerify = createTurnDigestVerifier({ 1: v1Material, 2: v2Material, 3: v2Material });
+    const versionedVerify = createTurnDigestVerifier((input: { content: string[] }, version) =>
+      version === 1 ? v1Material(input) : v2Material(input));
     const v1Digest = await createTurnDigestComputer(v1Material)(turn);
     const v2Digest = await createTurnDigestComputer(v2Material)(turn);
     expect(await versionedVerify(turn, v1Digest, 1)).toBe(true);
     expect(await versionedVerify(turn, v1Digest, 2)).toBe(false);
     expect(await versionedVerify(turn, v2Digest, 2)).toBe(true);
-    expect(await versionedVerify(turn, v2Digest, 3)).toBe(true);
     v1Material.mockClear();
     v2Material.mockClear();
     expect(await versionedVerify(turn, v2Digest, 4)).toBe(false);

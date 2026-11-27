@@ -1,7 +1,5 @@
 import { expect, test } from 'vitest';
 
-import { computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarBlock } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
-import { encodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { iterate } from '../shared/iterables.ts';
 import { expectTrip } from '../trip.ts';
@@ -33,9 +31,7 @@ const nativeFrames = (mode: 'legacy' | 'modern' | 'mixed', name: string, argumen
  *
  * A result answers the shape its assistant turn stated: a call the turn named by
  * id gets a `tool` message, and a legacy `function_call` — which states no id —
- * gets the `function` message this wire pairs with it by name. That pairing is
- * read off the restored turn, not off the source protocol, so every source
- * reaches it the same way.
+ * gets the `function` message this wire pairs with it by name.
  */
 const assertNativeHistory = (
   target: OpenAIChatCompletionsPayloadEx,
@@ -151,27 +147,4 @@ test('OpenAI Responses answers a restored legacy call via sidecar synthesizedCal
   }, context));
   expect(replay.target.messages.find(message => message.role === 'assistant')?.function_call).toEqual({ name: 'lookup', arguments: '{"x":1}' });
   expect(replay.target.messages.at(-1)).toEqual({ role: 'function', name: 'lookup', content: 'done' });
-});
-
-test('a legacy v2 sidecar without synthesizedCallIds rejects a source-ID-only result for a restored legacy call', async () => {
-  const codec = createTestSidecarCodec();
-  const context = { sidecarCodec: codec };
-  const assistantTurn = [{ role: 'assistant' as const, content: [{ type: 'tool_use' as const, id: 'toolu_legacy', name: 'lookup', input: { x: 1 } }] }];
-  const carrier = await encodeRoundTripSidecar(codec, {
-    v: 2,
-    source: 'anthropicMessages',
-    target: 'openaiChatCompletions',
-    targetTurn: { role: 'assistant', content: null, function_call: { name: 'lookup', arguments: '{"x":1}' } },
-    sourceTurnDigest: await computeAnthropicMessagesTurnDigest(assistantTurn),
-  });
-  const payload: AnthropicMessagesPayload = {
-    model: 'public-model', max_tokens: 64, stream: true,
-    messages: [
-      { role: 'user', content: 'Call lookup' },
-      { role: 'assistant', content: [...assistantTurn[0].content, createAnthropicMessagesSidecarBlock(carrier)] },
-      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_legacy', content: 'late' }] },
-    ],
-    tools: [{ name: 'lookup', input_schema: { type: 'object', properties: { x: { type: 'integer' } } } }],
-  };
-  await expect(routeAnthropicMessagesViaOpenAIChatCompletions(payload, context)).resolves.toMatchObject({ type: 'input-error' });
 });

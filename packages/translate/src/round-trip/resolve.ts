@@ -16,8 +16,8 @@ export interface SidecarRecognition<Turn> {
   readonly collectCandidates: (turn: Turn) => ReplayContent[];
 }
 
-export interface ResolvedRoundTripAssistantTurn<Target extends keyof InputAssistantTurnByProtocol> {
-  readonly turn: InputAssistantTurnFor<Target>;
+export interface ResolvedAssistantTurn<Turn> {
+  readonly turn: Turn;
   readonly synthesizedCallIds?: readonly (string | null)[];
 }
 
@@ -27,7 +27,7 @@ export const roundTripAssistantTurn = async <Source extends keyof InputAssistant
   turn: SourceTurn,
   codec: SidecarCodec,
   recognition: SidecarRecognition<SourceTurn>,
-): Promise<ResolvedRoundTripAssistantTurn<Target> | undefined> => {
+): Promise<ResolvedAssistantTurn<InputAssistantTurnFor<Target>> | undefined> => {
   const { inspect, verify, collectCandidates } = recognition;
   let selected: { carrier: SidecarOccurrence<SourceTurn>; sidecar: AnyRoundTripSidecar } | undefined;
   for (const carrier of inspect(turn)) {

@@ -23,16 +23,12 @@ export const createRoundTripCoordinator = <
   const turns = new Map<number, {
     turn: InputAssistantTurnFor<Target>;
     fieldState: InputAssistantTurnStateFor<Target, ReadFieldStates>;
-    idlessCallItemIndices?: readonly number[];
+    idlessCallItemIndices: readonly number[] | undefined;
   }>();
   const reader: RoundTripReader<Target> = {
     builder,
     onAssistantTurn: (choice, turn, fieldState, idlessCallItemIndices) => {
-      turns.set(choice, {
-        turn,
-        fieldState,
-        ...(idlessCallItemIndices === undefined ? {} : { idlessCallItemIndices }),
-      });
+      turns.set(choice, { turn, fieldState, idlessCallItemIndices });
     },
   };
   const writer: RoundTripWriter<Source> = {
@@ -46,14 +42,15 @@ export const createRoundTripCoordinator = <
         builder,
         collectEmittedFieldPlacements(turn, contentState, textPlacements),
       );
-      const callIds = pending.idlessCallItemIndices?.map(itemIndex => synthesizedCallIds?.get(itemIndex) ?? null);
-      const hasSynthesizedCallIds = callIds?.some(id => id !== null) === true;
+      const callIds = synthesizedCallIds === undefined
+        ? undefined
+        : pending.idlessCallItemIndices?.map(itemIndex => synthesizedCallIds.get(itemIndex) ?? null);
       return await encodeRoundTripSidecar(codec, {
         v: ROUND_TRIP_SIDECAR_VERSION,
         source,
         target,
         ...finalized,
-        ...(hasSynthesizedCallIds ? { synthesizedCallIds: callIds } : {}),
+        ...(callIds?.some(id => id !== null) ? { synthesizedCallIds: callIds } : {}),
         sourceTurnDigest,
       } satisfies RoundTripSidecar<Target>);
     },

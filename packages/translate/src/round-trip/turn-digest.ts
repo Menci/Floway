@@ -1,4 +1,5 @@
 import { hashRoundTripContent } from './hash.ts';
+import { isSupportedSidecarVersion, type RoundTripSidecarVersion } from './sidecar.ts';
 import type { IRJSONObject, IRJSONValue } from '../ir/common/json.ts';
 
 export type RoundTripTurnDigest = Uint8Array;
@@ -29,25 +30,14 @@ export const verifyRoundTripTurnDigest = async (material: IRJSONValue, sourceTur
 
 export type TurnDigestMaterialProjector<Turn> = (turn: Turn) => IRJSONValue;
 
-export type TurnDigestMaterialByVersion<Turn> =
-  | TurnDigestMaterialProjector<Turn>
-  | Readonly<Partial<Record<number, TurnDigestMaterialProjector<Turn>>>>;
-
 /** Protocols provide native digest material; the shared digest format owns version selection. */
 export const createTurnDigestComputer = <Turn>(
   materialOf: TurnDigestMaterialProjector<Turn>,
 ): (turn: Turn) => Promise<RoundTripTurnDigest> => turn => computeRoundTripTurnDigest(materialOf(turn));
 
 export const createTurnDigestVerifier = <Turn>(
-  materialOf: TurnDigestMaterialByVersion<Turn>,
-): (turn: Turn, sourceTurnDigest: RoundTripTurnDigest, version: number) => Promise<boolean> => (turn, sourceTurnDigest, version) => {
-  if (typeof materialOf === 'function') {
-    return version === 1 || version === 2 || version === 3
-      ? verifyRoundTripTurnDigest(materialOf(turn), sourceTurnDigest)
-      : Promise.resolve(false);
-  }
-  const projector = Object.hasOwn(materialOf, version) ? materialOf[version] : undefined;
-  return projector === undefined
-    ? Promise.resolve(false)
-    : verifyRoundTripTurnDigest(projector(turn), sourceTurnDigest);
-};
+  materialOf: (turn: Turn, version: RoundTripSidecarVersion) => IRJSONValue,
+): (turn: Turn, sourceTurnDigest: RoundTripTurnDigest, version: number) => Promise<boolean> => (turn, sourceTurnDigest, version) =>
+  isSupportedSidecarVersion(version)
+    ? verifyRoundTripTurnDigest(materialOf(turn, version), sourceTurnDigest)
+    : Promise.resolve(false);
