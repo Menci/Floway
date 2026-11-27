@@ -114,14 +114,6 @@ export const collectOpenAIResponsesReplayContents = (turn: OpenAIResponsesSource
   return candidates;
 };
 
-export const collectOpenAIResponsesCallIds = (turn: OpenAIResponsesSourceAssistantTurn): readonly (string | undefined)[] => {
-  const callIds: string[] = [];
-  for (const item of turn) {
-    if (item.type === 'function_call' || item.type === 'custom_tool_call') callIds.push(item.call_id);
-  }
-  return callIds;
-};
-
 export const verifyOpenAIResponsesTurnDigest = createTurnDigestVerifier((turn: OpenAIResponsesSourceAssistantTurn, version) =>
   version < 3 ? responsesTurnDigestMaterialV1(turn) : responsesTurnDigestMaterialV3(turn));
 

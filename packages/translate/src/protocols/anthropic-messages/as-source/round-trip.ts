@@ -66,17 +66,6 @@ export const collectAnthropicMessagesReplayContents = (turn: AnthropicMessagesSo
   return candidates;
 };
 
-export const collectAnthropicMessagesCallIds = (turn: AnthropicMessagesSourceAssistantTurn): readonly (string | undefined)[] => {
-  const callIds: string[] = [];
-  for (const message of turn) {
-    if (typeof message.content === 'string') continue;
-    for (const block of message.content) {
-      if (block.type === 'tool_use') callIds.push(block.id);
-    }
-  }
-  return callIds;
-};
-
 export const verifyAnthropicMessagesTurnDigest = createTurnDigestVerifier(messagesTurnDigestMaterialV1);
 
 export const createAnthropicMessagesSidecarBlock = (data: string): AnthropicMessagesRedactedThinkingBlock => ({ type: 'redacted_thinking', data });

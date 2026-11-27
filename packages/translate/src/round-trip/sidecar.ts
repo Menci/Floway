@@ -14,10 +14,9 @@ export const isSupportedSidecarVersion = (value: unknown): value is RoundTripSid
 
 // One wire version covers every translation subsystem. Each subsystem derives
 // its format rules from this `v` (`v >= 2` selects the v2 Chat Completions
-// turn-digest material and `v >= 3` orders Responses `function_call` and
-// `custom_tool_call` together, while retaining older verification) without
-// per-subsystem version members, so advancing any subsystem advances this
-// single `v`.
+// turn-digest material and `v >= 3` selects the v3 Responses turn-digest
+// material, while retaining older verification) without per-subsystem version
+// members, so advancing any subsystem advances this single `v`.
 export type RoundTripSidecar<Target extends AssistantTurnProtocol> = {
   v: RoundTripSidecarVersion;
   source: AssistantTurnProtocol;

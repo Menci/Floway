@@ -373,6 +373,14 @@ const openaiResponsesSettingsToIR = (payload: CanonicalOpenAIResponsesPayload): 
   };
 };
 
+const openaiResponsesCallIds = (turn: OpenAIResponsesSourceAssistantTurn): readonly (string | undefined)[] => {
+  const callIds: string[] = [];
+  for (const item of turn) {
+    if (item.type === 'function_call' || item.type === 'custom_tool_call') callIds.push(item.call_id);
+  }
+  return callIds;
+};
+
 export const readOpenAIResponsesRequest = (source: OpenAIResponsesRequestPayloadEx): SourceReading<OpenAIResponsesSourceAssistantTurn> => {
   const canonical = canonicalizeOpenAIResponsesPayload(source);
   if (!('input' in canonical)) throw new TranslateInputException(canonical.error.message, canonical.error);
@@ -391,6 +399,7 @@ export const readOpenAIResponsesRequest = (source: OpenAIResponsesRequestPayload
             kind: 'assistant' as const,
             assistantTurn: turn.items,
             toIRInputTurns: () => openaiResponsesTurnToIR(turn),
+            callIds: () => openaiResponsesCallIds(turn.items),
           }
         : { kind: 'client' as const, toIRInputTurns: () => openaiResponsesTurnToIR(turn) }),
     ],

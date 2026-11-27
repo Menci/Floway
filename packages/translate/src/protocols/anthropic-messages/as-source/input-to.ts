@@ -413,6 +413,17 @@ const reasoningEffortToIR = (payload: AnthropicMessagesPayload): string | undefi
  * lazy conversion preserves those boundaries until composition resolves the
  * sidecar path and joins adjacent client turns.
  */
+const anthropicMessagesCallIds = (turn: AnthropicMessagesSourceAssistantTurn): readonly (string | undefined)[] => {
+  const callIds: string[] = [];
+  for (const message of turn) {
+    if (typeof message.content === 'string') continue;
+    for (const block of message.content) {
+      if (block.type === 'tool_use') callIds.push(block.id);
+    }
+  }
+  return callIds;
+};
+
 export const readAnthropicMessagesRequest = (payload: AnthropicMessagesPayload): SourceReading<AnthropicMessagesSourceAssistantTurn> => {
   const request: IRInputRequestHeader = {
     settings: anthropicMessagesSettingsToIR(payload),
@@ -433,6 +444,7 @@ export const readAnthropicMessagesRequest = (payload: AnthropicMessagesPayload):
         kind: 'assistant',
         assistantTurn: turn.items,
         toIRInputTurns: () => anthropicMessagesTurnToIR(turn, firstMessageIndex),
+        callIds: () => anthropicMessagesCallIds(turn.items),
       });
       continue;
     }

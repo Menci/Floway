@@ -1,8 +1,9 @@
 import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
-import type { ResolvedAssistantTurn } from '../round-trip/resolve.ts';
 
-export interface RestoredAssistantTurn<Turn> extends ResolvedAssistantTurn<Turn> {
+export interface RestoredAssistantTurn<Turn> {
   readonly kind: 'restored';
+  readonly turn: Turn;
+  readonly sourceCallIds: readonly (string | undefined)[];
 }
 
 /** Native turns authenticate sidecars and bypass lazy IR conversion. */
@@ -12,6 +13,7 @@ export type SourceTurnSlot<AssistantTurn> =
     readonly kind: 'assistant';
     readonly assistantTurn: AssistantTurn;
     readonly toIRInputTurns: () => IRInputTurn[];
+    readonly callIds: () => readonly (string | undefined)[];
   };
 
 /**
@@ -28,7 +30,7 @@ export interface SourceReading<AssistantTurn> {
 
 export const resolveReading = async <AssistantTurn, Resolved>(
   reading: SourceReading<AssistantTurn>,
-  resolve: (turn: Extract<SourceTurnSlot<AssistantTurn>, { kind: 'assistant' }>) => Promise<ResolvedAssistantTurn<Resolved> | undefined>,
+  resolve: (turn: Extract<SourceTurnSlot<AssistantTurn>, { kind: 'assistant' }>) => Promise<Resolved | undefined>,
 ): Promise<(IRInputTurn | RestoredAssistantTurn<Resolved>)[]> => {
   const turns: (IRInputTurn | RestoredAssistantTurn<Resolved>)[] = [];
   const append = (input: readonly IRInputTurn[]): void => {
@@ -56,7 +58,7 @@ export const resolveReading = async <AssistantTurn, Resolved>(
       append(turn.toIRInputTurns());
       continue;
     }
-    turns.push({ kind: 'restored', ...result });
+    turns.push({ kind: 'restored', turn: result, sourceCallIds: turn.callIds() });
   }
   return turns;
 };
