@@ -9,6 +9,7 @@ import DashboardSettings from '../../src/routes/dashboard-settings';
 import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
+import { defaultUserPreferences } from '@floway-dev/protocols/browser';
 
 stubLocalStorage();
 
@@ -18,7 +19,7 @@ const user = {
   isAdmin: true,
   canViewPermissions: true,
   canViewUpstreams: true,
-  preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false },
+  preferences: { ...defaultUserPreferences, mergeModelVariants: true },
 };
 
 const renderPage = () => renderInApp(<RouterProvider router={createMemoryRouter([
@@ -41,7 +42,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('preference form', () => {
   it('saves the draft only after the operator submits it', async () => {
-    const fetch = vi.fn(async () => Response.json({ preferences: { quotaDisplay: 'used', language: null, uiTextEditor: false } }));
+    const fetch = vi.fn(async () => Response.json({ preferences: { ...defaultUserPreferences, quotaDisplay: 'used', mergeModelVariants: true } }));
     vi.stubGlobal('fetch', fetch);
     renderPage();
 
@@ -56,7 +57,7 @@ describe('preference form', () => {
     expect(fetch).not.toHaveBeenCalled();
 
     fireEvent.click(save);
-    await waitFor(() => expect(useAuthStore.getState().session!.user.preferences).toEqual({ quotaDisplay: 'used', language: null, uiTextEditor: false }));
+    await waitFor(() => expect(useAuthStore.getState().session!.user.preferences).toEqual({ ...defaultUserPreferences, quotaDisplay: 'used', mergeModelVariants: true }));
 
     const request = fetch.mock.calls[0] as unknown as [string, RequestInit];
     const url = new URL(request[0], 'http://localhost');
@@ -67,7 +68,7 @@ describe('preference form', () => {
   });
 
   it('persists UI text editor mode and reloads when toggled', async () => {
-    const fetch = vi.fn(async () => Response.json({ preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: true } }));
+    const fetch = vi.fn(async () => Response.json({ preferences: { ...defaultUserPreferences, uiTextEditor: true, mergeModelVariants: true } }));
     vi.stubGlobal('fetch', fetch);
     renderPage();
 

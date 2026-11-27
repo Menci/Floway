@@ -124,9 +124,33 @@ test('PATCH /api/users/me/preferences merges a partial update and clears languag
   const { adminSession, repo } = await setupAppTest();
 
   await patchPreferences(adminSession, { language: 'zh-Hans' });
-  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: 'zh-Hans', uiTextEditor: false });
+  expect(await repo.userPreferences.get(1)).toEqual({
+    quotaDisplay: 'remaining',
+    language: 'zh-Hans',
+    uiTextEditor: false,
+    mergeModelVariants: false,
+    foldSmallSeries: false,
+  });
+
+  const telemetry = await patchPreferences(adminSession, { mergeModelVariants: true, foldSmallSeries: true });
+  assertEquals(telemetry.status, 200);
+  expect(await telemetry.json()).toEqual({
+    preferences: {
+      quotaDisplay: 'remaining',
+      language: 'zh-Hans',
+      uiTextEditor: false,
+      mergeModelVariants: true,
+      foldSmallSeries: true,
+    },
+  });
 
   const cleared = await patchPreferences(adminSession, { language: null });
   assertEquals(cleared.status, 200);
-  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: null, uiTextEditor: false });
+  expect(await repo.userPreferences.get(1)).toEqual({
+    quotaDisplay: 'remaining',
+    language: null,
+    uiTextEditor: false,
+    mergeModelVariants: true,
+    foldSmallSeries: true,
+  });
 });

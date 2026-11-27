@@ -7,6 +7,7 @@ import DashboardProvidersSearch, { clientLoader } from '../../src/routes/dashboa
 import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
+import { defaultUserPreferences } from '@floway-dev/protocols/browser';
 
 stubLocalStorage();
 
@@ -17,7 +18,7 @@ afterEach(() => {
 
 describe('who search settings open for', () => {
   it('redirects an operator away before calling an admin endpoint', async () => {
-    const user = { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false } };
+    const user = { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { ...defaultUserPreferences } };
     useAuthStore.getState().primeFromLogin({ token: 'operator-session', user });
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);

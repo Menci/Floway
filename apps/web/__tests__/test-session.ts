@@ -1,4 +1,5 @@
 import { useAuthStore } from '../src/stores/auth-store';
+import { defaultUserPreferences } from '@floway-dev/protocols/browser';
 
 // Components that read the signed-in account's preferences need a session to
 // read. A suite that exercises the session itself leaves this alone.
@@ -11,7 +12,7 @@ export const primeDefaultSession = (): void => {
       isAdmin: true,
       canViewPermissions: true,
       canViewUpstreams: true,
-      preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false },
+      preferences: { ...defaultUserPreferences },
     },
   });
 };

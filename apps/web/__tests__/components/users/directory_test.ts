@@ -2,11 +2,12 @@ import { expect, test } from 'vitest';
 
 import type { ControlPlaneUserDirectory } from '../../../src/api/types';
 import { indexUserDirectory } from '../../../src/components/users/directory';
+import { defaultUserPreferences } from '@floway-dev/protocols/browser';
 
 const directory: ControlPlaneUserDirectory = {
   users: [
-    { id: 1, username: 'alice', isAdmin: true, createdAt: '2026-01-01T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } },
-    { id: 2, username: 'bob', isAdmin: false, createdAt: '2026-01-02T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } },
+    { id: 1, username: 'alice', isAdmin: true, createdAt: '2026-01-01T00:00:00Z', preferences: { ...defaultUserPreferences } },
+    { id: 2, username: 'bob', isAdmin: false, createdAt: '2026-01-02T00:00:00Z', preferences: { ...defaultUserPreferences } },
   ],
   groups: [
     { id: 1, name: 'Platform', hue: 210, createdAt: '2026-01-01T00:00:00Z', deletedAt: null },

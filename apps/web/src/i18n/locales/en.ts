@@ -1576,6 +1576,12 @@ const en = {
         },
       },
       charts: {
+        displayOptions: {
+          label: 'Display options',
+          mergeModelVariants: 'Merge model variants (prefix & case)',
+          foldSmallSeries: 'Fold small series into Other',
+          saveFailed: 'Could not save preference: {{error}}',
+        },
         series: {
           all: 'Show all series',
           invert: 'Invert series selection',

@@ -1559,6 +1559,12 @@ const zhHansCN = {
         },
       },
       charts: {
+        displayOptions: {
+          label: '显示选项',
+          mergeModelVariants: '合并模型变体（忽略前缀与大小写）',
+          foldSmallSeries: '将小占比项折叠为“其他”',
+          saveFailed: '无法保存偏好设置：{{error}}',
+        },
         series: {
           all: '显示全部序列',
           invert: '反选序列',
