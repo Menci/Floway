@@ -14,9 +14,9 @@ import { SectionHeader } from '../ui/section-header';
 import { StatusBadge } from '../ui/status-badge';
 import { useRefresh } from '../ui/use-refresh';
 import { kimiCodeAccount, kimiCodeAccountName, readKimiCodeWindows, type KimiCodeRecord } from '../upstreams/kimi-code-account';
-import { ProviderIcon } from '../upstreams/provider-badge';
 import { QuotaProgressRow } from '../upstreams/quota-progress-row';
-import { readKimiCodeUsage } from '@floway-dev/provider-kimi-code/browser';
+import { UpstreamKindIcon } from '../upstreams/upstream-kind-badge';
+import { readKimiCodeUsage } from '@floway-dev/upstream-kimi-code/browser';
 
 const { Text } = fluentComponents;
 
@@ -48,7 +48,7 @@ export function KimiCodeUsageCard({ probeRecord, readOnly = false, record }: { p
 
   return <section className={SECTION_STACK_CLASS}>
     {account !== null && <div className="flex items-center gap-3 min-w-0">
-      <ProviderIcon kind="kimi-code" className="h-8 w-8 shrink-0" />
+      <UpstreamKindIcon kind="kimi-code" className="h-8 w-8 shrink-0" />
       <Text block className="min-w-0 flex-1" weight="semibold" truncate wrap={false}>{kimiCodeAccountName(account)}</Text>
       {account.userLevelName && <StatusBadge tone="accent">{account.userLevelName}</StatusBadge>}
     </div>}

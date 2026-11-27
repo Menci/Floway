@@ -33,7 +33,7 @@ import { PANEL_INSET_CLASS } from '../ui/panel';
 import { useRouteAddress } from '../ui/route-link';
 import { useScrollAreaHost } from '../ui/scroll-area';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
-import { ProviderBadge } from '../upstreams/provider-badge';
+import { UpstreamBadge } from '../upstreams/upstream-kind-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/browser';
 
 const { Option, Text, ToggleButton, Tooltip, makeStyles, mergeClasses } = fluentComponents;
@@ -284,7 +284,7 @@ function RequestRowContent({ compact, exportable, showSourceKey, exportIds, onTo
               end of the path line instead of disappearing. */}
           {showSourceKey && compact && <RequestKeyChip apiKey={record.key} className="flex-none max-w-24" />}
           {/* Compact, the upstream chip gives way to the path rather than overflowing. */}
-          {record.upstream && <span className={compact ? 'flex min-w-0 shrink' : 'contents'}><ProviderBadge
+          {record.upstream && <span className={compact ? 'flex min-w-0 shrink' : 'contents'}><UpstreamBadge
             upstream={record.upstream}
             label={record.upstream.name}
             title={`${record.upstream.kind}, ${record.upstream.id}`}

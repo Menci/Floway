@@ -135,7 +135,7 @@ const en = {
     },
     upstreams: {
       title: 'Upstreams',
-      description: 'Manage provider routing priority, availability, model catalogs, and connection settings',
+      description: 'Manage upstream routing priority, availability, model catalogs, and connection settings',
       kinds: {
         custom: {
           label: 'Custom',
@@ -260,7 +260,7 @@ const en = {
       editor: {
         readyToSave: {
           title: 'Ready to save',
-          description: 'Save this {{provider}} upstream to load its model catalog.',
+          description: 'Save this {{kind}} upstream to load its model catalog.',
         },
         documentTitleNew: 'New upstream',
         documentTitleEdit: 'Upstream details',
@@ -357,7 +357,7 @@ const en = {
           flags: 'Upstream feature flags',
         },
         flags: {
-          intro: 'Upstream behavior varies by provider, API surface, and model. Adjust these defaults only when compatibility requires it.',
+          intro: 'Upstream behavior varies by upstream kind, API surface, and model. Adjust these defaults only when compatibility requires it.',
           inherit: 'Default',
           on: 'On',
           off: 'Off',
@@ -387,11 +387,11 @@ const en = {
             },
             'anthropic-messages-web-search-shim': {
               label: 'Anthropic Messages Web Search Shim',
-              description: 'The Anthropic Messages API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the Anthropic Messages API.',
+              description: 'The Anthropic Messages API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search tool calls through the search backend configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the Anthropic Messages API.',
             },
             'openai-responses-web-search-shim': {
               label: 'OpenAI Responses Web Search Shim',
-              description: 'The OpenAI Responses API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search (`web_search`) tool calls through the search provider configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
+              description: 'The OpenAI Responses API includes web search capabilities, but this upstream may not support search.\nEnable this option to handle web search (`web_search`) tool calls through the search backend configured in Floway instead of forwarding them to the upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
             },
             'openai-responses-image-generation-shim': {
               label: 'OpenAI Responses Image Generation Shim',
@@ -399,7 +399,7 @@ const en = {
             },
             'openai-responses-collaboration-shim': {
               label: 'OpenAI Responses Collaboration Shim',
-              description: 'Uses plaintext Codex collaboration messages through an ordinary tool namespace. Enabled by default for every provider; disable it for an upstream or model that should use its native collaboration contract.',
+              description: 'Uses plaintext Codex collaboration messages through an ordinary tool namespace. Enabled by default for every upstream; disable it for an upstream or model that should use its native collaboration contract.',
             },
             'openai-responses-agent-message-shim': {
               label: 'OpenAI Responses Agent Message Shim',
@@ -705,7 +705,7 @@ const en = {
           title: 'Save changes before fetching models?',
           message: 'Model discovery uses the saved upstream configuration.',
           saveAndFetch: 'Save and fetch models',
-          unsavedCredential: 'Apply credential changes using the provider controls before saving.',
+          unsavedCredential: 'Apply credential changes using the upstream controls before saving.',
         },
       },
     },
@@ -1079,7 +1079,7 @@ const en = {
       },
       generation: {
         reasoningEffort: 'Reasoning effort',
-        providerDefault: 'Provider default',
+        upstreamDefault: 'Upstream default',
       },
       customJsonHint: 'Protocol-native fields override the controls above.',
       errors: {
@@ -1215,11 +1215,11 @@ const en = {
     },
     search: {
       title: 'Search',
-      heading: 'Search Provider',
-      description: 'Configure web search providers for Anthropic Messages / OpenAI Responses API tool calling',
-      providerLabel: 'Provider',
-      providerHint: 'The service that answers web search tool calls',
-      provider: {
+      heading: 'Search Backend',
+      description: 'Configure web search backends for Anthropic Messages / OpenAI Responses API tool calling',
+      backendLabel: 'Backend',
+      backendHint: 'The service that answers web search tool calls',
+      backend: {
         disabled: 'Disabled',
         tavily: 'Tavily',
         microsoftWebIq: 'Microsoft Web IQ',
@@ -1249,7 +1249,7 @@ const en = {
         ok: 'OK',
         error: 'Error',
       },
-      testedProvider: 'Provider: {{provider}}',
+      testedBackend: 'Backend: {{backend}}',
       testedQuery: 'Query: {{query}}',
       testSuccess: 'Connection test successful - {{count, number}} results returned.',
       testFailed: 'Test failed',
@@ -1630,7 +1630,7 @@ const en = {
         },
         charts: {
           search: 'Search Usage',
-          searchWithProvider: 'Search Usage ({{provider}})',
+          searchWithBackend: 'Search Usage ({{backend}})',
         },
         metrics: {
           requests: 'Requests',
@@ -1845,6 +1845,7 @@ const en = {
           message: 'Delete {{username}}? Their sessions will be revoked and their API keys will stop working.',
         },
         createdDefaultKey: 'A Default API key is created with each new user.',
+        createdWithoutAccess: 'No group is selected: this user will not be able to use any upstream until they join a group or are granted access in Permissions.',
       },
       groups: {
         createdAt: 'Created {{date}}',

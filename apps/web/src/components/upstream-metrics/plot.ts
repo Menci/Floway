@@ -2,7 +2,7 @@ import type { UpstreamMetricsMetadata } from './data';
 import type { ResolvedUpstreamMetricDisplaySeries } from './display-name';
 import { hueForSeriesSlot } from '../charts/palette';
 import type { SeriesLegendEntry } from '../charts/series-legends';
-import { upstreamMetricIdentityKey, type UpstreamMetricUnit } from '@floway-dev/provider/browser';
+import { upstreamMetricIdentityKey, type UpstreamMetricUnit } from '@floway-dev/upstream/browser';
 
 export interface UpstreamMetricsSeries extends SeriesLegendEntry { unit: UpstreamMetricUnit; axisPriority: number; form: 'line' | 'area' }
 export interface UpstreamMetricsChart {

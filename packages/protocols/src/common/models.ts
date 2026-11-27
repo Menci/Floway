@@ -52,7 +52,7 @@ export type InputModality = Modality | 'audio';
 // raw upstream catalog fill it themselves; elsewhere it comes from the
 // operator's model config. Lives in protocols because it flows verbatim onto
 // PublicModel.chat (the wire DTO) and is also re-exported by
-// @floway-dev/provider as UpstreamChatModelConfig for the catalog side; one
+// @floway-dev/upstream as UpstreamChatModelConfig for the catalog side; one
 // definition serves both surfaces.
 export interface ChatModelInfo {
   modalities?: {

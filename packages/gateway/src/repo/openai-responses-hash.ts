@@ -1,4 +1,4 @@
-import { sha256JsonHex } from '@floway-dev/provider';
+import { sha256JsonHex } from '@floway-dev/upstream';
 
 export const hashOpenAIResponsesJson = async (value: unknown): Promise<string> =>
   sha256JsonHex(sortJson(value));

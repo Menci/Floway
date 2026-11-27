@@ -18,7 +18,6 @@ import type { OpenAIChatCompletionsInterceptor } from './types.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../shared/json-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { providerModelOf } from '@floway-dev/provider';
 
 const rewriteInboundUsage = (chunk: OpenAIChatCompletionsStreamEvent): OpenAIChatCompletionsStreamEvent => {
   const usage = asJsonObject(chunk.usage);
@@ -38,7 +37,7 @@ const rewriteInboundUsage = (chunk: OpenAIChatCompletionsStreamEvent): OpenAICha
 };
 
 export const withVendorKimiOpenAIChatCompletionsNormalize: OpenAIChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-kimi')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('vendor-kimi')) return await run();
 
   const result = await run();
   if (result.type !== 'events') return result;

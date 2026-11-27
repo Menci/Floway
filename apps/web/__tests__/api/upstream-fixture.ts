@@ -1,5 +1,5 @@
 import type { UpstreamRecord } from '../../src/api/types';
-import { OPTIONAL_FLAG_IDS, type FlagDefaults } from '@floway-dev/provider/browser';
+import { OPTIONAL_FLAG_IDS, type FlagDefaults } from '@floway-dev/upstream/browser';
 
 // `FlagDefaults` is exhaustive over the flag catalog, so it is built from that
 // catalog rather than written out: a new flag needs no edit here.
@@ -23,16 +23,16 @@ const commonFields = {
   model_prefix: null,
   hue: 210,
   modelsCache: { fetchedAt: null, lastError: null, modelCount: null },
-} satisfies Omit<UpstreamRecord, 'id' | 'kind' | 'config' | 'state'>;
+} satisfies Omit<UpstreamRecord, 'id' | 'kind' | 'config' | 'state' | 'manual_models'>;
 
 // Distributed over the union so that a kind can only be paired with its own
-// config and state, which is what a cast would throw away.
+// config, state, and manual_models, which is what a cast would throw away.
 type UpstreamRecordSeed<R = UpstreamRecord> = R extends UpstreamRecord
-  ? Pick<R, 'kind' | 'config' | 'state'> & Partial<R>
+  ? Omit<R, keyof typeof commonFields | 'id'> & Partial<R>
   : never;
 
 export const upstreamRecord = (id: string, seed: UpstreamRecordSeed): UpstreamRecord => ({
   ...commonFields,
   id,
   ...seed,
-});
+}) as UpstreamRecord;

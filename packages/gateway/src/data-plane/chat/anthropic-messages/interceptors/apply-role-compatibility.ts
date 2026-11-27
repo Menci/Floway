@@ -1,6 +1,5 @@
 import type { AnthropicMessagesPayloadInterceptor } from './types.ts';
 import type { AnthropicMessagesAssistantMessage, AnthropicMessagesMessage, AnthropicMessagesSystemMessage } from '@floway-dev/protocols/anthropic-messages';
-import { providerModelOf } from '@floway-dev/provider';
 
 const SERVER_TOOL_RESULT_TYPES = new Set([
   'advisor_tool_result',
@@ -52,7 +51,7 @@ const disallowedContentSystemMessageIndexes = (messages: readonly AnthropicMessa
 
 export const withRoleCompatibilityApplied: AnthropicMessagesPayloadInterceptor = (ctx, _gatewayCtx, run) => {
   if (ctx.targetApi !== 'anthropicMessages') return run();
-  const flags = providerModelOf(ctx.candidate).enabledFlags;
+  const flags = ctx.candidate.model.enabledFlags;
   const rewriteAllSystem = flags.has('rewrite-mid-conv-system-to-user');
   const rewriteDisallowedSystem = flags.has('rewrite-disallowed-mid-conv-system-to-user');
   if (!rewriteAllSystem && !rewriteDisallowedSystem) return run();

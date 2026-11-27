@@ -5,8 +5,8 @@ import { saveUpstreamForTest } from './upstreams.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { UpstreamRepo } from '../../src/repo/types.ts';
 import { divideDecimalString, priceRequest, type ModelPricing, validateModelPricing } from '@floway-dev/protocols/common';
-import type { UpstreamRecord } from '@floway-dev/provider';
 import { assert, assertEquals } from '@floway-dev/test-utils';
+import type { UpstreamRecord } from '@floway-dev/upstream';
 
 const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id' | 'kind' | 'createdAt' | 'sortOrder'>): UpstreamRecord => ({
   name: overrides.id,
@@ -19,7 +19,6 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
   ...overrides,
 });
@@ -45,7 +44,7 @@ const exerciseUpstreamReorder = async (repo: UpstreamRepo) => {
 
 const exerciseAtomicAppend = async (repo: UpstreamRepo) => {
   await saveUpstreamForTest(repo, upstream({ id: 'first', kind: 'custom', sortOrder: 10, createdAt: '2026-05-21T10:00:00.000Z' }));
-  const append = (id: string) => repo.insertAtEndForModels(upstream({ id, kind: 'custom', sortOrder: -100, createdAt: `2026-05-21T10:00:0${id}.000Z` }));
+  const append = (id: string) => repo.insertAtEnd({ upstream: upstream({ id, kind: 'custom', sortOrder: -100, createdAt: `2026-05-21T10:00:0${id}.000Z` }) });
   const [a, b] = await Promise.all([append('1'), append('2')]);
   assert(a !== null);
   assert(b !== null);
@@ -155,7 +154,7 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
                 json_object('baseUrl', 'https://b.example', 'apiKey', 'k', 'authStyle', 'bearer'), '{}', '[]', '[]'),
               ('up_cold', 'custom', 'Cold', 1, 2, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z',
                 json_object('baseUrl', 'https://c.example', 'apiKey', 'k', 'authStyle', 'bearer'), '{}', '[]', '[]')`);
-    // Revision 4 already carried the core ProviderModel projection below;
+    // Revision 4 already carried the core UpstreamModel projection below;
     // revision 5 changed pricing semantics. The migration must preserve this
     // faithful old catalog even though current hydration treats it as cold.
     db.run(`INSERT INTO models_cache (upstream_id, revision, fetched_at, models_json, last_error_json)
@@ -202,10 +201,24 @@ test('migration 0072 folds every cached catalog onto its upstream row', async ()
       applySqlJsFile(db, filename);
     }
 
-    const repo = new SqlRepo(wrapSqlJsDatabase(db)).upstreams;
-    assertEquals((await repo.getById('up_clean'))?.modelsCache, null);
-    assertEquals((await repo.getById('up_failed'))?.modelsCache, null);
-    assertEquals((await repo.getById('up_cold'))?.modelsCache, null);
+    const repo = new SqlRepo(wrapSqlJsDatabase(db));
+    assertEquals((await repo.upstreams.getById('up_clean'))?.modelsCache, {
+      revision: 4,
+      fetchedAt: 1785643896263,
+      lastError: null,
+    });
+    assertEquals((await repo.upstreams.getById('up_failed'))?.modelsCache, {
+      revision: 4,
+      fetchedAt: 1785643797798,
+      lastError: { message: 'boom', at: 1785643800000, failureCount: 1 },
+    });
+    assertEquals((await repo.upstreams.getById('up_cold'))?.modelsCache, {
+      revision: null,
+      fetchedAt: null,
+      lastError: null,
+    });
+    assertEquals(await repo.upstreamModels.listByUpstream('up_clean'), []);
+    assertEquals(await repo.upstreamModels.listByUpstream('up_failed'), []);
   } finally {
     db.close();
   }
@@ -331,112 +344,119 @@ test('model pricing migrations materialize legacy semantics as base-unit metric 
   }
 
   const [configResult] = db.exec("SELECT config_json FROM upstreams WHERE id = 'up_pricing'");
-  const config = JSON.parse(configResult!.values[0]![0] as string) as {
-    models: { upstreamModelId: string; display_name?: string; pricing?: ModelPricing }[];
-  };
+  const config = JSON.parse(configResult!.values[0]![0] as string) as Record<string, unknown>;
+  const manualRows = sqlJsRows<{ config_json: string }>(
+    db,
+    "SELECT config_json FROM upstream_manual_models WHERE upstream_id = 'up_pricing' ORDER BY position",
+  );
+  const models = manualRows.map(row => JSON.parse(row.config_json) as {
+    upstreamModelId: string;
+    display_name?: string;
+    pricing?: ModelPricing;
+  });
   assertEquals(config, {
     apiKey: '',
     ingressHeadersRules: [],
     modelsFetch: { enabled: false, authStyle: 'bearer', endpoint: null },
-    models: [
-      {
-        upstreamModelId: 'base-and-overlay',
-        pricing: tokenPricing([
-          { rates: inputRates(1, 4) },
-          { selector: { serviceTier: 'priority' }, rates: inputRates(2, 4) },
-        ]),
-      },
-      {
-        upstreamModelId: 'cache-overrides',
-        pricing: tokenPricing([
-          {
-            rates: {
-              input_tokens: '0.000001',
-              input_cache_read_tokens: '0.0000001',
-              input_cache_write_tokens: '0.00000125',
-              input_cache_write_1h_tokens: '0.00000125',
-              input_image_tokens: '0.000001',
-              output_tokens: '0.000004',
-              output_image_tokens: '0.000004',
-            },
-          },
-          {
-            selector: { serviceTier: 'fast' },
-            rates: {
-              input_tokens: '0.000002',
-              input_cache_read_tokens: '0.0000001',
-              input_cache_write_tokens: '0.000003',
-              input_cache_write_1h_tokens: '0.000003',
-              input_image_tokens: '0.000002',
-              output_tokens: '0.000004',
-              output_image_tokens: '0.000004',
-            },
-          },
-        ]),
-      },
-      {
-        upstreamModelId: 'tiny-rate',
-        pricing: tokenPricing([{
-          rates: {
-            input_tokens: '0.00000000000000000000000001',
-            input_cache_read_tokens: '0.00000000000000000000000001',
-            input_cache_write_tokens: '0.00000000000000000000000001',
-            input_cache_write_1h_tokens: '0.00000000000000000000000001',
-            input_image_tokens: '0.00000000000000000000000001',
-          },
-        }]),
-      },
-      {
-        upstreamModelId: 'tier-adds-output',
-        pricing: tokenPricing([
-          { rates: inputRates(1, 0) },
-          { selector: { serviceTier: 'priority' }, rates: inputRates(1, 8) },
-        ]),
-      },
-      {
-        upstreamModelId: 'tier-only',
-        pricing: tokenPricing([
-          { rates: inputRates(0) },
-          { selector: { serviceTier: 'priority' }, rates: inputRates(2) },
-        ]),
-      },
-      {
-        upstreamModelId: 'empty-tier',
-        pricing: tokenPricing([
-          { rates: inputRates(1) },
-          { selector: { serviceTier: 'priority' }, rates: inputRates(1) },
-        ]),
-      },
-      { upstreamModelId: 'empty-rates' },
-      {
-        upstreamModelId: 'write-and-output-only',
-        pricing: tokenPricing([{ rates: { input_cache_write_tokens: '0.00000125', input_cache_write_1h_tokens: '0.00000125', output_tokens: '0.000004', output_image_tokens: '0.000004' } }]),
-      },
-      {
-        upstreamModelId: 'zero-input',
-        pricing: tokenPricing([
-          { rates: inputRates(0) },
-          { selector: { serviceTier: 'priority' }, rates: inputRates(2) },
-        ]),
-      },
-      {
-        upstreamModelId: 'tier-order',
-        pricing: tokenPricing([
-          { rates: inputRates(1) },
-          { selector: { serviceTier: 'priority' }, rates: inputRates(2) },
-          { selector: { serviceTier: 'flex' }, rates: inputRates(0.5) },
-        ]),
-      },
-      {
-        upstreamModelId: 'base-equivalent-tiers',
-        pricing: tokenPricing([{ rates: inputRates(1) }]),
-      },
-      { upstreamModelId: 'base-equivalent-tier-only' },
-      { upstreamModelId: 'unpriced', display_name: 'Unpriced' },
-    ],
   });
+  assertEquals(models, [
+    {
+      upstreamModelId: 'base-and-overlay',
+      pricing: tokenPricing([
+        { rates: inputRates(1, 4) },
+        { selector: { serviceTier: 'priority' }, rates: inputRates(2, 4) },
+      ]),
+    },
+    {
+      upstreamModelId: 'cache-overrides',
+      pricing: tokenPricing([
+        {
+          rates: {
+            input_tokens: '0.000001',
+            input_cache_read_tokens: '0.0000001',
+            input_cache_write_tokens: '0.00000125',
+            input_cache_write_1h_tokens: '0.00000125',
+            input_image_tokens: '0.000001',
+            output_tokens: '0.000004',
+            output_image_tokens: '0.000004',
+          },
+        },
+        {
+          selector: { serviceTier: 'fast' },
+          rates: {
+            input_tokens: '0.000002',
+            input_cache_read_tokens: '0.0000001',
+            input_cache_write_tokens: '0.000003',
+            input_cache_write_1h_tokens: '0.000003',
+            input_image_tokens: '0.000002',
+            output_tokens: '0.000004',
+            output_image_tokens: '0.000004',
+          },
+        },
+      ]),
+    },
+    {
+      upstreamModelId: 'tiny-rate',
+      pricing: tokenPricing([{
+        rates: {
+          input_tokens: '0.00000000000000000000000001',
+          input_cache_read_tokens: '0.00000000000000000000000001',
+          input_cache_write_tokens: '0.00000000000000000000000001',
+          input_cache_write_1h_tokens: '0.00000000000000000000000001',
+          input_image_tokens: '0.00000000000000000000000001',
+        },
+      }]),
+    },
+    {
+      upstreamModelId: 'tier-adds-output',
+      pricing: tokenPricing([
+        { rates: inputRates(1, 0) },
+        { selector: { serviceTier: 'priority' }, rates: inputRates(1, 8) },
+      ]),
+    },
+    {
+      upstreamModelId: 'tier-only',
+      pricing: tokenPricing([
+        { rates: inputRates(0) },
+        { selector: { serviceTier: 'priority' }, rates: inputRates(2) },
+      ]),
+    },
+    {
+      upstreamModelId: 'empty-tier',
+      pricing: tokenPricing([
+        { rates: inputRates(1) },
+        { selector: { serviceTier: 'priority' }, rates: inputRates(1) },
+      ]),
+    },
+    { upstreamModelId: 'empty-rates' },
+    {
+      upstreamModelId: 'write-and-output-only',
+      pricing: tokenPricing([{ rates: { input_cache_write_tokens: '0.00000125', input_cache_write_1h_tokens: '0.00000125', output_tokens: '0.000004', output_image_tokens: '0.000004' } }]),
+    },
+    {
+      upstreamModelId: 'zero-input',
+      pricing: tokenPricing([
+        { rates: inputRates(0) },
+        { selector: { serviceTier: 'priority' }, rates: inputRates(2) },
+      ]),
+    },
+    {
+      upstreamModelId: 'tier-order',
+      pricing: tokenPricing([
+        { rates: inputRates(1) },
+        { selector: { serviceTier: 'priority' }, rates: inputRates(2) },
+        { selector: { serviceTier: 'flex' }, rates: inputRates(0.5) },
+      ]),
+    },
+    {
+      upstreamModelId: 'base-equivalent-tiers',
+      pricing: tokenPricing([{ rates: inputRates(1) }]),
+    },
+    { upstreamModelId: 'base-equivalent-tier-only' },
+    { upstreamModelId: 'unpriced', display_name: 'Unpriced' },
+  ]);
 
-  for (const model of config.models) {
+  for (const model of models) {
     if (!model.pricing) continue;
     validateModelPricing(model.pricing);
     const base = model.pricing.entries.find(entry => entry.selector === undefined)!.rates;

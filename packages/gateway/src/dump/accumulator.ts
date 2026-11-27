@@ -25,7 +25,7 @@ import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ChatTargetApi, TelemetryModelIdentity } from '@floway-dev/provider';
+import type { ChatTargetApi, TelemetryModelIdentity } from '@floway-dev/upstream';
 
 // Frozen at ctx construction so `finalize` never has to re-read a stream
 // the handler already consumed.

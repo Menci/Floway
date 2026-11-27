@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { inputErrorResult } from '../../../../src/data-plane/chat/anthropic-messages/errors.ts';
-import { decodeResponseBody } from '@floway-dev/provider';
 import { assert, assertEquals } from '@floway-dev/test-utils';
+import { decodeResponseBody } from '@floway-dev/upstream';
 
 const bodyOf = (result: ReturnType<typeof inputErrorResult>): Record<string, unknown> =>
   JSON.parse(decodeResponseBody(result.body));

@@ -3,7 +3,7 @@ import { resolveLegacyOpaqueBlobCompatibilityIdentity } from './legacy.ts';
 import { compatibilityIdentityForCandidate } from './selection.ts';
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { ChatGatewayCtx } from '../gateway-ctx.ts';
-import type { ModelCandidate } from '@floway-dev/provider';
+import type { ModelCandidate } from '@floway-dev/upstream';
 
 export interface AffinityEgressOptions {
   readonly codec: Pick<AffinityCodec, 'wrap'>;
@@ -11,7 +11,7 @@ export interface AffinityEgressOptions {
 }
 
 const affinityIdentityForCandidate = (candidate: ModelCandidate): AffinityIdentity => ({
-  upstreamId: candidate.provider.upstreamId,
+  upstreamId: candidate.upstream.upstreamId,
   modelId: candidate.model.id,
   ...(candidate.rules !== undefined ? { rules: candidate.rules } : {}),
   opaqueBlobCompatibilityIdentity: compatibilityIdentityForCandidate(candidate),

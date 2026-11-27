@@ -5,7 +5,7 @@ import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext,
 import type { User } from '../../repo/types.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { PerformanceTelemetryContext } from '@floway-dev/upstream';
 
 // Per-attempt timing and performance attribution. `timing` keeps its identity
 // across candidate resets because the dump accumulator reads the same object.

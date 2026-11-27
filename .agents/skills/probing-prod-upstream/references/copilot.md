@@ -8,13 +8,13 @@ as described below. This exchange does not use an OAuth refresh token.
 
 ## Exchange the PAT
 
-Read the management-plane URL construction in `packages/provider-copilot/src/auth.ts`
+Read the management-plane URL construction in `packages/upstream-copilot/src/auth.ts`
 for the configured GitHub host. For github.com, the token exchange endpoint is:
 
 `GET https://api.github.com/copilot_internal/v2/token`
 
 Do not append the exchange path to a Copilot data-plane host. Send the headers
-from `githubHeaders` in `packages/provider-copilot/src/auth.ts`:
+from `githubHeaders` in `packages/upstream-copilot/src/auth.ts`:
 
 ```
 authorization: token <PAT>
@@ -63,7 +63,7 @@ openai-intent: conversation-agent
 x-interaction-type: conversation-agent
 ```
 
-`packages/provider-copilot/src/auth.ts` is the source of truth for both header
+`packages/upstream-copilot/src/auth.ts` is the source of truth for both header
 sets, their distinct version constants, extraction of `endpoints.api`, and
 data-plane dispatch in `copilotAuthedFetch`. Read the current values and flow
 from there rather than hardcoding them in probe scripts. For Anthropic Messages probes

@@ -1,23 +1,23 @@
-import type { WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderName } from './types.ts';
+import type { WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchBackend, WebSearchBackendName } from './types.ts';
 import { recordWebSearchUsage } from './usage.ts';
 
 export const fetchPageAndRecordUsage = async (args: {
-  provider: WebSearchProvider;
-  providerName: WebSearchProviderName;
+  backend: WebSearchBackend;
+  backendName: WebSearchBackendName;
   keyId: string;
   request: WebSearchFetchPageRequest;
 }): Promise<WebSearchFetchPageResult> => {
   try {
-    return await args.provider.fetchPage(args.request);
+    return await args.backend.fetchPage(args.request);
   } finally {
-    // Telemetry must never mask the provider result; log and swallow
+    // Telemetry must never mask the backend result; log and swallow
     // recording failures.
     try {
       await recordWebSearchUsage({
-        provider: args.providerName,
+        backend: args.backendName,
         keyId: args.keyId,
         action: 'fetch_page',
-        // Provider billing is per URL; the shim batches multiple URLs into
+        // Backend billing is per URL; the shim batches multiple URLs into
         // one call to save HTTP round-trips, but each URL must increment
         // its own usage row.
         requests: args.request.urls.length,

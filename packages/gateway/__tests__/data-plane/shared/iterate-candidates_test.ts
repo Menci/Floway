@@ -3,22 +3,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GatewayCtx } from '../../../src/data-plane/shared/gateway-ctx.ts';
 import { iterateCandidates } from '../../../src/data-plane/shared/iterate-candidates.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
-import type { ModelCandidate, PerformanceTelemetryContext } from '@floway-dev/provider';
 import { ProxyDialError } from '@floway-dev/proxy';
-import { mockPerfTelemetryContext, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
+import { mockPerfTelemetryContext, stubModelCandidate, stubUpstream } from '@floway-dev/test-utils';
+import type { ModelCandidate, PerformanceTelemetryContext } from '@floway-dev/upstream';
 
 const stubCandidate = (id: string, upstream = 'up'): ModelCandidate =>
   stubModelCandidate({
     model: { id },
-    provider: {
+    upstream: {
       upstreamId: upstream,
       kind: 'custom',
       name: upstream,
       inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      modelsCache: null,
-      instance: stubProvider(),
+      instance: stubUpstream(),
     },
   });
 

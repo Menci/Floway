@@ -64,6 +64,8 @@ const USER_BOB: User = {
   deletedAt: null,
 };
 
+const EMPTY_MODELS_CACHE = { revision: null, fetchedAt: null, lastError: null };
+
 const CUSTOM_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_custom_a',
   kind: 'custom',
@@ -77,8 +79,8 @@ const CUSTOM_UPSTREAM: StoredUpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  configVersion: 1,
-  modelsCache: null,
+  version: 1,
+  modelsCache: EMPTY_MODELS_CACHE,
   hue: 210,
   config: {
     baseUrl: 'https://custom.example.com',
@@ -106,8 +108,8 @@ const COPILOT_UPSTREAM: StoredUpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  configVersion: 1,
-  modelsCache: null,
+  version: 1,
+  modelsCache: EMPTY_MODELS_CACHE,
   hue: 210,
   config: {
     githubHost: 'github.com',
@@ -122,6 +124,20 @@ const COPILOT_UPSTREAM: StoredUpstreamRecord = {
   state: null,
 };
 
+const AZURE_MANUAL_MODELS = [
+  {
+    upstreamModelId: 'gpt-prod',
+    publicModelId: 'gpt-public',
+    kind: 'chat' as const,
+    endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
+  },
+  {
+    upstreamModelId: 'deepseek-prod',
+    kind: 'chat' as const,
+    endpoints: { openaiChatCompletions: {} },
+  },
+];
+
 const AZURE_UPSTREAM: StoredUpstreamRecord = {
   id: 'up_azure_a',
   kind: 'azure',
@@ -135,25 +151,12 @@ const AZURE_UPSTREAM: StoredUpstreamRecord = {
   disabledPublicModelIds: ['gpt-public'],
   proxyFallbackList: [],
   modelPrefix: null,
-  configVersion: 1,
-  modelsCache: null,
+  version: 1,
+  modelsCache: EMPTY_MODELS_CACHE,
   hue: 210,
   config: {
     endpoint: 'https://example.openai.azure.com',
     apiKey: 'az-key',
-    models: [
-      {
-        upstreamModelId: 'gpt-prod',
-        publicModelId: 'gpt-public',
-        kind: 'chat',
-        endpoints: { openaiChatCompletions: {}, openaiResponses: {}, openaiEmbeddings: {} },
-      },
-      {
-        upstreamModelId: 'deepseek-prod',
-        kind: 'chat',
-        endpoints: { openaiChatCompletions: {} },
-      },
-    ],
   },
   state: null,
 };
@@ -171,8 +174,8 @@ const CHATGPT_UPSTREAM: StoredUpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  configVersion: 1,
-  modelsCache: null,
+  version: 1,
+  modelsCache: EMPTY_MODELS_CACHE,
   hue: 210,
   config: {
     accounts: [{
@@ -216,7 +219,7 @@ const USAGE_2: UsageRecord = {
 };
 
 const WEB_SEARCH_USAGE_1: WebSearchUsageRecord = {
-  provider: 'tavily',
+  backend: 'tavily',
   keyId: 'key-a',
   action: 'search',
   hour: '2026-01-01T10',
@@ -224,7 +227,7 @@ const WEB_SEARCH_USAGE_1: WebSearchUsageRecord = {
 };
 
 const WEB_SEARCH_USAGE_2: WebSearchUsageRecord = {
-  provider: 'microsoft-web-iq',
+  backend: 'microsoft-web-iq',
   keyId: 'key-b',
   action: 'fetch_page',
   hour: '2026-01-01T11',
@@ -295,7 +298,7 @@ const doExport = async (app: Hono, includePerformance = false) => {
   return (await resp.json()) as Record<string, any>;
 };
 
-const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 25) => {
+const doImport = async (app: Hono, mode: string, data: unknown, version: unknown = 27) => {
   const resp = await app.request('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -358,8 +361,8 @@ test('import rejects any version other than the current one before deleting data
   await repo.apiKeys.save(KEY_A);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
 
-  const VERSION_ERROR = 'version must be 25 — older export formats are not supported; re-export from the current deployment';
-  const previousV24 = await doImport(app, 'replace', latestImportData(), 24);
+  const VERSION_ERROR = 'version must be 27 — older export formats are not supported; re-export from the current deployment';
+  const previousV25 = await doImport(app, 'replace', latestImportData(), 25);
   const previousV11 = await doImport(app, 'replace', latestImportData(), 11);
   const ancientVersion = await doImport(app, 'replace', { apiKeys: [] }, 1);
   const missingVersionResponse = await app.request('/import', {
@@ -369,8 +372,8 @@ test('import rejects any version other than the current one before deleting data
   });
   const missingVersion = { status: missingVersionResponse.status, body: (await missingVersionResponse.json()) as Record<string, any> };
 
-  assertEquals(previousV24.status, 400);
-  assertEquals(previousV24.body.error, VERSION_ERROR);
+  assertEquals(previousV25.status, 400);
+  assertEquals(previousV25.body.error, VERSION_ERROR);
   assertEquals(previousV11.status, 400);
   assertEquals(previousV11.body.error, VERSION_ERROR);
   assertEquals(ancientVersion.status, 400);
@@ -389,7 +392,7 @@ test('import replace writes upstreams and clears replaced collections', async ()
   await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
   await repo.openaiResponsesItems.insertMany([STORED_OPENAI_RESPONSES_ITEM], 0);
   await repo.webSearchConfig.save({
-    provider: 'tavily',
+    backend: 'tavily',
     tavily: { apiKey: 'old' },
     microsoftWebIq: { apiKey: '' },
     jina: { apiKey: '' },
@@ -400,13 +403,13 @@ test('import replace writes upstreams and clears replaced collections', async ()
     ...EMPTY_ACCESS_TRANSFER,
     users: [SEED_ADMIN],
     apiKeys: [KEY_B],
-    upstreams: [upstreamRecordToFullJson(AZURE_UPSTREAM)],
+    upstreams: [upstreamRecordToFullJson(AZURE_UPSTREAM, AZURE_MANUAL_MODELS)],
     usage: [USAGE_2],
     searchUsage: [WEB_SEARCH_USAGE_2],
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: {
-      provider: 'microsoft-web-iq',
+      backend: 'microsoft-web-iq',
       tavily: { apiKey: '' },
       microsoftWebIq: { apiKey: 'ms-new' },
       jina: { apiKey: '' },
@@ -420,12 +423,17 @@ test('import replace writes upstreams and clears replaced collections', async ()
   const restoredKey = await repo.apiKeys.findByRawKey(KEY_B.key);
   if (restoredKey === null) throw new Error('restored key missing');
   assertEquals(restoredKey, KEY_B);
-  assertEquals(await repo.upstreams.list(), [{ ...AZURE_UPSTREAM, sortOrder: 0 }]);
+  const restoredUpstreams = await repo.upstreams.list();
+  assertEquals(restoredUpstreams.map(({ modelsCache: _modelsCache, ...rest }) => rest), [
+    (({ modelsCache: _modelsCache, ...rest }) => ({ ...rest, sortOrder: 0 }))(AZURE_UPSTREAM),
+  ]);
+  assertEquals(typeof restoredUpstreams[0]?.modelsCache.fetchedAt, 'number');
+  assertEquals(await repo.upstreamModels.listManualModels(AZURE_UPSTREAM.id), AZURE_MANUAL_MODELS);
   assertEquals(await repo.usage.listAll(), [USAGE_2]);
   assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_2]);
   assertEquals(await repo.openaiResponsesItems.lookupMany('key-a', [STORED_OPENAI_RESPONSES_ITEM.id], 0), []);
   assertEquals(await repo.webSearchConfig.get(), {
-    provider: 'microsoft-web-iq',
+    backend: 'microsoft-web-iq',
     tavily: { apiKey: '' },
     microsoftWebIq: { apiKey: 'ms-new' },
     jina: { apiKey: '' },
@@ -437,7 +445,7 @@ test('import merge upserts by repository key without clearing unrelated rows', a
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
-  await saveUpstreamForTest(repo.upstreams, AZURE_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, AZURE_UPSTREAM, { manualModels: AZURE_MANUAL_MODELS });
   await repo.usage.set({ ...USAGE_1, requests: 10 });
   await repo.webSearchUsage.set({ ...WEB_SEARCH_USAGE_1, requests: 10 });
 
@@ -612,7 +620,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     apiKeys: [],
     upstreams: [],
     usage: [],
-    searchUsage: [{ provider: 'not-real', keyId: 'key-a', hour: '2026-01-01T10', requests: 1 }],
+    searchUsage: [{ backend: 'not-real', keyId: 'key-a', hour: '2026-01-01T10', requests: 1 }],
     upstreamMetrics: [],
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
@@ -763,7 +771,7 @@ test('replace-mode import clears sessions before writing users', async () => {
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
     siteSettings: { siteName: null },
-  }, 25);
+  }, 27);
 
   assertEquals(result.status, 200);
   // No public listAll on sessions; create a fresh session and check the
@@ -772,7 +780,7 @@ test('replace-mode import clears sessions before writing users', async () => {
   assertEquals(await repo.sessions.deleteByUserId(USER_BOB.id), 0);
 });
 
-test('v25 replace import refuses payload missing user 1', async () => {
+test('v27 replace import refuses payload missing user 1', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', {
     ...EMPTY_ACCESS_TRANSFER,
@@ -785,12 +793,12 @@ test('v25 replace import refuses payload missing user 1', async () => {
     performanceIncluded: false,
     searchConfig: DEFAULT_WEB_SEARCH_CONFIG,
     siteSettings: { siteName: null },
-  }, 25);
+  }, 27);
   assertEquals(result.status, 400);
   expect(result.body.error).toContain('user 1');
 });
 
-test('a full v25 export re-imports verbatim — the export→import round trip is closed', async () => {
+test('a full v27 export re-imports verbatim — the export→import round trip is closed', async () => {
   const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
   await repo.users.save(USER_BOB);
@@ -798,7 +806,7 @@ test('a full v25 export re-imports verbatim — the export→import round trip i
   await repo.apiKeys.save({ ...KEY_B, userId: USER_BOB.id });
   await saveUpstreamForTest(repo.upstreams, COPILOT_UPSTREAM);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
-  await saveUpstreamForTest(repo.upstreams, AZURE_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, AZURE_UPSTREAM, { manualModels: AZURE_MANUAL_MODELS });
   await saveUpstreamForTest(repo.upstreams, CHATGPT_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.usage.set(USAGE_2);
@@ -807,7 +815,7 @@ test('a full v25 export re-imports verbatim — the export→import round trip i
   await repo.performance.set(PERFORMANCE_1);
   await repo.performance.set(PERFORMANCE_2);
   const config = {
-    provider: 'tavily' as const,
+    backend: 'tavily' as const,
     tavily: { apiKey: 'tk' },
     microsoftWebIq: { apiKey: '' },
     jina: { apiKey: '' },
@@ -816,12 +824,12 @@ test('a full v25 export re-imports verbatim — the export→import round trip i
   await repo.webSearchConfig.save(config);
 
   const exported = await doExport(app, true);
-  assertEquals(exported.version, 25);
+  assertEquals(exported.version, 27);
 
   // Replace-import the export's own `data`, verbatim. If the export emits any
   // shape the import parser rejects, this 400s — the round trip is the
   // invariant, so this test fails the moment the two sides drift.
-  const result = await doImport(app, 'replace', exported.data, 25);
+  const result = await doImport(app, 'replace', exported.data, 27);
   assertEquals(result.status, 200);
   assertEquals(result.body.imported, { users: 2, userPreferences: 0, groups: 0, accessRecords: 0, apiKeys: 2, upstreams: 4, proxies: 0, usage: 2, searchUsage: 2, upstreamMetrics: 0, performance: 2 });
 

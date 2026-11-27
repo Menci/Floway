@@ -5,7 +5,7 @@ import type {
   PerformanceOverviewResult,
 } from './types.ts';
 import type { SqlBindValue, SqlDatabase } from '@floway-dev/platform';
-import { parsePerformanceOperation } from '@floway-dev/provider';
+import { parsePerformanceOperation } from '@floway-dev/upstream';
 
 interface PerformanceOverviewSqlRow {
   row_kind: 'aggregate' | 'facet' | 'invalid_histogram' | 'missing_hour' | 'orphan';

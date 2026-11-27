@@ -9,8 +9,8 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { ExecuteResult } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
+import type { ExecuteResult } from '@floway-dev/upstream';
 
 const encoder = new TextEncoder();
 

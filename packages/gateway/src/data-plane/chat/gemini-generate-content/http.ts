@@ -1,4 +1,3 @@
-import { normalizeGeminiGenerateContentFailure } from './errors.ts';
 import { geminiGenerateContentInternalRpcErrorResponse, geminiGenerateContentRpcErrorResponse, respondGeminiGenerateContent } from './respond.ts';
 import { geminiGenerateContentServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
@@ -9,7 +8,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { GeminiCountTokensPayload, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import { internalErrorResult, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
+import { internalErrorResult, toInternalDebugError } from '@floway-dev/upstream';
 
 interface GeminiGenerateContentModelAction {
   readonly model: string;
@@ -47,33 +46,18 @@ const parseGeminiGenerateContentBodyBytes = <T>(requestBody: RequestBody, projec
   }
 };
 
-// Surfaces a pre-stream throw as a Gemini-generateContent-RPC envelope, routing through
-// `respondGeminiGenerateContent` so the dump records the failure exactly as the sibling
-// HTTP handlers do. A `ProviderModelsUnavailableError`
-// carrying an upstream HTTP body relays that body through the `api-error`
-// path with `source: 'upstream'`; everything else collapses to an
-// `internal-error` result rendered as the Gemini generateContent internal-error envelope
-// (status, code, message, stack, cause, target_api). The throwing-
-// candidate telemetry stamped in serve.ts survives onto the error row via
-// `ctx.attempt.telemetry` so a mid-attempt throw still lands in
-// performance_summary against the throwing upstream.
+// Surfaces a pre-stream throw as a Gemini generateContent internal-error RPC
+// envelope (status, code, message, stack, cause, target_api) through
+// `respondGeminiGenerateContent` so dumps record the failure the same way
+// sibling HTTP handlers do. The throwing-candidate telemetry stamped by
+// `iterateCandidates` survives onto the error row via `ctx.attempt.telemetry`
+// so a mid-attempt throw still lands in performance_summary against that upstream.
 const respondWithGeminiGenerateContentError = async (
   c: AuthedContext,
   error: unknown,
   ctx: ChatGatewayCtx,
   wantsStream: boolean,
 ): Promise<Response> => {
-  if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
-    const { status, headers, body } = error.httpResponse;
-    const apiErrorResult = normalizeGeminiGenerateContentFailure({
-      type: 'api-error' as const,
-      source: 'upstream' as const,
-      http: { status, headers: new Headers(headers) },
-      body: new TextEncoder().encode(body),
-    });
-    const response = await respondGeminiGenerateContent(c, apiErrorResult, wantsStream, ctx);
-    return finalizeGatewayResponse(ctx, response);
-  }
   const internalResult = internalErrorResult(500, toInternalDebugError(error), ctx.attempt.telemetry);
   const response = await respondGeminiGenerateContent(c, internalResult, wantsStream, ctx);
   return finalizeGatewayResponse(ctx, response);

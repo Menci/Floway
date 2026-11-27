@@ -18,7 +18,7 @@ import { stubModelCandidate } from '@floway-dev/test-utils';
 const modelCandidate = (upstream: string) => {
   const base = stubModelCandidate();
   return stubModelCandidate({
-    provider: { ...base.provider, upstreamId: upstream },
+    upstream: { ...base.upstream, upstreamId: upstream },
     model: { id: 'model-a' },
   });
 };
@@ -61,9 +61,9 @@ test('affinity selects the route while item storage preserves the exact emitted 
   const withAffinity = wrapOpenAIResponsesAffinityEgress(source(), {
     codec,
     affinity: {
-      upstreamId: candidateA.provider.upstreamId,
+      upstreamId: candidateA.upstream.upstreamId,
       modelId: candidateA.model.id,
-      opaqueBlobCompatibilityIdentity: { upstreamId: candidateA.provider.upstreamId, key: candidateA.model.id },
+      opaqueBlobCompatibilityIdentity: { upstreamId: candidateA.upstream.upstreamId, key: candidateA.model.id },
     },
   });
   const client = wrapOpenAIResponsesClientOutput(withAffinity, {
@@ -85,9 +85,9 @@ test('affinity selects the route while item storage preserves the exact emitted 
   const hydrated = hydrateOpenAIResponsesPayload({ model: 'model-a', input }, store);
   const affinity = await analyzeOpenAIResponsesAffinity(hydrated, codec);
   expect(affinity.requiredTargets).toEqual([{
-    upstreamId: candidateA.provider.upstreamId,
+    upstreamId: candidateA.upstream.upstreamId,
     modelId: candidateA.model.id,
-    opaqueBlobCompatibilityIdentity: { upstreamId: candidateA.provider.upstreamId, key: candidateA.model.id },
+    opaqueBlobCompatibilityIdentity: { upstreamId: candidateA.upstream.upstreamId, key: candidateA.model.id },
   }]);
   expect(affinity.evaluateCandidate(candidateA)).toMatchObject({ kind: 'accepted', degrades: false });
   expect(affinity.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
@@ -121,9 +121,9 @@ test('compaction_summary carrier authenticates after alias canonicalization with
   for await (const frame of wrapOpenAIResponsesAffinityEgress(source(), {
     codec,
     affinity: {
-      upstreamId: candidate.provider.upstreamId,
+      upstreamId: candidate.upstream.upstreamId,
       modelId: candidate.model.id,
-      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
+      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.upstream.upstreamId, key: candidate.model.id },
     },
   })) {
     if (frame.type === 'event' && frame.event.type === 'response.completed') {
@@ -135,9 +135,9 @@ test('compaction_summary carrier authenticates after alias canonicalization with
   const canonical = { type: 'compaction', id: 'cmp_public', encrypted_content: wrapped } as unknown as CanonicalOpenAIResponsesInputItem;
   const prepared = await analyzeOpenAIResponsesAffinity({ model: 'model-a', input: [canonical] }, codec);
   expect(prepared.requiredTargets).toEqual([{
-    upstreamId: candidate.provider.upstreamId,
+    upstreamId: candidate.upstream.upstreamId,
     modelId: candidate.model.id,
-    opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
+    opaqueBlobCompatibilityIdentity: { upstreamId: candidate.upstream.upstreamId, key: candidate.model.id },
   }]);
   const evaluation = prepared.evaluateCandidate(candidate);
   if (evaluation.kind === 'rejected') throw new Error('Expected candidate affinity evaluation to be accepted');
@@ -191,9 +191,9 @@ test('gateway-owned compaction round-trips across affinity targets and expands w
   for await (const frame of wrapOpenAIResponsesAffinityEgress(source(), {
     codec,
     affinity: {
-      upstreamId: candidateA.provider.upstreamId,
+      upstreamId: candidateA.upstream.upstreamId,
       modelId: candidateA.model.id,
-      opaqueBlobCompatibilityIdentity: { upstreamId: candidateA.provider.upstreamId, key: candidateA.model.id },
+      opaqueBlobCompatibilityIdentity: { upstreamId: candidateA.upstream.upstreamId, key: candidateA.model.id },
     },
   })) if (frame.type === 'event') events.push(frame.event);
 

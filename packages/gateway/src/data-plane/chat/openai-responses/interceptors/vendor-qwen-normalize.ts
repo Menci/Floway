@@ -15,10 +15,9 @@
 
 import type { OpenAIResponsesInterceptor } from './types.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf } from '@floway-dev/provider';
 
 export const withVendorQwenOpenAIResponsesNormalize: OpenAIResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-qwen')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('vendor-qwen')) return await run();
 
   if (ctx.payload.reasoning?.effort === 'none') {
     const { reasoning: _stripped, ...rest } = ctx.payload;

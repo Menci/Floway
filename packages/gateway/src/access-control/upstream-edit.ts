@@ -26,7 +26,7 @@ export const resolveUpstreamAccesses = async (
 
 export const canViewUpstreams = async (subject: User): Promise<boolean> => {
   if (subject.isAdmin) return true;
-  const upstreamIds = (await getRepo().upstreams.list()).map(upstream => upstream.id);
+  const upstreamIds = await getRepo().upstreams.listIds();
   const accesses = await resolveUpstreamAccesses(subject, upstreamIds);
   return [...accesses.values()].some(access => access.audit || access.edit !== 'off');
 };
@@ -41,11 +41,11 @@ export const fullUpstreamActionError = async (
   if (upstreamId === '') {
     return subject.isAdmin ? null : { status: 403, error: 'Creating upstream credentials requires administrator privileges' };
   }
-  const [editLevel, record] = await Promise.all([
+  const [editLevel, metas] = await Promise.all([
     resolveUpstreamEditLevel(subject, upstreamId),
-    getRepo().upstreams.getById(upstreamId),
+    getRepo().upstreams.getMetaByIds([upstreamId]),
   ]);
-  return editLevel === 'full' && record !== null
+  return editLevel === 'full' && metas.length > 0
     ? null
     : { status: 404, error: 'Upstream not found' };
 };

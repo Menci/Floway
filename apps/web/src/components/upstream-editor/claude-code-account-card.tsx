@@ -19,9 +19,9 @@ import {
   readProbeSnapshot,
   subscriptionLabel,
 } from '../upstreams/claude-code-account';
-import { ProviderIcon } from '../upstreams/provider-badge';
 import { QuotaProgressRow } from '../upstreams/quota-progress-row';
 import { WALL_CLOCK_REFRESH_MS } from '../upstreams/subscription-quota';
+import { UpstreamKindIcon } from '../upstreams/upstream-kind-badge';
 
 const {
   Accordion, AccordionHeader, AccordionItem, AccordionPanel, Badge, Button,
@@ -58,7 +58,7 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, readOnly = fals
 
   return <section className="grid gap-4">
     <div className="flex items-start gap-3">
-      <ProviderIcon kind="claude-code" className="h-8 w-8 shrink-0" />
+      <UpstreamKindIcon kind="claude-code" className="h-8 w-8 shrink-0" />
       <div className="grid gap-1 min-w-0 flex-1">
         <Text block weight="semibold" truncate wrap={false}>{account.email ?? accountUuidShort}</Text>
         <div className="flex flex-wrap items-center gap-2">

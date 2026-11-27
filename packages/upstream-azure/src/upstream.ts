@@ -1,0 +1,159 @@
+import { assertAzureUpstreamRecord } from './config.ts';
+import { AZURE_DEFAULT_FLAGS } from './defaults.ts';
+import { azureFetchDecision, azureFetchOpenAIAudioTranscriptions, azureFetchOpenAIChatCompletions, azureFetchOpenAICompletions, azureFetchOpenAIEmbeddings, azureFetchOpenAIImagesEdits, azureFetchOpenAIImagesGenerations, azureFetchAnthropicMessages, azureFetchAnthropicMessagesCountTokens, azureFetchOpenAIResponses, azureFetchOpenAIResponsesCompact } from './fetch.ts';
+import { AZURE_OPENAI_RESPONSES_BOUNDARY } from './interceptors/openai-responses/index.ts';
+import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses/types.ts';
+import { runInterceptors } from '@floway-dev/interceptor';
+import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
+import { kindForEndpoints } from '@floway-dev/protocols/common';
+import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
+import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
+import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
+import { headersForAnthropicMessagesCall, jsonRequestBody, serializeModelPathOpenAIAudioTranscriptionRequest, serializeOpenAIImagesEditsRequest, type FetchInit, type HttpHeaderLines, type UpstreamInstance, type Upstream, type UpstreamModel, type UpstreamOpenAIResponsesResult, type UpstreamStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModelConfig, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingUpstreamCall } from '@floway-dev/upstream';
+
+const upstreamModelIdOf = (model: UpstreamModel): string => (model.upstreamData as { upstreamModelId: string }).upstreamModelId;
+
+export const projectAzureModels = (
+  record: UpstreamRecord,
+  manualModels: readonly UpstreamModelConfig[],
+): UpstreamModel[] => {
+  const azure = assertAzureUpstreamRecord(record);
+  return manualModels.map(model => {
+    const effective = resolveEffectiveFlags([AZURE_DEFAULT_FLAGS, azure.flagOverrides, model.flagOverrides]);
+    const endpoints = model.endpoints;
+    const kind = kindForEndpoints(endpoints);
+    return {
+      id: publicModelId(model),
+      upstreamModelId: model.upstreamModelId,
+      limits: { ...(model.limits ?? {}) },
+      ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
+      ...(model.pricing ? { pricing: model.pricing } : {}),
+      ...(kind === 'chat' && model.chat ? { chat: model.chat } : {}),
+      kind,
+      endpoints,
+      upstreamData: { upstreamModelId: model.upstreamModelId },
+      enabledFlags: effective,
+      opaqueBlobCompatibilityScope: model.opaqueBlobCompatibilityScope ?? { bindToUpstream: true },
+      // A Foundry decision deployment answers the System One contract; the
+      // dialect is not the operator's to choose.
+      ...(kind === 'decision' ? { decisionTarget: { protocol: 'typesafe-systemone' as const } } : {}),
+    };
+  });
+};
+
+type AzureTypedFetch = (config: ReturnType<typeof assertAzureUpstreamRecord>['config'], init: FetchInit, options: UpstreamFetchOptions) => Promise<Response>;
+
+export const createAzureUpstream = (record: UpstreamRecord): Upstream => {
+  const azure = assertAzureUpstreamRecord(record);
+
+  const callStreaming = <TEvent>(
+    transport: AzureTypedFetch,
+    model: UpstreamModel,
+    body: Record<string, unknown>,
+    signal: AbortSignal | undefined,
+    headers: HttpHeaderLines,
+    parser: UpstreamStreamParser<TEvent>,
+    opts: UpstreamCallOptions,
+  ) => {
+    const upstreamModelId = upstreamModelIdOf(model);
+    return streamingUpstreamCall(
+      transport(
+        azure.config,
+        { method: 'POST', body: jsonRequestBody({ ...body, stream: true, model: upstreamModelId }), signal },
+        { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+      ),
+      parser,
+      upstreamModelId,
+      signal,
+    );
+  };
+
+  const callNonStreaming = async (transport: AzureTypedFetch, model: UpstreamModel, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: HttpHeaderLines, opts: UpstreamCallOptions) => {
+    const upstreamModelId = upstreamModelIdOf(model);
+    const response = await transport(azure.config, { method: 'POST', body: jsonRequestBody({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+    return { http: response, modelKey: upstreamModelId };
+  };
+
+  const instance: UpstreamInstance = {
+    runScheduledTask: async () => {},
+    callAlphaSearch: () => Promise.reject(new Error('Azure upstream does not support callAlphaSearch')),
+    getModels(_fetcher, manualModels = []) {
+      return Promise.resolve(projectAzureModels(azure, manualModels));
+    },
+    callOpenAICompletions: (model, body, signal, opts) => callNonStreaming(azureFetchOpenAICompletions, model, body, signal, [...opts.headers], opts),
+    callOpenAIChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchOpenAIChatCompletions, model, body, signal, [...opts.headers], parseOpenAIChatCompletionsStream, opts),
+    callOpenAIResponses: async (model, body, action, signal, opts) => {
+      const ctx: OpenAIResponsesBoundaryCtx = {
+        payload: { ...body, model: model.id },
+        headers: new Headers(opts.headers),
+        model,
+        action,
+      };
+      return await runInterceptors<OpenAIResponsesBoundaryCtx, object, UpstreamOpenAIResponsesResult>(
+        ctx, {}, AZURE_OPENAI_RESPONSES_BOUNDARY, async () => {
+          const { model: _ignored, ...wireBody } = ctx.payload;
+          switch (ctx.action) {
+          case 'generate': {
+            const stream = await callStreaming(azureFetchOpenAIResponses, model, wireBody, signal, [...ctx.headers], parseOpenAIResponsesStream, opts);
+            return { action: 'generate', ...stream };
+          }
+          case 'compact': {
+            const upstreamModelId = upstreamModelIdOf(model);
+            const response = await azureFetchOpenAIResponsesCompact(
+              azure.config,
+              { method: 'POST', body: jsonRequestBody({ ...toCompactPayloadShape(wireBody), model: upstreamModelId }), signal },
+              { extraHeaders: [...ctx.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+            );
+            return response.ok
+              ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: upstreamModelId, http: { status: response.status, headers: response.headers } }
+              : { action: 'compact', ok: false, http: response, modelKey: upstreamModelId };
+          }
+          default:
+            ctx.action satisfies never;
+            throw new Error(`Unhandled OpenAIResponsesAction: ${ctx.action as string}`);
+          }
+        },
+      );
+    },
+    callAnthropicMessages: (model, body, signal, opts) => callStreaming(azureFetchAnthropicMessages, model, body, signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), parseAnthropicMessagesStream, opts),
+    callAnthropicMessagesCountTokens: (model, body, signal, opts) => callNonStreaming(azureFetchAnthropicMessagesCountTokens, model, body, signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), opts),
+    callGeminiGenerateContent: () => Promise.reject(new Error('Azure upstream does not support callGeminiGenerateContent')),
+    callGeminiGenerateContentCountTokens: () => Promise.reject(new Error('Azure upstream does not support callGeminiGenerateContentCountTokens')),
+    callOpenAIEmbeddings: (model, body, signal, opts) => callNonStreaming(azureFetchOpenAIEmbeddings, model, body, signal, [...opts.headers], opts),
+    callOpenAIImagesGenerations: (model, body, signal, opts) => callNonStreaming(azureFetchOpenAIImagesGenerations, model, body, signal, [...opts.headers], opts),
+    callOpenAIImagesEdits: async (model, request, signal, opts) => {
+      const upstreamModelId = upstreamModelIdOf(model);
+      const body = await serializeOpenAIImagesEditsRequest(request, upstreamModelId);
+      const response = await azureFetchOpenAIImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+      return { http: response, modelKey: upstreamModelId };
+    },
+    callOpenAIAudioTranscriptions: async (model, request, signal, opts) => {
+      const upstreamModelId = upstreamModelIdOf(model);
+      const body = serializeModelPathOpenAIAudioTranscriptionRequest(request);
+      const response = await azureFetchOpenAIAudioTranscriptions(azure.config, upstreamModelId, { method: 'POST', body, signal }, { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+      return { http: response, modelKey: upstreamModelId };
+    },
+    callRerank: () => Promise.reject(new Error('Azure upstream does not support callRerank')),
+    callDecision: async (model: UpstreamModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
+      const target = model.decisionTarget;
+      if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
+      const upstreamModelId = upstreamModelIdOf(model);
+      const body = serializeDecisionRequest(target.protocol, upstreamModelId, request);
+      const response = await azureFetchDecision(
+        azure.config,
+        target.path ?? DEFAULT_DECISION_PATHS[target.protocol],
+        { method: 'POST', body: jsonRequestBody(body), signal },
+        { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+      );
+      return { http: response, modelKey: upstreamModelId, target };
+    },
+  };
+
+  return {
+    upstreamId: azure.id,
+    kind: 'azure',
+    name: azure.name,
+    inboundHeaderAllowlist: [],
+    instance,
+  };
+};

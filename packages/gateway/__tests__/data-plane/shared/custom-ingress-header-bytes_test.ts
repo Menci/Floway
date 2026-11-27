@@ -6,9 +6,9 @@ import { afterEach, test } from 'vitest';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { initSocketDial, type DialedSocket } from '@floway-dev/platform';
-import type { ProxyFallbackEntry } from '@floway-dev/provider';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
+import type { ProxyFallbackEntry } from '@floway-dev/upstream';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
 
 // Both Node egress paths end in a byte serializer of their own — undici for
 // `direct_fetch`, our own writer in `@floway-dev/http` for `direct_connect` —
@@ -115,9 +115,10 @@ const embeddingsThroughUpstream = async (egress: ProxyFallbackEntry[], origin: s
       endpoints: {},
       ingressHeadersRules: INGRESS_HEADERS_RULES,
       modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{ upstreamModelId: 'embedding-model', endpoints: { openaiEmbeddings: {} } }],
     },
-  }));
+  }), {
+    manualModels: [{ upstreamModelId: 'embedding-model', kind: 'embedding', endpoints: { openaiEmbeddings: {} } }],
+  });
   await warmModelsForTest();
 
   const headers = new Headers({ 'content-type': 'application/json', 'x-api-key': apiKey.key });

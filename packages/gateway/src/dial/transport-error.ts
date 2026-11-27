@@ -1,5 +1,5 @@
-import { isAbortError } from '@floway-dev/provider';
 import { ProxyDialError } from '@floway-dev/proxy';
+import { isAbortError } from '@floway-dev/upstream';
 
 // Only rejections from the network call itself are eligible for upstream failover.
 export class UpstreamTransportError extends Error {

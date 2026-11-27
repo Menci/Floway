@@ -17,7 +17,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/re
 import { tokenUsageFromOpenAIImagesBody } from '../shared/telemetry/usage.ts';
 import { isJsonMediaType, isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import type { OpenAIImageEditReference } from '@floway-dev/protocols/openai-images';
-import { isBase64ImageDataUrl, type OpenAIImagesEditsRequest, type OpenAIImagesEditsSource } from '@floway-dev/provider';
+import { isBase64ImageDataUrl, type OpenAIImagesEditsRequest, type OpenAIImagesEditsSource } from '@floway-dev/upstream';
 
 type PreparedOpenAIImagesEdit =
   | { type: 'ok'; request: OpenAIImagesEditsRequest }
@@ -86,9 +86,9 @@ export const openaiImagesGenerations = async (c: Context): Promise<Response> => 
     model: request.model,
     kind: 'image',
     modelServesEndpoint: model => model.endpoints.openaiImagesGenerations !== undefined,
-    call: (provider, model, opts) => {
+    call: (upstream, model, opts) => {
       const { model: _model, ...body } = request.body;
-      return provider.instance.callOpenAIImagesGenerations(model, body, undefined, opts);
+      return upstream.instance.callOpenAIImagesGenerations(model, body, undefined, opts);
     },
     response: { format: 'json', extractBilling: tokenUsageFromOpenAIImagesBody },
   });
@@ -111,7 +111,7 @@ const serveOpenAIImagesEditRequest = async (
     model,
     kind: 'image',
     modelServesEndpoint: model => model.endpoints.openaiImagesEdits !== undefined,
-    call: (provider, model, opts) => provider.instance.callOpenAIImagesEdits(model, request, undefined, opts),
+    call: (upstream, model, opts) => upstream.instance.callOpenAIImagesEdits(model, request, undefined, opts),
     response: { format: 'json', extractBilling: tokenUsageFromOpenAIImagesBody },
   });
   return finalizeGatewayResponse(ctx, response);

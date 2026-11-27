@@ -1,5 +1,5 @@
 import type { DecisionTarget, ModelEndpoints, ModelKind, RerankTarget } from '@floway-dev/protocols/browser';
-import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
+import type { UpstreamKind } from '@floway-dev/upstream/browser';
 
 // Every override the custom provider accepts, in the order the editor lists it:
 // the key the config stores it under, the protocol name shown beside it, and
@@ -79,12 +79,12 @@ export const configuredEndpoints = (configured: ModelEndpoints): ModelEndpoints 
 export const shapeForKind = (
   kind: ModelKind,
   current: { endpoints: ModelEndpoints; rerankTarget?: RerankTarget; decisionTarget?: DecisionTarget },
-  providerKind: UpstreamProviderKind,
+  upstreamKind: UpstreamKind,
 ): { endpoints: ModelEndpoints; rerankTarget?: RerankTarget; decisionTarget?: DecisionTarget } => {
   if (kind === 'embedding') return { endpoints: { openaiEmbeddings: {} } };
   if (kind === 'transcription') return { endpoints: { openaiAudioTranscriptions: {} } };
   if (kind === 'rerank') return { endpoints: { rerank: {} }, rerankTarget: current.rerankTarget ?? INITIAL_RERANK_TARGET };
-  if (kind === 'decision') return providerKind === 'custom'
+  if (kind === 'decision') return upstreamKind === 'custom'
     ? { endpoints: { decision: {} }, decisionTarget: current.decisionTarget ?? INITIAL_DECISION_TARGET }
     : { endpoints: { decision: {} } };
   const family = kind === 'image' ? IMAGE_ENDPOINT_KEYS : CHAT_ENDPOINT_KEYS;

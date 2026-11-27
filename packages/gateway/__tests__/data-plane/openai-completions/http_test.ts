@@ -5,8 +5,8 @@ import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
 
 // A custom upstream is the easiest fixture to assert /completions against:
 // the operator declares the endpoint capability per-model, and the path
@@ -24,12 +24,14 @@ const registerOpenAICompletionsUpstream = async (repo: Awaited<ReturnType<typeof
       apiKey: 'sk-passthrough',
       endpoints: {},
       modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{
-        upstreamModelId: 'davinci-002',
-        endpoints: { openaiCompletions: {} },
-      }],
     },
-  }));
+  }), {
+    manualModels: [{
+      upstreamModelId: 'davinci-002',
+      kind: 'chat',
+      endpoints: { openaiCompletions: {} },
+    }],
+  });
 };
 
 const completionStream = (): Response => {

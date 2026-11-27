@@ -1,13 +1,38 @@
 import type { OverviewBucket, OverviewBucketId } from './telemetry-bucket-sql.ts';
 import type { AccessPrincipal, AccessRecord, AccessRecordInput } from '../access-control/types.ts';
-import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
+import type { WebSearchConfig, WebSearchBackendName } from '../shared/web-search-backends.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector, UserPreferences } from '@floway-dev/protocols/common';
-import type { PerformanceTelemetryContext, UpstreamMetricIdentity, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceTelemetryContext, UpstreamModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamMetricIdentity, UpstreamModelConfig, UpstreamModelSource, UpstreamKind, UpstreamRecord } from '@floway-dev/upstream';
 
-// Provider config, flag overrides, and catalog transport advance this version;
-// runtime state and non-model metadata do not.
-export type StoredUpstreamRecord = UpstreamRecord & { configVersion: number };
+export interface UpstreamModelsCacheError {
+  message: string;
+  at: number;
+  failureCount: number;
+}
+
+export interface UpstreamModelsCacheState {
+  revision: number | null;
+  fetchedAt: number | null;
+  lastError: UpstreamModelsCacheError | null;
+}
+
+export interface StoredUpstreamMeta {
+  id: string;
+  kind: UpstreamKind;
+  name: string;
+  enabled: boolean;
+  sortOrder: number;
+  hue: number;
+}
+
+// Every control-plane edit, reorder, and successful models refresh advances
+// `version`; runtime state writes (`saveState`) and refresh failure recordings
+// check `version` without advancing it.
+export interface StoredUpstreamRecord extends UpstreamRecord {
+  version: number;
+  modelsCache: UpstreamModelsCacheState;
+}
 
 export interface ApiKey {
   id: string;
@@ -141,7 +166,7 @@ export interface TokenUsage {
 export type WebSearchUsageAction = 'search' | 'fetch_page';
 
 export interface WebSearchUsageRecord {
-  provider: WebSearchProviderName;
+  backend: WebSearchBackendName;
   keyId: string;
   action: WebSearchUsageAction;
   hour: string;
@@ -397,8 +422,8 @@ export interface UsageRepo {
 }
 
 export interface WebSearchUsageRepo {
-  record(args: { provider: WebSearchProviderName; keyId: string; action: WebSearchUsageAction; hour: string; requests: number }): Promise<void>;
-  query(opts: { provider?: WebSearchProviderName | undefined; keyId?: string | undefined; action?: WebSearchUsageAction; start: string; end: string }): Promise<WebSearchUsageRecord[]>;
+  record(args: { backend: WebSearchBackendName; keyId: string; action: WebSearchUsageAction; hour: string; requests: number }): Promise<void>;
+  query(opts: { backend?: WebSearchBackendName | undefined; keyId?: string | undefined; action?: WebSearchUsageAction; start: string; end: string }): Promise<WebSearchUsageRecord[]>;
   listAll(): Promise<WebSearchUsageRecord[]>;
   set(record: WebSearchUsageRecord): Promise<void>;
   deleteAll(): Promise<void>;
@@ -445,18 +470,55 @@ export interface WebSearchConfigRepo {
   save(config: WebSearchConfig): Promise<void>;
 }
 
+export interface UpstreamModelEntry {
+  readonly source: UpstreamModelSource;
+  readonly model: UpstreamModel;
+}
+
+export type UpstreamModelsCacheAction =
+  | { readonly kind: 'preserve' }
+  | { readonly kind: 'mark-stale' }
+  | { readonly kind: 'clear-cache' }
+  | { readonly kind: 'set-fresh'; readonly revision: number; readonly fetchedAt: number };
+
+export interface UpstreamModelsWritePayload {
+  // Replace upstream_models rows for this upstream atomically with the upstream write.
+  readonly models?: readonly UpstreamModelEntry[];
+  readonly cacheAction: UpstreamModelsCacheAction;
+}
+
+export interface DueModelsRefreshCandidate {
+  readonly id: string;
+  readonly version: number;
+  readonly proxyFallbackList: ProxyFallbackEntry[];
+  readonly requiresNetwork: boolean;
+}
+
+export interface UpstreamInsertInput {
+  readonly upstream: UpstreamRecord;
+  readonly manualModels?: readonly UpstreamModelConfig[];
+  readonly modelsWrite?: UpstreamModelsWritePayload;
+}
+
 export interface UpstreamRepo {
   list(): Promise<StoredUpstreamRecord[]>;
+  listIds(): Promise<string[]>;
+  listMeta(): Promise<StoredUpstreamMeta[]>;
+  getMetaByIds(ids: readonly string[]): Promise<StoredUpstreamMeta[]>;
   getById(id: string): Promise<StoredUpstreamRecord | null>;
+  listDueModelsRefresh(revision: number, nowMs: number): Promise<DueModelsRefreshCandidate[]>;
   reorder(
     expectedIds: readonly string[],
     assignments: readonly { id: string; sortOrder: number }[],
-  ): Promise<StoredUpstreamRecord[] | null>;
-  insertAtEndForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null>;
-  insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null>;
-  replaceForModels(input: {
-    previous: StoredUpstreamRecord;
-    upstream: UpstreamRecord;
+  ): Promise<StoredUpstreamMeta[] | null>;
+  insertAtEnd(input: UpstreamInsertInput): Promise<StoredUpstreamRecord | null>;
+  insert(input: UpstreamInsertInput): Promise<StoredUpstreamRecord | null>;
+  replace(input: {
+    readonly previous: StoredUpstreamRecord;
+    readonly upstream: UpstreamRecord;
+    readonly replaceState?: boolean;
+    readonly manualModels?: readonly UpstreamModelConfig[];
+    readonly modelsWrite?: UpstreamModelsWritePayload;
   }): Promise<StoredUpstreamRecord | null>;
   delete(id: string): Promise<boolean>;
   deleteAll(): Promise<void>;
@@ -464,32 +526,66 @@ export interface UpstreamRepo {
   // gateway's own token-rotation work and by the operator-triggered OAuth
   // refresh / probe routes. The repo reads, applies `mutate`, and writes under
   // a CAS, retrying against the winner when it loses; exhausting the retries
-  // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
+  // throws. See UpstreamsRepoSlim in @floway-dev/upstream for why the change
   // is a function.
-  saveState(id: string, mutate: (current: unknown, configVersion: number) => unknown): Promise<void>;
-  publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean>;
+  saveState(id: string, mutate: (current: unknown, version: number) => unknown): Promise<void>;
+  publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<number | null>;
   recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean>;
 }
 
-export interface ModelsRefreshIdentity {
-  id: string;
-  configVersion: number;
-  cacheEpoch: number;
-  refreshInputs: {
-    provider: UpstreamRecord['kind'];
-    configJson: string;
-    flagOverridesJson: string;
-    proxyFallbackListJson: string;
-  };
+export interface ModelsRefreshSuccessInput {
+  readonly id: string;
+  readonly version: number;
+  readonly revision: number;
+  readonly fetchedAt: number;
+  readonly models: readonly UpstreamModelEntry[];
 }
 
-export interface ModelsRefreshSuccessInput extends ModelsRefreshIdentity {
-  cache: Omit<UpstreamModelsCache, 'lastError'>;
+export interface ModelsRefreshFailureInput {
+  readonly id: string;
+  readonly version: number;
+  readonly error: { readonly message: string; readonly at: number };
 }
 
-export interface ModelsRefreshFailureInput extends ModelsRefreshIdentity {
-  error: Pick<NonNullable<UpstreamModelsCache['lastError']>, 'message' | 'at'>;
-  previousFailureCount: number;
+export interface ResolvedUpstreamModelMatch {
+  readonly matchedInputId: string;
+  readonly matchedForm: 'unprefixed' | 'prefixed';
+  readonly upstream: StoredUpstreamRecord;
+  readonly model: UpstreamModel;
+}
+
+export interface CatalogUpstreamRow {
+  readonly id: string;
+  readonly kind: UpstreamKind;
+  readonly name: string;
+  readonly hue: number;
+  readonly modelPrefix: ModelPrefixConfig | null;
+}
+
+export interface UpstreamCatalogFilter {
+  readonly include?: readonly string[];
+  readonly exclude?: readonly string[];
+  readonly preserveIncludeOrder?: boolean;
+}
+
+export interface UpstreamModelsRepo {
+  resolve(input: {
+    readonly modelIds: readonly string[];
+    readonly upstreamIds: readonly string[] | null;
+  }): Promise<ResolvedUpstreamModelMatch[]>;
+  listCatalog(filter: UpstreamCatalogFilter | null): Promise<{
+    readonly upstreams: CatalogUpstreamRow[];
+    readonly modelsByUpstream: Map<string, UpstreamModel[]>;
+  }>;
+  listAddressableIdsForUpstreams(upstreamIds: readonly string[]): Promise<{
+    readonly upstreamId: string;
+    readonly addressableId: string;
+  }[]>;
+  countListedByUpstream(upstreamIds?: readonly string[]): Promise<Map<string, number | null>>;
+  listByUpstream(upstreamId: string, options?: { readonly source?: UpstreamModelSource }): Promise<UpstreamModelEntry[]>;
+  getByKey(upstreamId: string, modelId: string, kind: ModelKind): Promise<UpstreamModel | null>;
+  listManualModels(upstreamId: string): Promise<UpstreamModelConfig[]>;
+  listManualModelsByUpstreams(upstreamIds: readonly string[]): Promise<Map<string, UpstreamModelConfig[]>>;
 }
 
 export interface ProxyRecord {
@@ -692,6 +788,7 @@ export interface Repo {
   siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
+  upstreamModels: UpstreamModelsRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
   modelAliases: ModelAliasesRepo;

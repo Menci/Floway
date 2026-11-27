@@ -11,8 +11,8 @@ import { planLabel as copilotPlanLabel } from './copilot-seat';
 import { kimiCodePlanLabel, readKimiCodeWindows, type KimiCodeRecord } from './kimi-code-account';
 import { planLabel as ollamaPlanLabel } from './ollama-account';
 import { activityCostHint, activityCostText, includedCreditsHint, includedCreditsUsed, readWindows } from './ollama-usage';
-import { providerLabel } from './provider-badge';
 import { quotaRingTone, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
+import { upstreamKindLabel } from './upstream-kind-badge';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
@@ -23,8 +23,8 @@ import { useNow } from '../../lib/use-now';
 import { useUserPreferences } from '../../lib/use-preferences';
 import { ProgressRing } from '../ui/progress-ring';
 import type { QuotaDisplay } from '@floway-dev/protocols/browser';
-import { KIMI_CODE_WINDOW_SECONDS, readKimiCodeUsage } from '@floway-dev/provider-kimi-code/browser';
-import { readOllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
+import { KIMI_CODE_WINDOW_SECONDS, readKimiCodeUsage } from '@floway-dev/upstream-kimi-code/browser';
+import { readOllamaAccountUsage } from '@floway-dev/upstream-ollama/browser';
 
 const { Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
@@ -294,7 +294,7 @@ const upstreamPlan = (record: UpstreamRecord): string | null => {
 };
 
 export const upstreamReadout = (record: UpstreamRecord, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamReadout => ({
-  plan: upstreamPlan(record) ?? t(`upstreams.kinds.${record.kind}.label`, providerLabel(record.kind)),
+  plan: upstreamPlan(record) ?? t(`upstreams.kinds.${record.kind}.label`, upstreamKindLabel(record.kind)),
   signals: upstreamSignals(record, t, locale, now, quotaDisplay),
 });
 

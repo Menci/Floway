@@ -1,5 +1,5 @@
 import type { AffinityRequestAnalysis, CandidateAffinityEvaluation } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import type { ModelCandidate } from '@floway-dev/provider';
+import type { ModelCandidate } from '@floway-dev/upstream';
 
 export const acceptedAffinityEvaluation = <T>(
   analysis: AffinityRequestAnalysis<T>,

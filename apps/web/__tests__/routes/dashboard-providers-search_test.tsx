@@ -32,7 +32,7 @@ describe('who search settings open for', () => {
 
 const loaderData = {
   config: {
-    provider: 'tavily' as const,
+    backend: 'tavily' as const,
     tavily: { apiKey: 'key' },
     microsoftWebIq: { apiKey: '' },
     jina: { apiKey: '' },
@@ -68,7 +68,7 @@ describe('what a failed search test says', () => {
   it('reads the probe verdict out of the structured 400 body', async () => {
     await pressTest(() => Response.json({
       ok: false,
-      provider: 'tavily',
+      backend: 'tavily',
       query: 'floway',
       error: { code: 'unauthorized', message: 'Invalid API key.' },
     }, { status: 400 }));

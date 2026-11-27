@@ -3,7 +3,7 @@ name: probing-prod-upstream
 description: Probe a production upstream directly only when the human explicitly
   requests a probe. Read the selected upstream's production configuration and
   existing access credential, reproduce its proxy fallback route, and follow
-  the owning provider's wire behavior. Never use refresh tokens.
+  the owning upstream package's wire behavior. Never use refresh tokens.
 ---
 
 # Probing Production Upstreams
@@ -14,7 +14,7 @@ The human must explicitly request an upstream probe before any production
 upstream configuration or credential is read, or any probe is sent. A request
 to investigate, audit, debug, review, or edit this skill does not grant that
 authorization. Keep configuration reads and calls within the requested probe's
-provider, account, and behavior scope. Until authorized, use repository code
+upstream kind, account, and behavior scope. Until authorized, use repository code
 and non-production fixtures only.
 
 **Never use a production refresh token.** An independent refresh can rotate the
@@ -22,7 +22,7 @@ refresh token and leave production holding an invalid predecessor, interrupting
 production token renewal. This is a production continuity constraint. Do not
 extract refresh tokens, invoke refresh endpoints, call automatic-refresh helpers
 (including `ensureChatGPTAccessToken` and `ensureClaudeCodeAccessToken`), or route
-through a gateway operation that may trigger renewal. For providers with
+through a gateway operation that may trigger renewal. For upstreams with
 refresh-token renewal, use the existing access token. If it is missing, expired,
 or rejected, stop probing that account and report the blocker; let production
 own renewal. Never write probe credentials
@@ -37,14 +37,14 @@ After authorization:
    running Wrangler commands.
 2. Inventory only upstreams within the requested scope. The query below lists
    enabled upstreams and fallback routes without credentials; narrow its `WHERE`
-   clause by the requested provider or upstream id before running it. Pass the
+   clause by the requested upstream kind or upstream id before running it. Pass the
    SQL through a quoted heredoc to preserve SQL and JSON quoting:
 
    ```bash
    pnpm wrangler d1 execute <DB_NAME> --remote --command "$(cat <<'SQL'
    SELECT u.id,
           u.name,
-          u.provider,
+          u.kind,
           CAST(j.key AS INTEGER) AS fallback_index,
           json_extract(j.value, '$.id') AS fallback_id,
           json_extract(j.value, '$.colos') AS fallback_colos,
@@ -70,8 +70,8 @@ After authorization:
    )"
    ```
 
-3. Read the owning provider's `config.ts`, `state.ts` when present, and fetch
-   implementation under `packages/provider-<kind>/src/`. Extract only the chosen
+3. Read the owning upstream package's `config.ts`, `state.ts` when present, and fetch
+   implementation under `packages/upstream-<kind>/src/`. Extract only the chosen
    upstream's endpoint, existing access token or API key, expiry, and required
    account/header fields with targeted `json_extract` expressions. Do not select
    entire credential-bearing config/state documents. Keep credentials and proxy
@@ -102,11 +102,11 @@ data-plane call. When exercising fallback, advance in production order.
 - A non-built-in `fallback_id` with NULL `proxy_url` is a dangling reference.
   Record its dial failure and advance, matching production.
 
-## Call the owning provider
+## Call the owning upstream
 
 Derive the URL, API path, authentication, beta/version headers, and account
-identity from the current provider implementation and selected configuration.
-Do not import a provider entrypoint that can renew tokens or persist state.
+identity from the current upstream implementation and selected configuration.
+Do not import an upstream entrypoint that can renew tokens or persist state.
 
 - **Copilot:** follow [the Copilot access reference](references/copilot.md) for
   PAT exchange, token-advertised endpoints, and Copilot Chat headers.

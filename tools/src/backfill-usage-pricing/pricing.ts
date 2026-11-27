@@ -1,20 +1,23 @@
 import { ToolError } from './errors.ts';
 import { MODEL_CATALOG_REVISION } from '@floway-dev/gateway';
 import { canonicalPricingSelectorKey, type ModelPricing, type PriceVector, validateModelPricing } from '@floway-dev/protocols/common';
-import { assertUpstreamProviderKind, isRecord, modelsField, pricingField, type UpstreamModelConfig, type UpstreamProviderKind } from '@floway-dev/provider';
-import { pricingForChatGPTModelKey } from '@floway-dev/provider-chatgpt';
-import { pricingForClaudeCodeModelKey } from '@floway-dev/provider-claude-code';
-import { pricingForCopilotPublicModelId } from '@floway-dev/provider-copilot';
-import { pricingForKimiCodePublicModelId } from '@floway-dev/provider-kimi-code';
-import { pricingForOllamaModelKey } from '@floway-dev/provider-ollama';
+import { assertUpstreamKind, isRecord, pricingField, type UpstreamModelConfig, type UpstreamKind } from '@floway-dev/upstream';
+import { pricingForChatGPTModelKey } from '@floway-dev/upstream-chatgpt';
+import { pricingForClaudeCodeModelKey } from '@floway-dev/upstream-claude-code';
+import { pricingForCopilotPublicModelId } from '@floway-dev/upstream-copilot';
+import { pricingForKimiCodePublicModelId } from '@floway-dev/upstream-kimi-code';
+import { pricingForOllamaModelKey } from '@floway-dev/upstream-ollama';
 
 const CATALOG_HARD_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface StoredUpstream {
   id: string;
-  provider: string;
+  kind: string;
   configJson: string;
-  modelsCacheJson: string | null;
+  manualModels: readonly UpstreamModelConfig[];
+  modelsCacheRevision: number | null;
+  modelsCacheFetchedAt: number | null;
+  cachedModelJson: string | null;
 }
 
 export type PricingResolution =
@@ -30,14 +33,8 @@ const parsedJson = (raw: string, label: string): unknown => {
   }
 };
 
-const configuredModels = (upstream: StoredUpstream): UpstreamModelConfig[] => {
-  const config = parsedJson(upstream.configJson, `Upstream ${upstream.id} config_json`);
-  if (!isRecord(config) || config.models === undefined) return [];
-  return modelsField(config.models, `${upstream.provider} upstream ${upstream.id}`);
-};
-
 const configuredModel = (upstream: StoredUpstream, modelKey: string): UpstreamModelConfig | undefined =>
-  configuredModels(upstream).find(model => model.upstreamModelId === modelKey);
+  upstream.manualModels.find(model => model.upstreamModelId === modelKey);
 
 const customModelsFetchEnabled = (upstream: StoredUpstream): boolean => {
   const config = parsedJson(upstream.configJson, `Upstream ${upstream.id} config_json`);
@@ -59,19 +56,20 @@ const customCacheResolution = (
   modelKey: string,
   now: number,
 ): PricingResolution => {
-  if (upstream.modelsCacheJson === null) {
+  if (upstream.modelsCacheFetchedAt === null) {
     return { status: 'unavailable', reason: `Custom upstream ${upstream.id} has no stored model catalog` };
   }
-  const cache = parsedJson(upstream.modelsCacheJson, `Upstream ${upstream.id} models_cache_json`);
-  if (!isRecord(cache) || cache.revision !== MODEL_CATALOG_REVISION || typeof cache.fetchedAt !== 'number' || !Array.isArray(cache.models)) {
+  if (upstream.modelsCacheRevision !== MODEL_CATALOG_REVISION) {
     return { status: 'unavailable', reason: `Custom upstream ${upstream.id} has no current stored model catalog` };
   }
-  if (!Number.isFinite(cache.fetchedAt) || now - cache.fetchedAt >= CATALOG_HARD_TTL_MS) {
+  if (!Number.isFinite(upstream.modelsCacheFetchedAt) || now - upstream.modelsCacheFetchedAt >= CATALOG_HARD_TTL_MS) {
     return { status: 'unavailable', reason: `Custom upstream ${upstream.id} model catalog is older than 24 hours` };
   }
-  const cached = cache.models.find(candidate =>
-    isRecord(candidate) && candidate.id === model && candidate.providerData === modelKey);
-  if (!isRecord(cached)) {
+  if (upstream.cachedModelJson === null) {
+    return { status: 'unavailable', reason: `Custom upstream ${upstream.id} catalog does not contain ${model} (${modelKey})` };
+  }
+  const cached = parsedJson(upstream.cachedModelJson, `Upstream ${upstream.id} upstream_models.model_json`);
+  if (!isRecord(cached) || cached.id !== model || cached.upstreamData !== modelKey) {
     return { status: 'unavailable', reason: `Custom upstream ${upstream.id} catalog does not contain ${model} (${modelKey})` };
   }
   const pricing = pricingField(cached.pricing, `custom upstream ${upstream.id} cached model ${model}.pricing`);
@@ -85,9 +83,9 @@ export const resolveUsagePricing = (
   identity: { model: string; modelKey: string },
   now = Date.now(),
 ): PricingResolution => {
-  const provider: UpstreamProviderKind = assertUpstreamProviderKind(upstream.provider);
+  const kind: UpstreamKind = assertUpstreamKind(upstream.kind);
   const manual = configuredModel(upstream, identity.modelKey);
-  switch (provider) {
+  switch (kind) {
   case 'azure':
     if (manual === undefined) return { status: 'unavailable', reason: `Azure config no longer contains model key ${identity.modelKey}` };
     return staticResolution(manual.pricing ?? null, `upstream:${upstream.id}:config`);
@@ -101,18 +99,18 @@ export const resolveUsagePricing = (
     return customCacheResolution(upstream, identity.model, identity.modelKey, now);
   case 'ollama':
     if (manual?.pricing !== undefined) return staticResolution(manual.pricing, `upstream:${upstream.id}:config`);
-    return staticResolution(pricingForOllamaModelKey(identity.modelKey), 'provider:ollama');
+    return staticResolution(pricingForOllamaModelKey(identity.modelKey), 'upstream:ollama');
   case 'kimi-code':
-    return staticResolution(pricingForKimiCodePublicModelId(identity.model), 'provider:kimi-code');
+    return staticResolution(pricingForKimiCodePublicModelId(identity.model), 'upstream:kimi-code');
   case 'copilot':
-    return staticResolution(pricingForCopilotPublicModelId(identity.model), 'provider:copilot');
+    return staticResolution(pricingForCopilotPublicModelId(identity.model), 'upstream:copilot');
   case 'chatgpt':
-    return staticResolution(pricingForChatGPTModelKey(identity.modelKey), 'provider:chatgpt');
+    return staticResolution(pricingForChatGPTModelKey(identity.modelKey), 'upstream:chatgpt');
   case 'claude-code':
-    return staticResolution(pricingForClaudeCodeModelKey(identity.modelKey), 'provider:claude-code');
+    return staticResolution(pricingForClaudeCodeModelKey(identity.modelKey), 'upstream:claude-code');
   default:
-    provider satisfies never;
-    throw new Error(`Unhandled provider: ${provider as string}`);
+    kind satisfies never;
+    throw new Error(`Unhandled upstream kind: ${kind as string}`);
   }
 };
 

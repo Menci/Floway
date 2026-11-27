@@ -48,8 +48,8 @@ export const LEGACY_REDIRECT_RULES: LegacyRedirectRule[] = [
   { from: '/dashboard/upstreams', to: () => '/dashboard/providers/upstreams' },
   { from: '/dashboard/upstreams/new', to: () => '/dashboard/providers/upstreams' },
   {
-    from: '/dashboard/upstreams/new/:provider',
-    to: ({ provider = '' }) => `/dashboard/providers/upstreams/new/${encodeURIComponent(decodeParam(provider))}`,
+    from: '/dashboard/upstreams/new/:kind',
+    to: ({ kind = '' }) => `/dashboard/providers/upstreams/new/${encodeURIComponent(decodeParam(kind))}`,
   },
   {
     from: '/dashboard/upstreams/:id',

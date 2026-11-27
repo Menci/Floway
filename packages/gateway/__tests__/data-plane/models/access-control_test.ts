@@ -1,26 +1,19 @@
 import { expect, test } from 'vitest';
 
 import { MODEL_CATALOG_REVISION } from '../../../src/repo/models-cache-contract.ts';
-import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
+import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
-import { projectCustomModels } from '@floway-dev/provider-custom';
 import { assertEquals } from '@floway-dev/test-utils';
+import type { UpstreamModelConfig } from '@floway-dev/upstream';
+import { projectCustomModels } from '@floway-dev/upstream-custom';
 
-const listingModel = (upstream: ReturnType<typeof buildCustomUpstreamRecord>) => {
-  const stored = upstream;
-  return {
-    ...stored,
-    config: {
-      ...stored.config as object,
-      models: [{
-        upstreamModelId: `model-${upstream.id}`,
-        limits: { max_context_window_tokens: upstream.id === 'a' ? 100_000 : 200_000 },
-        endpoints: upstream.id === 'a' ? { openaiChatCompletions: {} } : { anthropicMessages: {} },
-      }],
-    },
-  };
-};
+const listingManualModels = (id: string): UpstreamModelConfig[] => [{
+  upstreamModelId: `model-${id}`,
+  kind: 'chat',
+  limits: { max_context_window_tokens: id === 'a' ? 100_000 : 200_000 },
+  endpoints: id === 'a' ? { openaiChatCompletions: {} } : { anthropicMessages: {} },
+}];
 
 test('restricted data-plane aliases keep gateway-wide metadata and caller-scoped targets', async () => {
   const { repo, apiKey } = await setupAppTest();
@@ -38,14 +31,15 @@ test('restricted data-plane aliases keep gateway-wide metadata and caller-scoped
         endpoints: id === 'a' ? { openaiChatCompletions: {} } : { anthropicMessages: {} },
       },
     });
-    const stored = listingModel(upstream);
-    await saveUpstreamForTest(repo.upstreams, stored);
+    const manualModels = listingManualModels(id);
+    await saveUpstreamForTest(repo.upstreams, upstream, { manualModels });
     const persisted = await repo.upstreams.getById(id);
     if (persisted === null) throw new Error(`Missing upstream ${id}`);
-    await seedModelsCache(repo.upstreams, id, modelsRefreshIdentity(persisted), {
+    await seedModelsCache(repo.upstreams, id, {
+      version: persisted.version,
       revision: MODEL_CATALOG_REVISION,
       fetchedAt: 1,
-      models: projectCustomModels(persisted),
+      models: projectCustomModels(persisted, manualModels),
     });
   }
   await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: apiKey.userId });

@@ -169,30 +169,30 @@ importers:
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../../packages/protocols
-      '@floway-dev/provider':
-        specifier: workspace:*
-        version: link:../../packages/provider
-      '@floway-dev/provider-chatgpt':
-        specifier: workspace:*
-        version: link:../../packages/provider-chatgpt
-      '@floway-dev/provider-claude-code':
-        specifier: workspace:*
-        version: link:../../packages/provider-claude-code
-      '@floway-dev/provider-copilot':
-        specifier: workspace:*
-        version: link:../../packages/provider-copilot
-      '@floway-dev/provider-custom':
-        specifier: workspace:*
-        version: link:../../packages/provider-custom
-      '@floway-dev/provider-kimi-code':
-        specifier: workspace:*
-        version: link:../../packages/provider-kimi-code
-      '@floway-dev/provider-ollama':
-        specifier: workspace:*
-        version: link:../../packages/provider-ollama
       '@floway-dev/proxy':
         specifier: workspace:*
         version: link:../../packages/proxy
+      '@floway-dev/upstream':
+        specifier: workspace:*
+        version: link:../../packages/upstream
+      '@floway-dev/upstream-chatgpt':
+        specifier: workspace:*
+        version: link:../../packages/upstream-chatgpt
+      '@floway-dev/upstream-claude-code':
+        specifier: workspace:*
+        version: link:../../packages/upstream-claude-code
+      '@floway-dev/upstream-copilot':
+        specifier: workspace:*
+        version: link:../../packages/upstream-copilot
+      '@floway-dev/upstream-custom':
+        specifier: workspace:*
+        version: link:../../packages/upstream-custom
+      '@floway-dev/upstream-kimi-code':
+        specifier: workspace:*
+        version: link:../../packages/upstream-kimi-code
+      '@floway-dev/upstream-ollama':
+        specifier: workspace:*
+        version: link:../../packages/upstream-ollama
       '@fluentui/react-charts':
         specifier: ^9.3.22
         version: 9.3.22(patch_hash=417a079919ce252b1c003999de6ff7a4279810d4a351e194b20141bc13b0bcba)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
@@ -390,36 +390,36 @@ importers:
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
-      '@floway-dev/provider':
-        specifier: workspace:*
-        version: link:../provider
-      '@floway-dev/provider-azure':
-        specifier: workspace:*
-        version: link:../provider-azure
-      '@floway-dev/provider-chatgpt':
-        specifier: workspace:*
-        version: link:../provider-chatgpt
-      '@floway-dev/provider-claude-code':
-        specifier: workspace:*
-        version: link:../provider-claude-code
-      '@floway-dev/provider-copilot':
-        specifier: workspace:*
-        version: link:../provider-copilot
-      '@floway-dev/provider-custom':
-        specifier: workspace:*
-        version: link:../provider-custom
-      '@floway-dev/provider-kimi-code':
-        specifier: workspace:*
-        version: link:../provider-kimi-code
-      '@floway-dev/provider-ollama':
-        specifier: workspace:*
-        version: link:../provider-ollama
       '@floway-dev/proxy':
         specifier: workspace:*
         version: link:../proxy
       '@floway-dev/translate':
         specifier: workspace:*
         version: link:../translate
+      '@floway-dev/upstream':
+        specifier: workspace:*
+        version: link:../upstream
+      '@floway-dev/upstream-azure':
+        specifier: workspace:*
+        version: link:../upstream-azure
+      '@floway-dev/upstream-chatgpt':
+        specifier: workspace:*
+        version: link:../upstream-chatgpt
+      '@floway-dev/upstream-claude-code':
+        specifier: workspace:*
+        version: link:../upstream-claude-code
+      '@floway-dev/upstream-copilot':
+        specifier: workspace:*
+        version: link:../upstream-copilot
+      '@floway-dev/upstream-custom':
+        specifier: workspace:*
+        version: link:../upstream-custom
+      '@floway-dev/upstream-kimi-code':
+        specifier: workspace:*
+        version: link:../upstream-kimi-code
+      '@floway-dev/upstream-ollama':
+        specifier: workspace:*
+        version: link:../upstream-ollama
       '@hono/zod-validator':
         specifier: ^0.8.0
         version: 0.8.0(hono@4.13.21)(zod@4.4.3)
@@ -524,155 +524,6 @@ importers:
         specifier: ^7.0.0
         version: 7.0.0
 
-  packages/provider:
-    dependencies:
-      '@discoveryjs/json-ext':
-        specifier: 1.1.0
-        version: 1.1.0(patch_hash=481fc61758af35cca4b19ff47a4f7515c1750ef5fef628a5e2e80fb602f3e4bd)
-      '@floway-dev/http':
-        specifier: workspace:*
-        version: link:../http
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../protocols
-      '@noble/hashes':
-        specifier: ^2.2.0
-        version: 2.2.0
-      klona:
-        specifier: 2.0.6
-        version: 2.0.6(patch_hash=86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2)
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
-
-  packages/provider-azure:
-    dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../protocols
-      '@floway-dev/provider':
-        specifier: workspace:*
-        version: link:../provider
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
-
-  packages/provider-chatgpt:
-    dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../protocols
-      '@floway-dev/provider':
-        specifier: workspace:*
-        version: link:../provider
-      uuid:
-        specifier: ^14.0.1
-        version: 14.0.1
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
-
-  packages/provider-claude-code:
-    dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../protocols
-      '@floway-dev/provider':
-        specifier: workspace:*
-        version: link:../provider
-      '@noble/hashes':
-        specifier: ^2.2.0
-        version: 2.2.0
-      uuid:
-        specifier: ^14.0.1
-        version: 14.0.1
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
-
-  packages/provider-copilot:
-    dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
-      '@floway-dev/platform':
-        specifier: workspace:*
-        version: link:../platform
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../protocols
-      '@floway-dev/provider':
-        specifier: workspace:*
-        version: link:../provider
-      oauth4webapi:
-        specifier: ^3.8.6
-        version: 3.8.6
-      p-retry:
-        specifier: ^8.0.0
-        version: 8.0.0
-      uuid:
-        specifier: ^14.0.1
-        version: 14.0.1
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
-
-  packages/provider-custom:
-    dependencies:
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../protocols
-      '@floway-dev/provider':
-        specifier: workspace:*
-        version: link:../provider
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
-
-  packages/provider-kimi-code:
-    dependencies:
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../protocols
-      '@floway-dev/provider':
-        specifier: workspace:*
-        version: link:../provider
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
-
-  packages/provider-ollama:
-    dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../protocols
-      '@floway-dev/provider':
-        specifier: workspace:*
-        version: link:../provider
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
-
   packages/proxy:
     dependencies:
       '@floway-dev/http':
@@ -696,9 +547,9 @@ importers:
 
   packages/test-utils:
     dependencies:
-      '@floway-dev/provider':
+      '@floway-dev/upstream':
         specifier: workspace:*
-        version: link:../provider
+        version: link:../upstream
 
   packages/translate:
     dependencies:
@@ -713,6 +564,155 @@ importers:
         specifier: workspace:*
         version: link:../test-utils
 
+  packages/upstream:
+    dependencies:
+      '@discoveryjs/json-ext':
+        specifier: 1.1.0
+        version: 1.1.0(patch_hash=481fc61758af35cca4b19ff47a4f7515c1750ef5fef628a5e2e80fb602f3e4bd)
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.2.0
+      klona:
+        specifier: 2.0.6
+        version: 2.0.6(patch_hash=86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2)
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
+  packages/upstream-azure:
+    dependencies:
+      '@floway-dev/interceptor':
+        specifier: workspace:*
+        version: link:../interceptor
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@floway-dev/upstream':
+        specifier: workspace:*
+        version: link:../upstream
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
+  packages/upstream-chatgpt:
+    dependencies:
+      '@floway-dev/interceptor':
+        specifier: workspace:*
+        version: link:../interceptor
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@floway-dev/upstream':
+        specifier: workspace:*
+        version: link:../upstream
+      uuid:
+        specifier: ^14.0.1
+        version: 14.0.1
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
+  packages/upstream-claude-code:
+    dependencies:
+      '@floway-dev/interceptor':
+        specifier: workspace:*
+        version: link:../interceptor
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@floway-dev/upstream':
+        specifier: workspace:*
+        version: link:../upstream
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.2.0
+      uuid:
+        specifier: ^14.0.1
+        version: 14.0.1
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
+  packages/upstream-copilot:
+    dependencies:
+      '@floway-dev/interceptor':
+        specifier: workspace:*
+        version: link:../interceptor
+      '@floway-dev/platform':
+        specifier: workspace:*
+        version: link:../platform
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@floway-dev/upstream':
+        specifier: workspace:*
+        version: link:../upstream
+      oauth4webapi:
+        specifier: ^3.8.6
+        version: 3.8.6
+      p-retry:
+        specifier: ^8.0.0
+        version: 8.0.0
+      uuid:
+        specifier: ^14.0.1
+        version: 14.0.1
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
+  packages/upstream-custom:
+    dependencies:
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@floway-dev/upstream':
+        specifier: workspace:*
+        version: link:../upstream
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
+  packages/upstream-kimi-code:
+    dependencies:
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@floway-dev/upstream':
+        specifier: workspace:*
+        version: link:../upstream
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
+  packages/upstream-ollama:
+    dependencies:
+      '@floway-dev/interceptor':
+        specifier: workspace:*
+        version: link:../interceptor
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@floway-dev/upstream':
+        specifier: workspace:*
+        version: link:../upstream
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
   tools:
     dependencies:
       '@floway-dev/gateway':
@@ -721,24 +721,24 @@ importers:
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../packages/protocols
-      '@floway-dev/provider':
+      '@floway-dev/upstream':
         specifier: workspace:*
-        version: link:../packages/provider
-      '@floway-dev/provider-chatgpt':
+        version: link:../packages/upstream
+      '@floway-dev/upstream-chatgpt':
         specifier: workspace:*
-        version: link:../packages/provider-chatgpt
-      '@floway-dev/provider-claude-code':
+        version: link:../packages/upstream-chatgpt
+      '@floway-dev/upstream-claude-code':
         specifier: workspace:*
-        version: link:../packages/provider-claude-code
-      '@floway-dev/provider-copilot':
+        version: link:../packages/upstream-claude-code
+      '@floway-dev/upstream-copilot':
         specifier: workspace:*
-        version: link:../packages/provider-copilot
-      '@floway-dev/provider-kimi-code':
+        version: link:../packages/upstream-copilot
+      '@floway-dev/upstream-kimi-code':
         specifier: workspace:*
-        version: link:../packages/provider-kimi-code
-      '@floway-dev/provider-ollama':
+        version: link:../packages/upstream-kimi-code
+      '@floway-dev/upstream-ollama':
         specifier: workspace:*
-        version: link:../packages/provider-ollama
+        version: link:../packages/upstream-ollama
       fflate:
         specifier: ^0.8.3
         version: 0.8.3

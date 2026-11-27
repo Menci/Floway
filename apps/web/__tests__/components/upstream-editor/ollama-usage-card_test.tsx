@@ -19,7 +19,8 @@ beforeEach(() => { primeDefaultSession(); });
 
 test('successful manual balance refresh clears a persisted failure while displaying the new balance', async () => {
   const record = upstreamRecord('ollama', {
-    kind: 'ollama', config: { baseUrl: 'https://ollama.com', cloudUsage: true, models: [], apiKeySet: true },
+    kind: 'ollama', config: { baseUrl: 'https://ollama.com', cloudUsage: true, apiKeySet: true },
+    manual_models: [],
     state: {
       account: null, usageProbe: {
         attemptedAt: 1000, observation: { fetchedAt: 900, data: pairedUsage }, error: 'stored balance error',

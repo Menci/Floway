@@ -3,14 +3,14 @@ import { openaiResponsesTarget } from './attempt.ts';
 import { renderOpenAIResponsesFailure, type OpenAIResponsesServeFailure } from './errors.ts';
 import { hydrateOpenAIResponsesPayload } from './items/hydrate.ts';
 import type { OpenAIResponsesStatefulStore } from './items/store.ts';
-import { enumerateModelCandidates } from '../../providers/resolution.ts';
+import { enumerateModelCandidates } from '../../upstreams/resolution.ts';
 import type { AffinityCandidateSelection } from '../shared/affinity/index.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure, tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate, ExecuteResult } from '@floway-dev/provider';
+import type { ModelCandidate, ExecuteResult } from '@floway-dev/upstream';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
 // resolve. The HTTP/WS entry layer catches this and renders the OpenAI-shaped
@@ -82,13 +82,12 @@ export const prepareOpenAIResponsesServePlan = async (args: {
   const { payload, ctx } = args;
   const store = ctx.store;
   const prepared = await expandPreviousResponseId(payload, store);
-  const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+  const { candidates, sawModel } = await enumerateModelCandidates({
     subject: ctx.user,
     upstreamIds: ctx.upstreamIds,
     randomizeUpstreams: ctx.randomizeUpstreams,
     model: prepared.model,
     kind: 'chat',
-    scheduler: ctx.backgroundScheduler,
     runtimeLocation: ctx.runtimeLocation,
   });
   const viable = candidates.filter(c => openaiResponsesTarget.canServe(c.model.endpoints));
@@ -114,7 +113,7 @@ export const prepareOpenAIResponsesServePlan = async (args: {
   if (selection.candidates.length === 0) {
     return {
       kind: 'failure',
-      result: renderOpenAIResponsesFailure(noViableCandidateFailure(sawModel, prepared.model, failedUpstreams)),
+      result: renderOpenAIResponsesFailure(noViableCandidateFailure(sawModel, prepared.model)),
     };
   }
   return { kind: 'ready', affinitySelection: selection, candidates: selection.candidates };

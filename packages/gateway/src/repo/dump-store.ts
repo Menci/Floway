@@ -107,7 +107,7 @@ const failureCondition = "(json_type(d.meta_json, '$.error') != 'null' OR json_e
 
 // The key segment of a list row; `substr` cuts the display tail in SQL so the
 // raw key column is never read out.
-const recordSelect = `SELECT d.id, d.key_id, k.name AS key_name, substr(k.key, -4) AS key_suffix, d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue, d.created_at FROM dump_records d ${recordJoins}`;
+const recordSelect = `SELECT d.id, d.key_id, k.name AS key_name, substr(k.key, -4) AS key_suffix, d.meta_json, d.upstream_id, u.name AS upstream_name, u.kind AS upstream_kind, u.hue AS upstream_hue, d.created_at FROM dump_records d ${recordJoins}`;
 
 const hourBucket = (ms: number): string => {
   const date = new Date(Math.floor(ms / HOUR_MS) * HOUR_MS);
@@ -335,7 +335,7 @@ export class FileDumpStore implements DumpStore {
   private async getWhere(keyIds: readonly string[], recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
     if (keyIds.length === 0) return null;
     const row = await this.db.prepare(
-      'SELECT d.id, d.key_id, k.name AS key_name, substr(k.key, -4) AS key_suffix, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.hue AS upstream_hue, '
+      'SELECT d.id, d.key_id, k.name AS key_name, substr(k.key, -4) AS key_suffix, d.upstream_id, u.name AS upstream_name, u.kind AS upstream_kind, u.hue AS upstream_hue, '
       + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor, d.response_upstream_body_descriptor '
       + `FROM dump_records d ${recordJoins} `
       + `WHERE d.id = ? AND d.key_id IN (SELECT CAST(value AS TEXT) FROM json_each(?)) AND ${retentionCondition}`,

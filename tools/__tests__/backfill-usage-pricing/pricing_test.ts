@@ -4,50 +4,62 @@ import { resolveUsagePricing, type StoredUpstream } from '../../src/backfill-usa
 import { MODEL_CATALOG_REVISION } from '@floway-dev/gateway';
 import { basePricing } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
+import type { UpstreamModelConfig } from '@floway-dev/upstream';
 
-const upstream = (provider: string, config: unknown, modelsCache: unknown = null): StoredUpstream => ({
-  id: `${provider}-1`,
-  provider,
+const upstream = (
+  kind: string,
+  config: unknown,
+  opts: {
+    manualModels?: readonly UpstreamModelConfig[];
+    modelsCacheRevision?: number | null;
+    modelsCacheFetchedAt?: number | null;
+    cachedModel?: unknown;
+  } = {},
+): StoredUpstream => ({
+  id: `${kind}-1`,
+  kind,
   configJson: JSON.stringify(config),
-  modelsCacheJson: modelsCache === null ? null : JSON.stringify(modelsCache),
+  manualModels: opts.manualModels ?? [],
+  modelsCacheRevision: opts.modelsCacheRevision ?? null,
+  modelsCacheFetchedAt: opts.modelsCacheFetchedAt ?? null,
+  cachedModelJson: opts.cachedModel === undefined ? null : JSON.stringify(opts.cachedModel),
 });
 
 test('custom fetched pricing requires a current catalog with matching model identity', () => {
   const pricing = basePricing({ input_tokens: '0.02' });
   const cache = {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: Date.UTC(2026, 0, 1),
-    models: [{ id: 'public', providerData: 'wire', pricing }],
+    modelsCacheRevision: MODEL_CATALOG_REVISION,
+    modelsCacheFetchedAt: Date.UTC(2026, 0, 1),
+    cachedModel: { id: 'public', upstreamData: 'wire', pricing },
   };
   const resolved = resolveUsagePricing(
-    upstream('custom', { models: [] }, cache),
+    upstream('custom', {}, cache),
     { model: 'public', modelKey: 'wire' },
     Date.UTC(2026, 0, 1, 1),
   );
   assertEquals(resolved.status, 'priced');
   assertEquals(resolveUsagePricing(
-    upstream('custom', { models: [] }, cache),
+    upstream('custom', {}, cache),
     { model: 'public', modelKey: 'different' },
     Date.UTC(2026, 0, 1, 1),
   ).status, 'unavailable');
   assertEquals(resolveUsagePricing(
-    upstream('custom', { models: [] }, cache),
+    upstream('custom', {}, cache),
     { model: 'public', modelKey: 'wire' },
     Date.UTC(2026, 0, 3),
   ).status, 'unavailable');
 });
 
 test('custom disabled model fetching does not reuse cached pricing', () => {
-  const cache = {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: Date.UTC(2026, 0, 1),
-    models: [{ id: 'public', providerData: 'wire', pricing: basePricing({ input_tokens: '0.02' }) }],
-  };
   const resolved = resolveUsagePricing(
     upstream('custom', {
       modelsFetch: { enabled: false },
-      models: [{ kind: 'chat', endpoints: { openaiResponses: {} }, upstreamModelId: 'wire' }],
-    }, cache),
+    }, {
+      manualModels: [{ kind: 'chat', endpoints: { openaiResponses: {} }, upstreamModelId: 'wire' }],
+      modelsCacheRevision: MODEL_CATALOG_REVISION,
+      modelsCacheFetchedAt: Date.UTC(2026, 0, 1),
+      cachedModel: { id: 'public', upstreamData: 'wire', pricing: basePricing({ input_tokens: '0.02' }) },
+    }),
     { model: 'public', modelKey: 'wire' },
     Date.UTC(2026, 0, 1, 1),
   );

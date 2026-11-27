@@ -13,7 +13,7 @@ import { withVendorQwenOpenAIChatCompletionsNormalize } from './vendor-qwen-norm
 
 // Unified OpenAI Chat Completions interceptor list. All entries are attached to
 // every candidate; each interceptor's body decides whether to act (flag-gated
-// entries early-return on `providerModelOf(ctx.candidate).enabledFlags.has(flagId)`).
+// entries early-return on `ctx.candidate.model.enabledFlags.has(flagId)`).
 //
 // Translated requests re-enter the selected target protocol's chain. The role
 // compatibility entry therefore acts only when OpenAI Chat Completions is the final

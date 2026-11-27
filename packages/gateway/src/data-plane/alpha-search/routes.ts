@@ -27,10 +27,10 @@ import { passthroughApiError } from '../shared/passthrough-serve.ts';
 import { relayFetchedResponse } from '../tools/web-search/alpha-search/relay-response.ts';
 import { AlphaSearchModelNotFoundError, resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
 import type { AlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
+import { resolveConfiguredWebSearchBackend } from '../tools/web-search/backend.ts';
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
 import { assertLocalWebSearchSupport, executeOperationToText, isSearchResponseLength, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, UnsupportedLocalWebSearchFeatureError, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
-import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
-import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
+import type { ConfiguredWebSearchBackend } from '../tools/web-search/types.ts';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
 const domainListSchema = z.array(z.string());
@@ -127,12 +127,12 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
   }
 
   const responseLength = body.commands?.response_length;
-  let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
+  let configuredBackend: Promise<ConfiguredWebSearchBackend> | undefined;
   const session: WebSearchExecutionSession = {
     ...(isSearchResponseLength(responseLength) ? { responseLength } : {}),
-    getProvider: () => {
-      configuredProvider ??= Promise.resolve(resolveConfiguredWebSearchProvider(webSearchConfig));
-      return configuredProvider;
+    getBackend: () => {
+      configuredBackend ??= Promise.resolve(resolveConfiguredWebSearchBackend(webSearchConfig));
+      return configuredBackend;
     },
     filters: filtersFromSettings(body.settings),
     apiKeyId: apiKeyFromContext(c).id,
