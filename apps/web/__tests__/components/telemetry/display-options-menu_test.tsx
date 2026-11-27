@@ -22,40 +22,62 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const renderMenu = () => renderInApp(
+const renderMenu = (props: Parameters<typeof TelemetryDisplayOptionsMenu>[0]) => renderInApp(
   <OutcomeToastProvider>
-    <TelemetryDisplayOptionsMenu />
+    <TelemetryDisplayOptionsMenu {...props} />
   </OutcomeToastProvider>,
 );
 
 describe('TelemetryDisplayOptionsMenu', () => {
-  it('applies toggles optimistically and persists them in the background', async () => {
+  it('shows merge option only for model-grouped charts and persists toggles in the background', async () => {
     const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const patch = JSON.parse(String(init?.body)) as Record<string, boolean>;
       return Response.json({ preferences: { ...defaultUserPreferences, ...patch } });
     });
     vi.stubGlobal('fetch', fetch);
+    const onMergeChange = vi.fn();
 
-    renderMenu();
+    const hiddenMerge = renderMenu({ showMergeModelVariants: false });
     fireEvent.click(screen.getByRole('button', { name: 'Display options' }));
-    const foldItem = await screen.findByRole('menuitemcheckbox', { name: /Fold small series/ });
-    expect(foldItem.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByRole('menuitemcheckbox', { name: /Merge model variants/ })).toBeNull();
+    expect(screen.getByRole('menuitemcheckbox', { name: /Fold small series/ })).toBeTruthy();
+    hiddenMerge.unmount();
 
-    fireEvent.click(foldItem);
-    expect(useAuthStore.getState().session!.user.preferences.foldSmallSeries).toBe(true);
+    renderMenu({ showMergeModelVariants: true, onMergeModelVariantsChange: onMergeChange });
+    fireEvent.click(screen.getByRole('button', { name: 'Display options' }));
+    const mergeItem = await screen.findByRole('menuitemcheckbox', { name: /Merge model variants/ });
+    expect(mergeItem.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(mergeItem);
+    expect(onMergeChange).toHaveBeenCalledWith(true);
+    expect(useAuthStore.getState().session!.user.preferences.mergeModelVariants).toBe(true);
 
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    expect(JSON.parse(String((fetch.mock.calls[0] as [string, RequestInit])[1].body))).toEqual({ foldSmallSeries: true });
+    expect(JSON.parse(String((fetch.mock.calls[0] as [string, RequestInit])[1].body))).toEqual({ mergeModelVariants: true });
   });
 
   it('keeps the toggled state and shows an error toast when saving fails', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Database read-only' }, { status: 503 })));
+    let attempts = 0;
+    const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      attempts += 1;
+      if (attempts === 1) return Response.json({ error: 'Database read-only' }, { status: 503 });
+      const patch = JSON.parse(String(init?.body)) as Record<string, boolean>;
+      return Response.json({ preferences: { ...defaultUserPreferences, ...patch } });
+    });
+    vi.stubGlobal('fetch', fetch);
 
-    renderMenu();
+    renderMenu({ showMergeModelVariants: true });
     fireEvent.click(screen.getByRole('button', { name: 'Display options' }));
-    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: /Fold small series/ }));
+    fireEvent.click(await screen.findByRole('menuitemcheckbox', { name: /Merge model variants/ }));
 
     await screen.findByText(/Database read-only/);
-    expect(useAuthStore.getState().session!.user.preferences.foldSmallSeries).toBe(true);
+    expect(useAuthStore.getState().session!.user.preferences.mergeModelVariants).toBe(true);
+
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /Fold small series/ }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(useAuthStore.getState().session!.user.preferences).toMatchObject({
+      mergeModelVariants: true,
+      foldSmallSeries: true,
+    });
   });
 });

@@ -9,13 +9,13 @@ import { renderInApp } from '../../render';
 
 const entries: SeriesLegendEntry[] = [
   { id: 'small', label: 'Small', hue: 10 },
-  { id: 'large', label: 'Large', hue: 210 },
+  { id: 'large', label: 'Large', hue: 210, members: ['anthropic/Large', 'large'] },
 ];
 
 const other: ChartSectionOther = {
   color: OTHER_SERIES_COLOR,
   members: [
-    { id: 'tail-a', label: 'Tail A' },
+    { id: 'tail-a', label: 'Tail A', members: ['vendor/Tail A'] },
     { id: 'tail-b', label: 'Tail B' },
   ],
 };
@@ -42,17 +42,17 @@ function Harness({ weights }: { weights?: ReadonlyMap<string, number> }) {
 const hiddenIds = () => JSON.parse(screen.getByTestId('hidden').textContent ?? '[]') as string[];
 
 describe('ChartSection legend ranking and expandable Other', () => {
-  it('ranks legend entries descending by weight and lists collapsed Other members in a bold Includes tooltip', async () => {
+  it('ranks legend entries descending by weight and renders bold Includes tooltips for merged series', async () => {
     renderInApp(<Harness weights={new Map([['small', 10], ['large', 500]])} />);
 
     const largeButton = screen.getByRole('button', { name: 'Large' });
     const smallButton = screen.getByRole('button', { name: 'Small' });
     expect(largeButton.compareDocumentPosition(smallButton) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
 
-    fireEvent.focus(screen.getByRole('button', { name: 'Other (2)' }));
+    fireEvent.focus(largeButton);
     const tooltip = await screen.findByRole('tooltip');
     expect(tooltip.querySelector('strong')).not.toBeNull();
-    expect(tooltip.textContent).toContain('Tail A, Tail B');
+    expect(tooltip.textContent).toContain('anthropic/Large, large');
   });
 
   it('expands Other flat inline and stores only individual member ids in hidden state', () => {

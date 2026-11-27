@@ -20,6 +20,8 @@ export interface UserPreferences {
    */
   language: SupportedLanguage | null;
   uiTextEditor: boolean;
+  /** Charts and tables grouped by model merge variants differing only by prefix or case. */
+  mergeModelVariants: boolean;
   /** Telemetry charts fold minor series of the active metric into Other. */
   foldSmallSeries: boolean;
 }
@@ -28,6 +30,7 @@ export const defaultUserPreferences: UserPreferences = {
   quotaDisplay: 'remaining',
   language: null,
   uiTextEditor: false,
+  mergeModelVariants: false,
   foldSmallSeries: false,
 };
 
@@ -37,7 +40,7 @@ const isQuotaDisplay = (value: unknown): value is QuotaDisplay =>
 const isSupportedLanguage = (value: unknown): value is SupportedLanguage =>
   SUPPORTED_LANGUAGES.includes(value as SupportedLanguage);
 
-type BooleanPreferenceKey = 'uiTextEditor' | 'foldSmallSeries';
+type BooleanPreferenceKey = 'uiTextEditor' | 'mergeModelVariants' | 'foldSmallSeries';
 
 const parseBooleanPreference = (record: Record<string, unknown>, key: BooleanPreferenceKey): boolean => {
   const value = record[key] === undefined ? defaultUserPreferences[key] : record[key];
@@ -66,9 +69,10 @@ export const parseUserPreferences = (value: unknown): UserPreferences => {
   }
 
   const uiTextEditor = parseBooleanPreference(record, 'uiTextEditor');
+  const mergeModelVariants = parseBooleanPreference(record, 'mergeModelVariants');
   const foldSmallSeries = parseBooleanPreference(record, 'foldSmallSeries');
 
-  return { quotaDisplay, language, uiTextEditor, foldSmallSeries };
+  return { quotaDisplay, language, uiTextEditor, mergeModelVariants, foldSmallSeries };
 };
 
 export const serializeUserPreferences = (preferences: UserPreferences): string => JSON.stringify(preferences);

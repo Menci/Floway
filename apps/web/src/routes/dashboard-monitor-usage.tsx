@@ -204,7 +204,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     {showSearch && <Panel className="min-w-0">
       {searchChart === null ? <EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine> : (
         <UsageChartSection
-          actions={<TelemetryDisplayOptionsMenu />}
+          actions={<TelemetryDisplayOptionsMenu showMergeModelVariants={false} />}
           chart={searchChart}
           detailsLabel={t('monitoring.usage.charts.search')}
           hidden={hiddenSearch}

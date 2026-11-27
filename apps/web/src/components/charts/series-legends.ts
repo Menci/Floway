@@ -7,6 +7,8 @@ export interface SeriesLegendEntry {
   hue: number;
   /** Overrides `colorForHue(hue)` for series outside the hue palette (e.g. Other). */
   color?: string | undefined;
+  /** Underlying raw series names merged or stripped into this entry, when distinct from `label`, shown in its tooltip. */
+  members?: readonly string[] | undefined;
 }
 export type ChartSeries = SeriesLegendEntry & { legend: string };
 

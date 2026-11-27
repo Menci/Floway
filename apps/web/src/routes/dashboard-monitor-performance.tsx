@@ -13,7 +13,7 @@ import {
   buildPerformanceChartData,
   createPerformanceLoader,
   performanceOverviewForDisplay,
-  performanceRanking,
+  performanceRankingForDisplay,
   type PerformanceDataset,
   type PerformanceQuery,
 } from '../components/performance/data';
@@ -149,7 +149,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const pendingRegionAvailableRef = useRef<boolean | null>(null);
   const pageWindow = useRef<{ query: PerformanceQuery; requestedAt: number } | undefined>(undefined);
   const locale = useLocale();
-  const { foldSmallSeries } = useUserPreferences();
+  const { foldSmallSeries, mergeModelVariants } = useUserPreferences();
   const identityContext = {
     currentUserId: loaderData.currentUserId,
     fallbackGroup: 'model' as const,
@@ -323,6 +323,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       buckets,
       groupBy: loadedQuery.groupBy,
       metric,
+      mergeModelVariants,
       foldSmallSeries,
       hidden: hiddenSeries,
       labels,
@@ -332,7 +333,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       chart: buildPerformanceChart(data.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range, data),
       other: data.other,
     };
-  }, [buckets, dataset, foldSmallSeries, hiddenSeries, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentile, t]);
+  }, [buckets, dataset, foldSmallSeries, hiddenSeries, labels, loadedQuery.groupBy, loadedQuery.range, mergeModelVariants, metric, overview, percentile, t]);
 
   const changeBreakdown = (key: PerformanceGroupBy) => {
     if (key === rankingDimension) return;
@@ -350,10 +351,16 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const rankingWindow = Math.max(loadedAt, activeRanking?.requestedAt ?? loadedAt);
   const showRanking = breakdownGroup !== loadedQuery.groupBy;
   const rankingDataset = showRanking ? performanceLoader.get(loadedQuery, breakdownGroup, rankingWindow, scopeKey) : undefined;
-  const tableRows = showRanking ? (rankingDataset === undefined ? undefined : performanceRanking(rankingDataset)) : overview?.rows;
+  const tableView = useMemo(() => {
+    const source = showRanking ? rankingDataset : dataset ?? undefined;
+    if (source !== undefined) {
+      return performanceRankingForDisplay({ dataset: source, breakdown: breakdownGroup, mergeModelVariants });
+    }
+    return !showRanking && overview !== null ? { rows: overview.rows } : undefined;
+  }, [breakdownGroup, dataset, mergeModelVariants, overview, rankingDataset, showRanking]);
   const rankingError = rankingFailure?.query === loadedQuery && rankingFailure.scopeKey === scopeKey ? rankingFailure : undefined;
   const rankingBusy = pendingBreakdown !== undefined
-    || (needsRanking && (rankingPolling || rankingRefreshing || (tableRows === undefined && rankingError === undefined)));
+    || (needsRanking && (rankingPolling || rankingRefreshing || (tableView === undefined && rankingError === undefined)));
   const summary = overview?.summary;
   const summaryCards = [
     ['requests', formatCount(summary?.requests ?? 0, locale)],
@@ -454,7 +461,12 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
         </Panel>
         <Panel className="min-w-0">
           <PerformanceChartSection
-            actions={<TelemetryDisplayOptionsMenu />}
+            actions={
+              <TelemetryDisplayOptionsMenu
+                onMergeModelVariantsChange={() => setHiddenSeries(new Set())}
+                showMergeModelVariants={loadedQuery.groupBy === 'model'}
+              />
+            }
             chart={chartView.chart}
             hidden={hiddenSeries}
             onHiddenChange={setHiddenSeries}
@@ -478,12 +490,14 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
           }}>{t('monitoring.performance.actions.retryBreakdown')}</Button>}>
             {rankingError.error.message}
           </OutcomeMessageBar>}
-          {tableRows !== undefined && <PerformanceTable groupBy={activeBreakdown.key}
+          {tableView !== undefined && <PerformanceTable groupBy={activeBreakdown.key}
+            labelByGroup={tableView.labelByGroup}
             labels={rankingDataset === undefined ? labels : performanceLabels({
               users: [...overview.users, ...rankingDataset.snapshot.users],
               keys: rankingDataset.snapshot.keys,
             }, [...overview.upstreams, ...rankingDataset.snapshot.upstreams])}
-            onSortChange={setSort} percentile={percentile} rows={tableRows} sort={sort} />}
+            membersByGroup={tableView.membersByGroup}
+            onSortChange={setSort} percentile={percentile} rows={tableView.rows} sort={sort} />}
         </Panel>
       </>;
     })()}

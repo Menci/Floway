@@ -8,6 +8,7 @@ import {
   createPerformanceLoader,
   performanceOverviewForDisplay,
   performanceRanking,
+  performanceRankingForDisplay,
   type PerformanceDataset,
   type PerformanceQuery,
 } from '../../../src/components/performance/data';
@@ -100,7 +101,7 @@ it('rejects a ranking total that overflows only after merging safe slice counts'
   expect(() => performanceRanking(dataset)).toThrow(RangeError);
 });
 
-it('aggregates raw histograms for visible Other members before percentile evaluation', async () => {
+it('merges raw histograms before percentile evaluation for model variants and visible Other members', async () => {
   const hour = '2026-11-26T10';
   const response: PerformanceSlicesResponse = {
     ...first,
@@ -110,12 +111,13 @@ it('aggregates raw histograms for visible Other members before percentile evalua
       end: '2026-11-26T11',
       bucket: hour,
       rows: [
-        { group: 'primary', requests: 2000, errors: 0, ttftSamples: 2000, tpotSamples: 2000, neutral: 0, ttft: [[0, 2000]], tpot: [[0, 2000]] },
+        { group: 'anthropic/Claude-Sonnet', requests: 1000, errors: 0, ttftSamples: 1000, tpotSamples: 1000, neutral: 0, ttft: [[0, 1000]], tpot: [[0, 1000]] },
+        { group: 'bedrock/claude-sonnet', requests: 1000, errors: 0, ttftSamples: 1000, tpotSamples: 1000, neutral: 0, ttft: [[1, 1000]], tpot: [[0, 1000]] },
         { group: 'minor-a', requests: 5, errors: 0, ttftSamples: 5, tpotSamples: 5, neutral: 0, ttft: [[1, 5]], tpot: [[0, 5]] },
         { group: 'minor-b', requests: 5, errors: 0, ttftSamples: 5, tpotSamples: 5, neutral: 0, ttft: [[2, 5]], tpot: [[0, 5]] },
       ],
       dimensionValues: {
-        models: ['primary', 'minor-a', 'minor-b'],
+        models: ['anthropic/Claude-Sonnet', 'bedrock/claude-sonnet', 'minor-a', 'minor-b'],
         upstreams: [],
         operations: [],
         runtimeLocations: [],
@@ -129,17 +131,33 @@ it('aggregates raw histograms for visible Other members before percentile evalua
   const labels: PerformanceLabels = { upstreams: new Map(), upstreamHues: new Map(), users: new Map(), keys: new Map() };
   const buckets = dashboardChartBuckets('today', now);
 
+  const expectedMergedP50 = percentileFromBuckets([
+    { lower: 0, upper: 100, count: 1000 },
+    { lower: 100, upper: 200, count: 1000 },
+  ], 0.5);
   const expectedOtherP50 = percentileFromBuckets([{ lower: 200, upper: 300, count: 5 }], 0.5);
   const chartData = buildPerformanceChartData({
     dataset,
     buckets,
     groupBy: 'model',
     metric: 'ttft',
+    mergeModelVariants: true,
     foldSmallSeries: true,
     hidden: new Set(['minor-a']),
     labels,
     otherLabel: 'Other',
   });
+  expect(chartData.seriesByGroup.get('claude-sonnet')).toMatchObject({
+    label: 'Claude-Sonnet',
+    members: ['anthropic/Claude-Sonnet', 'bedrock/claude-sonnet'],
+  });
   expect(chartData.other?.members.map(member => member.id)).toEqual(['minor-a', 'minor-b']);
+  expect(chartData.series.find(row => row.group === 'claude-sonnet')?.ttftMsP50).toBe(expectedMergedP50);
   expect(chartData.series.find(row => row.group === OTHER_SERIES_ID)?.ttftMsP50).toBe(expectedOtherP50);
+
+  const ranking = performanceRankingForDisplay({ dataset, breakdown: 'model', mergeModelVariants: true });
+  const mergedRow = ranking.rows.find(row => row.group === 'claude-sonnet');
+  expect(mergedRow).toMatchObject({ requests: 2000, ttftMsP50: expectedMergedP50 });
+  expect(ranking.labelByGroup?.get('claude-sonnet')).toBe('Claude-Sonnet');
+  expect(ranking.membersByGroup?.get('claude-sonnet')).toEqual(['anthropic/Claude-Sonnet', 'bedrock/claude-sonnet']);
 });
