@@ -3,16 +3,26 @@ import { requireTokenCount } from '../../../shared/token-count.ts';
 import { splitInclusiveInputTokens } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentModalityTokenCount, GeminiGenerateContentUsageMetadata } from '@floway-dev/protocols/gemini-generate-content';
 
+const INPUT_MODALITIES: Readonly<Record<string, keyof IROutputUsage>> = {
+  AUDIO: 'input_audio_tokens',
+  IMAGE: 'input_image_tokens',
+  TEXT: 'input_text_tokens',
+};
+
+const OUTPUT_MODALITIES: Readonly<Record<string, keyof IROutputUsage>> = {
+  AUDIO: 'output_audio_tokens',
+  TEXT: 'output_text_tokens',
+};
+
 const collectModalityCounts = (
-  details: readonly GeminiGenerateContentModalityTokenCount[] | undefined,
+  details: readonly GeminiGenerateContentModalityTokenCount[] | null | undefined,
   mapping: Readonly<Record<string, keyof IROutputUsage>>,
   result: Partial<Record<keyof IROutputUsage, number>>,
 ): void => {
-  if (details === undefined) return;
+  if (details == null) return;
   for (const entry of details) {
-    if (entry.modality === undefined || entry.tokenCount === undefined) continue;
+    if (entry.modality == null || entry.tokenCount == null || !Object.hasOwn(mapping, entry.modality)) continue;
     const key = mapping[entry.modality];
-    if (key === undefined) continue;
     result[key] = (result[key] ?? 0) + requireTokenCount(key, entry.tokenCount);
   }
 };
@@ -23,14 +33,14 @@ const collectModalityCounts = (
 // https://ai.google.dev/api/generate-content#UsageMetadata
 export const usageToIR = (usage: GeminiGenerateContentUsageMetadata): IROutputUsage => {
   const result: Partial<Record<keyof IROutputUsage, number>> = {};
-  const put = (key: keyof IROutputUsage, value: number | undefined): void => {
-    if (value !== undefined) result[key] = requireTokenCount(key, value);
+  const put = (key: keyof IROutputUsage, value: number | null | undefined): void => {
+    if (value != null) result[key] = requireTokenCount(key, value);
   };
 
-  const prompt = usage.promptTokenCount === undefined
+  const prompt = usage.promptTokenCount == null
     ? undefined
     : requireTokenCount('input_tokens_inclusive', usage.promptTokenCount);
-  const toolUsePrompt = usage.toolUsePromptTokenCount === undefined
+  const toolUsePrompt = usage.toolUsePromptTokenCount == null
     ? undefined
     : requireTokenCount('input_tokens_inclusive', usage.toolUsePromptTokenCount);
   if (prompt !== undefined || toolUsePrompt !== undefined) {
@@ -39,29 +49,20 @@ export const usageToIR = (usage: GeminiGenerateContentUsageMetadata): IROutputUs
   put('cached_input_tokens', usage.cachedContentTokenCount);
   put('total_tokens', usage.totalTokenCount);
 
-  const candidates = usage.candidatesTokenCount === undefined
+  const candidates = usage.candidatesTokenCount == null
     ? undefined
     : requireTokenCount('output_tokens_inclusive', usage.candidatesTokenCount);
-  const thoughts = usage.thoughtsTokenCount === undefined
+  const thoughts = usage.thoughtsTokenCount == null
     ? undefined
     : requireTokenCount('reasoning_tokens', usage.thoughtsTokenCount);
-  if (thoughts !== undefined) result.reasoning_tokens = thoughts;
   if (candidates !== undefined || thoughts !== undefined) {
     result.output_tokens_inclusive = (candidates ?? 0) + (thoughts ?? 0);
   }
+  if (thoughts !== undefined) result.reasoning_tokens = thoughts;
 
-  const inputModalities: Readonly<Record<string, keyof IROutputUsage>> = {
-    AUDIO: 'input_audio_tokens',
-    IMAGE: 'input_image_tokens',
-    TEXT: 'input_text_tokens',
-  };
-  collectModalityCounts(usage.promptTokensDetails, inputModalities, result);
-  collectModalityCounts(usage.toolUsePromptTokensDetails, inputModalities, result);
-  collectModalityCounts(
-    usage.candidatesTokensDetails,
-    { AUDIO: 'output_audio_tokens', TEXT: 'output_text_tokens' },
-    result,
-  );
+  collectModalityCounts(usage.promptTokensDetails, INPUT_MODALITIES, result);
+  collectModalityCounts(usage.toolUsePromptTokensDetails, INPUT_MODALITIES, result);
+  collectModalityCounts(usage.candidatesTokensDetails, OUTPUT_MODALITIES, result);
 
   if (result.input_tokens_inclusive !== undefined) {
     splitInclusiveInputTokens(result.input_tokens_inclusive, result.cached_input_tokens ?? 0, 0);

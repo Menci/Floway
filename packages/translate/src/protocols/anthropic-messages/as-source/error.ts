@@ -1,5 +1,5 @@
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
-import { errorDetailsOf } from '../../../shared/api-error.ts';
+import { errorDetailsOf, restateError } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesErrorEventEx } from '@floway-dev/protocols/anthropic-messages';
 
@@ -34,4 +34,9 @@ export const anthropicMessagesErrorEnvelope = (error: IRErrorPayload): { readonl
     body: { type: 'error', error: messagesError(error, contextExceeded) },
     status: contextExceeded ? 400 : undefined,
   };
+};
+
+export const writeAnthropicMessagesError = (upstreamStatus: number, headers: Headers, error: IRErrorPayload) => {
+  const { body, status } = anthropicMessagesErrorEnvelope(error);
+  return restateError(status ?? upstreamStatus, headers, body);
 };

@@ -3,7 +3,6 @@ import { anthropicMessagesInterceptors, anthropicMessagesCountTokensInterceptors
 import type { AnthropicMessagesInvocation } from './interceptors/types.ts';
 import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
-import { mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { geminiGenerateContentAttempt } from '../gemini-generate-content/attempt.ts';
 import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt.ts';
 import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
@@ -13,6 +12,7 @@ import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
+import { reshapeTranslatedCountTokens } from '../shared/translated-count-tokens.ts';
 import { upstreamStreamResultToExecuteResult } from '../shared/upstream-stream-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -29,18 +29,12 @@ import {
   type ExecuteResult,
   type AnthropicMessagesUpstreamCallOptions,
   type PlainResult,
-  decodeResponseBody,
   internalDebugErrorFields,
   plainResult,
   toInternalDebugError,
 } from '@floway-dev/upstream';
 
-// `/v1/messages` generate prefers a native Anthropic Messages target, then the
-// translated OpenAI Responses path, then OpenAI Chat Completions, then Gemini GenerateContent.
 export const anthropicMessagesGenerateTarget = chatTargetPicker(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions', 'geminiGenerateContent']);
-
-// `count_tokens` prefers a native Anthropic Messages target and otherwise
-// translates to Gemini `:countTokens` and reshapes `{ totalTokens }` to `{ input_tokens }`.
 export const anthropicMessagesCountTokensTarget = chatTargetPicker(['anthropicMessages', 'geminiGenerateContent']);
 
 export interface AnthropicMessagesAttemptArgs {
@@ -115,58 +109,25 @@ export const anthropicMessagesAttempt = {
       );
       if (trip.type === 'input-error') return inputErrorResult(trip, ctx.attempt.telemetry);
       const { model: _model, ...target } = trip.target;
+      const capture = captureFromDump(ctx.dump, targetApi);
       const geminiResult = await geminiGenerateContentAttempt.countTokens({
         payload: target, ctx, candidate, headers: invocation.headers,
       });
-      return reshapeGeminiGenerateContentCountAsAnthropicMessages(geminiResult, trip.error);
+      return reshapeTranslatedCountTokens(geminiResult, {
+        translateError: trip.error,
+        fallbackErrorBody: (status, text) => anthropicErrorEnvelopeBody(
+          anthropicErrorTypeForStatus(status),
+          text.trim() || 'Upstream token counting request failed.',
+        ),
+        invalidResponseResult: error => anthropicMessagesInternalPlainResult(502, error),
+        extractCount: decoded => (decoded !== null && typeof decoded === 'object'
+          ? (decoded as { totalTokens?: unknown }).totalTokens as number | undefined
+          : undefined),
+        encodeCount: input_tokens => ({ input_tokens }),
+        capture,
+      });
     });
   },
-};
-
-const reshapeGeminiGenerateContentCountAsAnthropicMessages = (
-  geminiResult: ApiErrorResult | PlainResult,
-  translateError: (status: number, headers: Headers, body: Uint8Array) => { readonly status: number; readonly headers: Headers; readonly body: unknown } | undefined,
-): ApiErrorResult | PlainResult => {
-  const { status, headers } = geminiResult.http;
-  if (geminiResult.type === 'plain' && geminiResult.body === null && (status === 204 || status === 205 || status === 304)) {
-    return geminiResult;
-  }
-  const text = decodeResponseBody(geminiResult.body);
-  const http = { status, headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, headers) };
-  if (geminiResult.type === 'api-error' || status !== 200) {
-    const rawBody = geminiResult.body instanceof Uint8Array
-      ? geminiResult.body
-      : new TextEncoder().encode(text);
-    const translated = translateError(status, headers, rawBody);
-    if (translated !== undefined) {
-      const translatedHttp = {
-        status: translated.status,
-        headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, translated.headers),
-      };
-      const body = new TextEncoder().encode(JSON.stringify(translated.body));
-      return geminiResult.type === 'api-error'
-        ? { ...geminiResult, http: translatedHttp, body }
-        : plainResult(translatedHttp, body, geminiResult.upstreamId);
-    }
-    const body = anthropicErrorEnvelopeBody(
-      anthropicErrorTypeForStatus(status),
-      text.trim() || 'Upstream token counting request failed.',
-    );
-    return geminiResult.type === 'api-error'
-      ? { ...geminiResult, http, body }
-      : plainResult(http, body, geminiResult.upstreamId);
-  }
-  let decoded: unknown;
-  try { decoded = JSON.parse(text); } catch {}
-  const totalTokens = decoded && typeof decoded === 'object' ? (decoded as { totalTokens?: unknown }).totalTokens : undefined;
-  if (typeof totalTokens !== 'number' || !Number.isFinite(totalTokens)) {
-    return anthropicMessagesInternalPlainResult(502, new Error('Invalid upstream token counting response.'));
-  }
-  return plainResult(
-    http,
-    new TextEncoder().encode(JSON.stringify({ input_tokens: totalTokens })),
-    geminiResult.upstreamId,
-  );
 };
 
 const anthropicMessagesInternalPlainResult = (status: number, error: Error): PlainResult => plainResult(
@@ -190,37 +151,38 @@ const dispatchAnthropicMessages = async (
     );
     return await upstreamStreamResultToExecuteResult(upstreamResult, candidate, targetApi, ctx, createAnthropicMessagesBillableUsageReader());
   }
-  if (targetApi === 'openaiResponses') {
+  const sidecarCodec = ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn);
+  switch (targetApi) {
+  case 'openaiResponses':
     return await executeTranslation(
       invocation.payload,
-      p => routeAnthropicMessagesViaOpenAIResponses(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeAnthropicMessagesViaOpenAIResponses(p, { sidecarCodec }),
       translated => openaiResponsesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),
       captureFromDump(ctx.dump, targetApi),
     );
-  }
-  if (targetApi === 'openaiChatCompletions') {
+  case 'openaiChatCompletions':
     return await executeTranslation(
       invocation.payload,
-      p => routeAnthropicMessagesViaOpenAIChatCompletions(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeAnthropicMessagesViaOpenAIChatCompletions(p, { sidecarCodec }),
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),
       captureFromDump(ctx.dump, targetApi),
     );
-  }
-  if (targetApi === 'geminiGenerateContent') {
+  case 'geminiGenerateContent':
     return await executeTranslation(
       invocation.payload,
-      p => routeAnthropicMessagesViaGeminiGenerateContent(p, {
-        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
-      }),
+      p => routeAnthropicMessagesViaGeminiGenerateContent(p, { sidecarCodec }),
       ({ model: _model, ...body }) => geminiGenerateContentAttempt.generate({
         payload: body, ctx, candidate, headers: invocation.headers,
       }),
       captureFromDump(ctx.dump, targetApi),
     );
+  default: {
+    const exhaustive: never = targetApi;
+    throw new Error(`anthropicMessagesAttempt.generate: unexpected targetApi '${exhaustive as string}'`);
   }
-  throw new Error(`anthropicMessagesAttempt.generate: unexpected targetApi '${targetApi as string}'`);
+  }
 };

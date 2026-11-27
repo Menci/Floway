@@ -1,4 +1,4 @@
-import { writeAnthropicMessagesError } from './as-source/error-body.ts';
+import { writeAnthropicMessagesError } from './as-source/error.ts';
 import { writeAnthropicMessagesEvents } from './as-source/events.ts';
 import { readAnthropicMessagesRequest } from './as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from './as-source/round-trip.ts';

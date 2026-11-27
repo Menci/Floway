@@ -11,13 +11,14 @@ import type {
   IRInputTextPart,
   IRInputTool,
   IRInputToolChoice,
-  IRInputToolResultContentPart,
 } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
-import { parseDataURL } from '../../../shared/data-url.ts';
+import { isDataURL, parseDataURL } from '../../../shared/data-url.ts';
 import { DOCUMENT_CLOSE_TAG, documentImage, documentOpening } from '../../../shared/document.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
-import { FAST_SERVICE_TIER, isFastServiceTier, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
+import { isPlainJSONObject } from '../../../shared/json/object.ts';
+import { geminiServiceTierFromInputIR } from '../service-tier.ts';
+import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 import type {
   GeminiGenerateContentBlob,
   GeminiGenerateContentContent,
@@ -41,32 +42,28 @@ export type GeminiGenerateContentToolResultLookup = ReadonlyMap<IRInputToolResul
 
 const DEFAULT_BINARY_MEDIA_TYPE = 'application/octet-stream';
 
-const inlineBlobOf = (data: string, mediaType: string | undefined): GeminiGenerateContentBlob => ({
+const inlineBlob = (data: string, mediaType: string | undefined): GeminiGenerateContentBlob => ({
   mimeType: mediaType !== undefined && mediaType !== '' ? mediaType : DEFAULT_BINARY_MEDIA_TYPE,
   data,
 });
 
-const dataOrBase64BlobOf = (data: string, mediaType: string | undefined): GeminiGenerateContentBlob => {
-  if (mediaType !== undefined && mediaType !== '') return { mimeType: mediaType, data };
-  if (data.startsWith('data:')) {
-    const parsed = parseDataURL(data);
-    return inlineBlobOf(parsed.data, parsed.media_type);
-  }
-  return inlineBlobOf(data, undefined);
-};
-
 const mediaPart = (media: IRInputMedia): GeminiGenerateContentPart => {
   switch (media.source_kind) {
   case 'url':
-    if (media.url.startsWith('data:')) {
+    if (isDataURL(media.url)) {
       const parsed = parseDataURL(media.url);
-      return { inlineData: inlineBlobOf(parsed.data, parsed.media_type) };
+      return { inlineData: inlineBlob(parsed.data, parsed.media_type) };
     }
     return { fileData: { fileUri: media.url } };
-  case 'data':
-    return { inlineData: dataOrBase64BlobOf(media.data, undefined) };
+  case 'data': {
+    if (isDataURL(media.data)) {
+      const parsed = parseDataURL(media.data);
+      return { inlineData: inlineBlob(parsed.data, parsed.media_type) };
+    }
+    return { inlineData: inlineBlob(media.data, undefined) };
+  }
   case 'base64':
-    return { inlineData: dataOrBase64BlobOf(media.data, media.media_type) };
+    return { inlineData: inlineBlob(media.data, media.media_type) };
   case 'file':
     // A file id names an object in the source vendor's file store; Gemini
     // `fileData.fileUri` cannot resolve it.
@@ -91,10 +88,9 @@ const parseFunctionCallArguments = (argumentsJson: string): Record<string, unkno
   try {
     const parsed = parseJSONWithRawNumbers(argumentsJson);
     if (parsed === null) return {};
-    return typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : { raw_arguments: argumentsJson };
-  } catch {
+    return isPlainJSONObject(parsed) ? parsed : { raw_arguments: argumentsJson };
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
     return { raw_arguments: argumentsJson };
   }
 };
@@ -107,13 +103,12 @@ const parseFunctionCallArguments = (argumentsJson: string): Record<string, unkno
 const wrapFunctionResponseText = (text: string, isError: boolean): Record<string, unknown> => {
   try {
     const parsed = parseJSONWithRawNumbers(text);
-    if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-      const record = parsed as Record<string, unknown>;
-      if (!isError) return record;
-      return 'error' in record ? record : { error: record };
+    if (isPlainJSONObject(parsed)) {
+      if (!isError) return parsed;
+      return 'error' in parsed ? parsed : { error: parsed };
     }
-  } catch {
-    // Non-JSON tool output falls through to `{ output }` / `{ error }` wrapping.
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
   }
   return isError ? { error: text } : { output: text };
 };
@@ -133,7 +128,7 @@ const buildToolResult = (
 ): BuiltToolResult => {
   const matched = matchedToolResults.get(item);
   if (matched === undefined) {
-    throw new TranslateInputException(`Cannot translate tool result for unknown call_id '${item.call_id}' to Gemini GenerateContent.`);
+    throw new Error(`Missing Gemini GenerateContent matched call metadata for tool_result '${item.call_id}'.`);
   }
   const isError = item.is_error === true;
   if (typeof item.output === 'string') {
@@ -154,27 +149,18 @@ const buildToolResult = (
   const inlineParts: GeminiGenerateContentFunctionResponsePart[] = [];
   const rawLiftedParts: GeminiGenerateContentPart[] = [];
   const liftedKinds = new Set<'image' | 'file' | 'document'>();
-  for (const part of item.output as readonly IRInputToolResultContentPart[]) {
+  for (const part of item.output) {
     switch (part.type) {
     case 'text':
       texts.push(part.text);
       break;
-    case 'image': {
-      const converted = mediaPart(part.image);
-      if (converted.inlineData !== undefined) {
-        inlineParts.push({ inlineData: { mimeType: converted.inlineData.mimeType, data: converted.inlineData.data } });
-      } else {
-        liftedKinds.add('image');
-        rawLiftedParts.push(converted);
-      }
-      break;
-    }
+    case 'image':
     case 'file': {
-      const converted = mediaPart(part.file);
+      const converted = mediaPart(part.type === 'image' ? part.image : part.file);
       if (converted.inlineData !== undefined) {
         inlineParts.push({ inlineData: { mimeType: converted.inlineData.mimeType, data: converted.inlineData.data } });
       } else {
-        liftedKinds.add('file');
+        liftedKinds.add(part.type);
         rawLiftedParts.push(converted);
       }
       break;
@@ -203,8 +189,9 @@ const buildToolResult = (
     ];
   }
 
-  const response = texts.length > 0
-    ? wrapFunctionResponseText(texts.join(''), isError)
+  const joinedText = texts.join('');
+  const response = joinedText !== ''
+    ? wrapFunctionResponseText(joinedText, isError)
     : rawLiftedParts.length > 0
       ? (isError ? { error: liftedPlaceholder } : { output: liftedPlaceholder })
       : (isError ? { error: '' } : { output: '' });
@@ -259,9 +246,8 @@ export const applySyntheticThoughtSignatures = (
   for (const content of contents) {
     if (content.role !== 'model') continue;
     const parts = content.parts ?? [];
-    if (parts.some(part => part.thoughtSignature !== undefined)) continue;
     const firstFunctionCall = parts.find(part => part.functionCall !== undefined);
-    if (firstFunctionCall !== undefined && syntheticFunctionCalls.has(firstFunctionCall)) {
+    if (firstFunctionCall !== undefined && firstFunctionCall.thoughtSignature === undefined && syntheticFunctionCalls.has(firstFunctionCall)) {
       firstFunctionCall.thoughtSignature = GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR;
     }
   }
@@ -296,7 +282,9 @@ const assistantParts = (
         functionCall: {
           id: item.call_id,
           name: item.name,
-          // Emit `{}` when arguments are absent so Go relays without `omitempty` (e.g. New-API) do not serialize `"args": null`.
+          // `FunctionCall.args` is a `google.protobuf.Struct`; always emit an explicit object
+          // so downstream JSON relays never forward a missing/null field.
+          // https://github.com/googleapis/googleapis/blob/bc7e3baa28fbb223fa93782e130260fab8205bfc/google/ai/generativelanguage/v1beta/content.proto
           args: item.arguments === undefined ? {} : parseFunctionCallArguments(item.arguments),
         },
       };
@@ -322,15 +310,16 @@ const assistantParts = (
   return parts;
 };
 
+export type NormalizedGeminiContent = GeminiGenerateContentContent & { role: 'user' | 'model'; parts: GeminiGenerateContentPart[] };
+
 export const appendContentParts = (
-  contents: GeminiGenerateContentContent[],
+  contents: NormalizedGeminiContent[],
   role: 'user' | 'model',
   parts: readonly GeminiGenerateContentPart[],
 ): void => {
   if (parts.length === 0) return;
   const last = contents.at(-1);
   if (last?.role === role) {
-    last.parts ??= [];
     last.parts.push(...parts);
     return;
   }
@@ -339,7 +328,7 @@ export const appendContentParts = (
 
 export interface GeminiGenerateContentConversation {
   readonly systemParts: GeminiGenerateContentPart[];
-  readonly contents: GeminiGenerateContentContent[];
+  readonly contents: NormalizedGeminiContent[];
 }
 
 export const geminiGenerateContentConversationFromIR = (
@@ -347,32 +336,37 @@ export const geminiGenerateContentConversationFromIR = (
   leading: boolean,
   matchedToolResults: GeminiGenerateContentToolResultLookup,
   syntheticFunctionCalls: WeakSet<GeminiGenerateContentPart>,
+  previousRole?: 'user' | 'model',
 ): GeminiGenerateContentConversation => {
   const systemParts: GeminiGenerateContentPart[] = [];
-  const contents: GeminiGenerateContentContent[] = [];
+  const contents: NormalizedGeminiContent[] = [];
   let hoisting = leading;
   let pendingToolResults: BuiltToolResult[] = [];
+  let pendingUserParts: GeminiGenerateContentPart[] = [];
 
-  const flushToolResults = (): void => {
-    if (pendingToolResults.length === 0) return;
-    const ordered = [...pendingToolResults].sort((a, b) => a.order - b.order);
-    pendingToolResults = [];
-    appendContentParts(contents, 'user', [
+  const flushClientRun = (): void => {
+    if (pendingToolResults.length === 0 && pendingUserParts.length === 0) return;
+    const ordered = pendingToolResults.toSorted((a, b) => a.order - b.order);
+    const parts: GeminiGenerateContentPart[] = [
       ...ordered.map(entry => entry.responsePart),
       ...ordered.flatMap(entry => entry.liftedParts),
-    ]);
+      ...pendingUserParts,
+    ];
+    pendingToolResults = [];
+    pendingUserParts = [];
+    appendContentParts(contents, 'user', parts);
   };
 
   for (const turn of turns) {
     if (turn.kind === 'assistant') {
-      flushToolResults();
+      flushClientRun();
       hoisting = false;
       const parts = assistantParts(turn.items, syntheticFunctionCalls);
       if (parts.length > 0) {
         appendContentParts(contents, 'model', parts);
-      } else if (turn.items.length > 0 && contents.at(-1)?.role !== 'model') {
-        // Non-sidecar reasoning-only turns drop their unverified reasoning; keep an empty
-        // model turn boundary so surrounding user turns do not merge across it.
+      } else if ((contents.at(-1)?.role ?? previousRole) !== 'model') {
+        // Non-sidecar reasoning-only or empty assistant turns drop their unverified
+        // content; keep an empty model boundary so surrounding user turns do not merge.
         appendContentParts(contents, 'model', [{ text: '' }]);
       }
       continue;
@@ -384,14 +378,13 @@ export const geminiGenerateContentConversationFromIR = (
         pendingToolResults.push(buildToolResult(item, matchedToolResults));
         continue;
       }
-      flushToolResults();
       if (item.type === 'instruction') {
         if (hoisting) {
           systemParts.push(...systemTextParts(item.content));
           hoisting = false;
           continue;
         }
-        appendContentParts(contents, 'user', systemTextParts(item.content));
+        pendingUserParts.push(...systemTextParts(item.content));
         continue;
       }
       if (item.type === 'message' && item.role !== 'user') {
@@ -401,15 +394,15 @@ export const geminiGenerateContentConversationFromIR = (
         }
         // Gemini `contents` only admits `'user'` and `'model'` roles; non-leading
         // system/developer turns lower inline into user text parts.
-        appendContentParts(contents, 'user', systemTextParts(item.content));
+        pendingUserParts.push(...systemTextParts(item.content));
         continue;
       }
       hoisting = false;
-      appendContentParts(contents, 'user', userMessageParts(item));
+      pendingUserParts.push(...userMessageParts(item));
     }
   }
 
-  flushToolResults();
+  flushClientRun();
   return { systemParts, contents };
 };
 
@@ -440,23 +433,22 @@ const toolConfigFromIR = (
       throw new TranslateInputException('Gemini GenerateContent cannot require a tool call from an empty allowed_tools list.');
     }
     const permitted = new Set(choice.tools.map(selector => `${selector.type}:${selector.name}`));
-    if (tools.length > 0 && tools.every(tool => permitted.has(`${tool.type}:${tool.name}`))) {
+    if (tools.length > 0 && permitted.size === tools.length && tools.every(tool => permitted.has(`${tool.type}:${tool.name}`))) {
       return { functionCallingConfig: { mode: choice.mode === 'required' ? 'ANY' : 'AUTO' } };
     }
     return {
       functionCallingConfig: {
         mode: choice.mode === 'required' ? 'ANY' : 'VALIDATED',
-        allowedFunctionNames: choice.tools.map(selector => selector.name),
+        allowedFunctionNames: [...new Set(choice.tools.map(selector => selector.name))],
       },
     };
   }
   return { functionCallingConfig: { mode: 'ANY', allowedFunctionNames: [choice.name] } };
 };
 
-const toolChoiceForTools = (
-  choice: IRInputToolChoice | undefined,
-  tools: readonly IRInputTool[] | undefined,
-): IRInputToolChoice | undefined => (tools !== undefined && tools.length > 0 ? choice : undefined);
+const isForcingToolChoice = (choice: IRInputToolChoice): boolean =>
+  choice === 'required'
+  || (typeof choice === 'object' && (choice.type !== 'allowed_tools' || choice.mode === 'required'));
 
 // Inverse of `geminiGenerateContentReasoningEffortToIR` in `../as-source/input-to.ts`.
 // https://ai.google.dev/api/generate-content#ThinkingLevel
@@ -477,7 +469,9 @@ const thinkingLevelFromEffort = (effort: string): string => {
 // `output_config.effort`), and bare dynamic thinking falls back to `-1`.
 // https://ai.google.dev/api/generate-content#ThinkingConfig
 const thinkingConfigFromSettings = (settings: IRInputSettings): GeminiGenerateContentThinkingConfig | undefined => {
-  const thoughtFlag = settings.reasoning_summary === 'omitted' ? {} : { includeThoughts: true };
+  const summary = settings.reasoning_summary;
+  const includeThoughts = summary === undefined || summary === '' ? undefined : summary !== 'omitted';
+  const thoughtFlag = includeThoughts === undefined ? { includeThoughts: true } : { includeThoughts };
   if (settings.reasoning_budget !== undefined) {
     return settings.reasoning_budget === 0
       ? { thinkingBudget: 0 }
@@ -494,8 +488,8 @@ const thinkingConfigFromSettings = (settings: IRInputSettings): GeminiGenerateCo
   if (settings.reasoning_budget_dynamic === true) {
     return { thinkingBudget: -1, ...thoughtFlag };
   }
-  if (settings.reasoning_summary !== undefined) {
-    return { includeThoughts: settings.reasoning_summary !== 'omitted' };
+  if (includeThoughts !== undefined) {
+    return { includeThoughts };
   }
   return undefined;
 };
@@ -517,8 +511,15 @@ export const geminiGenerateContentSettingsFromIR = (
     ...(settings.choice_count === undefined ? {} : { candidateCount: settings.choice_count }),
     ...(settings.presence_penalty == null ? {} : { presencePenalty: settings.presence_penalty }),
     ...(settings.frequency_penalty == null ? {} : { frequencyPenalty: settings.frequency_penalty }),
-    ...(settings.logprobs == null ? {} : { responseLogprobs: settings.logprobs }),
-    ...(settings.top_logprobs == null ? {} : { logprobs: settings.top_logprobs }),
+    // Gemini rejects `generationConfig.logprobs` unless `responseLogprobs` is true,
+    // and OpenAI Responses sets `logprobs: false` whenever `include` omits logprobs.
+    // https://ai.google.dev/api/generate-content#GenerationConfig
+    ...(settings.logprobs === true
+      ? {
+          responseLogprobs: true,
+          ...(settings.top_logprobs == null ? {} : { logprobs: settings.top_logprobs }),
+        }
+      : {}),
     ...(format?.type === 'json_schema'
       ? {
           responseMimeType: 'application/json',
@@ -537,24 +538,17 @@ export const geminiGenerateContentHeaderFromIR = (
   request: IRInputRequestHeader,
 ): Omit<GeminiGenerateContentRequest, 'contents' | 'systemInstruction'> => {
   requireStreaming(request.settings);
-  const declarations = request.tools?.map(toolFromIR) ?? [];
+  const declaredTools = request.tools ?? [];
+  const declarations = declaredTools.map(toolFromIR);
   const tools: GeminiGenerateContentToolGroup[] | undefined = declarations.length === 0
     ? undefined
     : [{ functionDeclarations: declarations }];
-  const choice = toolChoiceForTools(request.tool_choice, request.tools);
-  const toolConfig = choice === undefined ? undefined : toolConfigFromIR(choice, request.tools ?? []);
+  const choice = request.tool_choice !== undefined && (declaredTools.length > 0 || isForcingToolChoice(request.tool_choice))
+    ? request.tool_choice
+    : undefined;
+  const toolConfig = choice === undefined ? undefined : toolConfigFromIR(choice, declaredTools);
   const generationConfig = geminiGenerateContentSettingsFromIR(request.settings);
-  // Gemini's ServiceTier enum spells the accelerated lane as `priority` and the standard lane as `standard`.
-  // Omit OpenAI's default `auto` lane since Gemini has no matching tier value.
-  // https://ai.google.dev/api/generate-content#ServiceTier
-  const tier = request.settings.service_tier;
-  const serviceTier = tier == null || tier === 'auto'
-    ? undefined
-    : isFastServiceTier(tier)
-      ? FAST_SERVICE_TIER
-      : tier === 'default'
-        ? 'standard'
-        : tier;
+  const serviceTier = geminiServiceTierFromInputIR(request.settings.service_tier);
 
   return {
     model: request.settings.model,

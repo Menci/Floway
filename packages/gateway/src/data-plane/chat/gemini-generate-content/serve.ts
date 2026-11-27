@@ -1,6 +1,6 @@
 import { analyzeGeminiGenerateContentAffinity } from './affinity/ingress.ts';
 import { geminiGenerateContentAttempt, geminiGenerateContentCountTokensTarget, geminiGenerateContentGenerateTarget } from './attempt.ts';
-import { renderGeminiGenerateContentFailure } from './errors.ts';
+import { normalizeGeminiGenerateContentFailure, renderGeminiGenerateContentFailure } from './errors.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import { enumerateModelCandidates } from '../../upstreams/resolution.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
@@ -53,8 +53,11 @@ export const geminiGenerateContentServe = {
       'chat',
       async candidate => {
         const result = await geminiGenerateContentAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers });
-        if (result.type === 'events') ctx.affinity.select(candidate);
-        return result;
+        if (result.type === 'events') {
+          ctx.affinity.select(candidate);
+          return result;
+        }
+        return normalizeGeminiGenerateContentFailure(result);
       },
     );
   },

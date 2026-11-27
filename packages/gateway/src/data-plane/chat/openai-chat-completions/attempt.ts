@@ -23,8 +23,6 @@ import {
 } from '@floway-dev/translate';
 import { type ModelCandidate, type ExecuteResult } from '@floway-dev/upstream';
 
-// `/v1/chat/completions` generate prefers a native OpenAI Chat Completions target,
-// then Anthropic Messages, then OpenAI Responses, then Gemini GenerateContent.
 export const openaiChatCompletionsTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses', 'geminiGenerateContent']);
 
 export interface OpenAIChatCompletionsAttemptArgs {
@@ -69,11 +67,13 @@ const dispatchOpenAIChatCompletions = async (
     );
     return await upstreamStreamResultToExecuteResult(upstreamResult, candidate, 'openaiChatCompletions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
   }
-  if (targetApi === 'anthropicMessages') {
+  const sidecarCodec = ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn);
+  switch (targetApi) {
+  case 'anthropicMessages':
     return await executeTranslation(
       invocation.payload,
       p => routeOpenAIChatCompletionsViaAnthropicMessages(p, {
-        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
+        sidecarCodec,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       }),
       translated => anthropicMessagesAttempt.generate({
@@ -81,28 +81,27 @@ const dispatchOpenAIChatCompletions = async (
       }),
       captureFromDump(ctx.dump, targetApi),
     );
-  }
-  if (targetApi === 'openaiResponses') {
+  case 'openaiResponses':
     return await executeTranslation(
       invocation.payload,
-      p => routeOpenAIChatCompletionsViaOpenAIResponses(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeOpenAIChatCompletionsViaOpenAIResponses(p, { sidecarCodec }),
       translated => openaiResponsesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),
       captureFromDump(ctx.dump, targetApi),
     );
-  }
-  if (targetApi === 'geminiGenerateContent') {
+  case 'geminiGenerateContent':
     return await executeTranslation(
       invocation.payload,
-      p => routeOpenAIChatCompletionsViaGeminiGenerateContent(p, {
-        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
-      }),
+      p => routeOpenAIChatCompletionsViaGeminiGenerateContent(p, { sidecarCodec }),
       ({ model: _model, ...body }) => geminiGenerateContentAttempt.generate({
         payload: body, ctx, candidate, headers: invocation.headers,
       }),
       captureFromDump(ctx.dump, targetApi),
     );
+  default: {
+    const exhaustive: never = targetApi;
+    throw new Error(`openaiChatCompletionsAttempt.generate: unexpected targetApi '${exhaustive as string}'`);
   }
-  throw new Error(`openaiChatCompletionsAttempt.generate: unexpected targetApi '${targetApi as string}'`);
+  }
 };

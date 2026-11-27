@@ -241,4 +241,23 @@ test('translated countTokens uses trip.error for structured Anthropic upstream e
   assertEquals(JSON.parse(decodeResponseBody(plainTextResp.body)), {
     error: { code: 503, message: 'upstream unavailable', status: 'UNAVAILABLE' },
   });
+
+  const apiErrorResp = await geminiGenerateContentAttempt.countTokens({
+    payload: makePayload({
+      contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+      tools: [{ googleSearch: {} }],
+    }),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({
+      // Only anthropicMessages is available, and Anthropic web-search shim rejects invalid server tools with ApiErrorResult,
+      // or an upstream Anthropic error body returns PlainResult.
+      callAnthropicMessagesCountTokens: async () => ({
+        http: new Response(null, { status: 204 }),
+        modelKey: 'k',
+      }),
+    }),
+    headers: new Headers(),
+  });
+  assertEquals(apiErrorResp.type, 'plain');
+  assertEquals(apiErrorResp.http.status, 204);
 });

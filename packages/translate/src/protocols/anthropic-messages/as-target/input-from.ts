@@ -2,7 +2,7 @@ import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds } from '..
 import { requireStreaming } from '../../../ir/input/streaming.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputDocument, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
-import { parseDataURL, type ParsedDataURL } from '../../../shared/data-url.ts';
+import { isDataURL, parseDataURL, type ParsedDataURL } from '../../../shared/data-url.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { type TranslateOptions } from '../../../types.ts';
 import type {
@@ -23,13 +23,13 @@ const requiredMediaType = (media: ParsedDataURL): string => media.media_type ?? 
 
 const inlineMedia = (media: Extract<IRInputMedia, { source_kind: 'data' | 'base64' }>): ParsedDataURL => {
   if (media.source_kind === 'base64') return media;
-  return media.data.startsWith('data:') ? parseDataURL(media.data) : { data: media.data };
+  return isDataURL(media.data) ? parseDataURL(media.data) : { data: media.data };
 };
 
 const imageSource = (media: IRInputMedia): AnthropicMessagesImageSource => {
   switch (media.source_kind) {
   case 'url': {
-    if (media.url.startsWith('data:')) {
+    if (isDataURL(media.url)) {
       const inline = parseDataURL(media.url);
       return { type: 'base64', media_type: requiredMediaType(inline) as Extract<AnthropicMessagesImageSource, { type: 'base64' }>['media_type'], data: inline.data };
     }
@@ -58,7 +58,7 @@ const imageBlock = (media: IRInputMedia): AnthropicMessagesImageBlock => ({ type
 const mediaDocumentBlock = (media: IRInputMedia): Extract<AnthropicMessagesUserContentBlock, { type: 'document' }> => {
   switch (media.source_kind) {
   case 'url': {
-    if (!media.url.startsWith('data:')) return { type: 'document', source: { type: 'url', url: media.url } };
+    if (!isDataURL(media.url)) return { type: 'document', source: { type: 'url', url: media.url } };
     const inline = parseDataURL(media.url);
     return { type: 'document', source: { type: 'base64', media_type: requiredMediaType(inline), data: inline.data } };
   }

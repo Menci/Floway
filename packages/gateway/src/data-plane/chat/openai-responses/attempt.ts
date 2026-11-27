@@ -29,8 +29,6 @@ import {
 } from '@floway-dev/translate';
 import { type ModelCandidate, eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type UpstreamOpenAIResponsesResult, type OpenAIResponsesAction } from '@floway-dev/upstream';
 
-// `/v1/responses` generate prefers the native OpenAI Responses target, then
-// Anthropic Messages, then OpenAI Chat Completions, then Gemini GenerateContent.
 // The same picker covers compact: every non-Responses target is reachable via
 // the shim, which pivots compact→generate inside the chain.
 export const openaiResponsesTarget = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions', 'geminiGenerateContent']);
@@ -115,8 +113,7 @@ const dispatchOpenAIResponses = async (
   ctx: ChatGatewayCtx,
 ): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> | TranslateInputError> => {
   const { candidate, targetApi } = invocation;
-  switch (targetApi) {
-  case 'openaiResponses': {
+  if (targetApi === 'openaiResponses') {
     if (candidate.rules !== undefined) applyRulesToUpstreamOpenAIResponses(invocation.payload, candidate.rules);
     // Compact drops `stream` and `store` before hitting the wire: `store` is a
     // gateway-only snapshot-persistence hint the upstream compact endpoint
@@ -140,20 +137,22 @@ const dispatchOpenAIResponses = async (
     );
     return await upstreamOpenAIResponsesResultToExecuteResult(upstreamResult, candidate, targetApi, ctx);
   }
+  if (invocation.action === 'compact') {
+    // The openai-responses-compact-shim is structurally required on non-openai-responses
+    // targets and pivots ctx.action to 'generate' before reaching here;
+    // landing inside this case with action='compact' means the shim
+    // disengaged or was wired out of the chain. A compaction_trigger in
+    // input is caught one layer down by the translator's
+    // unexpected-input-item guard.
+    throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='${targetApi}' — the openai-responses-compact-shim must engage and pivot the action`);
+  }
+  const sidecarCodec = ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn);
+  switch (targetApi) {
   case 'anthropicMessages':
-    if (invocation.action === 'compact') {
-      // The openai-responses-compact-shim is structurally required on non-openai-responses
-      // targets and pivots ctx.action to 'generate' before reaching here;
-      // landing inside this case with action='compact' means the shim
-      // disengaged or was wired out of the chain. A compaction_trigger in
-      // input is caught one layer down by the translator's
-      // unexpected-input-item guard.
-      throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='anthropicMessages' — the openai-responses-compact-shim must engage and pivot the action`);
-    }
     return await executeTranslation(
       invocation.payload,
       p => routeOpenAIResponsesViaAnthropicMessages(p, {
-        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
+        sidecarCodec,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       }),
       translated => anthropicMessagesAttempt.generate({
@@ -162,26 +161,18 @@ const dispatchOpenAIResponses = async (
       captureFromDump(ctx.dump, targetApi),
     );
   case 'openaiChatCompletions':
-    if (invocation.action === 'compact') {
-      throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='openaiChatCompletions' — the openai-responses-compact-shim must engage and pivot the action`);
-    }
     return await executeTranslation(
       invocation.payload,
-      p => routeOpenAIResponsesViaOpenAIChatCompletions(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeOpenAIResponsesViaOpenAIChatCompletions(p, { sidecarCodec }),
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),
       captureFromDump(ctx.dump, targetApi),
     );
   case 'geminiGenerateContent':
-    if (invocation.action === 'compact') {
-      throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='geminiGenerateContent' — the openai-responses-compact-shim must engage and pivot the action`);
-    }
     return await executeTranslation(
       invocation.payload,
-      p => routeOpenAIResponsesViaGeminiGenerateContent(p, {
-        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
-      }),
+      p => routeOpenAIResponsesViaGeminiGenerateContent(p, { sidecarCodec }),
       ({ model: _model, ...body }) => geminiGenerateContentAttempt.generate({
         payload: body, ctx, candidate, headers: invocation.headers,
       }),

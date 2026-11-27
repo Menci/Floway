@@ -167,7 +167,7 @@ export class TextCoordinateIndex {
 
   utf16RangeToUTF8(range: TextRange): { start: number; end: number } {
     if (this.#mode !== 'utf16-to-utf8') throw new TypeError('Text coordinate index does not map UTF-16 to UTF-8');
-    if (this.#unpairedSurrogates !== 0) throw new TypeError('GenerateContent byte coordinates require well-formed Unicode');
+    if (this.#unpairedSurrogates !== 0) throw new TypeError('UTF-8 byte coordinates require well-formed Unicode');
     const [start, end] = this.#utf16Range(range);
     return { start, end };
   }

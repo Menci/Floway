@@ -10,9 +10,20 @@ export const GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE = 'Gemini generate
 
 export const isGeminiGenerateContentErrorEvent = (event: GeminiGenerateContentStreamEvent): event is GeminiGenerateContentErrorResponse => 'error' in event;
 
-export const isGeminiGenerateContentTerminalEvent = (event: GeminiGenerateContentStreamEvent): boolean => isGeminiGenerateContentErrorEvent(event) || ('promptFeedback' in event && event.promptFeedback?.blockReason !== undefined);
+// Protobuf default enum zero values (`BLOCK_REASON_UNSPECIFIED` in REST proto,
+// `BLOCKED_REASON_UNSPECIFIED` in `@google/genai`) and empty strings are non-blocking.
+// https://github.com/googleapis/googleapis/blob/e7513c828b8db536fa12fc5493d541f323aedf90/google/ai/generativelanguage/v1beta/generative_service.proto#L596-L618
+// https://github.com/googleapis/js-genai/blob/ca5690c0999f499f69bb69ea6187ef29d26ddfef/src/types.ts
+export const isGeminiGenerateContentPromptBlockReason = (
+  reason: string | null | undefined,
+): reason is string =>
+  reason != null && reason !== '' && reason !== 'BLOCK_REASON_UNSPECIFIED' && reason !== 'BLOCKED_REASON_UNSPECIFIED';
+
+export const isGeminiGenerateContentTerminalEvent = (event: GeminiGenerateContentStreamEvent): boolean =>
+  isGeminiGenerateContentErrorEvent(event) || ('promptFeedback' in event && isGeminiGenerateContentPromptBlockReason(event.promptFeedback?.blockReason));
 
 // Relays (e.g. New-API) and Vertex chunks can emit empty or unspecified finishReason values on non-terminal frames.
+// https://github.com/googleapis/googleapis/blob/e7513c828b8db536fa12fc5493d541f323aedf90/google/ai/generativelanguage/v1beta/generative_service.proto#L686-L762
 export const isGeminiGenerateContentTerminalFinishReason = (
   reason: GeminiGenerateContentFinishReason | null | undefined,
 ): reason is GeminiGenerateContentFinishReason =>
@@ -40,7 +51,7 @@ export const createGeminiGenerateContentCandidateCompletion = () => {
 const geminiGenerateContentEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>): AsyncGenerator<GeminiGenerateContentStreamEvent> {
   const completion = createGeminiGenerateContentCandidateCompletion();
   for await (const frame of frames) {
-    if (frame.type === 'done') return;
+    if (frame.type === 'done') break;
 
     yield frame.event;
     if (isGeminiGenerateContentTerminalEvent(frame.event)) return;

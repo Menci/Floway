@@ -937,7 +937,7 @@ const prepareAnthropicMessagesWebSearchInvocation = (ctx: AnthropicMessagesInvoc
  * `web_search_tool_result` / `web_search_result_location` shape.
  *
  * The shim is unconditional for non-native Anthropic Messages targets (OpenAI Responses /
- * OpenAI Chat Completions cannot carry Anthropic server tools), and gated by the
+ * OpenAI Chat Completions / Gemini GenerateContent cannot carry Anthropic server tools), and gated by the
  * `anthropic-messages-web-search-shim` flag for native Anthropic Messages targets (the upstream
  * may or may not be able to serve web_search natively).
  */

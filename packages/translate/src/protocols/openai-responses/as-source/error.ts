@@ -1,5 +1,5 @@
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
-import { errorDetailsOf } from '../../../shared/api-error.ts';
+import { errorDetailsOf, restateError } from '../../../shared/api-error.ts';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 export const openaiResponsesErrorEventOf = (error: IRErrorPayload): OpenAIResponsesStreamEventEx => {
@@ -12,3 +12,6 @@ export const openaiResponsesErrorEventOf = (error: IRErrorPayload): OpenAIRespon
     ...(details === undefined ? {} : { provider_specific_fields: details }),
   };
 };
+
+export const writeOpenAIResponsesError = (upstreamStatus: number, headers: Headers, error: IRErrorPayload) =>
+  restateError(upstreamStatus, headers, openaiResponsesErrorEventOf(error));

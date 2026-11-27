@@ -71,9 +71,14 @@ test('equal values at one metadata key coalesce across namespaces without consum
   });
 });
 
-test('leaves array JSON bodies untouched in generic error parsing', () => {
-  const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
-  expect(irErrorPayloadFromBody(encode([{
-    error: { code: 400, message: 'bad field', status: 'INVALID_ARGUMENT' },
-  }]))).toBeUndefined();
+test('preserves structured error fields when a wire error omits message', () => {
+  expect(errorPayloadFromWire({
+    error: { type: 'rate_limit_error', code: 'rate_limit', param: 'model', status: 'RESOURCE_EXHAUSTED', trace: 't1' },
+  })).toEqual({
+    message: '',
+    type: 'rate_limit_error',
+    code: 'rate_limit',
+    param: 'model',
+    provider_specific_fields: { status: 'RESOURCE_EXHAUSTED', trace: 't1' },
+  });
 });

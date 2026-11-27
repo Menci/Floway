@@ -56,7 +56,7 @@ Protocol-native request normalization and Part data classification belong to
 - `composition/index.ts` — pairs one source protocol with one target protocol into a trip; the generic composition boundary.
 - `protocols/<protocol>/as-source.ts` — states that protocol as the side a request comes from.
 - `protocols/<protocol>/as-target.ts` — states that protocol as the side a request goes to.
-- `shared/` — cross-route coordinates, error classification, JSON handling, token validation, and callable wrapper formats.
+- `shared/` — cross-route coordinates, data URLs, error classification, JSON handling, token validation, and callable wrapper formats.
 
 ## Rules
 

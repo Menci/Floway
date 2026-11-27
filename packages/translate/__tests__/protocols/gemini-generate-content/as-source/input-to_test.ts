@@ -40,7 +40,7 @@ test('empty thoughts do not enter IR or split visible text', () => {
 });
 
 test.each([
-  [FAST_SERVICE_TIER, 'fast'],
+  [FAST_SERVICE_TIER, FAST_SERVICE_TIER],
   ['standard', 'default'],
   ['flex', 'flex'],
   ['', undefined],

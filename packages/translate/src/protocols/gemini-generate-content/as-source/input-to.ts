@@ -19,7 +19,7 @@ import type {
   IRInputToolResultContentPart,
 } from '../../../ir/input/types.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
-import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
+import { geminiServiceTierToInputIR } from '../service-tier.ts';
 import { geminiGenerateContentPartKind } from '@floway-dev/protocols/gemini-generate-content';
 import type { GeminiGenerateContentThinkingConfig, GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentPayload, GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 
@@ -278,14 +278,7 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
   const outputFormat: IRInputOutputFormat | undefined = schema !== undefined
     ? { type: 'json_schema', schema: klona(schema), name: 'gemini_response' }
     : config?.responseMimeType === 'application/json' ? { type: 'json_object' } : undefined;
-  const rawTier = payload.serviceTier;
-  const serviceTier = typeof rawTier !== 'string' || rawTier === ''
-    ? undefined
-    : rawTier === FAST_SERVICE_TIER
-      ? 'fast'
-      : rawTier === 'standard'
-        ? 'default'
-        : rawTier;
+  const serviceTier = geminiServiceTierToInputIR(payload.serviceTier);
 
   return {
     model: payload.model,

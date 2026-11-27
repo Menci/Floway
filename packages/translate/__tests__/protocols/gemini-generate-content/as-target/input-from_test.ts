@@ -1,12 +1,14 @@
 import { expect, test } from 'vitest';
 
+import { geminiGenerateContentTargetProtocol } from '../../../../src/protocols/gemini-generate-content/as-target.ts';
+import { TranslateInputException } from '../../../../src/shared/input-error.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import { iterate } from '../../../shared/iterables.ts';
 import { expectTrip } from '../../../trip.ts';
 import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, FAST_SERVICE_TIER, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsAssistantMessageEx, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import { collectOpenAIResponsesProtocolEventsToResult, toOpenAIResponsesInputItems, type OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import {
   routeAnthropicMessagesViaGeminiGenerateContent,
@@ -146,7 +148,7 @@ test('translates OpenAI Responses namespaces, custom tools, allowed_tools subset
     tool_choice: {
       type: 'allowed_tools',
       mode: 'auto',
-      tools: [{ type: 'custom', name: 'fs.patch' }],
+      tools: [{ type: 'custom', name: 'fs.patch' }, { type: 'custom', name: 'fs.patch' }],
     },
     input: [
       { type: 'message', role: 'developer', content: 'Leading developer guidance' },
@@ -179,6 +181,16 @@ test('translates OpenAI Responses namespaces, custom tools, allowed_tools subset
     parts: [{ text: 'Leading developer guidance' }, { text: 'Apply patch' }, { text: 'Mid-turn developer note' }],
   }]);
 
+  const summaryOmittedWithEffort = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    stream: true,
+    reasoning: { effort: 'high', summary: 'omitted' },
+    input: 'Hi',
+  }, options()));
+  expect(summaryOmittedWithEffort.target.generationConfig).toEqual({
+    thinkingConfig: { thinkingLevel: 'HIGH', includeThoughts: false },
+  });
+
   const summaryOnly = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
     stream: true,
@@ -190,7 +202,7 @@ test('translates OpenAI Responses namespaces, custom tools, allowed_tools subset
   });
 });
 
-test('hoists leading developer messages when no top-level instruction exists and keeps a model boundary across a dropped reasoning-only turn', async () => {
+test('hoists leading developer messages, handles logprobs/json_object/adaptive thinking, and preserves model boundaries across dropped or empty assistant turns', async () => {
   const chat: OpenAIChatCompletionsPayload = {
     model: 'gemini-2.5-pro',
     stream: true,
@@ -198,13 +210,14 @@ test('hoists leading developer messages when no top-level instruction exists and
     logprobs: true,
     top_logprobs: 3,
     n: 2,
+    response_format: { type: 'json_object' },
     messages: [
       { role: 'developer', content: 'Hoisted developer rule' },
       {
         role: 'user',
         content: [
           { type: 'text', text: 'Multimodal user turn' },
-          { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,aGVsbG8=' } },
+          { type: 'image_url', image_url: { url: 'DATA:image/jpeg;base64,aGVsbG8=' } },
           { type: 'input_audio', input_audio: { data: 'YXVk', format: 'wav' } },
         ],
       },
@@ -217,326 +230,38 @@ test('hoists leading developer messages when no top-level instruction exists and
     candidateCount: 2,
     responseLogprobs: true,
     logprobs: 3,
+    responseMimeType: 'application/json',
     thinkingConfig: { thinkingBudget: 0 },
   });
-  expect(chatTrip.target.contents).toEqual([
-    {
-      role: 'user',
-      parts: [
-        { text: 'Multimodal user turn' },
-        { inlineData: { mimeType: 'image/jpeg', data: 'aGVsbG8=' } },
-        { inlineData: { mimeType: 'audio/wav', data: 'YXVk' } },
-      ],
-    },
-  ]);
+  expect(chatTrip.target.contents).toEqual([{
+    role: 'user',
+    parts: [
+      { text: 'Multimodal user turn' },
+      { inlineData: { mimeType: 'image/jpeg', data: 'aGVsbG8=' } },
+      { inlineData: { mimeType: 'audio/wav', data: 'YXVk' } },
+    ],
+  }]);
 
-  const separatedUsers = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+  // Responses `include` omitting logprobs sets `logprobs: false` in IR; Gemini must omit both fields.
+  const withoutLogprobs = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
     stream: true,
+    include: ['reasoning.encrypted_content'],
+    top_logprobs: 3,
     input: [
       { type: 'message', role: 'user', content: 'First user turn' },
-      { type: 'reasoning', id: 'rs_foreign', summary: [{ type: 'summary_text', text: 'Dropped unverified reasoning' }] },
+      // Encrypted-only foreign reasoning produces an empty IR assistant turn (`items: []`), which must keep its boundary.
+      { type: 'reasoning', id: 'rs_encrypted_only', summary: [], encrypted_content: 'foreign_blob' },
       { type: 'message', role: 'user', content: 'Second user turn' },
     ],
   }, options()));
-  expect(separatedUsers.target.contents).toEqual([
+  expect(withoutLogprobs.target.generationConfig).toBeUndefined();
+  expect(withoutLogprobs.target.contents).toEqual([
     { role: 'user', parts: [{ text: 'First user turn' }] },
     { role: 'model', parts: [{ text: '' }] },
     { role: 'user', parts: [{ text: 'Second user turn' }] },
   ]);
-});
 
-test('round-trips parallel id-less Gemini functionCalls (answered out of order) and thoughtSignature across Responses, Messages, and Chat clients', async () => {
-  const codec = createTestSidecarCodec('idless-gemini-roundtrip');
-  const geminiFrames = (calls: readonly { name: string; args: Record<string, unknown>; sig: string }[]): ProtocolFrame<GeminiGenerateContentStreamEvent>[] => [
-    eventFrame({
-      responseId: 'gem_rt_1',
-      modelVersion: 'gemini-2.5-pro',
-      candidates: [{
-        index: 0,
-        content: {
-          role: 'model',
-          parts: [
-            { thought: true, text: 'Planning tool calls.', thoughtSignature: 'sig_plan' },
-            ...calls.map(call => ({ functionCall: { name: call.name, args: call.args }, thoughtSignature: call.sig })),
-          ],
-        },
-        finishReason: 'STOP',
-      }],
-    }),
-    doneFrame(),
-  ];
-
-  // 1. OpenAI Responses with grouped custom tool + function tool answered out of order
-  const respTurn1: OpenAIResponsesRequestPayloadEx = {
-    model: 'gemini-2.5-pro',
-    stream: true,
-    tools: [
-      {
-        type: 'namespace',
-        name: 'code',
-        description: 'Coding tools',
-        tools: [{ type: 'custom', name: 'patch', format: { type: 'text' } }],
-      },
-      { type: 'function', name: 'read', parameters: { type: 'object', properties: { path: { type: 'string' } } } },
-    ],
-    input: 'Edit file',
-  };
-  const respTrip1 = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent(respTurn1, { sidecarCodec: codec }));
-  const respResult1 = await collectOpenAIResponsesProtocolEventsToResult(
-    respTrip1.events(iterate(geminiFrames([
-      { name: 'code_patch', args: { input: '*** Patch' }, sig: 'sig_patch' },
-      { name: 'read', args: { path: '/a.ts' }, sig: 'sig_read' },
-    ]))),
-  );
-  const respPatch = respResult1.output.find(item => item.type === 'custom_tool_call');
-  const respRead = respResult1.output.find(item => item.type === 'function_call');
-  if (respPatch === undefined || respRead === undefined) throw new Error('Expected translated tool calls');
-  expect(respPatch).toMatchObject({ type: 'custom_tool_call', namespace: 'code', name: 'patch', input: '*** Patch' });
-
-  const respTurn2: OpenAIResponsesRequestPayloadEx = {
-    ...respTurn1,
-    input: [
-      { type: 'message', role: 'user', content: 'Edit file' },
-      ...toOpenAIResponsesInputItems(respResult1.output),
-      { type: 'function_call_output', call_id: respRead.call_id, output: '{"ok":true}' },
-      { type: 'custom_tool_call_output', call_id: respPatch.call_id, output: '{"applied":true}' },
-    ],
-  };
-  const respTrip2 = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent(respTurn2, { sidecarCodec: codec }));
-  expect(respTrip2.target.contents).toEqual([
-    { role: 'user', parts: [{ text: 'Edit file' }] },
-    {
-      role: 'model',
-      parts: [
-        { thought: true, text: 'Planning tool calls.', thoughtSignature: 'sig_plan' },
-        { functionCall: { name: 'code_patch', args: { input: '*** Patch' } }, thoughtSignature: 'sig_patch' },
-        { functionCall: { name: 'read', args: { path: '/a.ts' } }, thoughtSignature: 'sig_read' },
-      ],
-    },
-    {
-      role: 'user',
-      parts: [
-        { functionResponse: { name: 'code_patch', response: { applied: true } } },
-        { functionResponse: { name: 'read', response: { ok: true } } },
-      ],
-    },
-  ]);
-
-  // 2. Anthropic Messages
-  const msgTurn1: AnthropicMessagesPayload = {
-    model: 'gemini-2.5-pro',
-    max_tokens: 1024,
-    stream: true,
-    tools: [{ name: 'bash', input_schema: { type: 'object', properties: { cmd: { type: 'string' } } } }],
-    messages: [{ role: 'user', content: 'Run ls' }],
-  };
-  const msgTrip1 = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent(msgTurn1, { sidecarCodec: codec }));
-  const msgResult1 = await collectAnthropicMessagesProtocolEventsToResult(
-    msgTrip1.events(iterate(geminiFrames([{ name: 'bash', args: { cmd: 'ls' }, sig: 'sig_call' }]))),
-  );
-  const toolUse = msgResult1.content.find(block => block.type === 'tool_use');
-  if (toolUse === undefined) throw new Error('Expected translated tool_use');
-  const msgTrip2 = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
-    ...msgTurn1,
-    messages: [
-      ...msgTurn1.messages,
-      { role: 'assistant', content: msgResult1.content },
-      { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUse.id, content: 'README.md' }] },
-    ],
-  }, { sidecarCodec: codec }));
-  expect(msgTrip2.target.contents[1]).toEqual({
-    role: 'model',
-    parts: [
-      { thought: true, text: 'Planning tool calls.', thoughtSignature: 'sig_plan' },
-      { functionCall: { name: 'bash', args: { cmd: 'ls' } }, thoughtSignature: 'sig_call' },
-    ],
-  });
-  expect(msgTrip2.target.contents[2]).toEqual({
-    role: 'user',
-    parts: [{ functionResponse: { name: 'bash', response: { output: 'README.md' } } }],
-  });
-
-  // 3. OpenAI Chat Completions
-  const chatTurn1: OpenAIChatCompletionsPayload = {
-    model: 'gemini-2.5-pro',
-    stream: true,
-    tools: [{ type: 'function', function: { name: 'bash', parameters: { type: 'object', properties: { cmd: { type: 'string' } } } } }],
-    messages: [{ role: 'user', content: 'Run pwd' }],
-  };
-  const chatTrip1 = expectTrip(await routeOpenAIChatCompletionsViaGeminiGenerateContent(chatTurn1, { sidecarCodec: codec }));
-  const chatResult1 = await collectOpenAIChatCompletionsProtocolEventsToResult(
-    chatTrip1.events(iterate(geminiFrames([{ name: 'bash', args: { cmd: 'pwd' }, sig: 'sig_call' }]))),
-  );
-  const chatCall = chatResult1.choices[0]?.message.tool_calls?.[0];
-  if (chatCall === undefined) throw new Error('Expected translated tool_call');
-  const chatTrip2 = expectTrip(await routeOpenAIChatCompletionsViaGeminiGenerateContent({
-    ...chatTurn1,
-    messages: [
-      ...chatTurn1.messages,
-      chatResult1.choices[0]!.message,
-      { role: 'tool', tool_call_id: chatCall.id, content: '/workspace' },
-    ],
-  }, { sidecarCodec: codec }));
-  expect(chatTrip2.target.contents[1]).toEqual({
-    role: 'model',
-    parts: [
-      { thought: true, text: 'Planning tool calls.', thoughtSignature: 'sig_plan' },
-      { functionCall: { name: 'bash', args: { cmd: 'pwd' } }, thoughtSignature: 'sig_call' },
-    ],
-  });
-  expect(chatTrip2.target.contents[2]).toEqual({
-    role: 'user',
-    parts: [{ functionResponse: { name: 'bash', response: { output: '/workspace' } } }],
-  });
-});
-
-test('returns input-error when a source file_id media reference cannot be resolved by Gemini', async () => {
-  const result = await routeOpenAIResponsesViaGeminiGenerateContent({
-    model: 'gemini-2.5-pro',
-    stream: true,
-    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_123', detail: 'auto' }] }],
-  }, options());
-  expect(result).toMatchObject({ type: 'input-error' });
-});
-
-test('omits empty systemInstruction, toolConfig without tools, serviceTier auto, and empty reasoning_effort thinkingLevel', async () => {
-  const emptyEffortOnly = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
-    model: 'gemini-2.5-pro',
-    stream: true,
-    instructions: '',
-    service_tier: 'auto',
-    reasoning: { effort: '' },
-    tool_choice: 'auto',
-    input: 'Hello',
-  }, options()));
-  expect(emptyEffortOnly.target).not.toHaveProperty('systemInstruction');
-  expect(emptyEffortOnly.target).not.toHaveProperty('toolConfig');
-  expect(emptyEffortOnly.target).not.toHaveProperty('serviceTier');
-  expect(emptyEffortOnly.target).not.toHaveProperty('generationConfig');
-
-  const emptySystem = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
-    model: 'gemini-2.5-pro',
-    max_tokens: 100,
-    stream: true,
-    system: [{ type: 'text', text: '' }],
-    messages: [{ role: 'user', content: 'Hi' }],
-  }, options()));
-  expect(emptySystem.target).not.toHaveProperty('systemInstruction');
-});
-
-test('serializes non-sidecar parallel tool calls with default empty args and thoughtSignature only on the first call, and merges consecutive model turns preserving sidecar signatures', async () => {
-  const codec = createTestSidecarCodec('gemini-parallel-and-merge');
-  const parallel = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
-    model: 'gemini-2.5-pro',
-    stream: true,
-    tools: [
-      { type: 'function', name: 'ping', parameters: { type: 'object', properties: {} } },
-      { type: 'custom', name: 'patch', format: { type: 'text' } },
-    ],
-    input: [
-      { type: 'message', role: 'user', content: 'Run tools' },
-      { type: 'function_call', call_id: 'call_1', name: 'ping', arguments: '' },
-      { type: 'custom_tool_call', call_id: 'call_2', name: 'patch', input: 'diff' },
-      { type: 'function_call_output', call_id: 'call_1', output: 'ok' },
-      { type: 'custom_tool_call_output', call_id: 'call_2', output: 'done' },
-    ],
-  }, { sidecarCodec: codec }));
-  expect(parallel.target.contents[1]).toEqual({
-    role: 'model',
-    parts: [
-      {
-        functionCall: { id: 'call_1', name: 'ping', args: {} },
-        thoughtSignature: 'skip_thought_signature_validator',
-      },
-      {
-        functionCall: { id: 'call_2', name: 'patch', args: { input: 'diff' } },
-      },
-    ],
-  });
-
-  // Produce a sidecar-restored model turn and replay it right after a non-sidecar model turn separated by dropped reasoning.
-  const turn1 = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
-    model: 'gemini-2.5-pro',
-    stream: true,
-    tools: [{ type: 'function', name: 'ping', parameters: { type: 'object', properties: {} } }],
-    input: 'First question',
-  }, { sidecarCodec: codec }));
-  const result1 = await collectOpenAIResponsesProtocolEventsToResult(turn1.events(iterate([
-    eventFrame({
-      modelVersion: 'gemini-2.5-pro',
-      candidates: [{
-        index: 0,
-        content: {
-          role: 'model',
-          parts: [{ functionCall: { name: 'ping', args: {} }, thoughtSignature: 'real_gemini_sig' }],
-        },
-        finishReason: 'STOP',
-      }],
-    }),
-    doneFrame(),
-  ])));
-  const restoredItems = toOpenAIResponsesInputItems(result1.output);
-  const restoredCall = result1.output.find(item => item.type === 'function_call');
-  if (restoredCall === undefined) throw new Error('Expected function_call');
-
-  const mergedModels = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
-    model: 'gemini-2.5-pro',
-    stream: true,
-    tools: [{ type: 'function', name: 'ping', parameters: { type: 'object', properties: {} } }],
-    input: [
-      { type: 'message', role: 'user', content: 'First question' },
-      { type: 'message', role: 'assistant', content: 'Let me check.' },
-      // Empty mid-turn developer guidance yields 0 parts, forcing consecutive IR and restored model turns adjacent.
-      { type: 'message', role: 'developer', content: '' },
-      ...restoredItems,
-      { type: 'message', role: 'developer', content: '' },
-      { type: 'function_call', call_id: 'call_extra', name: 'ping', arguments: '' },
-      { type: 'function_call_output', call_id: restoredCall.call_id, output: 'pong' },
-      { type: 'function_call_output', call_id: 'call_extra', output: 'pong2' },
-    ],
-  }, { sidecarCodec: codec }));
-  expect(mergedModels.target.contents).toEqual([
-    { role: 'user', parts: [{ text: 'First question' }] },
-    {
-      role: 'model',
-      parts: [
-        { text: 'Let me check.' },
-        { functionCall: { name: 'ping', args: {} }, thoughtSignature: 'real_gemini_sig' },
-        { functionCall: { id: 'call_extra', name: 'ping', args: {} } },
-      ],
-    },
-    {
-      role: 'user',
-      parts: [
-        { functionResponse: { name: 'ping', response: { output: 'pong' } } },
-        { functionResponse: { id: 'call_extra', name: 'ping', response: { output: 'pong2' } } },
-      ],
-    },
-  ]);
-
-  const consecutiveAssistantCalls = expectTrip(await routeOpenAIChatCompletionsViaGeminiGenerateContent({
-    model: 'gemini-2.5-pro',
-    stream: true,
-    tools: [{ type: 'function', function: { name: 'ping', parameters: { type: 'object', properties: {} } } }],
-    messages: [
-      { role: 'user', content: 'Twice' },
-      { role: 'assistant', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'ping', arguments: '{}' } }] },
-      { role: 'assistant', tool_calls: [{ id: 'c2', type: 'function', function: { name: 'ping', arguments: '{}' } }] },
-      { role: 'tool', tool_call_id: 'c1', content: 'one' },
-      { role: 'tool', tool_call_id: 'c2', content: 'two' },
-    ],
-  }, { sidecarCodec: codec }));
-  expect(consecutiveAssistantCalls.target.contents[1]).toEqual({
-    role: 'model',
-    parts: [
-      { functionCall: { id: 'c1', name: 'ping', args: {} }, thoughtSignature: 'skip_thought_signature_validator' },
-      { functionCall: { id: 'c2', name: 'ping', args: {} } },
-    ],
-  });
-});
-
-test('maps Anthropic adaptive thinking with and without explicit effort, and restores Chat tool sidecar when client omits refusal null', async () => {
   const adaptiveOnly = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
     max_tokens: 1024,
@@ -561,54 +286,306 @@ test('maps Anthropic adaptive thinking with and without explicit effort, and res
     thinkingLevel: 'LOW',
     includeThoughts: true,
   });
+});
 
-  // OpenAI Chat client omitting `refusal: null` and `content: null` when replaying a tool call turn.
-  const codec = createTestSidecarCodec('chat-omit-refusal-null');
-  const chatTurn1: OpenAIChatCompletionsPayload = {
+test('round-trips parallel id-less Gemini functionCalls answered out of order (even with interleaved user text) and thoughtSignature', async () => {
+  const codec = createTestSidecarCodec('idless-gemini-roundtrip');
+  const geminiFrames: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [
+    eventFrame({
+      responseId: 'gem_rt_1',
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{
+        index: 0,
+        content: {
+          role: 'model',
+          parts: [
+            { thought: true, text: 'Planning tool calls.', thoughtSignature: 'sig_plan' },
+            { functionCall: { name: 'code_patch', args: { input: '*** Patch' } }, thoughtSignature: 'sig_patch' },
+            { functionCall: { name: 'read', args: { path: '/a.ts' } }, thoughtSignature: 'sig_read' },
+          ],
+        },
+        finishReason: 'STOP',
+      }],
+    }),
+    doneFrame(),
+  ];
+
+  const respTurn1: OpenAIResponsesRequestPayloadEx = {
     model: 'gemini-2.5-pro',
     stream: true,
-    tools: [{ type: 'function', function: { name: 'bash', parameters: { type: 'object', properties: { cmd: { type: 'string' } } } } }],
-    messages: [{ role: 'user', content: 'Run pwd' }],
+    tools: [
+      {
+        type: 'namespace',
+        name: 'code',
+        description: 'Coding tools',
+        tools: [{ type: 'custom', name: 'patch', format: { type: 'text' } }],
+      },
+      { type: 'function', name: 'read', parameters: { type: 'object', properties: { path: { type: 'string' } } } },
+    ],
+    input: 'Edit file',
   };
-  const chatTrip1 = expectTrip(await routeOpenAIChatCompletionsViaGeminiGenerateContent(chatTurn1, { sidecarCodec: codec }));
-  const chatResult1 = await collectOpenAIChatCompletionsProtocolEventsToResult(
-    chatTrip1.events(iterate([
-      eventFrame({
-        responseId: 'gem_rt_omit_null',
-        modelVersion: 'gemini-2.5-pro',
-        candidates: [{
-          index: 0,
-          content: {
-            role: 'model',
-            parts: [{ functionCall: { name: 'bash', args: { cmd: 'pwd' } }, thoughtSignature: 'sig_no_refusal_null' }],
-          },
-          finishReason: 'STOP',
-        }],
-      }),
-      doneFrame(),
-    ])),
-  );
-  const msg1 = chatResult1.choices[0]!.message;
-  const toolCalls = msg1.tool_calls;
-  if (toolCalls === undefined || toolCalls.length === 0) throw new Error('Expected tool_calls');
-  const replayedAssistant: OpenAIChatCompletionsAssistantMessageEx = {
-    role: 'assistant',
-    tool_calls: toolCalls,
-    reasoning_details: msg1.reasoning_details,
-  };
-  const chatTurn2: OpenAIChatCompletionsPayloadEx = {
-    ...chatTurn1,
-    messages: [
-      ...chatTurn1.messages,
-      replayedAssistant,
-      { role: 'tool', tool_call_id: toolCalls[0]!.id, content: '/workspace' },
+  const respTrip1 = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent(respTurn1, { sidecarCodec: codec }));
+  const respResult1 = await collectOpenAIResponsesProtocolEventsToResult(respTrip1.events(iterate(geminiFrames)));
+  const respPatch = respResult1.output.find(item => item.type === 'custom_tool_call');
+  const respRead = respResult1.output.find(item => item.type === 'function_call');
+  if (respPatch === undefined || respRead === undefined) throw new Error('Expected translated tool calls');
+  expect(respPatch).toMatchObject({ type: 'custom_tool_call', namespace: 'code', name: 'patch', input: '*** Patch' });
+
+  const respTurn2: OpenAIResponsesRequestPayloadEx = {
+    ...respTurn1,
+    input: [
+      { type: 'message', role: 'user', content: 'Edit file' },
+      ...toOpenAIResponsesInputItems(respResult1.output),
+      // Interleaved user note between out-of-order tool results must not split or misorder functionResponse parts.
+      { type: 'function_call_output', call_id: respRead.call_id, output: '{"ok":true}' },
+      { type: 'message', role: 'user', content: 'Also verify lint' },
+      { type: 'custom_tool_call_output', call_id: respPatch.call_id, output: '{"applied":true}' },
     ],
   };
-  const chatTrip2 = expectTrip(await routeOpenAIChatCompletionsViaGeminiGenerateContent(chatTurn2, { sidecarCodec: codec }));
-  expect(chatTrip2.target.contents[1]).toEqual({
-    role: 'model',
-    parts: [{ functionCall: { name: 'bash', args: { cmd: 'pwd' } }, thoughtSignature: 'sig_no_refusal_null' }],
+  const respTrip2 = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent(respTurn2, { sidecarCodec: codec }));
+  expect(respTrip2.target.contents).toEqual([
+    { role: 'user', parts: [{ text: 'Edit file' }] },
+    {
+      role: 'model',
+      parts: [
+        { thought: true, text: 'Planning tool calls.', thoughtSignature: 'sig_plan' },
+        { functionCall: { name: 'code_patch', args: { input: '*** Patch' } }, thoughtSignature: 'sig_patch' },
+        { functionCall: { name: 'read', args: { path: '/a.ts' } }, thoughtSignature: 'sig_read' },
+      ],
+    },
+    {
+      role: 'user',
+      parts: [
+        { functionResponse: { name: 'code_patch', response: { applied: true } } },
+        { functionResponse: { name: 'read', response: { ok: true } } },
+        { text: 'Also verify lint' },
+      ],
+    },
+  ]);
+});
+
+test('returns input-error when a source file_id media reference cannot be resolved by Gemini', async () => {
+  const result = await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    stream: true,
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_123', detail: 'auto' }] }],
+  }, options());
+  expect(result).toMatchObject({ type: 'input-error' });
+});
+
+test('omits empty systemInstruction, non-forcing toolConfig without tools, empty/auto serviceTier, and empty effort or summary', async () => {
+  const emptyEffortOnly = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    stream: true,
+    service_tier: '',
+    reasoning: { effort: '', summary: '' as never },
+    tool_choice: 'auto',
+    input: 'Hello',
+  }, options()));
+  expect(emptyEffortOnly.target).not.toHaveProperty('systemInstruction');
+  expect(emptyEffortOnly.target).not.toHaveProperty('toolConfig');
+  expect(emptyEffortOnly.target).not.toHaveProperty('serviceTier');
+  expect(emptyEffortOnly.target).not.toHaveProperty('generationConfig');
+
+  const emptySystem = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    max_tokens: 100,
+    stream: true,
+    service_tier: 'auto' as never,
+    system: [{ type: 'text', text: '' }],
+    messages: [{ role: 'user', content: 'Hi' }],
+  }, options()));
+  expect(emptySystem.target).not.toHaveProperty('systemInstruction');
+  expect(emptySystem.target).not.toHaveProperty('serviceTier');
+});
+
+test('maps toolConfig variants (none, required, allowed_tools empty/all/undeclared/required) and keeps forcing choices without tools', async () => {
+  const twoTools: OpenAIResponsesRequestPayloadEx['tools'] = [
+    { type: 'function', name: 'a', parameters: { type: 'object', properties: {} } },
+    { type: 'function', name: 'b', parameters: { type: 'object', properties: {} } },
+  ];
+  const runChoice = async (tool_choice: NonNullable<OpenAIResponsesRequestPayloadEx['tool_choice']>, tools = twoTools) =>
+    await routeOpenAIResponsesViaGeminiGenerateContent({
+      model: 'gemini-2.5-pro',
+      stream: true,
+      ...(tools === undefined ? {} : { tools }),
+      tool_choice,
+      input: 'Go',
+    }, options());
+
+  expect(expectTrip(await runChoice('none')).target.toolConfig).toEqual({ functionCallingConfig: { mode: 'NONE' } });
+  expect(expectTrip(await runChoice('required')).target.toolConfig).toEqual({ functionCallingConfig: { mode: 'ANY' } });
+  expect(expectTrip(await runChoice('required', undefined)).target.toolConfig).toEqual({ functionCallingConfig: { mode: 'ANY' } });
+  expect(expectTrip(await runChoice({ type: 'allowed_tools', mode: 'auto', tools: [] })).target.toolConfig).toEqual({ functionCallingConfig: { mode: 'NONE' } });
+  expect(await runChoice({ type: 'allowed_tools', mode: 'required', tools: [] })).toMatchObject({ type: 'input-error' });
+  expect(expectTrip(await runChoice({
+    type: 'allowed_tools',
+    mode: 'auto',
+    tools: [{ type: 'function', name: 'a' }, { type: 'function', name: 'b' }],
+  })).target.toolConfig).toEqual({ functionCallingConfig: { mode: 'AUTO' } });
+  expect(expectTrip(await runChoice({
+    type: 'allowed_tools',
+    mode: 'required',
+    tools: [{ type: 'function', name: 'a' }],
+  })).target.toolConfig).toEqual({ functionCallingConfig: { mode: 'ANY', allowedFunctionNames: ['a'] } });
+  expect(geminiGenerateContentTargetProtocol.write({
+    settings: { model: 'gemini-2.5-pro', stream: true },
+    tools: [{ type: 'function', name: 'a' }, { type: 'function', name: 'b' }],
+    tool_choice: {
+      type: 'allowed_tools',
+      mode: 'auto',
+      tools: [{ type: 'function', name: 'a' }, { type: 'function', name: 'b' }, { type: 'function', name: 'undeclared' }],
+    },
+  }, [], options()).payload.toolConfig).toEqual({
+    functionCallingConfig: { mode: 'VALIDATED', allowedFunctionNames: ['a', 'b', 'undeclared'] },
   });
+});
+
+test('wraps rawJSON scalar numbers and malformed JSON as object args/responses, and handles error-object pass-through', async () => {
+  const trip = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    stream: true,
+    tools: [
+      { type: 'function', name: 'f1', parameters: { type: 'object', properties: {} } },
+      { type: 'function', name: 'f2', parameters: { type: 'object', properties: {} } },
+      { type: 'function', name: 'f3', parameters: { type: 'object', properties: {} } },
+      { type: 'function', name: 'f4', parameters: { type: 'object', properties: {} } },
+    ],
+    input: [
+      { type: 'message', role: 'user', content: 'Test scalars' },
+      { type: 'function_call', call_id: 'c1', name: 'f1', arguments: '1.0' },
+      { type: 'function_call', call_id: 'c2', name: 'f2', arguments: 'null' },
+      { type: 'function_call', call_id: 'c3', name: 'f3', arguments: '{malformed' },
+      { type: 'function_call', call_id: 'c4', name: 'f4', arguments: '[1,2]' },
+      { type: 'function_call_output', call_id: 'c1', output: '1.0' },
+      { type: 'function_call_output', call_id: 'c2', output: '[1,2]' },
+      { type: 'function_call_output', call_id: 'c3', output: '{"ok":1.0}' },
+      { type: 'function_call_output', call_id: 'c4', output: 'plain' },
+    ],
+  }, options()));
+
+  expect(JSON.parse(JSON.stringify(trip.target.contents[1]))).toEqual({
+    role: 'model',
+    parts: [
+      { functionCall: { id: 'c1', name: 'f1', args: { raw_arguments: '1.0' } }, thoughtSignature: 'skip_thought_signature_validator' },
+      { functionCall: { id: 'c2', name: 'f2', args: {} } },
+      { functionCall: { id: 'c3', name: 'f3', args: { raw_arguments: '{malformed' } } },
+      { functionCall: { id: 'c4', name: 'f4', args: { raw_arguments: '[1,2]' } } },
+    ],
+  });
+  expect(JSON.stringify(trip.target.contents[2])).toContain('"response":{"ok":1.0}');
+  expect(JSON.parse(JSON.stringify(trip.target.contents[2]))).toEqual({
+    role: 'user',
+    parts: [
+      { functionResponse: { id: 'c1', name: 'f1', response: { output: '1.0' } } },
+      { functionResponse: { id: 'c2', name: 'f2', response: { output: '[1,2]' } } },
+      { functionResponse: { id: 'c3', name: 'f3', response: { ok: 1 } } },
+      { functionResponse: { id: 'c4', name: 'f4', response: { output: 'plain' } } },
+    ],
+  });
+
+  // Error tool_result wrapping: rawJSON scalar -> string error, object without `error` -> nested, object with `error` -> pass-through.
+  const errTrip = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    max_tokens: 128,
+    stream: true,
+    tools: [{ name: 't', input_schema: { type: 'object', properties: {} } }],
+    messages: [
+      { role: 'user', content: 'Errs' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', id: 'e1', name: 't', input: {} },
+          { type: 'tool_use', id: 'e2', name: 't', input: {} },
+          { type: 'tool_use', id: 'e3', name: 't', input: {} },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'e1', is_error: true, content: '1.0' },
+          { type: 'tool_result', tool_use_id: 'e2', is_error: true, content: '{"detail":"bad"}' },
+          { type: 'tool_result', tool_use_id: 'e3', is_error: true, content: '{"error":"already"}' },
+        ],
+      },
+    ],
+  }, options()));
+  expect(errTrip.target.contents[2]).toEqual({
+    role: 'user',
+    parts: [
+      { functionResponse: { id: 'e1', name: 't', response: { error: '1.0' } } },
+      { functionResponse: { id: 'e2', name: 't', response: { error: { detail: 'bad' } } } },
+      { functionResponse: { id: 'e3', name: 't', response: { error: 'already' } } },
+    ],
+  });
+});
+
+test('tags synthetic functionCalls after signed non-call restored parts, merges consecutive model turns, and guards empty restored turns and mismatched sourceCallIds', () => {
+  const codec = createTestSidecarCodec('gemini-target-direct');
+  const header = { settings: { model: 'gemini-2.5-pro', stream: true } };
+  const write = (turns: Parameters<typeof geminiGenerateContentTargetProtocol.write>[1]) =>
+    geminiGenerateContentTargetProtocol.write(header, turns, { sidecarCodec: codec }).payload.contents;
+
+  // 1. Restored turn with signed thought + adjacent synthetic functionCall MUST still tag the synthetic functionCall;
+  //    a dropped reasoning-only turn right after a restored model turn must not append a bogus `{ text: '' }`.
+  const signedThoughtPlusSynthetic = write([
+    { kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text: 'Go' }] }] },
+    { kind: 'restored', turn: [{ role: 'model', parts: [{ thought: true, text: 't', thoughtSignature: 'sig_thought' }] }], sourceCallIds: [] },
+    { kind: 'assistant', items: [{ type: 'reasoning', id: 'r1', summary: ['dropped'] }] },
+    { kind: 'assistant', items: [{ type: 'function_call', call_id: 'c1', name: 'ping', arguments: '' }] },
+    { kind: 'client', items: [{ type: 'tool_result', call_id: 'c1', output: 'ok' }] },
+  ]);
+  expect(signedThoughtPlusSynthetic).toEqual([
+    { role: 'user', parts: [{ text: 'Go' }] },
+    {
+      role: 'model',
+      parts: [
+        { thought: true, text: 't', thoughtSignature: 'sig_thought' },
+        { functionCall: { id: 'c1', name: 'ping', args: {} }, thoughtSignature: 'skip_thought_signature_validator' },
+      ],
+    },
+    { role: 'user', parts: [{ functionResponse: { id: 'c1', name: 'ping', response: { output: 'ok' } } }] },
+  ]);
+
+  // 2. Restored call with explicit wire ID preserves wire ID on functionResponse; empty restored `parts: []` keeps a valid boundary.
+  const explicitWireAndEmptyRestored = write([
+    { kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text: 'A' }] }] },
+    { kind: 'restored', turn: [{ role: 'model', parts: [] }], sourceCallIds: [] },
+    { kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text: 'B' }] }] },
+    { kind: 'restored', turn: [{ role: 'model', parts: [{ functionCall: { id: 'wire_1', name: 'ping', args: {} }, thoughtSignature: 'sig_real' }] }], sourceCallIds: ['wire_1'] },
+    { kind: 'assistant', items: [{ type: 'function_call', call_id: 'c_extra', name: 'ping', arguments: '' }] },
+    { kind: 'client', items: [{ type: 'tool_result', call_id: 'wire_1', output: 'p1' }, { type: 'tool_result', call_id: 'c_extra', output: 'p2' }] },
+  ]);
+  expect(explicitWireAndEmptyRestored).toEqual([
+    { role: 'user', parts: [{ text: 'A' }] },
+    { role: 'model', parts: [{ text: '' }] },
+    { role: 'user', parts: [{ text: 'B' }] },
+    {
+      role: 'model',
+      parts: [
+        { functionCall: { id: 'wire_1', name: 'ping', args: {} }, thoughtSignature: 'sig_real' },
+        { functionCall: { id: 'c_extra', name: 'ping', args: {} } },
+      ],
+    },
+    {
+      role: 'user',
+      parts: [
+        { functionResponse: { id: 'wire_1', name: 'ping', response: { output: 'p1' } } },
+        { functionResponse: { id: 'c_extra', name: 'ping', response: { output: 'p2' } } },
+      ],
+    },
+  ]);
+
+  // 3. Corrupted sourceCallIds count or wire ID mismatch fails fast; unknown call_id throws TranslateInputException.
+  expect(() => write([
+    { kind: 'restored', turn: [{ role: 'model', parts: [{ functionCall: { name: 'ping', args: {} } }] }], sourceCallIds: [] },
+  ])).toThrow('Authenticated round-trip call IDs do not match restored Gemini GenerateContent function calls');
+  expect(() => write([
+    { kind: 'restored', turn: [{ role: 'model', parts: [{ functionCall: { id: 'wire_1', name: 'ping', args: {} } }] }], sourceCallIds: ['wire_2'] },
+  ])).toThrow('Authenticated round-trip call ID does not match restored Gemini GenerateContent wire call ID');
+  expect(() => write([
+    { kind: 'client', items: [{ type: 'tool_result', call_id: 'missing', output: 'x' }] },
+  ])).toThrow(TranslateInputException);
 });
 
 test('reorders parallel same-name id-less tool results to match call order and avoids cross-turn call_id overwrites', async () => {
@@ -678,7 +655,7 @@ test('reorders parallel same-name id-less tool results to match call order and a
   });
 });
 
-test('keeps tool_result documents intact after contiguous functionResponses and defaults untyped binary media to application/octet-stream', async () => {
+test('keeps tool_result documents and URL attachments intact after contiguous functionResponses and defaults untyped binary media', async () => {
   const trip = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
     max_tokens: 1024,
@@ -702,11 +679,22 @@ test('keeps tool_result documents intact after contiguous functionResponses and 
           {
             type: 'tool_result',
             tool_use_id: 'toolu_pdf',
-            content: [{
-              type: 'document',
-              title: 'Spec',
-              source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0=' },
-            }],
+            content: [
+              // Empty text alongside lifted attachments must still use the lifted placeholder.
+              { type: 'text', text: '' },
+              {
+                type: 'document',
+                title: 'Spec',
+                source: {
+                  type: 'content',
+                  content: [
+                    { type: 'text', text: 'Page 1' },
+                    { type: 'image', source: { type: 'url', url: 'https://example.com/page1.png' } },
+                  ],
+                },
+              },
+              { type: 'image', source: { type: 'url', url: 'https://example.com/extra.png' } },
+            ],
           },
           {
             type: 'tool_result',
@@ -725,7 +713,7 @@ test('keeps tool_result documents intact after contiguous functionResponses and 
         functionResponse: {
           id: 'toolu_pdf',
           name: 'fetch_pdf',
-          response: { output: 'Document output is attached in the following user content.' },
+          response: { output: 'Attachments is attached in the following user content.' },
         },
       },
       {
@@ -735,10 +723,12 @@ test('keeps tool_result documents intact after contiguous functionResponses and 
           response: { output: 'ok' },
         },
       },
-      { text: 'Document output from tool call toolu_pdf:' },
+      { text: 'Attachments from tool call toolu_pdf:' },
       { text: '<document>\n<title>Spec</title>' },
-      { inlineData: { mimeType: 'application/pdf', data: 'JVBERi0=' } },
+      { text: 'Page 1' },
+      { fileData: { fileUri: 'https://example.com/page1.png' } },
       { text: '</document>' },
+      { fileData: { fileUri: 'https://example.com/extra.png' } },
     ],
   });
 
@@ -748,11 +738,17 @@ test('keeps tool_result documents intact after contiguous functionResponses and 
     input: [{
       type: 'message',
       role: 'user',
-      content: [{ type: 'input_file', file_data: 'SGVsbG8=' }],
+      content: [
+        { type: 'input_file', file_data: 'SGVsbG8=' },
+        { type: 'input_file', file_data: 'data:application/pdf;base64,JVBERi0=' },
+      ],
     }],
   }, options()));
   expect(untypedMedia.target.contents).toEqual([{
     role: 'user',
-    parts: [{ inlineData: { mimeType: 'application/octet-stream', data: 'SGVsbG8=' } }],
+    parts: [
+      { inlineData: { mimeType: 'application/octet-stream', data: 'SGVsbG8=' } },
+      { inlineData: { mimeType: 'application/pdf', data: 'JVBERi0=' } },
+    ],
   }]);
 });

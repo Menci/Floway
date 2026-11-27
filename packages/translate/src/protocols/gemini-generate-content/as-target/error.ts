@@ -1,19 +1,14 @@
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import {
   errorEnvelopeOf,
-  errorEventPayloadOf,
   errorPayloadFromWire,
   errorPayloadOf,
   extensionOf,
-  parseErrorBodyJSON,
+  readErrorBodyEnvelope,
+  recordOf,
+  stringOf,
 } from '../../../shared/api-error.ts';
-
-const recordOf = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Readonly<Record<string, unknown>>
-    : undefined;
-
-const stringOf = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
+import { geminiGenerateContentStatusForHttpStatus } from '@floway-dev/protocols/gemini-generate-content';
 
 // Google RPC `google.rpc.Status` uses numeric HTTP `code` and canonical `status` enum names without a `type` string.
 // https://github.com/googleapis/googleapis/blob/bc7e3baa28fbb223fa93782e130260fab8205bfc/google/rpc/code.proto
@@ -29,6 +24,9 @@ const googleRpcErrorType = (status: string): string | undefined => {
     return 'permission_error';
   case 'NOT_FOUND':
     return 'not_found_error';
+  case 'ALREADY_EXISTS':
+  case 'ABORTED':
+    return 'conflict_error';
   case 'RESOURCE_EXHAUSTED':
     return 'rate_limit_error';
   case 'UNAVAILABLE':
@@ -36,6 +34,9 @@ const googleRpcErrorType = (status: string): string | undefined => {
   case 'INTERNAL':
   case 'DEADLINE_EXCEEDED':
   case 'UNKNOWN':
+  case 'DATA_LOSS':
+  case 'UNIMPLEMENTED':
+  case 'CANCELLED':
     return 'api_error';
   default:
     return undefined;
@@ -48,44 +49,46 @@ const googleRpcErrorType = (status: string): string | undefined => {
 const geminiGenerateContentErrorPayloadOf = (
   error: Readonly<Record<string, unknown>>,
   envelopeDetails: readonly Readonly<Record<string, unknown>>[] = [],
+  requireMessage = true,
 ): IRErrorPayload | undefined => {
-  if (typeof error.code !== 'number') return errorPayloadOf(error, envelopeDetails);
-  const message = stringOf(error.message) ?? stringOf(error.msg);
-  if (message === undefined) return undefined;
   const status = stringOf(error.status);
+  const rpcStatus = status ?? (typeof error.code === 'number' ? geminiGenerateContentStatusForHttpStatus(error.code) : undefined);
+  const mappedType = rpcStatus === undefined ? undefined : googleRpcErrorType(rpcStatus);
+  if (typeof error.code !== 'number' && mappedType === undefined) {
+    return requireMessage ? errorPayloadOf(error, envelopeDetails) : errorPayloadFromWire(error);
+  }
+  const message = stringOf(error.message) ?? stringOf(error.msg);
+  if (message === undefined && requireMessage) return undefined;
   const explicitType = stringOf(error.type);
-  const type = explicitType ?? (status === undefined ? undefined : googleRpcErrorType(status));
+  const type = explicitType ?? mappedType;
   const represented = new Set([
-    typeof error.message === 'string' ? 'message' : 'msg',
+    ...(message === undefined ? [] : [typeof error.message === 'string' ? 'message' : 'msg']),
     ...(explicitType === undefined ? [] : ['type']),
   ]);
   const extra = extensionOf(error, represented, envelopeDetails);
   return {
-    message,
+    message: message ?? '',
     ...(type === undefined ? {} : { type }),
     ...(extra === undefined ? {} : { provider_specific_fields: extra }),
   };
 };
 
+// Non-SSE `:streamGenerateContent` responses stream a JSON array, so HTTP errors arrive as `[{ error: ... }]`.
+// https://ai.google.dev/api/generate-content#method:-models.streamgeneratecontent
+const unwrapSingleElementArray = (parsed: unknown): unknown =>
+  Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : parsed;
+
 export const readGeminiGenerateContentErrorBody = (body: Uint8Array): IRErrorPayload | undefined => {
-  const parsed = parseErrorBodyJSON(body);
-  // Google `:streamGenerateContent` HTTP errors can arrive as a single-element JSON array `[{ error: ... }]`.
-  const envelopeRecord = recordOf(Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : parsed);
-  if (envelopeRecord === undefined) return undefined;
-  const { source, details } = errorEnvelopeOf(
-    envelopeRecord.type === 'error' ? errorEventPayloadOf(envelopeRecord) : envelopeRecord,
-  );
-  return geminiGenerateContentErrorPayloadOf(source, details);
+  const envelope = readErrorBodyEnvelope(body, unwrapSingleElementArray);
+  return envelope === undefined ? undefined : geminiGenerateContentErrorPayloadOf(envelope.source, envelope.details);
 };
 
 export const geminiGenerateContentErrorPayloadFromWire = (wire: unknown): IRErrorPayload => {
   const record = recordOf(wire);
   if (record !== undefined) {
     const { source, details } = errorEnvelopeOf(record);
-    if (typeof source.code === 'number') {
-      const payload = geminiGenerateContentErrorPayloadOf(source, details);
-      if (payload !== undefined) return payload;
-    }
+    const payload = geminiGenerateContentErrorPayloadOf(source, details, false);
+    if (payload !== undefined) return payload;
   }
   return errorPayloadFromWire(wire);
 };

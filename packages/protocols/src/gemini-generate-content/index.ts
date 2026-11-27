@@ -76,7 +76,7 @@ export interface GeminiGenerateContentGenerationConfig {
   audioTranscriptionConfig?: { languageCodes?: string[]; adaptationPhrases?: string[]; customVocabulary?: string[]; wordTimestamp?: boolean; diarization?: boolean; mode?: string; languageHints?: { languageCodes: string[] }; languageAuto?: Record<string, never> };
   responseFormat?: { text?: { mimeType?: string; schema?: unknown }; image?: { mimeType?: string; delivery?: string; aspectRatio?: string; imageSize?: string }; audio?: { mimeType?: string; sampleRate?: number; bitRate?: number; delivery?: string } };
 }
-export interface GeminiGenerateContentThinkingConfig { thinkingBudget?: number; thinkingLevel?: 'THINKING_LEVEL_UNSPECIFIED' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH' | (string & {}); includeThoughts?: boolean }
+export interface GeminiGenerateContentThinkingConfig { thinkingBudget?: number; thinkingLevel?: 'THINKING_LEVEL_UNSPECIFIED' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH' | 'XHIGH' | (string & {}); includeThoughts?: boolean }
 export interface GeminiGenerateContentFunctionCallingConfig { mode?: 'MODE_UNSPECIFIED' | 'AUTO' | 'NONE' | 'ANY' | 'VALIDATED' | (string & {}); allowedFunctionNames?: string[] }
 export interface GeminiGenerateContentToolConfig { functionCallingConfig?: GeminiGenerateContentFunctionCallingConfig; retrievalConfig?: { latLng?: { latitude?: number; longitude?: number }; languageCode?: string }; includeServerSideToolInvocations?: boolean }
 export interface GeminiGenerateContentToolGroup {
@@ -136,8 +136,8 @@ export interface GeminiGenerateContentErrorResponse { error: { code: number; mes
 export type GeminiGenerateContentStreamEvent = GeminiGenerateContentResult | GeminiGenerateContentErrorResponse;
 
 export { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from './field-keys.ts';
-export { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent, isGeminiGenerateContentTerminalFinishReason, collectGeminiGenerateContentProtocolEventsToResult } from './to-result.ts';
-export { createGeminiGenerateContentEventAccumulator, isMergeableGeminiGenerateContentTextPart, reassembleGeminiGenerateContentEvents, type GeminiGenerateContentEventAccumulator } from './reassemble.ts';
+export { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentPromptBlockReason, isGeminiGenerateContentTerminalEvent, isGeminiGenerateContentTerminalFinishReason, collectGeminiGenerateContentProtocolEventsToResult } from './to-result.ts';
+export { appendGeminiGenerateContentPart, createGeminiGenerateContentEventAccumulator, reassembleGeminiGenerateContentEvents, type GeminiGenerateContentEventAccumulator } from './reassemble.ts';
 export { geminiGenerateContentProtocolFrameToSSEFrame } from './to-sse.ts';
 export { parseGeminiGenerateContentStream, type ParseGeminiGenerateContentStreamOptions } from './stream.ts';
 

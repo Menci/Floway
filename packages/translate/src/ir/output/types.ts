@@ -22,7 +22,7 @@ type IROutputChoice = {
 
 // All
 type IROutputRefusalDetails = {
-  readonly category: string | null; // Messages, Responses
+  readonly category: string | null; // Messages, Responses, GenerateContent
   readonly explanation: string | null; // All
 };
 
@@ -63,17 +63,17 @@ type IROutputFunctionCallItem = {
   readonly type: 'function_call'; // All
   readonly call_id?: string | IRAbsent; // All
   readonly name: string; // All
-  readonly namespace?: string | null; // ChatCompletions, Responses, Messages
+  readonly namespace?: string | null; // All
   readonly arguments: string; // All
 };
 
-// ChatCompletions, Responses, Messages
+// All
 type IROutputCustomToolCallItem = {
-  readonly type: 'custom_tool_call'; // ChatCompletions, Responses, Messages
-  readonly call_id?: string | IRAbsent; // ChatCompletions, Responses, Messages
-  readonly name: string; // ChatCompletions, Responses, Messages
-  readonly namespace?: string | null; // ChatCompletions, Responses, Messages
-  readonly input: string; // ChatCompletions, Responses, Messages
+  readonly type: 'custom_tool_call'; // All
+  readonly call_id?: string | IRAbsent; // All
+  readonly name: string; // All
+  readonly namespace?: string | null; // All
+  readonly input: string; // All
 };
 
 // Responses, GenerateContent
@@ -123,7 +123,7 @@ export type IROutputSourceCitation = {
 // Messages, GenerateContent
 type IROutputSourcePageRange = {
   readonly start_one_based: number; // Messages, GenerateContent
-  readonly end_one_based_exclusive: number; // Messages
+  readonly end_one_based_exclusive: number; // Messages, GenerateContent
 };
 
 // ChatCompletions, Responses, GenerateContent

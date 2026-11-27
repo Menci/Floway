@@ -2,12 +2,12 @@ import { rawJSON } from './json/raw-json.ts';
 import type { IRErrorPayload } from '../ir/output/error.ts';
 import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
-const recordOf = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
+export const recordOf = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : undefined;
 
-const stringOf = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
+export const stringOf = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
 
-export const parseErrorBodyJSON = (body: Uint8Array): unknown => {
+const parseErrorBodyJSON = (body: Uint8Array): unknown => {
   let text: string;
   try {
     text = new TextDecoder('utf-8', { fatal: true }).decode(body);
@@ -23,15 +23,23 @@ export const parseErrorBodyJSON = (body: Uint8Array): unknown => {
   }
 };
 
+export const readErrorBodyEnvelope = (
+  body: Uint8Array,
+  unwrap?: (parsed: unknown) => unknown,
+): { readonly source: Readonly<Record<string, unknown>>; readonly details: readonly Readonly<Record<string, unknown>>[] } | undefined => {
+  const parsed = parseErrorBodyJSON(body);
+  const envelopeRecord = recordOf(unwrap === undefined ? parsed : unwrap(parsed));
+  if (envelopeRecord === undefined) return undefined;
+  return errorEnvelopeOf(envelopeRecord.type === 'error' ? errorEventPayloadOf(envelopeRecord) : envelopeRecord);
+};
+
 /**
  * Recognize structured upstream error envelopes for cross-protocol rendering. Undefined includes
  * malformed JSON, invalid UTF-8 and unrecognized bodies, preserving the original response untouched.
  */
 export const irErrorPayloadFromBody = (body: Uint8Array): IRErrorPayload | undefined => {
-  const envelopeRecord = recordOf(parseErrorBodyJSON(body));
-  if (envelopeRecord === undefined) return undefined;
-  const { source, details } = errorEnvelopeOf(envelopeRecord.type === 'error' ? errorEventPayloadOf(envelopeRecord) : envelopeRecord);
-  return errorPayloadOf(source, details);
+  const envelope = readErrorBodyEnvelope(body);
+  return envelope === undefined ? undefined : errorPayloadOf(envelope.source, envelope.details);
 };
 
 /** Restatement requires a message; preserve every unrepresented field in diagnostic details. */
@@ -83,7 +91,7 @@ const withEnvelopeDetails = (payload: IRErrorPayload, details: readonly Readonly
   };
 };
 
-export const errorEventPayloadOf = (event: Readonly<Record<string, unknown>>) => {
+const errorEventPayloadOf = (event: Readonly<Record<string, unknown>>) => {
   const { type: _type, sequence_number: _sequenceNumber, ...payload } = event;
   return payload;
 };
@@ -101,14 +109,12 @@ export const errorPayloadFromWire = (wire: unknown): IRErrorPayload => {
     const { msg: _msg, ...fields } = source;
     return withEnvelopeDetails({ ...fields, message: aliasMessage }, details);
   }
-  // Failures without message text still need an error frame; use an empty message.
-  const extra = extensionOf(source, NAMED_ERROR_FIELDS, details);
-  return { message: '', ...(extra === undefined ? {} : { provider_specific_fields: extra }) };
+  // Failures without message text still need an error frame; preserve any structured fields alongside an empty message.
+  return errorPayloadOf({ ...source, message: '' }, details)!;
 };
 
 const hasErrorMessage = (value: Readonly<Record<string, unknown>>): value is Readonly<Record<string, unknown>> & { readonly message: string } =>
   stringOf(value.message) !== undefined;
-const NAMED_ERROR_FIELDS: ReadonlySet<string> = new Set(['message', 'msg', 'type', 'code', 'status', 'param']);
 
 const extensionNamespacesOf = (error: Readonly<Record<string, unknown>>, representedFields: ReadonlySet<string>) => {
   const own = recordOf(error.provider_specific_fields);

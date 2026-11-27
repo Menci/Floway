@@ -1,4 +1,4 @@
-import { writeOpenAIResponsesError } from './as-source/error-body.ts';
+import { writeOpenAIResponsesError } from './as-source/error.ts';
 import { writeOpenAIResponsesEvents } from './as-source/events.ts';
 import { readOpenAIResponsesRequest } from './as-source/input-to.ts';
 import { createRandomOpenAIResponsesResponseId } from './as-source/response-id.ts';

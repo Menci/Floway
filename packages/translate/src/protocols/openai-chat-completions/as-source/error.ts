@@ -1,5 +1,5 @@
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
-import { errorDetailsOf } from '../../../shared/api-error.ts';
+import { errorDetailsOf, restateError } from '../../../shared/api-error.ts';
 
 export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload) => {
   const details = errorDetailsOf(error, ['message', 'type', 'code', 'param']);
@@ -11,3 +11,6 @@ export const openaiChatCompletionsErrorFromIR = (error: IRErrorPayload) => {
     ...(details === undefined ? {} : { provider_specific_fields: details }),
   };
 };
+
+export const writeOpenAIChatCompletionsError = (upstreamStatus: number, headers: Headers, error: IRErrorPayload) =>
+  restateError(upstreamStatus, headers, { error: openaiChatCompletionsErrorFromIR(error) });

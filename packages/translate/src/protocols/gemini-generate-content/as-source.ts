@@ -1,4 +1,4 @@
-import { writeGeminiGenerateContentError } from './as-source/error-body.ts';
+import { writeGeminiGenerateContentError } from './as-source/error.ts';
 import { writeGeminiGenerateContentEvents } from './as-source/events.ts';
 import { readGeminiGenerateContentRequest } from './as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from './as-source/round-trip.ts';

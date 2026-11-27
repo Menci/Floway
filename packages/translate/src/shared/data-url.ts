@@ -1,7 +1,10 @@
 import { TranslateInputException } from './input-error.ts';
 
-const DATA_URL = /^data:([^,]*),([\s\S]*)$/;
+const DATA_URL = /^data:([^,]*),([\s\S]*)$/i;
 const BASE64_MARKER = ';base64';
+const TEXT_ENCODER = new TextEncoder();
+
+export const isDataURL = (value: string): boolean => /^data:/i.test(value);
 
 export interface ParsedDataURL {
   readonly media_type?: string;
@@ -18,7 +21,7 @@ const bytesOfPercentEncodedData = (value: string): number[] => {
       continue;
     }
     const codePoint = value.codePointAt(index)!;
-    bytes.push(...new TextEncoder().encode(String.fromCodePoint(codePoint)));
+    bytes.push(...TEXT_ENCODER.encode(String.fromCodePoint(codePoint)));
     index += codePoint > 0xffff ? 2 : 1;
   }
   return bytes;
@@ -38,9 +41,13 @@ export const parseDataURL = (url: string): ParsedDataURL => {
   const encodedAsBase64 = header.toLowerCase().endsWith(BASE64_MARKER);
   const mediaType = encodedAsBase64 ? header.slice(0, -BASE64_MARKER.length) : header;
   const normalizedMediaType = mediaType.startsWith(';') ? `text/plain${mediaType}` : mediaType;
-  const bytes = bytesOfPercentEncodedData(body);
+  const data = encodedAsBase64 && !body.includes('%')
+    ? body
+    : encodedAsBase64
+      ? stringOfBytes(bytesOfPercentEncodedData(body))
+      : btoa(stringOfBytes(bytesOfPercentEncodedData(body)));
   return {
     ...(normalizedMediaType === '' ? {} : { media_type: normalizedMediaType }),
-    data: encodedAsBase64 ? stringOfBytes(bytes) : btoa(stringOfBytes(bytes)),
+    data,
   };
 };

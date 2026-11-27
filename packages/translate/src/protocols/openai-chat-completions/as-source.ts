@@ -1,4 +1,4 @@
-import { writeOpenAIChatCompletionsError } from './as-source/error-body.ts';
+import { writeOpenAIChatCompletionsError } from './as-source/error.ts';
 import { writeOpenAIChatCompletionsEvents } from './as-source/events.ts';
 import { readOpenAIChatCompletionsRequest } from './as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from './as-source/round-trip.ts';

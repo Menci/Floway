@@ -2,12 +2,17 @@ import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_
 import type { GeminiGenerateContentCandidate, GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
-export const isMergeableGeminiGenerateContentTextPart = (part: GeminiGenerateContentPart): boolean =>
-  part.text !== undefined && Object.keys(part).every(key => key === 'text' || key === 'thought' && part.thought === false);
-const appendPart = (parts: GeminiGenerateContentPart[], part: GeminiGenerateContentPart): void => {
+const isMergeableTextPart = (part: GeminiGenerateContentPart): boolean =>
+  typeof part.text === 'string' && Object.keys(part).every(key => key === 'text' || key === 'thought' && part.thought === false);
+
+export const appendGeminiGenerateContentPart = (parts: GeminiGenerateContentPart[], part: GeminiGenerateContentPart): number => {
   const previous = parts.at(-1);
-  if (previous && isMergeableGeminiGenerateContentTextPart(previous) && isMergeableGeminiGenerateContentTextPart(part)) previous.text = `${previous.text}${part.text}`;
-  else parts.push({ ...part });
+  if (previous && isMergeableTextPart(previous) && isMergeableTextPart(part)) {
+    previous.text = `${previous.text}${part.text}`;
+    return parts.length - 1;
+  }
+  parts.push({ ...part });
+  return parts.length - 1;
 };
 interface CandidateAccumulator {
   candidate: GeminiGenerateContentCandidate;
@@ -39,7 +44,7 @@ export const createGeminiGenerateContentEventAccumulator = (): GeminiGenerateCon
       if (incoming.content !== undefined) {
         const content = state.content ??= { parts: [] };
         if (incoming.content.role !== undefined) content.role = incoming.content.role;
-        for (const part of incoming.content.parts ?? []) appendPart(content.parts, part);
+        for (const part of incoming.content.parts ?? []) appendGeminiGenerateContentPart(content.parts, part);
         state.candidate.content = content;
       }
       const { content: _content, ...fields } = incoming;

@@ -122,8 +122,9 @@ export const normalizeGeminiGenerateContentFailure = (result: ApiErrorResult | I
 
   const message = decodeResponseBody(result.body).trim();
   const parsed = parseJson(message);
-  if (isGeminiGenerateContentErrorResponse(parsed)) {
-    return { ...result, http: { ...http, status: googleRpcHttpStatusCode(parsed.error.code) } };
+  const unwrapped = Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : parsed;
+  if (isGeminiGenerateContentErrorResponse(unwrapped)) {
+    return { ...result, http: { ...http, status: googleRpcHttpStatusCode(unwrapped.error.code) } };
   }
 
   const status = gatewayRpcStatus(http.status);
