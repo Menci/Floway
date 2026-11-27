@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { serializeOpenAIImagesEditsRequest } from '../src/images.ts';
+import { serializeOpenAIImagesEditsBody, serializeOpenAIImagesEditsRequest } from '../src/images.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const parseJsonBody = async (body: Awaited<ReturnType<typeof serializeOpenAIImagesEditsRequest>>): Promise<unknown> => {
@@ -51,4 +51,24 @@ test('serializeOpenAIImagesEditsRequest uses the singular field for one upload a
   assertEquals(multipleForm.getAll('image[]'), [first, second]);
   assertEquals(multipleForm.get('image'), null);
   assertEquals(multipleForm.get('model'), 'gpt-image');
+});
+
+test('serializeOpenAIImagesEditsBody renders byte files as multipart uploads and JSON data URLs', async () => {
+  const upload = { type: 'upload', file: { name: 'source.png', mediaType: 'image/png', bytes: new Uint8Array([1, 2, 3]) } } as const;
+  const multipart = await serializeOpenAIImagesEditsBody({ images: [upload], parameters: { prompt: 'edit' } }, 'image-model');
+  const form = await new Response(multipart.body, { headers: { 'content-type': multipart.contentType } }).formData();
+  const file = form.get('image');
+  if (!(file instanceof File)) throw new Error('Expected the image edit file');
+  assertEquals(file.name, 'source.png');
+  assertEquals(file.type, 'image/png');
+  assertEquals(new Uint8Array(await file.arrayBuffer()), new Uint8Array([1, 2, 3]));
+
+  const json = await serializeOpenAIImagesEditsBody({
+    images: [upload, { type: 'reference', reference: { file_id: 'image-id' } }],
+    parameters: { prompt: 'edit' },
+  }, 'image-model');
+  assertEquals(json.contentType, 'application/json');
+  assertEquals(await new Response(json.body).json(), {
+    prompt: 'edit', images: [{ image_url: 'data:image/png;base64,AQID' }, { file_id: 'image-id' }], model: 'image-model',
+  });
 });

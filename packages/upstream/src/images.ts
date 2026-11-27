@@ -1,7 +1,8 @@
 import { base64ToBytes, bytesToBase64, parseBase64ImageDataUrl } from './image-helpers.ts';
 import { jsonRequestBody } from './json-request.ts';
+import { serializeMultipartBody, uploadFile } from './multipart.ts';
 import type { ReplayableBody } from './options.ts';
-import type { OpenAIImageEditReference } from '@floway-dev/protocols/openai-images';
+import type { OpenAIImageEditReference, OpenAIImagesEditsInput, OpenAIImagesEditsPayload } from '@floway-dev/protocols/openai-images';
 
 // Each source stores one authoritative representation. Multipart requires
 // upload-like sources with no extra reference fields plus scalar parameters;
@@ -29,8 +30,10 @@ export interface OpenAIImagesEditsRequest {
   parameters: Record<string, unknown>;
 }
 
-const uploadedFile = (source: OpenAIImagesEditsSource, index: number): File | null => {
-  if (source.type === 'upload') return source.file;
+type ImagesEditsSource = OpenAIImagesEditsSource | OpenAIImagesEditsInput;
+
+const uploadedFile = (source: ImagesEditsSource, index: number): File | null => {
+  if (source.type === 'upload') return source.file instanceof File ? source.file : uploadFile(source.file);
   if (source.type === 'reference') return null;
   const parsed = parseBase64ImageDataUrl(source.reference.image_url);
   if (parsed === null) return null;
@@ -43,13 +46,17 @@ const uploadedFile = (source: OpenAIImagesEditsSource, index: number): File | nu
   return new File([bytes], `image-${index}`, { type: parsed.mimeType });
 };
 
-const jsonReference = async (source: OpenAIImagesEditsSource): Promise<OpenAIImageEditReference> => {
+const jsonReference = async (source: ImagesEditsSource): Promise<OpenAIImageEditReference> => {
   if (source.type === 'inline' || source.type === 'reference') return source.reference;
-  const bytes = new Uint8Array(await source.file.arrayBuffer());
-  return { image_url: `data:${source.file.type};base64,${bytesToBase64(bytes)}` };
+  const { file } = source;
+  const bytes = file instanceof File ? new Uint8Array(await file.arrayBuffer()) : file.bytes;
+  const mediaType = file instanceof File ? file.type : file.mediaType;
+  return { image_url: `data:${mediaType};base64,${bytesToBase64(bytes)}` };
 };
 
-const jsonBody = async (request: OpenAIImagesEditsRequest): Promise<Record<string, unknown>> => {
+type ImagesEdits = OpenAIImagesEditsRequest | OpenAIImagesEditsPayload;
+
+const jsonBody = async (request: ImagesEdits): Promise<Record<string, unknown>> => {
   const images = await Promise.all(request.images.map(jsonReference));
   const mask = request.mask === undefined ? undefined : await jsonReference(request.mask);
   return {
@@ -60,11 +67,11 @@ const jsonBody = async (request: OpenAIImagesEditsRequest): Promise<Record<strin
 };
 
 export const serializeOpenAIImagesEditsJsonPayload = async (
-  request: OpenAIImagesEditsRequest,
+  request: ImagesEdits,
   model: string,
 ): Promise<Record<string, unknown>> => ({ ...await jsonBody(request), model });
 
-const multipartBody = (request: OpenAIImagesEditsRequest, model: string): FormData | null => {
+const multipartBody = (request: ImagesEdits, model: string): FormData | null => {
   const sources = [...request.images, ...(request.mask === undefined ? [] : [request.mask])];
   const compatibleSources = sources.every(source =>
     source.type === 'upload'
@@ -95,4 +102,13 @@ export const serializeOpenAIImagesEditsRequest = async (request: OpenAIImagesEdi
   const multipart = multipartBody(request, model);
   if (multipart !== null) return multipart;
   return jsonRequestBody(await serializeOpenAIImagesEditsJsonPayload(request, model));
+};
+
+export const serializeOpenAIImagesEditsBody = async (request: OpenAIImagesEditsPayload, model: string): Promise<{
+  body: string | Uint8Array<ArrayBuffer>;
+  contentType: string;
+}> => {
+  const multipart = multipartBody(request, model);
+  if (multipart !== null) return await serializeMultipartBody(multipart);
+  return { body: JSON.stringify(await serializeOpenAIImagesEditsJsonPayload(request, model)), contentType: 'application/json' };
 };

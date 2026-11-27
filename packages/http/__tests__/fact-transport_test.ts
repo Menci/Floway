@@ -52,6 +52,19 @@ describe('HTTP header lines', () => {
 });
 
 describe('HTTP fact transport', () => {
+  it('carries the dispatch start with the actual response head', async () => {
+    const before = performance.now();
+    let dispatchedAt = Number.NaN;
+    const result = await sendHttpRequest(async () => {
+      dispatchedAt = performance.now();
+      return new Response(null, { status: 204 });
+    }, request, new AbortController().signal);
+    if (!result.ok) throw new Error('Expected the upstream response head');
+    expect(result.value.startedAt).toBeGreaterThanOrEqual(before);
+    expect(result.value.startedAt).toBeLessThanOrEqual(dispatchedAt);
+    expect(result.value.body).toBeNull();
+  });
+
   it('sends final bytes and credentials and retains ordered raw upstream fields and error status', async () => {
     const fake = makeFakeDuplex();
     const authorization = secret('token').map(token => `Bearer ${token}`);
@@ -251,7 +264,7 @@ describe('HTTP fact transport', () => {
     }
   });
 
-  it('preserves a rejected native body after its peer closes and the caller subsequently aborts', async () => {
+  it.each(['observe', 'abandon'] as const)('handles a rejected native body after its peer closes and the caller aborts (%s)', async action => {
     const peer = Promise.withResolvers<Socket>();
     const server = createServer((incoming, outgoing) => {
       peer.resolve(incoming.socket);
@@ -289,7 +302,11 @@ describe('HTTP fact transport', () => {
       const failure = await nativeFailure;
       expect(failure).toMatchObject({ name: 'TypeError', message: 'terminated', cause: { code: 'UND_ERR_SOCKET' } });
       caller.abort(new Error('client closed after the socket failed'));
-      expect(await source.body.next()).toEqual({ done: false, value: { ok: false, error: { kind: 'transport', cause: failure } } });
+      if (action === 'observe') {
+        expect(await source.body.next()).toEqual({ done: false, value: { ok: false, error: { kind: 'transport', cause: failure } } });
+      } else {
+        expect(await source.body.return()).toEqual({ done: true, value: undefined });
+      }
       expect(bodyClassified).toHaveBeenCalledExactlyOnceWith(failure);
       expect(await source.body.next()).toEqual({ done: true, value: undefined });
       expect(nativeBody!.locked).toBe(false);
@@ -314,6 +331,50 @@ describe('HTTP fact transport', () => {
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(response.body?.locked).toBe(false);
     expect(removeAbort).toHaveBeenCalledExactlyOnceWith('abort', expect.any(Function));
+  });
+
+  describe.each([false, true])('early return with started=%j', started => {
+    it.each(['transport', 'abort', 'unknown', 'teardown'] as const)('handles a %s rejection from native cancellation', async kind => {
+      const owner = new AbortController();
+      const removeAbort = vi.spyOn(owner.signal, 'removeEventListener');
+      const error = new TypeError(`${kind} error`);
+      let nativeBody: ReadableStreamDefaultController<Uint8Array>;
+      let bound: AbortSignal;
+      const cancel = vi.fn(() => { throw error; });
+      const classifyBodyFailure = vi.fn((cause: unknown): HttpStreamError | undefined => {
+        if (kind === 'transport' && cause === error) return { kind: 'transport', cause };
+      });
+      const response = Object.assign(new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          nativeBody = controller;
+          controller.enqueue(utf8.encode('terminal frame'));
+        },
+        cancel,
+      })), { classifyBodyFailure });
+      const source = await readSource(sendHttpRequest(async (_, init) => {
+        bound = init.signal!;
+        return response;
+      }, request, owner.signal));
+      if (started) {
+        expect(await source.body.next()).toEqual({ done: false, value: { ok: true, value: utf8.encode('terminal frame') } });
+      }
+      if (kind === 'abort') {
+        owner.abort(error);
+        nativeBody!.error(bound!.reason);
+      } else if (kind !== 'teardown') {
+        nativeBody!.error(error);
+      }
+      const completion = source.body.return();
+      if (kind === 'transport' || kind === 'abort') {
+        await expect(completion).resolves.toEqual({ done: true, value: undefined });
+      } else {
+        await expect(completion).rejects.toBe(error);
+      }
+      if (kind === 'teardown') expect(cancel).toHaveBeenCalledExactlyOnceWith(undefined);
+      expect(response.body?.locked).toBe(false);
+      expect(removeAbort).toHaveBeenCalledExactlyOnceWith('abort', expect.any(Function));
+      expect(await source.body.next()).toEqual({ done: true, value: undefined });
+    });
   });
 
   it('classifies malformed remote headers while leaving invalid request construction as a panic', async () => {

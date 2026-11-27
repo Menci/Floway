@@ -1,3 +1,6 @@
+import { serializeMultipartBody, uploadFile } from './multipart.ts';
+import type { OpenAIAudioTranscriptionsPayload } from '@floway-dev/protocols/openai-audio';
+
 // Buffered multipart carrier for OpenAI-compatible audio transcription.
 // Entries stay ordered and may repeat, matching FormData semantics. File
 // objects retain their bytes, filename, media type, and lastModified metadata;
@@ -18,7 +21,7 @@ type OpenAIAudioTranscriptionModelField =
   | { readonly type: 'omit' };
 
 const serializeOpenAIAudioTranscriptionRequest = (
-  request: OpenAIAudioTranscriptionRequest,
+  request: OpenAIAudioTranscriptionRequest | OpenAIAudioTranscriptionsPayload,
   modelField: OpenAIAudioTranscriptionModelField,
 ): FormData => {
   const form = new FormData();
@@ -28,7 +31,8 @@ const serializeOpenAIAudioTranscriptionRequest = (
     } else if (typeof entry.value === 'string') {
       form.append(entry.name, entry.value);
     } else {
-      form.append(entry.name, entry.value, entry.value.name);
+      const file = entry.value instanceof File ? entry.value : uploadFile(entry.value);
+      form.append(entry.name, file, file.name);
     }
   }
   return form;
@@ -42,3 +46,9 @@ export const serializeModelFieldOpenAIAudioTranscriptionRequest = (
 export const serializeModelPathOpenAIAudioTranscriptionRequest = (
   request: OpenAIAudioTranscriptionRequest,
 ): FormData => serializeOpenAIAudioTranscriptionRequest(request, { type: 'omit' });
+
+export const serializeOpenAIAudioTranscriptionsBody = async (
+  request: OpenAIAudioTranscriptionsPayload,
+  modelField: OpenAIAudioTranscriptionModelField,
+): Promise<{ body: Uint8Array<ArrayBuffer>; contentType: string }> =>
+  await serializeMultipartBody(serializeOpenAIAudioTranscriptionRequest(request, modelField));

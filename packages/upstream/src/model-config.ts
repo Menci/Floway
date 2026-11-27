@@ -59,23 +59,34 @@ export const optionalStringField = (value: unknown, label: string): string | und
   return value;
 };
 
-const MODEL_ENDPOINT_KEYS: ReadonlySet<ModelEndpointKey> = new Set<ModelEndpointKey>([
-  'openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'geminiGenerateContent', 'openaiEmbeddings', 'openaiImagesGenerations', 'openaiImagesEdits', 'rerank', 'openaiAudioTranscriptions', 'decision',
-]);
+const MODEL_ENDPOINT_KEYS = {
+  anthropicMessages: true,
+  decision: true,
+  geminiGenerateContent: true,
+  openaiAudioSpeech: true,
+  openaiAudioTranscriptions: true,
+  openaiChatCompletions: true,
+  openaiCompletions: true,
+  openaiEmbeddings: true,
+  openaiImagesEdits: true,
+  openaiImagesGenerations: true,
+  openaiResponses: true,
+  rerank: true,
+} satisfies Record<ModelEndpointKey, true>;
+
+const isModelEndpointKey = (key: string): key is ModelEndpointKey => Object.hasOwn(MODEL_ENDPOINT_KEYS, key);
 
 // The structured per-model capability map. A present key declares the model is
 // served by that endpoint; the empty value object is a placeholder reserved
 // for future per-endpoint sub-capabilities. `allowEmpty` is set for the
-// upstream-level fallback map (an upstream may serve only kind-derived
-// embedding/image/transcription models or manual rerank models and declare no
-// chat endpoint).
+// upstream-level fallback map, where model rows can supply all capabilities.
 export const endpointsField = (value: unknown, label: string, options: { allowEmpty?: boolean } = {}): ModelEndpoints => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
   const endpoints: ModelEndpoints = {};
   for (const [key, sub] of Object.entries(value)) {
-    if (!MODEL_ENDPOINT_KEYS.has(key as ModelEndpointKey)) throw new Error(`Malformed ${label}: unsupported endpoint ${key}`);
+    if (!isModelEndpointKey(key)) throw new Error(`Malformed ${label}: unsupported endpoint ${key}`);
     if (!isRecord(sub)) throw new Error(`Malformed ${label}.${key}: must be an object`);
-    endpoints[key as ModelEndpointKey] = {};
+    endpoints[key] = {};
   }
   if (!options.allowEmpty && Object.keys(endpoints).length === 0) throw new Error(`Malformed ${label}: must declare at least one endpoint`);
   return endpoints;

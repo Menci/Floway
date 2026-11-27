@@ -32,6 +32,17 @@ const readBody = (
   { signal, release }: ReturnType<typeof bindHttpAbort>,
 ): HttpByteStream => {
   let started = false;
+  let abandoned = false;
+  const cancel = async (target: Pick<ReadableStream<Uint8Array>, 'cancel'>): Promise<void> => {
+    try {
+      await target.cancel();
+    } catch (cause) {
+      if (!abandoned) throw cause;
+      // An errored stream rejects cancellation with its stored failure. The
+      // caller has relinquished expected results on this remainder.
+      httpFailure(cause, signal, classifyBodyFailure);
+    }
+  };
   const stream = (async function* (): HttpByteStream {
     started = true;
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -57,7 +68,7 @@ const readBody = (
     } finally {
       release();
       try {
-        if (reader !== undefined && !terminal) await reader.cancel();
+        if (reader !== undefined && !terminal) await cancel(reader);
       } finally {
         reader?.releaseLock();
       }
@@ -69,11 +80,12 @@ const readBody = (
   // The HTTP source already owns the response stream at that point.
   const end = stream.return.bind(stream);
   stream.return = value => {
+    abandoned = true;
     if (started) return end(value);
     started = true;
     release();
     const closed = end(value);
-    return body.cancel().then(() => closed);
+    return cancel(body).then(() => closed);
   };
   return stream;
 };
@@ -93,6 +105,7 @@ export const sendHttpRequest = async (
   let transferred = false;
   try {
     let response: FetchResponse;
+    const startedAt = performance.now();
     try {
       response = await fetcher(url, { method, headers, body: wireBody, signal: binding.signal });
     } catch (cause) {
@@ -102,7 +115,7 @@ export const sendHttpRequest = async (
     const responseHeaders = responseHeaderEntries(response);
     const source = readable === null ? null : readBody(readable, classifyBodyFailure, binding);
     transferred = source !== null;
-    return { ok: true, value: { status, statusText, headers: responseHeaders, body: source } };
+    return { ok: true, value: { status, statusText, headers: responseHeaders, body: source, startedAt } };
   } finally {
     if (!transferred) binding.release();
   }

@@ -64,11 +64,35 @@ export type {
 } from './upstream.ts';
 export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
 export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
-export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
+export { serializeOpenAIImagesEditsBody, serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
-export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
+export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest, serializeOpenAIAudioTranscriptionsBody } from './audio.ts';
 export type { UpstreamStreamParser } from './streaming.ts';
 export { streamingUpstreamCall } from './streaming.ts';
+
+export { httpTerminal } from './http-terminal.ts';
+export type { UpstreamHttpResponseFacts, UpstreamHttpServices } from './http-terminal.ts';
+export { httpDialError, parseJsonBody, parseUpstreamResult, parseUpstreamStream } from './parse-response.ts';
+export type { FormatProtocolError, ProtocolStreamDecoder } from './parse-response.ts';
+export { toUpstreamModelSnapshot, toUpstreamSnapshot } from './pipeline-facts.ts';
+export type {
+  ProtocolError,
+  ProtocolOutcome,
+  ProtocolResult,
+  ProtocolStream,
+  ProtocolStreamError,
+  UpstreamEvent,
+  UpstreamModelSnapshot,
+  UpstreamOperation,
+  UpstreamOutcome,
+  UpstreamPipeline,
+  UpstreamRequest,
+  UpstreamRequestFacts,
+  UpstreamResponse,
+  UpstreamResponseFacts,
+  UpstreamResult,
+  UpstreamSnapshot,
+} from './pipeline-facts.ts';
 
 export { formatUpstreamMetricIdentity, groupUpstreamMetricSamples, quotaPercentDisplay, recordUpstreamMetric, recordUpstreamMetrics, resolveUpstreamMetricDisplaySeries, upstreamMetricAxisPriority } from './upstream-metrics.ts';
 export type { GroupedUpstreamMetricSamples, UpstreamMetrics, UpstreamMetricDisplay, UpstreamMetricDisplayOptions, UpstreamMetricDisplaySeries, UpstreamMetricLabelKey, UpstreamMetricObservation, UpstreamMetricSample, UpstreamMetricUnit } from './upstream-metrics.ts';
