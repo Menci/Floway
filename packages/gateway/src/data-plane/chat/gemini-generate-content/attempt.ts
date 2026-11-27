@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import { inputErrorResult, geminiGenerateContentInternalErrorPayload, gatewayErrorStatus, normalizeGeminiGenerateContentFailure } from './errors.ts';
 import { geminiGenerateContentCountTokensInterceptors, geminiGenerateContentInterceptors } from './interceptors/index.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
@@ -43,7 +45,7 @@ export interface GeminiGenerateContentAttemptCountTokensArgs {
 export const geminiGenerateContentAttempt = {
   generate: async (args: GeminiGenerateContentAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>>> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = structuredClone(sourcePayload);
+    const payload = klona(sourcePayload);
     const headers = new Headers(sourceHeaders);
     const targetApi = geminiGenerateContentGenerateTarget.pick(candidate.model.endpoints);
     const invocation: GeminiGenerateContentInvocation = { payload, candidate, targetApi, headers };
@@ -56,12 +58,13 @@ export const geminiGenerateContentAttempt = {
 
   countTokens: async (args: GeminiGenerateContentAttemptCountTokensArgs): Promise<ApiErrorResult | PlainResult> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = structuredClone(sourcePayload);
+    const payload = klona(sourcePayload);
     const headers = new Headers(sourceHeaders);
     const targetApi = geminiGenerateContentCountTokensTarget.pick(candidate.model.endpoints);
     const invocation: GeminiGenerateContentInvocation = { payload, candidate, targetApi, headers };
     return await runInterceptors(invocation, ctx, geminiGenerateContentCountTokensInterceptors, async () => {
       if (targetApi === 'geminiGenerateContent') {
+        if (candidate.rules !== undefined) applyRulesToUpstreamGeminiGenerateContent(invocation.payload, candidate.rules);
         const { http: response } = await candidate.upstream.instance.callGeminiGenerateContentCountTokens(
           candidate.model,
           invocation.payload,
@@ -86,7 +89,7 @@ export const geminiGenerateContentAttempt = {
       const anthropicMessagesResult = await anthropicMessagesAttempt.countTokens({
         payload: target, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
       });
-      return reshapeAnthropicMessagesCountAsGeminiGenerateContent(anthropicMessagesResult);
+      return reshapeAnthropicMessagesCountAsGeminiGenerateContent(anthropicMessagesResult, trip.error);
     });
   },
 };
@@ -97,7 +100,10 @@ export const geminiGenerateContentAttempt = {
 // either is accepted. A missing or non-numeric figure is surfaced as a
 // 502 Google-RPC error so the caller sees a typed Gemini generateContent failure rather
 // than a passthrough of the upstream shape.
-const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (anthropicMessagesResult: PlainResult): PlainResult => {
+const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (
+  anthropicMessagesResult: PlainResult,
+  translateError: (status: number, headers: Headers, body: Uint8Array) => { readonly status: number; readonly headers: Headers; readonly body: unknown } | undefined,
+): PlainResult => {
   const { status, headers } = anthropicMessagesResult.http;
   if (anthropicMessagesResult.body === null && (status === 204 || status === 205 || status === 304)) {
     return anthropicMessagesResult;
@@ -105,7 +111,18 @@ const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (anthropicMessagesR
   const text = decodeResponseBody(anthropicMessagesResult.body);
   const http = { status, headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, headers) };
   if (status !== 200) {
-    // Empty upstream bodies fall back to a fixed message so the Google-RPC envelope is never empty.
+    const rawBody = anthropicMessagesResult.body instanceof Uint8Array
+      ? anthropicMessagesResult.body
+      : new TextEncoder().encode(text);
+    const translated = translateError(status, headers, rawBody);
+    if (translated !== undefined) {
+      return plainResult(
+        { status: translated.status, headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, translated.headers) },
+        new TextEncoder().encode(JSON.stringify(translated.body)),
+        anthropicMessagesResult.upstreamId,
+      );
+    }
+    // Empty or unrecognized upstream bodies fall back to a Google-RPC envelope.
     return plainResult(
       http,
       new TextEncoder().encode(JSON.stringify({
