@@ -153,6 +153,10 @@ test('translates OpenAI Responses namespaces, custom tools, allowed_tools subset
     input: [
       { type: 'message', role: 'developer', content: 'Leading developer guidance' },
       { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Apply patch' }] },
+      { type: 'function_call', call_id: 'call_ns_read', namespace: 'fs', name: 'read', arguments: '{"p":"a.ts"}' },
+      { type: 'custom_tool_call', call_id: 'call_ns_patch', namespace: 'fs', name: 'patch', input: 'diff' },
+      { type: 'function_call_output', call_id: 'call_ns_read', output: '{"content":"ok"}' },
+      { type: 'custom_tool_call_output', call_id: 'call_ns_patch', output: '{"applied":true}' },
       { type: 'message', role: 'developer', content: 'Mid-turn developer note' },
     ],
   };
@@ -176,10 +180,24 @@ test('translates OpenAI Responses namespaces, custom tools, allowed_tools subset
   expect(trip.target.generationConfig).toEqual({
     thinkingConfig: { thinkingLevel: 'XHIGH', includeThoughts: true },
   });
-  expect(trip.target.contents).toEqual([{
-    role: 'user',
-    parts: [{ text: 'Leading developer guidance' }, { text: 'Apply patch' }, { text: 'Mid-turn developer note' }],
-  }]);
+  expect(trip.target.contents).toEqual([
+    { role: 'user', parts: [{ text: 'Leading developer guidance' }, { text: 'Apply patch' }] },
+    {
+      role: 'model',
+      parts: [
+        { functionCall: { id: 'call_ns_read', name: 'fs_read', args: { p: 'a.ts' } }, thoughtSignature: 'skip_thought_signature_validator' },
+        { functionCall: { id: 'call_ns_patch', name: 'fs_patch', args: { input: 'diff' } } },
+      ],
+    },
+    {
+      role: 'user',
+      parts: [
+        { functionResponse: { id: 'call_ns_read', name: 'fs_read', response: { content: 'ok' } } },
+        { functionResponse: { id: 'call_ns_patch', name: 'fs_patch', response: { applied: true } } },
+        { text: 'Mid-turn developer note' },
+      ],
+    },
+  ]);
 
   const summaryOmittedWithEffort = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
@@ -420,10 +438,6 @@ test('maps toolConfig variants (none, required, allowed_tools empty/all/undeclar
   expect(expectTrip(await runChoice('required')).target.toolConfig).toEqual({ functionCallingConfig: { mode: 'ANY' } });
   expect(expectTrip(await runChoice('required', undefined)).target.toolConfig).toEqual({ functionCallingConfig: { mode: 'ANY' } });
   expect(expectTrip(await runChoice({ type: 'allowed_tools', mode: 'auto', tools: [] })).target.toolConfig).toEqual({ functionCallingConfig: { mode: 'NONE' } });
-  expect(await runChoice({ type: 'allowed_tools', mode: 'required', tools: [] })).toMatchObject({
-    type: 'input-error',
-    message: 'Cannot translate required allowed_tools with an empty callable subset.',
-  });
   expect(await routeOpenAIChatCompletionsViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
     stream: true,

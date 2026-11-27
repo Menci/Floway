@@ -269,19 +269,23 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
             groundingChunks: [
               { web: { uri: 'https://example.com/ab-text', title: 'AB Text' } },
               { web: { uri: 'https://example.com/ab-bounds', title: 'AB Bounds' } },
+              { web: { uri: 'https://example.com/ab-clamped', title: 'AB Clamped' } },
             ],
             groundingSupports: [
               // Native 0 ("Alpha ") vs logical 0 ("Alpha Beta"): `segment.text` picks logical 0 for 6..10 ("Beta").
               { segment: { partIndex: 0, startIndex: 6, endIndex: 10, text: 'Beta' }, groundingChunkIndices: [0] },
               // Without `segment.text`, byte bounds (`endIndex: 10 > 6`) still select logical 0 for 6..10.
               { segment: { partIndex: 0, startIndex: 6, endIndex: 10 }, groundingChunkIndices: [1] },
+              // Out-of-bounds `endIndex: 12` without `segment.text` falls back to logical 0 ("Alpha Beta") and clamps to 6..10.
+              { segment: { partIndex: 0, startIndex: 6, endIndex: 12 }, groundingChunkIndices: [2] },
             ],
           },
           finishReason: 'STOP',
         }],
       }),
     ]));
-    expect(warn).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith('Clamping Gemini GenerateContent grounding range to streamed text', expect.objectContaining({ startByte: 6, endByte: 12, availableBytes: 10 }));
     expect(disambiguated.state.choices[0]?.items[0]).toEqual({
       type: 'message',
       content: [{
@@ -300,6 +304,13 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
             source_kind: 'url',
             source: 'https://example.com/ab-bounds',
             source_label: 'AB Bounds',
+            output_text_range: { start: 6, end_exclusive: 10 },
+          },
+          {
+            type: 'source_citation',
+            source_kind: 'url',
+            source: 'https://example.com/ab-clamped',
+            source_label: 'AB Clamped',
             output_text_range: { start: 6, end_exclusive: 10 },
           },
         ],
@@ -474,11 +485,18 @@ test('handles multi-candidate streaming, ended-candidate filtering, prototype fi
           content: {
             role: 'model',
             parts: [
+              { text: 'Before' },
               { inlineData: { mimeType: 'application/pdf', data: 'JVBERi0=' } },
+              { text: 'Mid' },
               { inlineData: { mimeType: 'IMAGE/PNG', data: 'aW1n' } },
               { inlineData: { mimeType: 'audio/wav', data: 'YXVk' }, audioTranscription: { text: 'spoken' } },
               { inlineData: { mimeType: 'audio/mp3', data: 'bXAz' }, audioTranscription: {} as never },
+              { text: 'After' },
             ],
+          },
+          groundingMetadata: {
+            groundingChunks: [{ web: { uri: 'https://example.com/after', title: 'After' } }],
+            groundingSupports: [{ segment: { partIndex: 6, startIndex: 0, endIndex: 5 }, groundingChunkIndices: [0] }],
           },
           logprobsResult: { chosenCandidates: [{ token: 'A', logProbability: -0.2 }] },
         },
@@ -512,9 +530,21 @@ test('handles multi-candidate streaming, ended-candidate filtering, prototype fi
   expect(state.choices[0]?.items).toEqual([{
     type: 'message',
     content: [
+      { type: 'text', text: 'BeforeMid' },
       { type: 'image', image: { media_type: 'IMAGE/PNG', data: 'aW1n' } },
       { type: 'audio', audio: { media_type: 'audio/wav', data: 'YXVk', transcript: 'spoken' } },
       { type: 'audio', audio: { media_type: 'audio/mp3', data: 'bXAz' } },
+      {
+        type: 'text',
+        text: 'After',
+        annotations: [{
+          type: 'source_citation',
+          source_kind: 'url',
+          source: 'https://example.com/after',
+          source_label: 'After',
+          output_text_range: { start: 0, end_exclusive: 5 },
+        }],
+      },
     ],
   }]);
   expect(state.choices[0]?.logprobs).toEqual([{
@@ -527,9 +557,9 @@ test('handles multi-candidate streaming, ended-candidate filtering, prototype fi
   expect(state.choices[1]?.items).toEqual([{ type: 'message', content: [{ type: 'text', text: 'short' }] }]);
   const capturedAudio = turns.get(0);
   if (capturedAudio === undefined) throw new Error('Expected captured native turn');
-  expect(capturedAudio.turn[0]?.parts).toHaveLength(4);
-  expect(capturedAudio.fieldState[0]?.parts?.[0]).toBeUndefined();
+  expect(capturedAudio.turn[0]?.parts).toHaveLength(7);
   expect(capturedAudio.fieldState[0]?.parts?.[1]).toBeUndefined();
+  expect(capturedAudio.fieldState[0]?.parts?.[3]).toBeUndefined();
   await expect(referenceAssistantTurn<'geminiGenerateContent'>(
     capturedAudio.turn,
     capturedAudio.fieldState,

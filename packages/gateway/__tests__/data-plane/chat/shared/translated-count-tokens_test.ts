@@ -80,7 +80,7 @@ test('returns 502 internal-error with performance and parse cause on malformed 2
 });
 
 test('translates errors, applies fallback messaging, preserves api-error metadata, and gates dump capture on upstream origin', () => {
-  const capture = { upstreamPayload: vi.fn(), upstreamApiError: vi.fn(), upstreamFrame: vi.fn() };
+  const capture = { upstreamApiError: vi.fn(), upstreamFrame: vi.fn() };
   const opts = {
     ...baseOptions(),
     capture,

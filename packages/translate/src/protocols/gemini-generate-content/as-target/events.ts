@@ -240,8 +240,8 @@ const resolveGroundingSegment = (
   const addCandidate = (segment: TextSegment | undefined): void => {
     if (segment !== undefined && !candidates.includes(segment)) candidates.push(segment);
   };
-  addCandidate(choice.textSegmentsByNativeIndex.get(partIndex));
   addCandidate(choice.textSegmentsByLogicalIndex.get(partIndex));
+  addCandidate(choice.textSegmentsByNativeIndex.get(partIndex));
   if (partIndex === 0) addCandidate(choice.firstTextSegment);
   if (candidates.length <= 1) return candidates[0];
 
