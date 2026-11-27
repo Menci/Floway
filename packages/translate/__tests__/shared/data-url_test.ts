@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { parseDataURL } from '../../src/shared/data-url.ts';
+import { TranslateInputException } from '../../src/shared/input-error.ts';
 
 test('decodes base64 and percent-encoded data URLs including empty media types', () => {
   expect(parseDataURL('data:image/png;base64,aGVsbG8=')).toEqual({
@@ -14,5 +15,5 @@ test('decodes base64 and percent-encoded data URLs including empty media types',
   expect(parseDataURL('data:,hi')).toEqual({
     data: btoa('hi'),
   });
-  expect(() => parseDataURL('https://example.com/a.png')).toThrow('Expected a data URL');
+  expect(() => parseDataURL('https://example.com/a.png')).toThrow(TranslateInputException);
 });

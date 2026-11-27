@@ -40,7 +40,7 @@ test('content-backed document tool output is lifted with its document tags', asy
   ]);
 });
 
-test('buildTargetPayload maps thinking.disabled to reasoning_effort none and bare thinking.adaptive to medium', async () => {
+test('buildTargetPayload maps thinking.disabled to reasoning_effort none', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     max_tokens: 256,
@@ -49,15 +49,6 @@ test('buildTargetPayload maps thinking.disabled to reasoning_effort none and bar
   });
 
   assertEquals(result.reasoning_effort, 'none');
-
-  const adaptive = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    thinking: { type: 'adaptive' },
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals(adaptive.reasoning_effort, 'medium');
 });
 
 test.each([

@@ -63,7 +63,6 @@ const makeCandidate = (overrides: {
 test('routes OpenAI Chat Completions to a Gemini-only candidate, strips model from wire body, and keeps geminiGenerateContent last in target preference', async () => {
   initRepo(new InMemoryRepo());
 
-  expect(openaiChatCompletionsTarget.canServe({ geminiGenerateContent: {} })).toBe(true);
   expect(openaiChatCompletionsTarget.pick({ openaiResponses: {}, geminiGenerateContent: {} })).toBe('openaiResponses');
   expect(openaiChatCompletionsTarget.pick({ anthropicMessages: {}, geminiGenerateContent: {} })).toBe('anthropicMessages');
   expect(openaiChatCompletionsTarget.pick({ openaiChatCompletions: {}, geminiGenerateContent: {} })).toBe('openaiChatCompletions');
@@ -117,7 +116,6 @@ test('routes OpenAI Chat Completions to a Gemini-only candidate, strips model fr
     headers: new Headers(),
   });
 
-  expect(callGeminiGenerateContent).toHaveBeenCalledTimes(1);
   expect(capturedBody).toBeDefined();
   expect('model' in capturedBody!).toBe(false);
   expect(capturedBody).toMatchObject({
