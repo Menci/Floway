@@ -55,6 +55,7 @@ export const apiDocsEndpoints = [
   endpoint('openaiImagesGenerations', { group: 'media', name: 'openAiImageGeneration', docs: `${openAi}/images/create` }),
   endpoint('openaiImagesEdits', { group: 'media', name: 'openAiImageEdit', docs: `${openAi}/images/createEdit` }),
   endpoint('openaiAudioTranscriptions', { group: 'media', name: 'openAiTranscription', docs: `${openAi}/audio/createTranscription` }),
+  endpoint('openaiAudioSpeech', { group: 'media', name: 'openAiSpeech', docs: 'https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create' }),
 
   endpoint('cohereV1Rerank', { group: 'rerank', name: 'cohereV1Rerank', docs: 'https://docs.cohere.com/reference/rerank' }),
   endpoint('cohereV2Rerank', { group: 'rerank', name: 'cohereV2Rerank', docs: 'https://docs.cohere.com/v2/reference/rerank' }),

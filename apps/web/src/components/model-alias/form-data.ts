@@ -1,6 +1,7 @@
 import type { InferRequestType } from 'hono/client';
 
 import type { api } from '../../api/client';
+import { limitKeysForKind } from '../models/limits';
 import type {
   AliasSelection,
   AliasTarget,
@@ -24,9 +25,7 @@ export interface AliasFormValues {
 
 export const blankTarget = (): AliasTarget => ({ target_model_id: '', rules: {} });
 
-// An image alias announces nothing: its /v1/models entry carries no limits and
-// no chat block, so there is no operator override to hold.
-export const kindAnnouncesMetadata = (kind: ModelKind): boolean => kind !== 'image';
+export const kindAnnouncesMetadata = (kind: ModelKind): boolean => kind === 'chat' || limitKeysForKind(kind).length > 0;
 
 export const metadataForKind = (
   kind: ModelKind,

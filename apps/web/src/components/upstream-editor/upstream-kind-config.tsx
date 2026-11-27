@@ -188,27 +188,31 @@ function CustomApiPaths({ readOnly }: { readOnly: boolean }) {
         title={t('upstreams.editor.fields.pathOverrides')}
       >
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-          {PATH_OVERRIDE_OPTIONS.map(({ label, path, defaultPath }) => (
-            <Controller
-              control={control}
-              key={path}
-              name={`config.pathOverrides.${path}`}
-              render={({ field }) => (
-                <Field className="min-w-0" label={{ children: <span className="block truncate" title={label}>{label}</span> }}>
-                  <Input
-                    className="!w-full font-mono"
-                    name={field.name}
-                    onBlur={field.onBlur}
-                    onChange={(_, data) => field.onChange(data.value)}
-                    placeholder={defaultPath}
-                    readOnly={readOnly}
-                    ref={field.ref}
-                    value={field.value ?? ''}
-                  />
-                </Field>
-              )}
-            />
-          ))}
+          {PATH_OVERRIDE_OPTIONS.map(option => {
+            const { path, defaultPath } = option;
+            const label = 'labelKey' in option ? t(option.labelKey) : option.label;
+            return (
+              <Controller
+                control={control}
+                key={path}
+                name={`config.pathOverrides.${path}`}
+                render={({ field }) => (
+                  <Field className="min-w-0" label={{ children: <span className="block truncate" title={label}>{label}</span> }}>
+                    <Input
+                      className="!w-full font-mono"
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      onChange={(_, data) => field.onChange(data.value)}
+                      placeholder={defaultPath}
+                      readOnly={readOnly}
+                      ref={field.ref}
+                      value={field.value ?? ''}
+                    />
+                  </Field>
+                )}
+              />
+            );
+          })}
         </div>
       </EditorSection>
     </div>

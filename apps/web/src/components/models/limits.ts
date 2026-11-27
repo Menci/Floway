@@ -13,13 +13,14 @@ export type ModelLimitKey = keyof PublicModelLimits;
 // ignores `max_output_tokens` and friends on `/v1/decisions`, reports
 // `output_tokens: 0` with `total_tokens == input_tokens`, and accepts 921,858
 // input tokens before rejecting with 400), and embedding, rerank, and
-// transcription responses carry no generated stream either. An image model has
-// no token window at all.
+// transcription responses carry no generated stream either. Image and speech
+// models have no token window to announce.
 const LIMIT_KEYS_BY_KIND: Readonly<Record<ModelKind, readonly ModelLimitKey[]>> = {
   chat: ['max_context_window_tokens', 'max_prompt_tokens', 'max_output_tokens'],
   embedding: ['max_context_window_tokens'],
   rerank: ['max_context_window_tokens'],
   transcription: ['max_context_window_tokens'],
+  speech: [],
   decision: ['max_context_window_tokens'],
   image: [],
 };

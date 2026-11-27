@@ -21,7 +21,8 @@ vi.mock('../../../src/components/upstream-editor/models-yaml-editor', () => ({
   ),
 }));
 
-vi.mock('../../../src/components/ui/scroll-area', () => ({
+vi.mock(import('../../../src/components/ui/scroll-area'), async importOriginal => ({
+  ...await importOriginal(),
   ScrollArea: forwardRef<HTMLDivElement, PropsWithChildren>(({ children }, ref) => <div ref={ref}>{children}</div>),
 }));
 
@@ -147,6 +148,29 @@ describe('upstream model workspace field-array transitions', () => {
       upstreamModelId: 'model-new',
       opaqueBlobCompatibilityScope: { bindToUpstream: true },
     }));
+  });
+
+  it('switches a custom model to speech with its audio endpoint and no token limits', async () => {
+    renderInApp(<Harness source={{
+      ...record,
+      manual_models: [{ ...model('model-a'), limits: { max_context_window_tokens: 32_000 } }],
+    }} />);
+
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('models.editor.editNamed', { name: 'model-a' }) }));
+    fireEvent.click(screen.getByRole('combobox', { name: models('kind') }));
+    fireEvent.click(screen.getByRole('option', { name: models('kindValue.speech') }));
+
+    expect(screen.queryByRole('heading', { name: models('capabilities') })).toBe(null);
+    fireEvent.click(screen.getByRole('button', { name: models('back') }));
+    fireEvent.click(screen.getByRole('button', { name: models('editAsYaml') }));
+    const yaml = (await screen.findByLabelText('YAML models') as HTMLTextAreaElement).value;
+    expect(parse(yaml)).toEqual([{
+      upstreamModelId: 'model-a',
+      publicModelId: 'model-a',
+      display_name: 'model-a',
+      kind: 'speech',
+      endpoints: { openaiAudioSpeech: {} },
+    }]);
   });
 
   it('initializes, preserves, and clears original-detail support with image input', () => {

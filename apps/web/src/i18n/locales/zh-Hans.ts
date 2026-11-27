@@ -780,6 +780,7 @@ const zhHansCN = {
           image: '图像',
           rerank: '重排',
           transcription: '转录',
+          speech: '语音合成',
           decision: '决策',
         },
         selection: {
@@ -913,6 +914,7 @@ const zhHansCN = {
           embedding: '嵌入',
           image: '图像',
           transcription: '转录',
+          speech: '语音合成',
           rerank: '重排',
           decision: '决策',
         },
@@ -1467,6 +1469,7 @@ const zhHansCN = {
         openAiImageGeneration: 'OpenAI 图像生成',
         openAiImageEdit: 'OpenAI 图像编辑',
         openAiTranscription: 'OpenAI 音频转录',
+        openAiSpeech: 'OpenAI 语音合成',
         cohereV1Rerank: 'Cohere Rerank v1',
         cohereV2Rerank: 'Cohere Rerank v2',
         jinaRerank: 'Jina Rerank',

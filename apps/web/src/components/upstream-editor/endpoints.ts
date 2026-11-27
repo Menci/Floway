@@ -16,14 +16,15 @@ export const PATH_OVERRIDE_OPTIONS = [
   { path: '/alpha/search', label: 'OpenAI Search', defaultPath: '/v1/alpha/search' },
   { path: '/images/generations', label: 'OpenAI Images Generations', defaultPath: '/v1/images/generations' },
   { path: '/images/edits', label: 'OpenAI Images Edits', defaultPath: '/v1/images/edits' },
+  { path: '/audio/speech', labelKey: 'apiDocs.endpointNames.openAiSpeech', defaultPath: '/v1/audio/speech' },
 ] as const;
 
 export const CHAT_ENDPOINT_KEYS = ['openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'geminiGenerateContent'] as const satisfies readonly (keyof ModelEndpoints)[];
 export const IMAGE_ENDPOINT_KEYS = ['openaiImagesGenerations', 'openaiImagesEdits'] as const satisfies readonly (keyof ModelEndpoints)[];
 
 // The endpoints the editor lets an operator pick. Rerank and decision rows
-// carry their wire on the target instead, and embeddings and audio
-// transcription have no picker, so none of them appear here.
+// carry their wire on the target, and embeddings, transcription, and speech
+// have one endpoint each.
 type SelectableEndpointKey = (typeof CHAT_ENDPOINT_KEYS)[number] | (typeof IMAGE_ENDPOINT_KEYS)[number];
 
 // How the editor names an endpoint.
@@ -81,15 +82,21 @@ export const shapeForKind = (
   current: { endpoints: ModelEndpoints; rerankTarget?: RerankTarget; decisionTarget?: DecisionTarget },
   upstreamKind: UpstreamKind,
 ): { endpoints: ModelEndpoints; rerankTarget?: RerankTarget; decisionTarget?: DecisionTarget } => {
-  if (kind === 'embedding') return { endpoints: { openaiEmbeddings: {} } };
-  if (kind === 'transcription') return { endpoints: { openaiAudioTranscriptions: {} } };
-  if (kind === 'rerank') return { endpoints: { rerank: {} }, rerankTarget: current.rerankTarget ?? INITIAL_RERANK_TARGET };
-  if (kind === 'decision') return upstreamKind === 'custom'
+  switch (kind) {
+  case 'embedding': return { endpoints: { openaiEmbeddings: {} } };
+  case 'transcription': return { endpoints: { openaiAudioTranscriptions: {} } };
+  case 'speech': return { endpoints: { openaiAudioSpeech: {} } };
+  case 'rerank': return { endpoints: { rerank: {} }, rerankTarget: current.rerankTarget ?? INITIAL_RERANK_TARGET };
+  case 'decision': return upstreamKind === 'custom'
     ? { endpoints: { decision: {} }, decisionTarget: current.decisionTarget ?? INITIAL_DECISION_TARGET }
     : { endpoints: { decision: {} } };
-  const family = kind === 'image' ? IMAGE_ENDPOINT_KEYS : CHAT_ENDPOINT_KEYS;
-  const kept: ModelEndpoints = {};
-  for (const key of family) if (current.endpoints[key]) kept[key] = current.endpoints[key];
-  if (Object.keys(kept).length) return { endpoints: kept };
-  return { endpoints: kind === 'image' ? { openaiImagesGenerations: {}, openaiImagesEdits: {} } : { openaiChatCompletions: {} } };
+  case 'chat':
+  case 'image': {
+    const family = kind === 'image' ? IMAGE_ENDPOINT_KEYS : CHAT_ENDPOINT_KEYS;
+    const kept: ModelEndpoints = {};
+    for (const key of family) if (current.endpoints[key]) kept[key] = current.endpoints[key];
+    if (Object.keys(kept).length) return { endpoints: kept };
+    return { endpoints: kind === 'image' ? { openaiImagesGenerations: {}, openaiImagesEdits: {} } : { openaiChatCompletions: {} } };
+  }
+  }
 };
