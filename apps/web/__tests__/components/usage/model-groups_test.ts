@@ -15,7 +15,7 @@ describe('automatic model grouping', () => {
     expect(autoGroupName('cline-pass/deepseek-v4-pro-high')).toBe('deepseek-v4-pro');
     expect(autoGroupName('a/b/gpt-6-sol-xhigh-fast')).toBe('gpt-6-sol');
     expect(autoGroupName('moonshotai/Kimi-K2.7-Code-Highspeed')).toBe('Kimi-K2.7-Code');
-    expect(autoGroupName('mimo-v2.6-pro-ultraspeed')).toBe('mimo-v2.6-pro-ultraspeed');
+    expect(autoGroupName('gpt-high-sol')).toBe('gpt-high-sol');
   });
 
   it('keeps a name the rule would empty', () => {
