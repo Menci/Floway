@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-messages/as-source/conversation-turns.ts';
-import { collectAnthropicMessagesCallIds, computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarBlock, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
+import { computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarBlock, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import { partitionGeminiGenerateContentTurns } from '../../src/protocols/gemini-generate-content/as-source/conversation-turns.ts';
-import { collectGeminiGenerateContentCallIds, computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarPart, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
-import { collectOpenAIChatCompletionsCallIds, computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
+import { computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarPart, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
+import { computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-responses/as-source/conversation-turns.ts';
-import { collectOpenAIResponsesCallIds, computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
+import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
 import { hashRoundTripContent } from '../../src/round-trip/hash.ts';
 import type { SidecarOccurrence } from '../../src/round-trip/resolve.ts';
 import { ROUND_TRIP_SIDECAR_VERSION } from '../../src/round-trip/sidecar.ts';
@@ -320,41 +320,6 @@ describe('assistant-turn sidecar protocols', () => {
     expect(await verifyOpenAIResponsesTurnDigest([fnCall, customCall], v1Digest, 1)).toBe(true);
     expect(await verifyOpenAIResponsesTurnDigest([customCall, fnCall], v1Digest, 2)).toBe(true);
     expect(await verifyOpenAIResponsesTurnDigest([fnCall, customCall], v1Digest, 3)).toBe(false);
-  });
-
-  it('collects authenticated source call IDs in wire order across all four protocols', () => {
-    expect(collectOpenAIChatCompletionsCallIds({
-      role: 'assistant',
-      function_call: { name: 'legacy', arguments: '{}' },
-      tool_calls: [
-        { id: 'tc-1', type: 'function', function: { name: 'a', arguments: '{}' } },
-        { id: 'tc-2', type: 'custom', custom: { name: 'b', input: 'x' } },
-      ],
-    })).toEqual([undefined, 'tc-1', 'tc-2']);
-    expect(collectAnthropicMessagesCallIds([
-      { role: 'assistant', content: 'plain' },
-      {
-        role: 'assistant', content: [
-          { type: 'tool_use', id: 'tu-1', name: 'a', input: {} },
-          { type: 'text', text: 'mid', citations: null },
-          { type: 'tool_use', id: 'tu-2', name: 'b', input: {} },
-        ],
-      },
-    ])).toEqual(['tu-1', 'tu-2']);
-    expect(collectOpenAIResponsesCallIds([
-      { type: 'message', role: 'assistant', content: 'hi' },
-      { type: 'custom_tool_call', call_id: 'ctc-1', name: 'a', input: 'x' },
-      { type: 'function_call', call_id: 'fc-2', name: 'b', arguments: '{}' },
-    ])).toEqual(['ctc-1', 'fc-2']);
-    expect(collectGeminiGenerateContentCallIds([
-      {
-        role: 'model', parts: [
-          { functionCall: { id: 'g-1', name: 'a', args: {} } },
-          { functionCall: { name: 'b', args: {} } },
-          { functionCall: { id: '', name: 'c', args: {} } },
-        ],
-      },
-    ])).toEqual(['g-1', undefined, undefined]);
   });
 
   it('merges adjacent Messages roles and checks each block type in order', async () => {

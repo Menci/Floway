@@ -65,19 +65,6 @@ export const collectGeminiGenerateContentReplayContents = (turn: GeminiGenerateC
   return candidates;
 };
 
-export const collectGeminiGenerateContentCallIds = (turn: GeminiGenerateContentSourceAssistantTurn): readonly (string | undefined)[] => {
-  const callIds: (string | undefined)[] = [];
-  for (const content of turn) {
-    for (const part of content.parts ?? []) {
-      if (part.functionCall !== undefined) {
-        const id = part.functionCall.id;
-        callIds.push(id === undefined || id === '' ? undefined : id);
-      }
-    }
-  }
-  return callIds;
-};
-
 export const verifyGeminiGenerateContentTurnDigest = createTurnDigestVerifier(geminiTurnDigestMaterialV1);
 
 // Gemini returns model-side thought signatures as Part metadata.

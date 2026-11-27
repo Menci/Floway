@@ -1,7 +1,7 @@
 import { writeOpenAIChatCompletionsError } from './as-source/error-body.ts';
 import { writeOpenAIChatCompletionsEvents } from './as-source/events.ts';
 import { readOpenAIChatCompletionsRequest } from './as-source/input-to.ts';
-import { collectOpenAIChatCompletionsCallIds, collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from './as-source/round-trip.ts';
+import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from './as-source/round-trip.ts';
 import type { SourceProtocol } from '../../composition/index.ts';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -15,7 +15,6 @@ export const openaiChatCompletionsSourceProtocol: SourceProtocol<
     inspect: findOpenAIChatCompletionsSidecarOccurrences,
     verify: verifyOpenAIChatCompletionsTurnDigest,
     collectCandidates: collectOpenAIChatCompletionsReplayContents,
-    collectCallIds: collectOpenAIChatCompletionsCallIds,
   },
   writeError: writeOpenAIChatCompletionsError,
   writeEvents: (payload, records, roundTrip) => writeOpenAIChatCompletionsEvents(records, {

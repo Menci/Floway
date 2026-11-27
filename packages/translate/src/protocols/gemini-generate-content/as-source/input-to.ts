@@ -221,6 +221,19 @@ const toolsToIR = (payload: GeminiGenerateContentPayload): Pick<IRInputRequestHe
   };
 };
 
+const geminiGenerateContentCallIds = (turn: GeminiGenerateContentSourceAssistantTurn): readonly (string | undefined)[] => {
+  const callIds: (string | undefined)[] = [];
+  for (const content of turn) {
+    for (const part of content.parts ?? []) {
+      if (part.functionCall !== undefined) {
+        const id = part.functionCall.id;
+        callIds.push(id === undefined || id === '' ? undefined : id);
+      }
+    }
+  }
+  return callIds;
+};
+
 export const readGeminiGenerateContentRequest = (payload: GeminiGenerateContentRequest): SourceReading<GeminiGenerateContentSourceAssistantTurn> => {
   let contentIndex = 0;
   const instruction = geminiGenerateContentSystemToIR(payload.systemInstruction);
@@ -230,7 +243,7 @@ export const readGeminiGenerateContentRequest = (payload: GeminiGenerateContentR
     contentIndex += turn.items.length;
     const toIRInputTurns = () => turnToIRTurns(turn, at);
     if (turn.role !== 'assistant') return { kind: 'client', toIRInputTurns };
-    return { kind: 'assistant', assistantTurn: turn.items, toIRInputTurns };
+    return { kind: 'assistant', assistantTurn: turn.items, toIRInputTurns, callIds: () => geminiGenerateContentCallIds(turn.items) };
   };
 
   return {
