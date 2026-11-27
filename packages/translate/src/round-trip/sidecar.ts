@@ -5,14 +5,18 @@ import { tagContentReferences, untagContentReferences } from './reference/conten
 import type { ContentReference } from './reference/types.ts';
 import type { RoundTripTurnDigest } from './turn-digest.ts';
 
-const ROUND_TRIP_SIDECAR_VERSION = 1;
+export const ROUND_TRIP_SIDECAR_VERSION = 2;
+export type RoundTripSidecarVersion = 1 | 2;
+
+const isSupportedSidecarVersion = (value: unknown): value is RoundTripSidecarVersion =>
+  value === 1 || value === 2;
 
 // One wire version covers every translation subsystem. A field whose format can
-// change derives its own format version from this `v` (currently `v: 1` selects
-// the v1 turn-digest material) instead of carrying a second version member, so
-// advancing any subsystem advances this single `v`.
+// change derives its own format version from this `v` (`v: 2` selects the v2
+// turn-digest material while retaining `v: 1` verification) instead of carrying
+// a second version member, so advancing any subsystem advances this single `v`.
 export type RoundTripSidecar<Target extends AssistantTurnProtocol> = {
-  v: 1;
+  v: RoundTripSidecarVersion;
   source: AssistantTurnProtocol;
   target: Target;
   targetTurn: ReferenceableInputAssistantTurnFor<Target, ContentReference>;
@@ -41,7 +45,7 @@ const assertTargetTurnContainer = (target: AssistantTurnProtocol, value: unknown
 };
 
 function assertRoundTripEnvelope(value: Record<string, unknown>): asserts value is AnyRoundTripSidecar {
-  if (value.v !== ROUND_TRIP_SIDECAR_VERSION) throw new TypeError('Assistant-turn sidecar version is unsupported');
+  if (!isSupportedSidecarVersion(value.v)) throw new TypeError('Assistant-turn sidecar version is unsupported');
   if (!isAssistantTurnProtocol(value.source)) throw new TypeError('Assistant-turn sidecar source is invalid');
   if (!isAssistantTurnProtocol(value.target)) throw new TypeError('Assistant-turn sidecar target is invalid');
   assertTargetTurnContainer(value.target, value.targetTurn);
