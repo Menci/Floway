@@ -1,5 +1,5 @@
 import { testFetcher } from './mock-fetch.ts';
-import { type FlagId, type InternalModel, type PerformanceTelemetryContext, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type AnthropicMessagesUpstreamCallOptions, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { type FlagId, type InternalModel, type PerformanceTelemetryContext, type UpstreamInstance, type Upstream, type UpstreamModel, type ModelCandidate, type TelemetryModelIdentity, type AnthropicMessagesUpstreamCallOptions, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/upstream';
 
 // No-op UpstreamCallOptions factory for tests calling provider methods
 // directly: the fetcher uses runtime fetch so `globalThis.fetch` spies still
@@ -20,11 +20,11 @@ export const noopAnthropicMessagesUpstreamCallOptions = (overrides: Partial<Anth
   ...overrides,
 });
 
-// Provider-side shape: what `getProvidedModels` returns and what every
+// Provider-side shape: what `getModels` returns and what every
 // `provider.callXxx` takes at dispatch time. Interceptor boundary ctx types
 // (Copilot / Codex / Claude Code) also use this shape, so interceptor tests
-// that build a ctx by hand use `stubProviderModel` directly.
-export const stubProviderModel = (overrides: Partial<ProviderModel> = {}): ProviderModel => ({
+// that build a ctx by hand use `stubUpstreamModel` directly.
+export const stubUpstreamModel = (overrides: Partial<UpstreamModel> = {}): UpstreamModel => ({
   id: 'test-model',
   upstreamModelId: 'test-model',
   limits: {},
@@ -35,30 +35,16 @@ export const stubProviderModel = (overrides: Partial<ProviderModel> = {}): Provi
   ...overrides,
 });
 
-// Gateway-side shape: what the resolver hands the attempt layer. Defaults
-// seed `providerModels` with a single entry keyed on the given upstream id —
-// the entry mirrors the outer metadata so tests that resolve
-// `providerModelOf(candidate)` see a coherent shape without extra ceremony.
-// Callers that need a specific per-upstream shape pass `providerModels`
-// explicitly. Every stub is a real-row `InternalModel`; alias-row fixtures
-// belong on the alias-listing side and construct their `InternalModel`
-// directly with `aliasedFrom`.
+// Listing-side shape: an aggregated public catalog row.
 export const stubInternalModel = (
-  overrides: Partial<Omit<InternalModel, 'aliasedFrom' | 'providerModels'>> & { readonly providerModels?: Record<string, ProviderModel> } = {},
-  upstream = 'test-upstream',
-): InternalModel => {
-  const base = {
-    id: overrides.id ?? 'test-model',
-    limits: overrides.limits ?? {},
-    kind: overrides.kind ?? 'chat',
-    endpoints: overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
-  } as const;
-  return {
-    ...base,
-    ...overrides,
-    providerModels: overrides.providerModels ?? { [upstream]: stubProviderModel(base) },
-  };
-};
+  overrides: Partial<InternalModel> = {},
+): InternalModel => ({
+  id: 'test-model',
+  limits: {},
+  kind: 'chat',
+  endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
+  ...overrides,
+});
 
 export const testTelemetryModelIdentity: TelemetryModelIdentity = {
   model: 'test-model',
@@ -78,72 +64,50 @@ export const mockPerfTelemetryContext = (overrides: Partial<PerformanceTelemetry
 
 // An undefined override keeps the stub's default, so a test can forward its
 // own optional handler without branching on whether it was supplied.
-export const stubProvider = (overrides: { [K in keyof ProviderInstance]?: ProviderInstance[K] | undefined } = {}): ProviderInstance => ({
+export const stubUpstream = (overrides: { [K in keyof UpstreamInstance]?: UpstreamInstance[K] | undefined } = {}): UpstreamInstance => ({
   runScheduledTask: overrides.runScheduledTask ?? (() => Promise.resolve()),
-  getProvidedModels: overrides.getProvidedModels ?? (() => Promise.resolve([])),
-  callAlphaSearch: overrides.callAlphaSearch ?? (() => Promise.reject(new Error('stubProvider.callAlphaSearch was called'))),
-  callOpenAICompletions: overrides.callOpenAICompletions ?? (() => Promise.reject(new Error('stubProvider.callOpenAICompletions was called'))),
-  callOpenAIChatCompletions: overrides.callOpenAIChatCompletions ?? (() => Promise.reject(new Error('stubProvider.callOpenAIChatCompletions was called'))),
-  callOpenAIResponses: overrides.callOpenAIResponses ?? (() => Promise.reject(new Error('stubProvider.callOpenAIResponses was called'))),
-  callAnthropicMessages: overrides.callAnthropicMessages ?? (() => Promise.reject(new Error('stubProvider.callAnthropicMessages was called'))),
-  callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens ?? (() => Promise.reject(new Error('stubProvider.callAnthropicMessagesCountTokens was called'))),
-  callGeminiGenerateContent: overrides.callGeminiGenerateContent ?? (() => Promise.reject(new Error('stubProvider.callGeminiGenerateContent was called'))),
-  callGeminiGenerateContentCountTokens: overrides.callGeminiGenerateContentCountTokens ?? (() => Promise.reject(new Error('stubProvider.callGeminiGenerateContentCountTokens was called'))),
-  callOpenAIEmbeddings: overrides.callOpenAIEmbeddings ?? (() => Promise.reject(new Error('stubProvider.callOpenAIEmbeddings was called'))),
-  callOpenAIImagesGenerations: overrides.callOpenAIImagesGenerations ?? (() => Promise.reject(new Error('stubProvider.callOpenAIImagesGenerations was called'))),
-  callOpenAIImagesEdits: overrides.callOpenAIImagesEdits ?? (() => Promise.reject(new Error('stubProvider.callOpenAIImagesEdits was called'))),
-  callOpenAIAudioTranscriptions: overrides.callOpenAIAudioTranscriptions ?? (() => Promise.reject(new Error('stubProvider.callOpenAIAudioTranscriptions was called'))),
-  callRerank: overrides.callRerank ?? (() => Promise.reject(new Error('stubProvider.callRerank was called'))),
-  callDecision: overrides.callDecision ?? (() => Promise.reject(new Error('stubProvider.callDecision was called'))),
+  getModels: overrides.getModels ?? (() => Promise.resolve([])),
+  callAlphaSearch: overrides.callAlphaSearch ?? (() => Promise.reject(new Error('stubUpstream.callAlphaSearch was called'))),
+  callOpenAICompletions: overrides.callOpenAICompletions ?? (() => Promise.reject(new Error('stubUpstream.callOpenAICompletions was called'))),
+  callOpenAIChatCompletions: overrides.callOpenAIChatCompletions ?? (() => Promise.reject(new Error('stubUpstream.callOpenAIChatCompletions was called'))),
+  callOpenAIResponses: overrides.callOpenAIResponses ?? (() => Promise.reject(new Error('stubUpstream.callOpenAIResponses was called'))),
+  callAnthropicMessages: overrides.callAnthropicMessages ?? (() => Promise.reject(new Error('stubUpstream.callAnthropicMessages was called'))),
+  callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens ?? (() => Promise.reject(new Error('stubUpstream.callAnthropicMessagesCountTokens was called'))),
+  callGeminiGenerateContent: overrides.callGeminiGenerateContent ?? (() => Promise.reject(new Error('stubUpstream.callGeminiGenerateContent was called'))),
+  callGeminiGenerateContentCountTokens: overrides.callGeminiGenerateContentCountTokens ?? (() => Promise.reject(new Error('stubUpstream.callGeminiGenerateContentCountTokens was called'))),
+  callOpenAIEmbeddings: overrides.callOpenAIEmbeddings ?? (() => Promise.reject(new Error('stubUpstream.callOpenAIEmbeddings was called'))),
+  callOpenAIImagesGenerations: overrides.callOpenAIImagesGenerations ?? (() => Promise.reject(new Error('stubUpstream.callOpenAIImagesGenerations was called'))),
+  callOpenAIImagesEdits: overrides.callOpenAIImagesEdits ?? (() => Promise.reject(new Error('stubUpstream.callOpenAIImagesEdits was called'))),
+  callOpenAIAudioTranscriptions: overrides.callOpenAIAudioTranscriptions ?? (() => Promise.reject(new Error('stubUpstream.callOpenAIAudioTranscriptions was called'))),
+  callRerank: overrides.callRerank ?? (() => Promise.reject(new Error('stubUpstream.callRerank was called'))),
+  callDecision: overrides.callDecision ?? (() => Promise.reject(new Error('stubUpstream.callDecision was called'))),
 });
 
-// Stitches together a candidate whose `model.providerModels` map carries an
-// entry under the wired provider's upstream id — that's what
-// `providerModelOf(candidate)` resolves to at dispatch time. The
-// `enabledFlags` / `providerData` shortcuts populate that ProviderModel
-// directly — the common case for interceptor tests that just need a flag set
-// for the resolver's own upstream key. Any `model.providerModels` supplied
-// through `overrides.model` replaces both the default entry and those
-// shortcuts wholesale.
 export const stubModelCandidate = (overrides: {
-  model?: Partial<Omit<InternalModel, 'aliasedFrom' | 'providerModels'>> & { readonly providerModels?: Record<string, ProviderModel> };
-  provider?: Provider;
+  model?: Partial<UpstreamModel>;
+  upstream?: Upstream;
   enabledFlags?: ReadonlySet<FlagId>;
-  providerData?: unknown;
+  upstreamData?: unknown;
 } = {}): ModelCandidate => {
-  const provider = overrides.provider ?? {
+  const upstream = overrides.upstream ?? {
     upstreamId: 'test-upstream',
     kind: 'custom',
     name: 'Test Upstream',
     inboundHeaderAllowlist: [],
-    disabledPublicModelIds: [],
-    modelPrefix: null,
-    modelsCache: null,
-    instance: stubProvider(),
+    instance: stubUpstream(),
   };
   const modelOverrides = overrides.model ?? {};
-  const outerMeta = {
-    id: modelOverrides.id ?? 'test-model',
-    limits: modelOverrides.limits ?? {},
-    kind: modelOverrides.kind ?? 'chat',
-    endpoints: modelOverrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
-  } as const;
-  const providerModel = stubProviderModel({
-    id: outerMeta.id,
-    upstreamModelId: outerMeta.id,
-    limits: outerMeta.limits,
-    kind: outerMeta.kind,
-    endpoints: outerMeta.endpoints,
-    enabledFlags: overrides.enabledFlags ?? new Set<FlagId>(),
-    ...(modelOverrides.pricing !== undefined ? { pricing: modelOverrides.pricing } : {}),
-    ...(overrides.providerData !== undefined ? { providerData: overrides.providerData } : {}),
+  const id = modelOverrides.id ?? 'test-model';
+  const model = stubUpstreamModel({
+    id,
+    upstreamModelId: modelOverrides.upstreamModelId ?? id,
+    ...modelOverrides,
+    ...(overrides.enabledFlags !== undefined ? { enabledFlags: overrides.enabledFlags } : {}),
+    ...(overrides.upstreamData !== undefined ? { upstreamData: overrides.upstreamData } : {}),
   });
   return {
-    provider,
-    model: stubInternalModel({
-      ...modelOverrides,
-      providerModels: modelOverrides.providerModels ?? { [provider.upstreamId]: providerModel },
-    }),
+    upstream,
+    model,
     fetcher: testFetcher,
   };
 };

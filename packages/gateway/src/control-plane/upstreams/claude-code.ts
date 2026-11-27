@@ -4,10 +4,11 @@ import { fullUpstreamActionError } from '../../access-control/upstream-edit.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { claudeCodeOAuthAuthorizeUrlBody, claudeCodeOAuthExchangeBody, claudeCodeOAuthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody } from '../schemas.ts';
 import { saveUpstream } from '../shared/save-upstreams.ts';
-import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher, UpstreamRecord } from '@floway-dev/upstream';
 import {
   type ClaudeCodeUpstreamConfig,
   type ClaudeCodeUpstreamState,
@@ -22,7 +23,7 @@ import {
   importClaudeCodeFromSetupTokenCallback,
   logInfo,
   readClaudeCodeUpstreamState,
-} from '@floway-dev/provider-claude-code';
+} from '@floway-dev/upstream-claude-code';
 
 // Claude Code OAuth + setup-token + probe endpoints under the unified
 // record-body contract. Create and edit share one endpoint each: the
@@ -86,7 +87,14 @@ export const claudeCodeOAuthExchange = async (c: CtxWithJson<typeof claudeCodeOA
       state: ingestion.state,
       updatedAt: new Date().toISOString(),
     };
-    await saveUpstream({ previous: dbRecord, next });
+    await saveUpstream({
+      previous: dbRecord,
+      next,
+      refreshContext: {
+        runtimeLocation: getRuntimeLocation(c.req.raw),
+        scheduler: backgroundSchedulerFromContext(c),
+      },
+    });
   }
 
   return c.json({ patch: { config: ingestion.config, state: ingestion.state } });
@@ -131,7 +139,14 @@ export const claudeCodeSetupTokenExchange = async (c: CtxWithJson<typeof claudeC
       state: ingestion.state,
       updatedAt: new Date().toISOString(),
     };
-    await saveUpstream({ previous: dbRecord, next });
+    await saveUpstream({
+      previous: dbRecord,
+      next,
+      refreshContext: {
+        runtimeLocation: getRuntimeLocation(c.req.raw),
+        scheduler: backgroundSchedulerFromContext(c),
+      },
+    });
   }
 
   return c.json({ patch: { config: ingestion.config, state: ingestion.state } });

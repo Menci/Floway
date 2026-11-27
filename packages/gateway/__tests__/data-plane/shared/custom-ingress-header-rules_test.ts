@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest, sseOpenAIChatCompletionsResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
 
 // One instance, one rule set, one route per attempt path that hands inbound
 // headers to the provider (the passthrough endpoints share one attempt, so
@@ -28,14 +28,15 @@ const registerUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['
       endpoints: {},
       ingressHeadersRules: INGRESS_HEADERS_RULES,
       modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [
-        { upstreamModelId: 'chat-model', endpoints: { openaiChatCompletions: {} } },
-        { upstreamModelId: 'messages-model', endpoints: { anthropicMessages: {} } },
-        { upstreamModelId: 'embedding-model', endpoints: { openaiEmbeddings: {} } },
-        { upstreamModelId: 'rerank-model', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
-      ],
     },
-  }));
+  }), {
+    manualModels: [
+      { upstreamModelId: 'chat-model', kind: 'chat', endpoints: { openaiChatCompletions: {} } },
+      { upstreamModelId: 'messages-model', kind: 'chat', endpoints: { anthropicMessages: {} } },
+      { upstreamModelId: 'embedding-model', kind: 'embedding', endpoints: { openaiEmbeddings: {} } },
+      { upstreamModelId: 'rerank-model', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
+    ],
+  });
 };
 
 // A client that repeats `x-route`, sends its own `x-configured`, and sends a

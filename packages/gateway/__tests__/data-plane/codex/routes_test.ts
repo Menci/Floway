@@ -135,8 +135,8 @@ describe('Codex model-provider routes', () => {
       input_modalities: ['text', 'image'], supports_image_detail_original: false,
     });
     expect(bySlug).not.toHaveProperty('hidden-codex');
-    const stored = await repo.upstreams.getById('up_chatgpt');
-    expect(stored?.modelsCache?.models.find(model => model.id === 'gpt-6.1-sol')?.limits.max_context_window_tokens).toBe(872000);
+    const storedModels = await repo.upstreamModels.listByUpstream('up_chatgpt');
+    expect(storedModels.find(entry => entry.model.id === 'gpt-6.1-sol')?.model.limits.max_context_window_tokens).toBe(872000);
   });
 
   it('owns the namespaced alpha-search path', async () => {

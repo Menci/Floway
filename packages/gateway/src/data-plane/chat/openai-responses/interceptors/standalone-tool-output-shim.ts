@@ -2,7 +2,6 @@ import type { OpenAIResponsesInterceptor } from './types.ts';
 import { tryCatchChatServeFailure, type InputErrorDetails } from '../../shared/errors.ts';
 import { inputErrorResult } from '../errors.ts';
 import { standaloneToolOutputContent } from '../items/standalone-tool-output-content.ts';
-import { providerModelOf } from '@floway-dev/provider';
 
 // Codex injects client context (the `/goal` objective, companion pages,
 // automation and delegation bootstraps) as `function_call_output` items with a
@@ -18,7 +17,7 @@ import { providerModelOf } from '@floway-dev/provider';
 // https://github.com/openai/codex/issues/42088
 export const withOpenAIResponsesStandaloneToolOutputShim: OpenAIResponsesInterceptor = async (ctx, gatewayCtx, run) => {
   if (ctx.targetApi === 'openaiResponses'
-    && !providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-standalone-tool-output-shim')) return await run();
+    && !ctx.candidate.model.enabledFlags.has('openai-responses-standalone-tool-output-shim')) return await run();
   if (!ctx.payload.input.some(item => item.type === 'function_call_output' && item.call_id == null)) return await run();
 
   try {

@@ -5,7 +5,7 @@ import { initRepo } from '../../src/repo/index.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
-import type { ProxyFallbackEntry } from '@floway-dev/provider';
+import type { ProxyFallbackEntry } from '@floway-dev/upstream';
 
 const stubSocketDial: SocketDial = {
   connect: async () => {
@@ -35,7 +35,6 @@ const upstream = (id: string, proxyFallbackList: ProxyFallbackEntry[]) => ({
   disabledPublicModelIds: [],
   proxyFallbackList,
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
   config: COPILOT_CONFIG,
   state: null,
@@ -55,11 +54,13 @@ describe('createPerRequestFetcher', () => {
     // u_bad references the malformed row; u_ok shares the request but does
     // not. The whole-request build must still succeed; only u_bad's fetcher
     // surfaces the parse error, and only when actually called.
-    await saveUpstreamForTest(repo.upstreams, upstream('u_bad', [{ id: 'p_bad' }]));
-    await saveUpstreamForTest(repo.upstreams, upstream('u_ok', []));
+    const upBad = upstream('u_bad', [{ id: 'p_bad' }]);
+    const upOk = upstream('u_ok', []);
+    await saveUpstreamForTest(repo.upstreams, upBad);
+    await saveUpstreamForTest(repo.upstreams, upOk);
     await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', dialTimeoutSeconds: null });
 
-    const fetcherFor = await createPerRequestFetcher('TEST');
+    const fetcherFor = await createPerRequestFetcher('TEST', [upBad, upOk]);
     const badFetcher = fetcherFor('u_bad');
     await expect(badFetcher('https://example.com', { method: 'GET' }))
       .rejects.toThrow();

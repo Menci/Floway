@@ -42,7 +42,7 @@ export interface UsageUpstream {
 }
 
 export interface SearchUsageRecord {
-  provider: string;
+  backend: string;
   keyId: string;
   keyName?: string;
   keyCreatedAt?: string;
@@ -95,8 +95,8 @@ interface ChartModelBase {
   range: UsageRange;
 }
 export type TokenChartModel = ChartModelBase & { kind: 'token'; details: Map<string, Map<string, TokenCounters>> };
-// Providers present in the window's data, not the current filter selection.
-export type SearchChartModel = ChartModelBase & { kind: 'search'; providers: string[] };
+// Backends present in the window's data, not the current filter selection.
+export type SearchChartModel = ChartModelBase & { kind: 'search'; backends: string[] };
 export type UsageChartModel = TokenChartModel | SearchChartModel;
 
 export interface CalloutRow { id: string; label: string; color: string; value: number }

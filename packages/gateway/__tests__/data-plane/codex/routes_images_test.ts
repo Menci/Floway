@@ -21,17 +21,18 @@ const saveAzureImages = async (repo: InMemoryRepo): Promise<void> => {
     disabledPublicModelIds: [],
     proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'azkey',
-      models: [{
-        upstreamModelId: 'gpt-image-2',
-        endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
-      }],
     },
     state: null,
+  }, {
+    manualModels: [{
+      upstreamModelId: 'gpt-image-2',
+      kind: 'image',
+      endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
+    }],
   });
 };
 
@@ -49,7 +50,6 @@ const saveCodexImages = async (repo: InMemoryRepo): Promise<void> => {
     disabledPublicModelIds: [],
     proxyFallbackList: MOCKED_FETCH_EGRESS,
     modelPrefix: null,
-    modelsCache: null,
     hue: 210,
     config: {
       accounts: [{ email: 'team@example.test', chatgptAccountId: 'account', chatgptUserId: 'user', planType: 'team' }],

@@ -4,8 +4,8 @@ import { withEmptyToolsToolChoiceNormalized } from '../../../../../src/data-plan
 import type { AnthropicMessagesInvocation } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
-import { type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate } from '@floway-dev/test-utils';
+import { type FlagId } from '@floway-dev/upstream';
 
 const stubCtx = mockChatGatewayCtx();
 const okResponse = () => Promise.resolve(new Response());

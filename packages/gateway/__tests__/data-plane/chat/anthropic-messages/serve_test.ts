@@ -5,20 +5,19 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
+import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type UpstreamCallResult, type UpstreamStreamResult, type FlagId } from '@floway-dev/upstream';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
 // candidates it wants, optionally with an alias-rules overlay attached.
 interface QueuedResolution {
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
-  readonly failedUpstreams: readonly string[];
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastResolveCall: { model?: string } = {};
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
+vi.mock('../../../../src/data-plane/upstreams/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../../src/data-plane/upstreams/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async ({ model }: { model: string }) => {
@@ -42,7 +41,6 @@ const queueResolution = (
   resolutionsQueue.push({
     candidates: rules !== undefined ? candidates.map(c => ({ ...c, rules })) : candidates,
     sawModel: extra.sawModel ?? candidates.length > 0,
-    failedUpstreams: [],
   });
 };
 
@@ -106,34 +104,28 @@ const makeCandidate = (overrides: {
   upstream?: string;
   modelId?: string;
   endpoints?: ModelEndpoints;
-  kind?: ModelCandidate['provider']['kind'];
+  kind?: ModelCandidate['upstream']['kind'];
   enabledFlags?: ReadonlySet<FlagId>;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
-  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<ProviderCallResult>;
+  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>>;
+  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<UpstreamCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const modelId = overrides.modelId ?? 'test-model';
   const kind = overrides.kind ?? 'custom';
-  const provider = stubProvider({
+  const instance = stubUpstream({
     callAnthropicMessages: overrides.callAnthropicMessages,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream, kind, name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
+      instance,
     },
-    model: stubInternalModel({
+    model: stubUpstreamModel({
       id: modelId,
       ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-      providerModels: {
-        [upstream]: stubProviderModel({
-          id: modelId,
-          ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-          ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
-        }),
-      },
-    }, upstream),
+      ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
+    }),
     fetcher: directFetcher,
   };
 };
@@ -161,7 +153,7 @@ const assertResultType = <U extends { type: string }, T extends U['type']>(
 test('generate routes a native Anthropic Messages candidate end to end', async () => {
   installRepo();
   let callOptions: AnthropicMessagesUpstreamCallOptions | undefined;
-  const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
+  const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => {
     callOptions = opts;
     return {
       ok: true,
@@ -206,7 +198,7 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   installRepo();
   const observedModelIds: string[] = [];
   let callOptions: AnthropicMessagesUpstreamCallOptions | undefined;
-  const callAnthropicMessagesCountTokens = vi.fn(async (model: unknown, _body, _signal, opts): Promise<ProviderCallResult> => {
+  const callAnthropicMessagesCountTokens = vi.fn(async (model: unknown, _body, _signal, opts): Promise<UpstreamCallResult> => {
     observedModelIds.push((model as { id: string }).id);
     callOptions = opts;
     return {
@@ -248,7 +240,7 @@ test('generate failover preserves billing blocks for a strip-off candidate', asy
   const messages = [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'original user text' }] }];
   const expectedMessages = structuredClone(messages);
   const firstBodies: Array<Omit<AnthropicMessagesPayload, 'model'>> = [];
-  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
+  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => {
     const firstBody = body as Omit<AnthropicMessagesPayload, 'model'>;
     firstBodies.push(firstBody);
     const message = firstBody.messages[0];
@@ -261,7 +253,7 @@ test('generate failover preserves billing blocks for a strip-off candidate', asy
     };
   });
   const observedBodies: Array<Omit<AnthropicMessagesPayload, 'model'>> = [];
-  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
+  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => {
     observedBodies.push(body as Omit<AnthropicMessagesPayload, 'model'>);
     return {
       ok: true,
@@ -301,7 +293,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   installRepo();
   const capturedBodies: AnthropicMessagesPayload[] = [];
   const observedModelIds: string[] = [];
-  const callAnthropicMessages = vi.fn(async (model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
+  const callAnthropicMessages = vi.fn(async (model: unknown, body: unknown): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => {
     observedModelIds.push((model as { id: string }).id);
     capturedBodies.push({ ...(body as Omit<AnthropicMessagesPayload, 'model'>), model: 'claude-opus-4-7' });
     return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesResultEvents()), modelKey: 'claude-opus-4-7' };

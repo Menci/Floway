@@ -1,6 +1,6 @@
 import { shortAccountId } from './account-id';
 import type { UpstreamRecord } from '../../api/types';
-import type { KimiCodeAccount, KimiCodeAccountUsage } from '@floway-dev/provider-kimi-code/browser';
+import type { KimiCodeAccount, KimiCodeAccountUsage } from '@floway-dev/upstream-kimi-code/browser';
 
 export type KimiCodeRecord = Extract<UpstreamRecord, { kind: 'kimi-code' }>;
 

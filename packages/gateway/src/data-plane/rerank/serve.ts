@@ -4,18 +4,17 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { rerankAttempt, type RerankAttemptResult } from './attempt.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { enumerateModelCandidates } from '../providers/resolution.ts';
-import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { iterateCandidates } from '../shared/iterate-candidates.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
-import { forwardUpstreamResponse, providerModelsUnavailableResponse } from '../shared/upstream-response.ts';
+import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
+import { enumerateModelCandidates } from '../upstreams/resolution.ts';
 import { parseDecimalString, type RerankSourceProtocol } from '@floway-dev/protocols/common';
 import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
-import { providerModelOf, toInternalDebugError } from '@floway-dev/provider';
-import type { TelemetryModelIdentity } from '@floway-dev/provider';
+import { toInternalDebugError } from '@floway-dev/upstream';
+import type { TelemetryModelIdentity } from '@floway-dev/upstream';
 
 const apiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
   c.json({ error: { message, type: 'api_error' } }, status);
@@ -74,13 +73,12 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
   let measuredUsage: Pick<CanonicalRerankResponse, 'searchUnits' | 'totalTokens'> | undefined;
   let usageSettled = false;
   try {
-    const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
+    const { candidates, sawModel } = await enumerateModelCandidates({
       subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       randomizeUpstreams: ctx.randomizeUpstreams,
       model,
       kind: 'rerank',
-      scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
     if (candidates.length === 0) {
@@ -88,18 +86,16 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       const message = sawModel
         ? unsupportedMessage(model)
         : `Model ${model} is not available on any configured upstream.`;
-      return finalizeGatewayResponse(ctx, apiError(c, appendFailedUpstreams(message, failedUpstreams), sawModel ? 400 : 404));
+      return finalizeGatewayResponse(ctx, apiError(c, message, sawModel ? 400 : 404));
     }
 
-    const routable = candidates.flatMap(candidate => {
-      const providerModel = providerModelOf(candidate);
-      return candidate.model.endpoints.rerank === undefined || providerModel.rerankTarget === undefined
+    const routable = candidates.flatMap(candidate =>
+      candidate.model.endpoints.rerank === undefined || candidate.model.rerankTarget === undefined
         ? []
-        : [{ candidate, target: providerModel.rerankTarget }];
-    });
+        : [{ candidate, target: candidate.model.rerankTarget }]);
     if (routable.length === 0) {
       ctx.dump?.error('gateway');
-      return finalizeGatewayResponse(ctx, apiError(c, appendFailedUpstreams(unsupportedMessage(model), failedUpstreams), 400));
+      return finalizeGatewayResponse(ctx, apiError(c, unsupportedMessage(model), 400));
     }
     const viable = routable.filter(({ target }) => rerankRequestIncompatibility(target.protocol, request) === null);
     if (viable.length === 0) {
@@ -171,11 +167,6 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, true);
     } else if (terminal === undefined) {
       recordFailedRequest(ctx, ctx.attempt.telemetry);
-    }
-    const forwarded = providerModelsUnavailableResponse(error);
-    if (forwarded) {
-      ctx.dump?.error('upstream');
-      return finalizeGatewayResponse(ctx, forwarded);
     }
     ctx.dump?.failed(error);
     return finalizeGatewayResponse(ctx, c.json({ error: toInternalDebugError(error) }, 502));

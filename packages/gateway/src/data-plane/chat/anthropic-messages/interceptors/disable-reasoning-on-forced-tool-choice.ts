@@ -1,6 +1,5 @@
 import type { AnthropicMessagesPayloadInterceptor } from './types.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
-import { providerModelOf } from '@floway-dev/provider';
 
 // Opt-in workaround for upstreams where forced `tool_choice` and enabled
 // thinking do not compose. Anthropic Messages has a native `thinking: disabled` shape.
@@ -24,7 +23,7 @@ const disableAnthropicMessagesReasoning = (payload: AnthropicMessagesPayload): A
 };
 
 export const withReasoningDisabledOnForcedToolChoice: AnthropicMessagesPayloadInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!providerModelOf(ctx.candidate).enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
   if (!hasForcedToolChoice(ctx.payload)) return await run();
   ctx.payload = disableAnthropicMessagesReasoning(ctx.payload);
   return await run();

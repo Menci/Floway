@@ -3,15 +3,15 @@ import type {
   FullSerializedUpstreamRecord,
   RedactedSerializedUpstreamRecord,
 } from './types.ts';
-import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
-import type { FlagOverrides, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
-import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/provider-chatgpt';
-import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
-import { assertCopilotUpstreamRecord, assertCopilotUpstreamState } from '@floway-dev/provider-copilot';
-import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
-import { assertKimiCodeUpstreamRecord, readKimiCodeUpstreamState } from '@floway-dev/provider-kimi-code';
-import { assertOllamaUpstreamRecord, readOllamaUpstreamState } from '@floway-dev/provider-ollama';
+import { flagDefaultsForKind } from '../../data-plane/upstreams/registry.ts';
+import type { FlagOverrides, ProxyFallbackEntry, UpstreamModelConfig, UpstreamKind, UpstreamRecord } from '@floway-dev/upstream';
+import { assertAzureUpstreamRecord } from '@floway-dev/upstream-azure';
+import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/upstream-chatgpt';
+import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/upstream-claude-code';
+import { assertCopilotUpstreamRecord, assertCopilotUpstreamState } from '@floway-dev/upstream-copilot';
+import { assertCustomUpstreamRecord } from '@floway-dev/upstream-custom';
+import { assertKimiCodeUpstreamRecord, readKimiCodeUpstreamState } from '@floway-dev/upstream-kimi-code';
+import { assertOllamaUpstreamRecord, readOllamaUpstreamState } from '@floway-dev/upstream-ollama';
 
 export type { FullSerializedUpstreamRecord } from './types.ts';
 
@@ -43,7 +43,10 @@ const stateless = (upstream: UpstreamRecord): null => {
   return null;
 };
 
-export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializedUpstreamRecord => {
+export const upstreamRecordToJson = (
+  upstream: UpstreamRecord,
+  manualModels: readonly UpstreamModelConfig[] = [],
+): RedactedSerializedUpstreamRecord => {
   const base = serializeBase(upstream);
   switch (upstream.kind) {
   case 'custom': {
@@ -57,9 +60,9 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
         ...(config.pathOverrides !== undefined ? { pathOverrides: clone(config.pathOverrides) } : {}),
         ingressHeadersRules: clone(config.ingressHeadersRules),
         modelsFetch: clone(config.modelsFetch),
-        models: clone(config.models),
         apiKeySet: hasSecret(config.apiKey),
       },
+      manual_models: clone([...manualModels]),
       state: stateless(upstream),
     };
   }
@@ -68,7 +71,8 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     return {
       ...base,
       kind: 'azure',
-      config: { endpoint: config.endpoint, models: clone(config.models), apiKeySet: hasSecret(config.apiKey) },
+      config: { endpoint: config.endpoint, apiKeySet: hasSecret(config.apiKey) },
+      manual_models: clone([...manualModels]),
       state: stateless(upstream),
     };
   }
@@ -143,7 +147,8 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     return {
       ...base,
       kind: 'ollama',
-      config: { baseUrl: config.baseUrl, cloudUsage: config.cloudUsage, models: clone(config.models), apiKeySet: hasSecret(config.apiKey) },
+      config: { baseUrl: config.baseUrl, cloudUsage: config.cloudUsage, apiKeySet: hasSecret(config.apiKey) },
+      manual_models: clone([...manualModels]),
       // The usage probe holds upstream-owned windows and counters with no
       // secret in them, so the slot crosses whole.
       state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state),
@@ -152,16 +157,19 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
   }
 };
 
-export const upstreamRecordToFullJson = (upstream: UpstreamRecord): FullSerializedUpstreamRecord => {
+export const upstreamRecordToFullJson = (
+  upstream: UpstreamRecord,
+  manualModels: readonly UpstreamModelConfig[] = [],
+): FullSerializedUpstreamRecord => {
   const base = serializeBase(upstream);
   switch (upstream.kind) {
   case 'custom': {
     const record = assertCustomUpstreamRecord(upstream);
-    return { ...base, kind: 'custom', config: clone(record.config), state: stateless(upstream) };
+    return { ...base, kind: 'custom', config: clone(record.config), manual_models: clone([...manualModels]), state: stateless(upstream) };
   }
   case 'azure': {
     const record = assertAzureUpstreamRecord(upstream);
-    return { ...base, kind: 'azure', config: clone(record.config), state: stateless(upstream) };
+    return { ...base, kind: 'azure', config: clone(record.config), manual_models: clone([...manualModels]), state: stateless(upstream) };
   }
   case 'copilot': {
     const record = assertCopilotUpstreamRecord(upstream);
@@ -184,12 +192,12 @@ export const upstreamRecordToFullJson = (upstream: UpstreamRecord): FullSerializ
   }
   case 'ollama': {
     const record = assertOllamaUpstreamRecord(upstream);
-    return { ...base, kind: 'ollama', config: clone(record.config), state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state) };
+    return { ...base, kind: 'ollama', config: clone(record.config), manual_models: clone([...manualModels]), state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state) };
   }
   }
 };
 
-const blueprintBase = (kind: UpstreamProviderKind) => ({
+const blueprintBase = (kind: UpstreamKind) => ({
   id: '',
   name: '',
   enabled: false,
@@ -204,7 +212,7 @@ const blueprintBase = (kind: UpstreamProviderKind) => ({
   model_prefix: null,
 });
 
-export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSerializedUpstreamRecord => {
+export const blueprintUpstreamRecord = (kind: UpstreamKind): BlueprintSerializedUpstreamRecord => {
   const base = blueprintBase(kind);
   switch (kind) {
   case 'copilot':
@@ -214,9 +222,9 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSe
     // OpenAI-compatible chat endpoint whose model catalog the upstream itself
     // publishes. The blueprint is the create form's opening record, so this is
     // the only place a new upstream's starting values are decided.
-    return { ...base, kind, config: { baseUrl: '', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: true, authStyle: 'bearer' }, models: [] }, state: null };
+    return { ...base, kind, config: { baseUrl: '', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: true, authStyle: 'bearer' } }, manual_models: [], state: null };
   case 'azure':
-    return { ...base, kind, config: { endpoint: '', apiKey: '', models: [] }, state: null };
+    return { ...base, kind, config: { endpoint: '', apiKey: '' }, manual_models: [], state: null };
   case 'chatgpt':
     return { ...base, kind, config: { accounts: [] }, state: { accounts: [] } };
   case 'claude-code':
@@ -224,6 +232,6 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSe
   case 'kimi-code':
     return { ...base, kind, config: { region: 'china', apiKey: '' }, state: null };
   case 'ollama':
-    return { ...base, kind, config: { baseUrl: '', apiKey: '', cloudUsage: false, models: [] }, state: null };
+    return { ...base, kind, config: { baseUrl: '', apiKey: '', cloudUsage: false }, manual_models: [], state: null };
   }
 };

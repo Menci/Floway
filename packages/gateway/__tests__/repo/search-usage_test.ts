@@ -9,33 +9,33 @@ import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 const sortWebSearchUsageRecords = (records: WebSearchUsageRecord[]) =>
   records.toSorted(
     (a, b) =>
-      a.hour.localeCompare(b.hour) || a.provider.localeCompare(b.provider) || a.keyId.localeCompare(b.keyId) || a.action.localeCompare(b.action),
+      a.hour.localeCompare(b.hour) || a.backend.localeCompare(b.backend) || a.keyId.localeCompare(b.keyId) || a.action.localeCompare(b.action),
   );
 
 const exerciseWebSearchUsageRepo = async (repo: WebSearchUsageRepo) => {
   await repo.deleteAll();
-  await repo.record({ provider: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 1 });
-  await repo.record({ provider: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 2 });
-  await repo.record({ provider: 'microsoft-web-iq', keyId: 'key_a', action: 'search', hour: '2026-04-25T11', requests: 4 });
-  await repo.record({ provider: 'tavily', keyId: 'key_b', action: 'search', hour: '2026-04-25T12', requests: 8 });
-  await repo.record({ provider: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-04-25T13', requests: 16 });
+  await repo.record({ backend: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 1 });
+  await repo.record({ backend: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 2 });
+  await repo.record({ backend: 'microsoft-web-iq', keyId: 'key_a', action: 'search', hour: '2026-04-25T11', requests: 4 });
+  await repo.record({ backend: 'tavily', keyId: 'key_b', action: 'search', hour: '2026-04-25T12', requests: 8 });
+  await repo.record({ backend: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-04-25T13', requests: 16 });
 
   assertEquals(
     await repo.query({
-      provider: 'tavily',
+      backend: 'tavily',
       start: '2026-04-25T10',
       end: '2026-04-25T13',
     }),
     [
       {
-        provider: 'tavily',
+        backend: 'tavily',
         keyId: 'key_a',
         action: 'search',
         hour: '2026-04-25T10',
         requests: 3,
       },
       {
-        provider: 'tavily',
+        backend: 'tavily',
         keyId: 'key_b',
         action: 'search',
         hour: '2026-04-25T12',
@@ -52,21 +52,21 @@ const exerciseWebSearchUsageRepo = async (repo: WebSearchUsageRepo) => {
     }),
     [
       {
-        provider: 'tavily',
+        backend: 'tavily',
         keyId: 'key_a',
         action: 'search',
         hour: '2026-04-25T10',
         requests: 3,
       },
       {
-        provider: 'microsoft-web-iq',
+        backend: 'microsoft-web-iq',
         keyId: 'key_a',
         action: 'search',
         hour: '2026-04-25T11',
         requests: 4,
       },
       {
-        provider: 'tavily',
+        backend: 'tavily',
         keyId: 'key_a',
         action: 'search',
         hour: '2026-04-25T13',
@@ -76,7 +76,7 @@ const exerciseWebSearchUsageRepo = async (repo: WebSearchUsageRepo) => {
   );
 
   await repo.set({
-    provider: 'tavily',
+    backend: 'tavily',
     keyId: 'key_a',
     action: 'search',
     hour: '2026-04-25T10',
@@ -84,14 +84,14 @@ const exerciseWebSearchUsageRepo = async (repo: WebSearchUsageRepo) => {
   });
   assertEquals(
     await repo.query({
-      provider: 'tavily',
+      backend: 'tavily',
       keyId: 'key_a',
       start: '2026-04-25T10',
       end: '2026-04-25T11',
     }),
     [
       {
-        provider: 'tavily',
+        backend: 'tavily',
         keyId: 'key_a',
         action: 'search',
         hour: '2026-04-25T10',
@@ -108,22 +108,22 @@ const exerciseActionDimension = async (repo: WebSearchUsageRepo) => {
   await repo.deleteAll();
 
   // Distinct rows per action under the same (provider, keyId, hour).
-  await repo.record({ provider: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-05-01T10', requests: 5 });
-  await repo.record({ provider: 'tavily', keyId: 'key_a', action: 'fetch_page', hour: '2026-05-01T10', requests: 3 });
-  await repo.record({ provider: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-05-01T10', requests: 2 }); // sums into the existing search row
+  await repo.record({ backend: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-05-01T10', requests: 5 });
+  await repo.record({ backend: 'tavily', keyId: 'key_a', action: 'fetch_page', hour: '2026-05-01T10', requests: 3 });
+  await repo.record({ backend: 'tavily', keyId: 'key_a', action: 'search', hour: '2026-05-01T10', requests: 2 }); // sums into the existing search row
 
   const all = await repo.listAll();
   assertEquals(all.length, 2);
   assertEquals(sortWebSearchUsageRecords(all), [
     {
-      provider: 'tavily',
+      backend: 'tavily',
       keyId: 'key_a',
       action: 'fetch_page',
       hour: '2026-05-01T10',
       requests: 3,
     },
     {
-      provider: 'tavily',
+      backend: 'tavily',
       keyId: 'key_a',
       action: 'search',
       hour: '2026-05-01T10',
@@ -135,7 +135,7 @@ const exerciseActionDimension = async (repo: WebSearchUsageRepo) => {
   const onlyFetch = await repo.query({ action: 'fetch_page', start: '2026-05-01T10', end: '2026-05-01T11' });
   assertEquals(onlyFetch, [
     {
-      provider: 'tavily',
+      backend: 'tavily',
       keyId: 'key_a',
       action: 'fetch_page',
       hour: '2026-05-01T10',
@@ -146,7 +146,7 @@ const exerciseActionDimension = async (repo: WebSearchUsageRepo) => {
   const onlySearch = await repo.query({ action: 'search', start: '2026-05-01T10', end: '2026-05-01T11' });
   assertEquals(onlySearch, [
     {
-      provider: 'tavily',
+      backend: 'tavily',
       keyId: 'key_a',
       action: 'search',
       hour: '2026-05-01T10',
@@ -160,7 +160,7 @@ const exerciseActionDimension = async (repo: WebSearchUsageRepo) => {
 
   // set() with action distinguishes from existing record under the same hour/provider/keyId.
   await repo.set({
-    provider: 'tavily',
+    backend: 'tavily',
     keyId: 'key_a',
     action: 'fetch_page',
     hour: '2026-05-01T10',
@@ -169,14 +169,14 @@ const exerciseActionDimension = async (repo: WebSearchUsageRepo) => {
   const afterSet = sortWebSearchUsageRecords(await repo.listAll());
   assertEquals(afterSet, [
     {
-      provider: 'tavily',
+      backend: 'tavily',
       keyId: 'key_a',
       action: 'fetch_page',
       hour: '2026-05-01T10',
       requests: 99,
     },
     {
-      provider: 'tavily',
+      backend: 'tavily',
       keyId: 'key_a',
       action: 'search',
       hour: '2026-05-01T10',
@@ -190,12 +190,12 @@ const exerciseActionDimension = async (repo: WebSearchUsageRepo) => {
 const assertRejectsInvalidProvider = async (repo: WebSearchUsageRepo) => {
   await repo.deleteAll();
 
-  await assertRejects(() => repo.record({ provider: 'disabled' as WebSearchUsageRecord['provider'], keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 1 }), TypeError);
+  await assertRejects(() => repo.record({ backend: 'disabled' as WebSearchUsageRecord['backend'], keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 1 }), TypeError);
 
   await assertRejects(
     () =>
       repo.set({
-        provider: 'disabled' as WebSearchUsageRecord['provider'],
+        backend: 'disabled' as WebSearchUsageRecord['backend'],
         keyId: 'key_a',
         action: 'search',
         hour: '2026-04-25T10',

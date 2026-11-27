@@ -1,5 +1,4 @@
 import type { AnthropicMessagesPayloadInterceptor } from './types.ts';
-import { providerModelOf } from '@floway-dev/provider';
 
 // Claude Code clients seed every Anthropic Messages request with an
 // `x-anthropic-billing-header: …` line carrying a per-turn `cch=<hash>` value,
@@ -31,7 +30,7 @@ const CLAUDE_CODE_BETA = 'claude-code-20250219';
 const stripText = (text: string): string => text.replace(BILLING_HEADER_LINE_RE, '').replace(CCH_HASH_RE, '').trim();
 
 export const stripBillingAttribution: AnthropicMessagesPayloadInterceptor = (ctx, _gatewayCtx, run) => {
-  if (!providerModelOf(ctx.candidate).enabledFlags.has('strip-billing-attribution')) return run();
+  if (!ctx.candidate.model.enabledFlags.has('strip-billing-attribution')) return run();
 
   ctx.anthropicBeta = ctx.anthropicBeta.filter(beta => beta !== CLAUDE_CODE_BETA);
 

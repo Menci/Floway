@@ -1,15 +1,15 @@
 import { analyzeAnthropicMessagesAffinity } from './affinity/ingress.ts';
 import { anthropicMessagesAttempt, anthropicMessagesGenerateTarget, anthropicMessagesCountTokensTarget } from './attempt.ts';
 import { renderAnthropicMessagesFailure } from './errors.ts';
-import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
+import { enumerateModelCandidates } from '../../upstreams/resolution.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { serializeAnthropicMessagesStream, shouldSerializeStreamItems } from '../shared/stream-compatibility/index.ts';
 import { parseAnthropicBetaHeader, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { providerModelOf, type ExecuteResult, type PlainResult } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult } from '@floway-dev/upstream';
 
 export interface AnthropicMessagesServeGenerateArgs {
   readonly payload: AnthropicMessagesPayload;
@@ -27,20 +27,19 @@ export const anthropicMessagesServe = {
   generate: async (args: AnthropicMessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>> => {
     const { payload, ctx, headers } = args;
     const anthropicBeta = parseAnthropicBetaHeader(headers.get('anthropic-beta'));
-    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
+    const { candidates: enumerated, sawModel } = await enumerateModelCandidates({
       subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       randomizeUpstreams: ctx.randomizeUpstreams,
       model: payload.model,
       kind: 'chat',
-      scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
     const affinity = await analyzeAnthropicMessagesAffinity(payload, ctx.affinity.codec);
     const viable = enumerated.filter(c => anthropicMessagesGenerateTarget.canServe(c.model.endpoints));
     const selection = selectAffinityCandidates(viable, affinity);
     if ('kind' in selection) return renderAnthropicMessagesFailure(selection, 'generate');
-    if (selection.candidates.length === 0) return renderAnthropicMessagesFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams), 'generate');
+    if (selection.candidates.length === 0) return renderAnthropicMessagesFailure(noViableCandidateFailure(sawModel, payload.model), 'generate');
 
     // Try each affinity-selected candidate in order. A successful attempt (SSE
     // stream opened) is the final answer; an api-error or internal-error
@@ -57,7 +56,7 @@ export const anthropicMessagesServe = {
         const result = await anthropicMessagesAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers, anthropicBeta });
         if (result.type !== 'events') return result;
         ctx.affinity.select(candidate);
-        const enabled = shouldSerializeStreamItems(providerModelOf(candidate).enabledFlags, 'anthropicMessages', headers.get('user-agent'));
+        const enabled = shouldSerializeStreamItems(candidate.model.enabledFlags, 'anthropicMessages', headers.get('user-agent'));
         return { ...result, events: serializeAnthropicMessagesStream(result.events, enabled) };
       },
     );
@@ -66,20 +65,19 @@ export const anthropicMessagesServe = {
   countTokens: async (args: AnthropicMessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> | PlainResult> => {
     const { payload, ctx, headers } = args;
     const anthropicBeta = parseAnthropicBetaHeader(headers.get('anthropic-beta'));
-    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
+    const { candidates: enumerated, sawModel } = await enumerateModelCandidates({
       subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       randomizeUpstreams: ctx.randomizeUpstreams,
       model: payload.model,
       kind: 'chat',
-      scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
     const affinity = await analyzeAnthropicMessagesAffinity(payload, ctx.affinity.codec);
     const viable = enumerated.filter(c => anthropicMessagesCountTokensTarget.canServe(c.model.endpoints));
     const selection = selectAffinityCandidates(viable, affinity);
     if ('kind' in selection) return renderAnthropicMessagesFailure(selection, 'countTokens');
-    if (selection.candidates.length === 0) return renderAnthropicMessagesFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams), 'countTokens');
+    if (selection.candidates.length === 0) return renderAnthropicMessagesFailure(noViableCandidateFailure(sawModel, payload.model), 'countTokens');
 
     return await iterateCandidates(
       selection.candidates,

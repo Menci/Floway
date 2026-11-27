@@ -1,0 +1,19 @@
+import { expect, test } from 'vitest';
+
+import { UpstreamModelsUnavailableError } from '../src/models-fetch.ts';
+
+test('model-list failure parses JSON for display without changing the captured upstream response', () => {
+  const body = '{"error":{"message":"token expired"}}';
+  const failure = new UpstreamModelsUnavailableError({
+    status: 401,
+    headers: new Headers({ 'content-type': 'application/json', 'retry-after': '5' }),
+    body,
+  });
+
+  expect(failure.displayResponse).toEqual({
+    status: 401,
+    headers: [['content-type', 'application/json'], ['retry-after', '5']],
+    body: JSON.stringify({ error: { message: 'token expired' } }, null, 2),
+  });
+  expect(failure.httpResponse?.body).toBe(body);
+});

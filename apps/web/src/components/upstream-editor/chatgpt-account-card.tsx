@@ -11,9 +11,9 @@ import { StatusBadge } from '../ui/status-badge';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { shortAccountId } from '../upstreams/account-id';
 import { accountStatus, type ChatGPTRecord, chatgptRenewable, findCredential, latestCredits, planLabel, quotaEntries } from '../upstreams/chatgpt-account';
-import { ProviderIcon } from '../upstreams/provider-badge';
 import { QuotaProgressRow } from '../upstreams/quota-progress-row';
 import { WALL_CLOCK_REFRESH_MS } from '../upstreams/subscription-quota';
+import { UpstreamKindIcon } from '../upstreams/upstream-kind-badge';
 
 const { Badge, Text } = fluentComponents;
 
@@ -50,7 +50,7 @@ export function ChatGPTAccountCard({ readOnly = false, record }: { readOnly?: bo
 
   return <section className="grid gap-4">
     <div className="flex items-start gap-3">
-      <ProviderIcon kind="chatgpt" className="h-8 w-8 shrink-0" />
+      <UpstreamKindIcon kind="chatgpt" className="h-8 w-8 shrink-0" />
       <div className="grid gap-1 min-w-0 flex-1">
         <Text block weight="semibold" truncate wrap={false}>{account.email ?? t('upstreams.editor.chatgpt.unknownEmail')}</Text>
         <div className="flex flex-wrap items-center gap-2">

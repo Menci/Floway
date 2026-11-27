@@ -7,15 +7,13 @@ import { startScheduledMaintenance } from './src/scheduled-maintenance.ts';
 import { createNodeFetchHandler, nodeWebDistDir } from './src/static-web.ts';
 import {
   app,
-  handleExecutionRequest,
   initBackgroundSchedulerResolver,
-  initExecutionCellNamespace,
   initRepo,
   initOpenAIResponsesWebSocketUpgradeResolver,
   runScheduledMaintenance,
   SqlRepo,
 } from '@floway-dev/gateway';
-import { getEnvOptional, InProcessExecutionCellNamespace } from '@floway-dev/platform';
+import { getEnvOptional } from '@floway-dev/platform';
 
 // In Node we don't have Workers' executionCtx.waitUntil — there's no request
 // lifecycle to attach background work to — so the resolver fire-and-forgets
@@ -46,7 +44,6 @@ if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_KEY) {
 
 await applyMigrations(db);
 initRepo(new SqlRepo(db));
-initExecutionCellNamespace(new InProcessExecutionCellNamespace(handleExecutionRequest));
 
 const scheduleBackground = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[scheduled-maintenance background]', err));

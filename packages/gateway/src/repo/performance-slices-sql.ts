@@ -2,7 +2,7 @@ import { overviewGroupSql, performanceCoordinateSql, performanceFiltersSql, perf
 import { overviewBucketBinds, overviewBucketSql, type OverviewBucketId } from './telemetry-bucket-sql.ts';
 import type { PerformanceQuerySlice, PerformanceSliceQuery } from './types.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
-import { parsePerformanceOperation } from '@floway-dev/provider';
+import { parsePerformanceOperation } from '@floway-dev/upstream';
 
 const dimensions = ['model', 'upstream', 'operation', 'runtimeLocation', 'userId', 'keyId'] as const;
 const facetValuesSql = dimensions.map(axis => `('${axis}')`).join(', ');

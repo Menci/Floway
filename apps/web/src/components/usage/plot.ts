@@ -118,17 +118,17 @@ export const buildSearchChart = ({
 }): SearchChartModel => {
   const groups = new Map<string, Map<string, number>>();
   const presentGroups = new Set<string>();
-  const providers = new Set<string>();
+  const backends = new Set<string>();
   const meta = new Map<string, { name: string | undefined; createdAt: string | undefined }>();
   for (const key of search.keys) meta.set(key.id, { name: key.name, createdAt: key.createdAt });
 
-  // Not gated on the configured provider: that would erase the history of every
-  // provider since switched away from, and hide the panel once search is off.
+  // Not gated on the configured backend: that would erase the history of every
+  // backend since switched away from, and hide the panel once search is off.
   for (const record of search.records) {
     const hour = parseTelemetryHour(record.hour);
     const bucket = buckets.find(({ start, end }) => start <= hour && hour < end)?.key;
     if (bucket === undefined) continue;
-    providers.add(record.provider);
+    backends.add(record.backend);
     presentGroups.add(record.keyId);
     meta.set(record.keyId, {
       name: record.keyName ?? meta.get(record.keyId)?.name,
@@ -149,7 +149,7 @@ export const buildSearchChart = ({
     weights: new Map(entries.map(entry => [entry.id, [...groups.get(entry.id)?.values() ?? []].reduce((sum, value) => sum + value, 0)])),
     buckets,
     kind: 'search',
-    providers: [...providers].sort(),
+    backends: [...backends].sort(),
     range,
     plot: {
       form: 'area',

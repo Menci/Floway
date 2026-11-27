@@ -1,4 +1,4 @@
-import type { PerformanceTelemetryContext, TelemetryModelIdentity } from '@floway-dev/provider';
+import type { PerformanceTelemetryContext, TelemetryModelIdentity } from '@floway-dev/upstream';
 
 export interface RawAttemptResult {
   readonly type: 'response';

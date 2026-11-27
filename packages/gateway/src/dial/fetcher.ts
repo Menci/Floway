@@ -5,9 +5,9 @@ import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo, isDirectFallbackI
 import type { Repo } from '../repo/types.ts';
 import type { HttpContentDecoders, HttpRequest } from '@floway-dev/http';
 import type { SocketDial } from '@floway-dev/platform';
-import type { Fetcher, FetchInit, ProxyFallbackEntry } from '@floway-dev/provider';
-import { isAbortError } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunDirectConnectRequestOptions, type RunProxiedRequestOptions } from '@floway-dev/proxy';
+import type { Fetcher, FetchInit, ProxyFallbackEntry } from '@floway-dev/upstream';
+import { isAbortError } from '@floway-dev/upstream';
 
 interface CreateFetcherInput {
   repo: Pick<Repo, 'proxyBackoffs'>;

@@ -16,10 +16,10 @@ import { renderInApp } from '../../render';
 // window, which is the single-column layout page-sectioned_test.tsx covers.
 stubMatchMedia(() => false);
 
-const apiMocks = vi.hoisted(() => ({ create: vi.fn(), patch: vi.fn() }));
+const apiMocks = vi.hoisted(() => ({ create: vi.fn(), patch: vi.fn(), listModels: vi.fn() }));
 
 vi.mock('../../../src/api/client', () => ({
-  api: { api: { upstreams: { $post: apiMocks.create, ':id': { $patch: apiMocks.patch } } } },
+  api: { api: { upstreams: { $post: apiMocks.create, ':id': { $patch: apiMocks.patch, 'list-models': { $post: apiMocks.listModels } } } } },
   callApi: (operation: () => unknown) => operation(),
 }));
 
@@ -71,6 +71,7 @@ const renderPage = (record: UpstreamRecord, mode: 'create' | 'edit') => {
 beforeEach(() => {
   vi.clearAllMocks();
   apiMocks.create.mockResolvedValue({ data: { ...blueprint, id: 'up_chatgpt', ...imported }, error: null });
+  apiMocks.listModels.mockResolvedValue({ data: { kind: 'chatgpt', data: [], modelsCache: blueprint.modelsCache }, error: null });
 });
 
 test('creating a ChatGPT upstream saves the imported credential', async () => {

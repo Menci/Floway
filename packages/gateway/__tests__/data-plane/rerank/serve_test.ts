@@ -4,8 +4,8 @@ import type { Repo } from '../../../src/repo/types.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
 
 const saveRerankUpstream = async (
   repo: Repo,
@@ -23,16 +23,17 @@ const saveRerankUpstream = async (
       apiKey: 'sk-rerank',
       endpoints: {},
       modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{
-        upstreamModelId: 'raw-reranker',
-        publicModelId: 'public-reranker',
-        kind: 'rerank',
-        endpoints: { rerank: {} },
-        rerankTarget: target,
-        ...(pricing === undefined ? {} : { pricing }),
-      }],
     },
-  }));
+  }), {
+    manualModels: [{
+      upstreamModelId: 'raw-reranker',
+      publicModelId: 'public-reranker',
+      kind: 'rerank',
+      endpoints: { rerank: {} },
+      rerankTarget: target,
+      ...(pricing === undefined ? {} : { pricing }),
+    }],
+  });
 };
 
 const requestHeaders = (apiKey: string) => ({

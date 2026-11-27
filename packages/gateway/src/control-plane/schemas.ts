@@ -22,7 +22,7 @@ import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
 import { isTelemetryBucketGranularity, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, QUOTA_DISPLAYS, RERANK_PROTOCOLS, SUPPORTED_LANGUAGES, tokenUsageUnattributedUserId, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
-import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
+import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/upstream';
 
 // --- shared atoms ---
 
@@ -148,7 +148,7 @@ const opaqueBlobCompatibilityScopeSchema = z.object({
   key: z.string().min(1).exactOptional(),
 }).strict();
 
-// Mirrors the runtime UpstreamModelConfig in @floway-dev/provider.
+// Mirrors the runtime UpstreamModelConfig in @floway-dev/upstream.
 // Azure, custom, and ollama upstreams share this per-model entry; the
 // canonical per-model endpoint validation lives in the runtime validator.
 const upstreamModelSchema = z.object({
@@ -204,17 +204,11 @@ const customConfigSchema = z.object({
     authStyle: z.enum(['bearer', 'x-api-key', 'x-goog-api-key']),
     endpoint: z.string().exactOptional(),
   }).exactOptional(),
-  // Statically configured per-model overrides merged with the live fetch.
-  models: z.array(upstreamModelSchema).exactOptional(),
 });
 
 const azureConfigSchema = z.object({
   endpoint: z.string().min(1),
   apiKey: z.string().exactOptional(),
-  models: z.array(upstreamModelSchema).min(1, 'models must be a non-empty array'),
-}).refine(config => config.models.every(model => model.kind !== 'rerank'), {
-  message: 'rerank models require a custom upstream',
-  path: ['models'],
 });
 
 const kimiCodeConfigSchema = z.object({
@@ -230,11 +224,20 @@ const ollamaConfigSchema = z.object({
   // Whether this upstream is an Ollama Cloud account whose usage windows the
   // gateway reads; see the provider config for why a base URL cannot answer it.
   cloudUsage: z.boolean().exactOptional(),
-  models: z.array(upstreamModelSchema).exactOptional(),
-}).refine(config => config.models?.every(model => model.kind !== 'rerank') !== false, {
-  message: 'rerank models require a custom upstream',
-  path: ['models'],
 });
+
+const customManualModelsSchema = z.array(upstreamModelSchema);
+
+const azureManualModelsSchema = z.array(upstreamModelSchema)
+  .min(1, 'manual_models must be a non-empty array')
+  .refine(models => models.every(model => model.kind !== 'rerank'), {
+    message: 'rerank models require a custom upstream',
+  });
+
+const ollamaManualModelsSchema = z.array(upstreamModelSchema)
+  .refine(models => models.every(model => model.kind !== 'rerank'), {
+    message: 'rerank models require a custom upstream',
+  });
 
 // --- auth ---
 
@@ -410,8 +413,8 @@ const upstreamBaseFields = {
 // Create accepts a discriminated union on `kind` for per-provider config
 // validation. New upstreams always append after the current order.
 export const createUpstreamBody = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
-  z.object({ kind: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
+  z.object({ kind: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema, manual_models: customManualModelsSchema.exactOptional() }),
+  z.object({ kind: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema, manual_models: azureManualModelsSchema }),
   // Copilot / ChatGPT / Claude Code carry OAuth-derived credentials that the
   // create page populates via the corresponding OAuth-exchange helper
   // before Save. `state` is accepted here as an opaque payload; the
@@ -421,7 +424,7 @@ export const createUpstreamBody = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('chatgpt'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().exactOptional() }),
   z.object({ kind: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().exactOptional() }),
   z.object({ kind: z.literal('kimi-code'), ...upstreamBaseFields, config: kimiCodeConfigSchema }),
-  z.object({ kind: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
+  z.object({ kind: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema, manual_models: ollamaManualModelsSchema.exactOptional() }),
 ]);
 
 // Update is kind-agnostic: kind is read from the existing record, and
@@ -451,6 +454,7 @@ export const updateUpstreamBody = z.object({
   // through `assertXxxUpstreamRecord`). `z.record(z.unknown())` blocks
   // primitives / arrays / null from reaching the handler as `config`.
   config: z.record(z.string(), z.unknown()).exactOptional(),
+  manual_models: z.array(upstreamModelSchema).exactOptional(),
 });
 
 export const reorderUpstreamsBody = z.object({
@@ -575,23 +579,6 @@ export const claudeCodeSetupTokenExchangeBody = z.object({
 
 export const claudeCodeProbeBody = recordOnlyBody;
 
-// The editor sends every discovery input, including model projection policy,
-// while direct preview callers can omit unrelated display metadata.
-export const previewModelsBody = z.object({
-  record: upstreamRecordEnvelope.extend({
-    proxy_fallback_list: proxyFallbackListSchema,
-    name: z.string().exactOptional(),
-    enabled: z.boolean().exactOptional(),
-    usage_refresh_interval_minutes: z.number().int().nonnegative().exactOptional(),
-    sort_order: z.number().int().exactOptional(),
-    created_at: z.string().exactOptional(),
-    updated_at: z.string().exactOptional(),
-    hue: upstreamHueSchema.exactOptional(),
-    flag_overrides: flagOverridesSchema.exactOptional(),
-    disabled_public_model_ids: disabledPublicModelIdsSchema.exactOptional(),
-    model_prefix: modelPrefixSchema.exactOptional(),
-  }),
-});
 // --- kimi-code ---
 
 export const kimiCodeUsageBody = recordOnlyBody;
@@ -663,7 +650,7 @@ export const upstreamOptionsQuery = z.object({ view: z.enum(['key', 'audit', 'al
 // --- search config ---
 
 export const webSearchConfigSchema = z.object({
-  provider: z.enum(['disabled', 'tavily', 'microsoft-web-iq', 'jina']),
+  backend: z.enum(['disabled', 'tavily', 'microsoft-web-iq', 'jina']),
   tavily: z.object({ apiKey: z.string() }),
   microsoftWebIq: z.object({ apiKey: z.string() }),
   jina: z.object({ apiKey: z.string() }),
@@ -817,7 +804,7 @@ export const siteSettingsBody = z.object({
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(25, { error: 'version must be 25 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(27, { error: 'version must be 27 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().exactOptional(),
 });
@@ -863,7 +850,7 @@ export const modelsQuery = z.object({
 
 export const webSearchUsageQuery = z.object({
   ...usageBaseQuery,
-  provider: z.string().exactOptional(),
+  backend: z.string().exactOptional(),
 });
 
 // A multi-select filter travels as a repeated query parameter. Hono hands one

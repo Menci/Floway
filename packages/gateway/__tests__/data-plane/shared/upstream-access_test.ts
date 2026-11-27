@@ -1,11 +1,12 @@
 import { test } from 'vitest';
 
 import { MODEL_CATALOG_REVISION } from '../../../src/repo/models-cache-contract.ts';
-import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
+import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest, sseOpenAIChatCompletionsResponse } from '../../test-utils/app.ts';
-import { projectCustomModels } from '@floway-dev/provider-custom';
 import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
+import type { UpstreamModelConfig } from '@floway-dev/upstream';
+import { projectCustomModels } from '@floway-dev/upstream-custom';
 
 const cases: Array<{ name: string; access: 'all' | 'none' | 'up_a' | 'up_b'; keyCap: string[] | null; models: string[] }> = [
   { name: 'all Model.Use grants and an inheriting key', access: 'all', keyCap: null, models: ['model_a', 'model_b'] },
@@ -19,6 +20,7 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
   for (const suffix of ['a', 'b']) {
+    const manualModels: UpstreamModelConfig[] = [{ upstreamModelId: `model_${suffix}`, kind: 'chat', endpoints: { openaiChatCompletions: {} } }];
     const upstream = buildCustomUpstreamRecord({
       id: `up_${suffix}`,
       name: `Upstream ${suffix}`,
@@ -28,16 +30,16 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
         apiKey: 'upstream-key',
         endpoints: { openaiChatCompletions: {} },
         modelsFetch: { enabled: false, authStyle: 'bearer' },
-        models: [{ upstreamModelId: `model_${suffix}`, kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
       },
     });
-    await saveUpstreamForTest(repo.upstreams, upstream);
+    await saveUpstreamForTest(repo.upstreams, upstream, { manualModels });
     const stored = await repo.upstreams.getById(upstream.id);
     if (stored === null) throw new Error(`Upstream ${upstream.id} was not saved`);
-    assertEquals(await seedModelsCache(repo.upstreams, upstream.id, modelsRefreshIdentity(stored), {
+    assertEquals(await seedModelsCache(repo.upstreams, upstream.id, {
+      version: stored.version,
       revision: MODEL_CATALOG_REVISION,
       fetchedAt: Date.now(),
-      models: projectCustomModels(stored),
+      models: projectCustomModels(stored, manualModels),
     }), true);
   }
 

@@ -8,7 +8,7 @@
 // credential-bearing proxy URIs. The endpoint is admin-only; handle the file
 // with the same care as a DB backup.
 
-import { parseImportData, type SerializedProxy } from './import-schema.ts';
+import { parseImportData, type ImportedUpstream, type SerializedProxy } from './import-schema.ts';
 import type { AccessRecordInput } from '../../access-control/types.ts';
 import { parseWebSearchConfigDefault, parseWebSearchConfigStrict } from '../../data-plane/tools/web-search/config.ts';
 import type { WebSearchConfig } from '../../data-plane/tools/web-search/types.ts';
@@ -18,13 +18,16 @@ import { groupNameKey } from '../../repo/group-names.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_FALLBACK_IDS } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, Group, SiteSettings, UpstreamMetricRecord, PerformanceTelemetryRecord, UsageRecord, User, UserPreferencesRepo, WebSearchUsageRecord } from '../../repo/types.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
+import { supportsManualModels } from '../../upstreams/models-refresh.ts';
 import { type exportQuery, type importBody } from '../schemas.ts';
 import { saveUpstreams } from '../shared/save-upstreams.ts';
 import { type FullSerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamRecord } from '@floway-dev/upstream';
 
 interface ExportPayload {
-  version: 25;
+  version: 27;
   exportedAt: string;
   data: {
     users: User[];
@@ -44,7 +47,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 25;
+const EXPORT_VERSION = 27;
 
 const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
   const ids = new Map<string, number>();
@@ -103,9 +106,9 @@ const validateProxyFallbackReferences = (
   return null;
 };
 
-const normalizeUpstreamOrder = (upstreams: readonly UpstreamRecord[]): UpstreamRecord[] => upstreams
-  .toSorted((left, right) => left.sortOrder - right.sortOrder || left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id))
-  .map((upstream, sortOrder) => ({ ...upstream, sortOrder }));
+const normalizeUpstreamOrder = (upstreams: readonly ImportedUpstream[]): ImportedUpstream[] => upstreams
+  .toSorted((left, right) => left.record.sortOrder - right.record.sortOrder || left.record.createdAt.localeCompare(right.record.createdAt) || left.record.id.localeCompare(right.record.id))
+  .map((entry, sortOrder) => ({ ...entry, record: { ...entry.record, sortOrder } }));
 
 export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
@@ -128,6 +131,10 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     repo.siteSettings.get(),
   ]);
 
+  const manualModelsByUpstream = await repo.upstreamModels.listManualModelsByUpstreams(
+    upstreams.filter(u => supportsManualModels(u.kind)).map(u => u.id),
+  );
+
   const payload: ExportPayload = {
     version: EXPORT_VERSION,
     exportedAt: new Date().toISOString(),
@@ -137,7 +144,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
       groups: groups.map(group => ({ ...group, memberIds: memberships.get(group.id) ?? [] })),
       accessRecords: accessRecords.map(({ principal, scope, sortOrder, values }) => ({ principal, scope, sortOrder, values })),
       apiKeys,
-      upstreams: upstreams.map(upstreamRecordToFullJson),
+      upstreams: upstreams.map(upstream => upstreamRecordToFullJson(upstream, manualModelsByUpstream.get(upstream.id) ?? [])),
       proxies: proxies.map(proxy => ({ id: proxy.id, name: proxy.name, url: proxy.url, dial_timeout_seconds: proxy.dialTimeoutSeconds })),
       usage,
       searchUsage: webSearchUsage,
@@ -177,11 +184,13 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   const preImportRetentionById = new Map<string, number | null>(preImportKeys.map(key => [key.id, key.dumpRetentionSeconds]));
 
   const existingProxyIdsForRefs = mode === 'merge' ? (await repo.proxies.list()).map(proxy => proxy.id) : [];
-  const fallbackRefError = validateProxyFallbackReferences(upstreams, proxies, existingProxyIdsForRefs);
+  const fallbackRefError = validateProxyFallbackReferences(upstreams.map(entry => entry.record), proxies, existingProxyIdsForRefs);
   if (fallbackRefError) return c.json({ error: `invalid upstreams: ${fallbackRefError}` }, 400);
-  const importedUpstreamIds = new Set(upstreams.map(upstream => upstream.id));
+  const importedUpstreamIds = new Set(upstreams.map(entry => entry.record.id));
   const retainedUpstreams = mode === 'merge'
-    ? (await repo.upstreams.list()).filter(upstream => !importedUpstreamIds.has(upstream.id))
+    ? (await repo.upstreams.list())
+        .filter(upstream => !importedUpstreamIds.has(upstream.id))
+        .map(record => ({ record }))
     : [];
   const normalizedUpstreams = normalizeUpstreamOrder([...retainedUpstreams, ...upstreams]);
 
@@ -233,9 +242,15 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
   for (const record of usage) await repo.usage.set(record);
   for (const record of searchUsage) await repo.webSearchUsage.set(record);
   for (const record of upstreamMetrics) await repo.upstreamMetrics.set(record);
-  await saveUpstreams(await Promise.all(normalizedUpstreams.map(async next => ({
-    previous: await repo.upstreams.getById(next.id),
-    next,
+  const refreshContext = {
+    runtimeLocation: getRuntimeLocation(c.req.raw),
+    scheduler: backgroundSchedulerFromContext(c),
+  };
+  await saveUpstreams(await Promise.all(normalizedUpstreams.map(async entry => ({
+    previous: await repo.upstreams.getById(entry.record.id),
+    next: entry.record,
+    ...(entry.manualModels !== undefined ? { manualModels: entry.manualModels } : {}),
+    refreshContext,
   }))));
   for (const record of performance) await repo.performance.set(record);
   await repo.siteSettings.save(siteSettings);

@@ -1,6 +1,6 @@
 import type { RefinementCtx } from 'zod';
 
-import { customIngressHeaderNameIssue, isCustomIngressHeaderValue } from '@floway-dev/provider-custom/browser';
+import { customIngressHeaderNameIssue, isCustomIngressHeaderValue } from '@floway-dev/upstream-custom/browser';
 
 interface CustomIngressHeaderRuleDraft {
   key: string;

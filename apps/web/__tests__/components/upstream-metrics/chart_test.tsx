@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { UpstreamMetricsChartSection } from '../../../src/components/upstream-metrics/chart';
 import { type UpstreamMetricsChart } from '../../../src/components/upstream-metrics/plot';
 import { renderInApp } from '../../render';
-import { upstreamMetricAxisPriority } from '@floway-dev/provider/browser';
+import { upstreamMetricAxisPriority } from '@floway-dev/upstream/browser';
 
 afterEach(() => vi.restoreAllMocks());
 beforeEach(() => vi.spyOn(HTMLSpanElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 40, 12)));

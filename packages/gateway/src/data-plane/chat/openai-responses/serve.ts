@@ -9,7 +9,7 @@ import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { serializeOpenAIResponsesStream, shouldSerializeStreamItems } from '../shared/stream-compatibility/index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesCompaction, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf, type ExecuteResult } from '@floway-dev/provider';
+import { type ExecuteResult } from '@floway-dev/upstream';
 
 interface OpenAIResponsesServeArgs {
   readonly payload: CanonicalOpenAIResponsesPayload;
@@ -43,7 +43,7 @@ export const openaiResponsesServe = {
         });
         if (result.type !== 'events') return result;
         ctx.affinity.select(candidate);
-        const enabled = shouldSerializeStreamItems(providerModelOf(candidate).enabledFlags, 'openaiResponses', headers.get('user-agent'));
+        const enabled = shouldSerializeStreamItems(candidate.model.enabledFlags, 'openaiResponses', headers.get('user-agent'));
         return { ...result, events: serializeOpenAIResponsesStream(result.events, enabled) };
       },
     );

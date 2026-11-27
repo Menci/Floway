@@ -4,10 +4,11 @@ import { fullUpstreamActionError } from '../../access-control/upstream-edit.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { chatgptImportExchangeBody, chatgptImportPreviewBody, chatgptOAuthAuthorizeUrlBody, chatgptOAuthRefreshBody, chatgptRateLimitResetConsumeBody, chatgptRateLimitResetCreditsBody } from '../schemas.ts';
 import { saveUpstream } from '../shared/save-upstreams.ts';
-import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher, UpstreamRecord } from '@floway-dev/upstream';
 import {
   buildChatGPTAuthorizeUrl,
   ChatGPTRateLimitResetRequestError,
@@ -29,7 +30,7 @@ import {
   persistChatGPTRefreshFailure,
   persistChatGPTRefreshTokenRotation,
   previewChatGPTJson,
-} from '@floway-dev/provider-chatgpt';
+} from '@floway-dev/upstream-chatgpt';
 
 class ChatGPTActionError extends Error {
   constructor(readonly status: 400 | 404 | 502, message: string, options?: ErrorOptions) {
@@ -194,7 +195,14 @@ export const chatgptImportExchange = async (c: CtxWithJson<typeof chatgptImportE
       state: ingestion.state,
       updatedAt: new Date().toISOString(),
     };
-    await saveUpstream({ previous: dbRecord, next });
+    await saveUpstream({
+      previous: dbRecord,
+      next,
+      refreshContext: {
+        runtimeLocation: getRuntimeLocation(c.req.raw),
+        scheduler: backgroundSchedulerFromContext(c),
+      },
+    });
   }
 
   return c.json({

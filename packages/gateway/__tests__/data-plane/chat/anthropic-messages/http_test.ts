@@ -8,12 +8,12 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type UpstreamCallResult, type UpstreamStreamResult, type UpstreamCallOptions } from '@floway-dev/upstream';
 
-const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
+const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean }[] = [];
+vi.mock('../../../../src/data-plane/upstreams/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../../src/data-plane/upstreams/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async () => {
@@ -29,7 +29,7 @@ const { anthropicMessagesHttp } = await import('../../../../src/data-plane/chat/
 const API_KEY_ID = 'key_messages_http_test';
 
 const queueCandidates = (candidates: readonly ModelCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
+  candidatesQueue.push({ candidates, sawModel });
 };
 
 const installRepo = (): InMemoryRepo => {
@@ -105,27 +105,27 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
-  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>>;
+  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const provider = stubProvider({
+  const instance = stubUpstream({
     callAnthropicMessages: overrides.callAnthropicMessages,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
+      instance,
     },
-    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
+    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
     fetcher: directFetcher,
   };
 };
 
 test('POST /v1/messages returns a single JSON body when stream is omitted', async () => {
   installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
+  const callAnthropicMessages = vi.fn(async (): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => ({
     ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([makeCandidate({ callAnthropicMessages })]);
@@ -144,7 +144,7 @@ test('POST /v1/messages returns a single JSON body when stream is omitted', asyn
 
 test('POST /v1/messages answers the Claude Code model-validation probe without calling the upstream', async () => {
   const repo = installRepo();
-  const callAnthropicMessages = vi.fn((): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
+  const callAnthropicMessages = vi.fn((): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => {
     throw new Error('the probe reached the upstream');
   });
   queueCandidates([makeCandidate({ callAnthropicMessages })]);
@@ -225,7 +225,7 @@ test('POST /v1/messages/count_tokens forwards an upstream rate limit and retry h
 
 test('POST /v1/messages does not switch upstreams after the response stream opens and breaks', async () => {
   installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
+  const callAnthropicMessages = vi.fn(async (): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => ({
     ok: true,
     events: (async function* () {
       yield eventFrame(makeAnthropicMessagesEvents()[0]!);
@@ -234,7 +234,7 @@ test('POST /v1/messages does not switch upstreams after the response stream open
     modelKey: 'k',
     http: { status: 200, headers: new Headers() },
   }));
-  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
+  const secondCall = vi.fn(async (): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => ({
     ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'second', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([

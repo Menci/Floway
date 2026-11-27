@@ -1,13 +1,8 @@
-import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { SqlExpirationSweepsRepo } from './expiration-sweeps-sql.ts';
-import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { decodeAliasTargets, decodeAnnouncedMetadata, encodeAliasTargets, encodeAnnouncedMetadata } from './model-alias-codecs.ts';
-import { MODEL_CATALOG_REVISION, storedModelErrorMessage } from './models-cache-contract.ts';
-import { matchesModelsRefreshInputs } from './models-refresh-inputs.ts';
 import { SqlOpenAIResponsesItemsRepo, SqlOpenAIResponsesSnapshotsRepo } from './openai-responses-state-sql.ts';
 import { querySqlPerformanceOverview } from './performance-overview-sql.ts';
 import { querySqlPerformanceSlices } from './performance-slices-sql.ts';
-import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { SqlScheduledMaintenanceRepo } from './scheduled-maintenance-sql.ts';
 import { generateSessionToken } from './session-tokens.ts';
 import { SqlSpilledFilesRepo } from './spilled-files-sql.ts';
@@ -27,8 +22,6 @@ import type {
   AgentSetupRenewal,
   AgentSetupRepository,
   BackoffRow,
-  ModelsRefreshFailureInput,
-  ModelsRefreshSuccessInput,
   ModelAliasesRepo,
   ModelAliasRecord,
   PerformanceBucketRow,
@@ -48,7 +41,6 @@ import type {
   OpenAIResponsesSnapshotsRepo,
   ScheduledMaintenanceRepo,
   SpilledFilesRepo,
-  StoredUpstreamRecord,
   SiteSettings,
   SiteSettingsRepo,
   WebSearchConfigRepo,
@@ -56,6 +48,7 @@ import type {
   WebSearchUsageRepo,
   Session,
   SessionsRepo,
+  UpstreamModelsRepo,
   UpstreamRepo,
   UsageMetricRecord,
   UsageRecord,
@@ -67,19 +60,8 @@ import type {
   UserPreferencesRepo,
   UsersRepo,
 } from './types.ts';
-import {
-  decodeDisabledPublicModelIds,
-  decodeModelPrefix,
-  decodeProxyFallbackList,
-  decodeUpstreamConfig,
-  decodeUpstreamFlagOverrides,
-  decodeUpstreamModelsCache,
-  decodeUpstreamState,
-  encodeUpstreamModelsCache,
-} from './upstream-codecs.ts';
-import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { SqlUpstreamMetricsRepo } from './upstream-metrics-sql.ts';
-import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
+import { SqlUpstreamModelsRepo, SqlUpstreamRepo } from './upstream-models-sql.ts';
 import { usageMetricRows } from './usage-metrics.ts';
 import { querySqlUsageOverview } from './usage-overview-sql.ts';
 import {
@@ -98,12 +80,11 @@ import {
 } from '../access-control/types.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { parseServerSecret } from '../shared/server-secret.ts';
-import { assertWebSearchProviderName, type WebSearchConfig } from '../shared/web-search-providers.ts';
+import { assertWebSearchBackendName, type WebSearchConfig } from '../shared/web-search-backends.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import { addDecimalStrings, canonicalPricingSelectorKey, defaultUserPreferences, parseBillingMetric, parseModelKind, parseNonNegativeDecimalString, parsePricingSelectorKey, parseStoredUserPreferences, serializeUserPreferences, type AliasSelection, type AnnouncedMetadata, type UserPreferences } from '@floway-dev/protocols/common';
-import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
-import { normalizeModelPrefix, parsePerformanceOperation, UpstreamGoneError } from '@floway-dev/provider';
+import { parsePerformanceOperation } from '@floway-dev/upstream';
 
 interface ApiKeyRow {
   id: string;
@@ -962,25 +943,25 @@ const assembleUsageRecords = (metrics: readonly UsageMetricRow[], requests: read
 class SqlWebSearchUsageRepo implements WebSearchUsageRepo {
   constructor(private db: SqlDatabase) {}
 
-  async record(args: { provider: WebSearchUsageRecord['provider']; keyId: string; action: WebSearchUsageRecord['action']; hour: string; requests: number }): Promise<void> {
-    const validProvider = assertWebSearchProviderName(args.provider);
+  async record(args: { backend: WebSearchUsageRecord['backend']; keyId: string; action: WebSearchUsageRecord['action']; hour: string; requests: number }): Promise<void> {
+    const validBackend = assertWebSearchBackendName(args.backend);
     await this.db
       .prepare(
-        `INSERT INTO search_usage (provider, key_id, action, hour, requests) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (provider, key_id, action, hour) DO UPDATE SET
+        `INSERT INTO search_usage (backend, key_id, action, hour, requests) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (backend, key_id, action, hour) DO UPDATE SET
            requests = requests + excluded.requests`,
       )
-      .bind(validProvider, args.keyId, args.action, args.hour, args.requests)
+      .bind(validBackend, args.keyId, args.action, args.hour, args.requests)
       .run();
   }
 
-  async query(opts: { provider?: WebSearchUsageRecord['provider']; keyId?: string; action?: WebSearchUsageRecord['action']; start: string; end: string }): Promise<WebSearchUsageRecord[]> {
+  async query(opts: { backend?: WebSearchUsageRecord['backend']; keyId?: string; action?: WebSearchUsageRecord['action']; start: string; end: string }): Promise<WebSearchUsageRecord[]> {
     const filters = ['hour >= ?', 'hour < ?'];
     const binds: SqlBindValue[] = [opts.start, opts.end];
-    if (opts.provider) {
-      const validProvider = assertWebSearchProviderName(opts.provider);
-      filters.unshift('provider = ?');
-      binds.unshift(validProvider);
+    if (opts.backend) {
+      const validBackend = assertWebSearchBackendName(opts.backend);
+      filters.unshift('backend = ?');
+      binds.unshift(validBackend);
     }
     if (opts.keyId) {
       filters.push('key_id = ?');
@@ -992,10 +973,10 @@ class SqlWebSearchUsageRepo implements WebSearchUsageRepo {
     }
 
     const { results } = await this.db
-      .prepare(`SELECT provider, key_id, action, hour, requests FROM search_usage WHERE ${filters.join(' AND ')} ORDER BY hour`)
+      .prepare(`SELECT backend, key_id, action, hour, requests FROM search_usage WHERE ${filters.join(' AND ')} ORDER BY hour`)
       .bind(...binds)
       .all<{
-      provider: string;
+      backend: string;
       key_id: string;
       action: string;
       hour: string;
@@ -1005,8 +986,8 @@ class SqlWebSearchUsageRepo implements WebSearchUsageRepo {
   }
 
   async listAll(): Promise<WebSearchUsageRecord[]> {
-    const { results } = await this.db.prepare('SELECT provider, key_id, action, hour, requests FROM search_usage ORDER BY hour').all<{
-      provider: string;
+    const { results } = await this.db.prepare('SELECT backend, key_id, action, hour, requests FROM search_usage ORDER BY hour').all<{
+      backend: string;
       key_id: string;
       action: string;
       hour: string;
@@ -1016,14 +997,14 @@ class SqlWebSearchUsageRepo implements WebSearchUsageRepo {
   }
 
   async set(record: WebSearchUsageRecord): Promise<void> {
-    const provider = assertWebSearchProviderName(record.provider);
+    const backend = assertWebSearchBackendName(record.backend);
     await this.db
       .prepare(
-        `INSERT INTO search_usage (provider, key_id, action, hour, requests) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (provider, key_id, action, hour) DO UPDATE SET
+        `INSERT INTO search_usage (backend, key_id, action, hour, requests) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (backend, key_id, action, hour) DO UPDATE SET
            requests = excluded.requests`,
       )
-      .bind(provider, record.keyId, record.action, record.hour, record.requests)
+      .bind(backend, record.keyId, record.action, record.hour, record.requests)
       .run();
   }
 
@@ -1214,12 +1195,12 @@ class SqlPerformanceRepo implements PerformanceRepo {
   }
 }
 
-const toWebSearchUsageRecord = (row: { provider: string; key_id: string; action: string; hour: string; requests: number }): WebSearchUsageRecord => {
+const toWebSearchUsageRecord = (row: { backend: string; key_id: string; action: string; hour: string; requests: number }): WebSearchUsageRecord => {
   if (row.action !== 'search' && row.action !== 'fetch_page') {
     throw new TypeError(`Invalid search usage action: ${row.action}`);
   }
   return {
-    provider: assertWebSearchProviderName(row.provider),
+    backend: assertWebSearchBackendName(row.backend),
     keyId: row.key_id,
     action: row.action,
     hour: row.hour,
@@ -1292,11 +1273,11 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
 
   async get(): Promise<unknown | null> {
     const row = await this.db
-      .prepare('SELECT provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1')
-      .first<{ provider: string; tavily_api_key: string; microsoft_web_iq_api_key: string; jina_api_key: string; passthrough_openai_search: number; alpha_search_upstream_id: string; alpha_search_model: string }>();
+      .prepare('SELECT backend, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1')
+      .first<{ backend: string; tavily_api_key: string; microsoft_web_iq_api_key: string; jina_api_key: string; passthrough_openai_search: number; alpha_search_upstream_id: string; alpha_search_model: string }>();
     if (!row) throw new Error('search_config singleton row missing');
     return {
-      provider: row.provider,
+      backend: row.backend,
       tavily: { apiKey: row.tavily_api_key },
       microsoftWebIq: { apiKey: row.microsoft_web_iq_api_key },
       jina: { apiKey: row.jina_api_key },
@@ -1309,13 +1290,13 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
   }
 
   async save(config: WebSearchConfig): Promise<void> {
-    const { provider, tavily, microsoftWebIq, jina, passthroughOpenAiSearch } = config;
+    const { backend, tavily, microsoftWebIq, jina, passthroughOpenAiSearch } = config;
     await this.db
       .prepare(
-        `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
+        `INSERT INTO search_config (id, backend, tavily_api_key, microsoft_web_iq_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
          VALUES (1, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET
-           provider = excluded.provider,
+           backend = excluded.backend,
            tavily_api_key = excluded.tavily_api_key,
            microsoft_web_iq_api_key = excluded.microsoft_web_iq_api_key,
            jina_api_key = excluded.jina_api_key,
@@ -1324,402 +1305,10 @@ class SqlWebSearchConfigRepo implements WebSearchConfigRepo {
            alpha_search_model = excluded.alpha_search_model,
            updated_at = excluded.updated_at`,
       )
-      .bind(provider, tavily.apiKey, microsoftWebIq.apiKey, jina.apiKey, passthroughOpenAiSearch.enabled ? 1 : 0, passthroughOpenAiSearch.upstreamId, passthroughOpenAiSearch.model)
+      .bind(backend, tavily.apiKey, microsoftWebIq.apiKey, jina.apiKey, passthroughOpenAiSearch.enabled ? 1 : 0, passthroughOpenAiSearch.upstreamId, passthroughOpenAiSearch.model)
       .run();
   }
 }
-
-// Losing once is ordinary on a row this contended, losing four times in a row
-// is not — and the attempts run back-to-back with no delay, so they observe
-// much the same contention rather than independent draws. The bound is a
-// judgement call about how much immediate re-reading is worth doing before
-// declaring the row unwritable, not a derived figure.
-export const UPSTREAM_STATE_WRITE_ATTEMPTS = 4;
-
-const MODELS_CACHE_EPOCH_SQL = `CASE
-  WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
-  THEN coalesce(json_extract(models_cache_json, '$.fetchedAt'), 0)
-  ELSE 0
-END`;
-
-const UPSTREAM_COLUMNS = 'id, provider, name, enabled, usage_refresh_interval_minutes, sort_order, created_at, updated_at, config_version, config_json, state_json, models_cache_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue';
-
-class SqlUpstreamRepo implements UpstreamRepo {
-  constructor(private db: SqlDatabase) {}
-
-  async list(): Promise<StoredUpstreamRecord[]> {
-    const { results } = await this.db
-      .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams ORDER BY sort_order, created_at, id`)
-      .all<UpstreamRow>();
-    return results.map(toUpstreamRecord);
-  }
-
-  async getById(id: string): Promise<StoredUpstreamRecord | null> {
-    const row = await this.db
-      .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams WHERE id = ?`)
-      .bind(id)
-      .first<UpstreamRow>();
-    return row ? toUpstreamRecord(row) : null;
-  }
-
-  async reorder(
-    expectedIds: readonly string[],
-    assignments: readonly { id: string; sortOrder: number }[],
-  ): Promise<StoredUpstreamRecord[] | null> {
-    const assignmentIds = assignments.map(assignment => assignment.id);
-    if (new Set(assignmentIds).size !== assignmentIds.length || assignmentIds.some(id => !expectedIds.includes(id))) return null;
-    const { results } = await this.db.prepare(
-      `WITH current_ids AS MATERIALIZED (
-         SELECT id FROM upstreams ORDER BY sort_order, created_at, id
-       ), valid_order AS MATERIALIZED (
-         SELECT json_group_array(id) = ? AS valid FROM current_ids
-       ), assignments AS MATERIALIZED (
-         SELECT
-           CAST(json_extract(value, '$.id') AS TEXT) AS id,
-           CAST(json_extract(value, '$.sortOrder') AS INTEGER) AS sort_order
-         FROM json_each(?)
-       )
-       UPDATE upstreams SET
-         sort_order = (SELECT sort_order FROM assignments WHERE assignments.id = upstreams.id),
-         updated_at = ?
-       WHERE id IN (SELECT id FROM assignments) AND (SELECT valid FROM valid_order)
-       RETURNING ${UPSTREAM_COLUMNS}`,
-    ).bind(JSON.stringify(expectedIds), JSON.stringify(assignments), new Date().toISOString()).all<UpstreamRow>();
-    if (results.length !== assignments.length) return null;
-    const byId = new Map(results.map(row => [row.id, toUpstreamRecord(row)]));
-    return assignments.map(({ id }) => byId.get(id)!);
-  }
-
-  async insertAtEndForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
-    const row = await this.db
-      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, usage_refresh_interval_minutes, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue)
-        VALUES (?, ?, ?, ?, ?, (SELECT coalesce(max(sort_order), -1) + 1 FROM upstreams), ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (id) DO NOTHING RETURNING ${UPSTREAM_COLUMNS}`)
-      .bind(
-        upstream.id,
-        upstream.kind,
-        upstream.name,
-        upstream.enabled ? 1 : 0,
-        upstream.usageRefreshIntervalMinutes,
-        upstream.createdAt,
-        upstream.updatedAt,
-        serializeStoredConfig(upstream.config),
-        serializeStoredState(upstream.state),
-        JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
-        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
-        JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
-        upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
-        upstream.hue,
-      )
-      .first<UpstreamRow>();
-    return row === null ? null : toUpstreamRecord(row);
-  }
-
-  async insertForModels(upstream: UpstreamRecord): Promise<StoredUpstreamRecord | null> {
-    const row = await this.db
-      .prepare(`INSERT INTO upstreams (id, provider, name, enabled, usage_refresh_interval_minutes, sort_order, created_at, updated_at, config_version, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, hue) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING
-        RETURNING ${UPSTREAM_COLUMNS}`)
-      .bind(
-        upstream.id,
-        upstream.kind,
-        upstream.name,
-        upstream.enabled ? 1 : 0,
-        upstream.usageRefreshIntervalMinutes,
-        upstream.sortOrder,
-        upstream.createdAt,
-        upstream.updatedAt,
-        serializeStoredConfig(upstream.config),
-        serializeStoredState(upstream.state),
-        JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
-        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
-        JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
-        upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
-        upstream.hue,
-      )
-      .first<UpstreamRow>();
-    return row === null ? null : toUpstreamRecord(row);
-  }
-
-  async replaceForModels(input: {
-    previous: StoredUpstreamRecord;
-    upstream: UpstreamRecord;
-  }): Promise<StoredUpstreamRecord | null> {
-    const { previous, upstream } = input;
-    const storedRow = await this.db
-      .prepare(`SELECT ${UPSTREAM_COLUMNS} FROM upstreams WHERE id = ?`)
-      .bind(upstream.id)
-      .first<UpstreamRow>();
-    if (storedRow === null) return null;
-    const modelConfigChanged = previous.kind !== upstream.kind
-      || serializeStoredConfig(previous.config) !== serializeStoredConfig(upstream.config)
-      || serializeStoredConfig(previous.flagOverrides) !== serializeStoredConfig(upstream.flagOverrides);
-    const transportChanged = serializeStoredConfig(previous.proxyFallbackList) !== serializeStoredConfig(upstream.proxyFallbackList);
-    const refreshInputsChanged = modelConfigChanged || transportChanged;
-    const configVersion = previous.configVersion + (refreshInputsChanged ? 1 : 0);
-    const replaceState = serializeStoredState(previous.state) !== serializeStoredState(upstream.state);
-    const stored = toUpstreamRecord(storedRow);
-    const comparable = (record: StoredUpstreamRecord): StoredUpstreamRecord => ({
-      ...record,
-      modelsCache: null,
-      state: replaceState ? record.state : null,
-    });
-    if (serializeStoredConfig(comparable(stored)) !== serializeStoredConfig(comparable(previous))) return null;
-    const modelsCacheUpdate = modelConfigChanged
-      ? ', models_cache_json = NULL'
-      : transportChanged
-        ? `, models_cache_json = CASE WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
-            THEN json_set(models_cache_json, '$.lastError', json('null')) ELSE NULL END`
-        : '';
-    const row = await this.db
-      .prepare(
-        `UPDATE upstreams SET
-           provider = ?,
-           name = ?,
-           enabled = ?,
-           usage_refresh_interval_minutes = ?,
-           sort_order = ?,
-           updated_at = ?,
-           config_version = ?,
-           config_json = ?,
-           state_json = CASE WHEN ? THEN ? ELSE state_json END,
-           flag_overrides = ?,
-           disabled_public_model_ids = ?,
-           proxy_fallback_list_json = ?,
-           model_prefix_json = ?,
-           hue = ?${modelsCacheUpdate}
-         WHERE id = ?
-           AND provider = ?
-           AND name = ?
-           AND enabled = ?
-           AND usage_refresh_interval_minutes = ?
-           AND sort_order = ?
-           AND updated_at = ?
-           AND config_version = ?
-           AND config_json = ?
-           AND (? = 0 OR state_json IS ?)
-           AND flag_overrides = ?
-           AND disabled_public_model_ids = ?
-           AND proxy_fallback_list_json = ?
-           AND model_prefix_json IS ?
-           AND hue = ?
-         RETURNING ${UPSTREAM_COLUMNS}`,
-      )
-      .bind(
-        upstream.kind,
-        upstream.name,
-        upstream.enabled ? 1 : 0,
-        upstream.usageRefreshIntervalMinutes,
-        upstream.sortOrder,
-        upstream.updatedAt,
-        configVersion,
-        serializeStoredConfig(upstream.config),
-        sqliteBoolean(replaceState),
-        serializeStoredState(upstream.state),
-        JSON.stringify(normalizeFlagOverrides(upstream.flagOverrides)),
-        JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
-        JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
-        upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
-        upstream.hue,
-        upstream.id,
-        previous.kind,
-        previous.name,
-        previous.enabled ? 1 : 0,
-        previous.usageRefreshIntervalMinutes,
-        previous.sortOrder,
-        previous.updatedAt,
-        previous.configVersion,
-        storedRow.config_json,
-        sqliteBoolean(replaceState),
-        storedRow.state_json,
-        storedRow.flag_overrides,
-        storedRow.disabled_public_model_ids,
-        storedRow.proxy_fallback_list_json,
-        storedRow.model_prefix_json,
-        previous.hue,
-      )
-      .first<UpstreamRow>();
-    return row === null ? null : toUpstreamRecord(row);
-  }
-
-  async delete(id: string): Promise<boolean> {
-    const result = await this.db.prepare('DELETE FROM upstreams WHERE id = ?').bind(id).run();
-    return (result.meta.changes ?? 0) > 0;
-  }
-
-  async deleteAll(): Promise<void> {
-    await this.db.prepare('DELETE FROM upstreams').run();
-  }
-
-  private async modelsRefreshFence(input: ModelsRefreshSuccessInput | ModelsRefreshFailureInput): Promise<{
-    provider: string;
-    config_json: string;
-    flag_overrides: string;
-    proxy_fallback_list_json: string;
-  } | null> {
-    const row = await this.db
-      .prepare('SELECT provider, config_json, flag_overrides, proxy_fallback_list_json FROM upstreams WHERE id = ? AND config_version = ?')
-      .bind(input.id, input.configVersion)
-      .first<{ provider: string; config_json: string; flag_overrides: string; proxy_fallback_list_json: string }>();
-    if (row === null || !matchesModelsRefreshInputs({
-      kind: parseUpstreamKind(input.id, row.provider),
-      config: decodeUpstreamConfig(row.config_json, input.id),
-      flagOverrides: parseFlagOverrides(input.id, row.flag_overrides),
-      proxyFallbackList: parseProxyFallbackList(input.id, row.proxy_fallback_list_json),
-    }, input.refreshInputs)) return null;
-    return row;
-  }
-
-  async publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean> {
-    const { id, configVersion, cacheEpoch, cache } = input;
-    const fence = await this.modelsRefreshFence(input);
-    if (fence === null) return false;
-    const result = await this.db
-      .prepare(`UPDATE upstreams SET models_cache_json = ? WHERE id = ? AND config_version = ?
-        AND provider = ? AND config_json = ? AND flag_overrides = ? AND proxy_fallback_list_json = ?
-        AND ${MODELS_CACHE_EPOCH_SQL} = ?`)
-      .bind(encodeUpstreamModelsCache({ ...cache, lastError: null }), id, configVersion,
-        fence.provider, fence.config_json, fence.flag_overrides, fence.proxy_fallback_list_json, cacheEpoch)
-      .run();
-    return (result.meta.changes ?? 0) > 0;
-  }
-
-  async recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean> {
-    const { id, configVersion, cacheEpoch, error, previousFailureCount } = input;
-    const fence = await this.modelsRefreshFence(input);
-    if (fence === null) return false;
-    // A cold failure remains immediately stale while preserving the error for
-    // the next request and dashboard read.
-    const nextError = { ...error, message: storedModelErrorMessage(error.message), failureCount: previousFailureCount + 1 };
-    const coldFailure = encodeUpstreamModelsCache({ revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: nextError });
-    const result = await this.db
-      .prepare(
-        `UPDATE upstreams SET
-           models_cache_json = CASE WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
-             THEN json_set(models_cache_json, '$.lastError', json(?)) ELSE ? END
-         WHERE id = ? AND config_version = ?
-           AND provider = ? AND config_json = ? AND flag_overrides = ? AND proxy_fallback_list_json = ?
-           AND ${MODELS_CACHE_EPOCH_SQL} = ?
-           AND coalesce(CASE WHEN json_extract(models_cache_json, '$.revision') = ${MODEL_CATALOG_REVISION}
-             THEN json_extract(models_cache_json, '$.lastError.failureCount') END, 0) = ?`,
-      )
-      .bind(JSON.stringify(nextError), coldFailure, id, configVersion,
-        fence.provider, fence.config_json, fence.flag_overrides, fence.proxy_fallback_list_json,
-        cacheEpoch, previousFailureCount)
-      .run();
-    return (result.meta.changes ?? 0) > 0;
-  }
-
-  // Read-modify-write under optimistic concurrency, retried against the winner
-  // on a loss. `IS` (not `=`) so a row whose state_json is SQL NULL still
-  // matches. The predicate binds the exact text this method read rather than a
-  // re-serialized form, so the CAS holds against a row written by anything —
-  // including a migration, which has no way to reproduce the canonical
-  // encoder's output.
-  //
-  // Losing is expected, not exceptional: the same row carries values written on
-  // every data-plane response, so a rotation's read-to-write window overlaps
-  // them routinely. Retrying is what makes the loss harmless; exhausting the
-  // retries is not, because the caller's change — a rotated refresh token the
-  // vendor has already invalidated — cannot be reconstructed later, so it
-  // throws rather than returning a flag a caller can drop.
-  async saveState(id: string, mutate: (current: unknown, configVersion: number) => unknown): Promise<void> {
-    for (let attempt = 0; attempt < UPSTREAM_STATE_WRITE_ATTEMPTS; attempt++) {
-      const row = await this.db
-        .prepare('SELECT state_json, config_version FROM upstreams WHERE id = ?')
-        .bind(id)
-        .first<{ state_json: string | null; config_version: number }>();
-      if (!row) throw new UpstreamGoneError(id);
-      const current = row.state_json === null ? null : decodeUpstreamState(row.state_json, id);
-      const next = serializeStoredState(mutate(current, row.config_version));
-      // A mutator that decided there is nothing to do returns what it was
-      // given, which serializes back to the stored text.
-      if (next === row.state_json) return;
-      const result = await this.db
-        .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ? AND config_version = ?')
-        .bind(next, id, row.state_json, row.config_version)
-        .run();
-      if ((result.meta.changes ?? 0) > 0) return;
-    }
-    throw new Error(`Upstream ${id} state write lost ${UPSTREAM_STATE_WRITE_ATTEMPTS} consecutive races`);
-  }
-}
-
-interface UpstreamRow {
-  id: string;
-  provider: string;
-  name: string;
-  enabled: number;
-  usage_refresh_interval_minutes: number;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
-  config_version: number;
-  config_json: string;
-  state_json: string | null;
-  models_cache_json: string | null;
-  flag_overrides: string;
-  disabled_public_model_ids: string;
-  proxy_fallback_list_json: string;
-  model_prefix_json: string | null;
-  hue: number;
-}
-
-const toUpstreamRecord = (row: UpstreamRow): StoredUpstreamRecord => {
-  const config = decodeUpstreamConfig(row.config_json, row.id);
-  const state = row.state_json === null ? null : decodeUpstreamState(row.state_json, row.id);
-  if (!Number.isSafeInteger(row.config_version) || row.config_version < 1) {
-    throw new Error(`Invalid upstream config version for ${row.id}`);
-  }
-
-  return {
-    id: row.id,
-    kind: parseUpstreamKind(row.id, row.provider),
-    modelsCache: parseModelsCache(row),
-    name: row.name,
-    enabled: row.enabled !== 0,
-    usageRefreshIntervalMinutes: row.usage_refresh_interval_minutes,
-    sortOrder: row.sort_order,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    configVersion: row.config_version,
-    config,
-    state,
-    flagOverrides: parseFlagOverrides(row.id, row.flag_overrides),
-    disabledPublicModelIds: parseDisabledPublicModelIds(row.id, row.disabled_public_model_ids),
-    proxyFallbackList: parseProxyFallbackList(row.id, row.proxy_fallback_list_json),
-    modelPrefix: parseModelPrefix(row.id, row.model_prefix_json),
-    hue: parseUpstreamHue(row.id, row.hue),
-  };
-};
-
-// The whole entry is one document, so a row either has a valid catalog or does
-// not. The codec restores the model-level enabledFlags Sets flattened on write.
-const parseModelsCache = (row: UpstreamRow): UpstreamModelsCache | null => {
-  if (row.models_cache_json === null) return null;
-  return decodeUpstreamModelsCache(row.models_cache_json, row.id);
-};
-
-const parseFlagOverrides = (id: string, json: string): Record<string, boolean> => {
-  return normalizeFlagOverrides(decodeUpstreamFlagOverrides(json, id));
-};
-
-const parseDisabledPublicModelIds = (id: string, json: string): string[] => {
-  return normalizeDisabledPublicModelIds(decodeDisabledPublicModelIds(json, id));
-};
-
-const parseProxyFallbackList = (id: string, json: string): ProxyFallbackEntry[] => {
-  return normalizeProxyFallbackList(decodeProxyFallbackList(json, id));
-};
-
-const parseModelPrefix = (id: string, json: string | null): ModelPrefixConfig | null => {
-  if (json === null) return null;
-  const parsed = decodeModelPrefix(json, id);
-  try {
-    return normalizeModelPrefix(parsed);
-  } catch (cause) {
-    throw new Error(`Invalid upstream model_prefix_json shape for ${id}`, { cause });
-  }
-};
 
 class SqlProxyRepo implements ProxyRepo {
   constructor(private db: SqlDatabase) {}
@@ -2206,6 +1795,7 @@ export class SqlRepo implements Repo {
   siteSettings: SiteSettingsRepo;
   webSearchConfig: WebSearchConfigRepo;
   upstreams: UpstreamRepo;
+  upstreamModels: UpstreamModelsRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
   modelAliases: ModelAliasesRepo;
@@ -2268,6 +1858,7 @@ export class SqlRepo implements Repo {
     this.siteSettings = new SqlSiteSettingsRepo(db);
     this.webSearchConfig = new SqlWebSearchConfigRepo(db);
     this.upstreams = new SqlUpstreamRepo(db);
+    this.upstreamModels = new SqlUpstreamModelsRepo(db);
     this.proxies = new SqlProxyRepo(db);
     this.proxyBackoffs = new SqlProxyBackoffRepo(db);
     this.modelAliases = new SqlModelAliasesRepo(db);

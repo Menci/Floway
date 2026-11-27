@@ -18,7 +18,7 @@ import { colorForHue } from '../charts/palette';
 import { seriesRunBoundaryPoints } from '../charts/point-markers';
 import { ChartSection } from '../charts/section';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
-import type { UpstreamMetricUnit } from '@floway-dev/provider/browser';
+import type { UpstreamMetricUnit } from '@floway-dev/upstream/browser';
 
 const unitAxisTieBreakers: Record<UpstreamMetricUnit, number> = {
   percent: 5,

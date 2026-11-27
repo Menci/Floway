@@ -12,7 +12,7 @@ import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gat
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
-import type { OpenAIAudioTranscriptionFormEntry } from '@floway-dev/provider';
+import type { OpenAIAudioTranscriptionFormEntry } from '@floway-dev/upstream';
 
 type PreparedOpenAIAudioTranscription =
   | {
@@ -78,7 +78,7 @@ export const openaiAudioTranscriptions = async (c: Context): Promise<Response> =
     model: request.model,
     kind: 'transcription',
     modelServesEndpoint: model => model.endpoints.openaiAudioTranscriptions !== undefined,
-    call: (provider, model, opts) => provider.instance.callOpenAIAudioTranscriptions(model, { entries: request.entries }, ctx.abortSignal, opts),
+    call: (upstream, model, opts) => upstream.instance.callOpenAIAudioTranscriptions(model, { entries: request.entries }, ctx.abortSignal, opts),
     response: { format: 'strategy', respond: respondOpenAIAudioTranscription },
   });
   return finalizeGatewayResponse(ctx, response);

@@ -63,8 +63,8 @@ const record = upstreamRecord('up_test', {
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models: [model('model-a')],
   },
+  manual_models: [model('model-a')],
   state: null,
 });
 
@@ -91,7 +91,7 @@ describe('upstream editor YAML submission', () => {
   it('enables the page save action and submits the YAML draft', async () => {
     const saved = {
       ...record,
-      config: { ...record.config, models: [model('replacement')] },
+      manual_models: [model('replacement')],
     };
     apiMocks.patch.mockResolvedValue({ data: saved, error: null });
     renderPage();
@@ -105,9 +105,7 @@ describe('upstream editor YAML submission', () => {
 
     await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledWith({
       json: expect.objectContaining({
-        config: expect.objectContaining({
-          models: [expect.objectContaining({ upstreamModelId: 'replacement' })],
-        }),
+        manual_models: [expect.objectContaining({ upstreamModelId: 'replacement' })],
       }),
       param: { id: record.id },
     }));

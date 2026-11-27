@@ -8,9 +8,9 @@ import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
-import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import type { FlagId } from '@floway-dev/provider/flags';
-import { assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type UpstreamCallResult, type UpstreamOpenAIResponsesResult, type UpstreamStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/upstream';
+import type { FlagId } from '@floway-dev/upstream/flags';
 
 const API_KEY_ID = 'key_messages_attempt_test';
 
@@ -53,31 +53,26 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
-  callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
-  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
-  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<ProviderCallResult>;
+  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>>;
+  callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamOpenAIResponsesResult>;
+  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>>;
+  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<UpstreamCallResult>;
   enabledFlags?: ReadonlySet<FlagId>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const endpoints = overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
-  const provider = stubProvider({
+  const instance = stubUpstream({
     callAnthropicMessages: overrides.callAnthropicMessages,
     callOpenAIResponses: overrides.callOpenAIResponses,
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
+      instance,
     },
-    model: stubInternalModel({
-      endpoints,
-      providerModels: {
-        [upstream]: stubProviderModel({ endpoints, enabledFlags: new Set<FlagId>(overrides.enabledFlags ?? []) }),
-      },
-    }, upstream),
+    model: stubUpstreamModel({ endpoints, enabledFlags: new Set<FlagId>(overrides.enabledFlags ?? []) }),
     fetcher: directFetcher,
   };
 };
@@ -99,11 +94,11 @@ const installRepo = (): InMemoryRepo => {
 test('generate and countTokens drop the Claude Code beta flag on candidates that strip billing attribution', async () => {
   installRepo();
   const upstreamAnthropicBeta: Array<readonly string[] | undefined> = [];
-  const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
+  const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => {
     upstreamAnthropicBeta.push(opts?.anthropicBeta);
     return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   });
-  const callAnthropicMessagesCountTokens = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderCallResult> => {
+  const callAnthropicMessagesCountTokens = vi.fn(async (_model, _body, _signal, opts): Promise<UpstreamCallResult> => {
     upstreamAnthropicBeta.push(opts?.anthropicBeta);
     return { http: Response.json({ input_tokens: 1 }), modelKey: 'k' };
   });
@@ -121,7 +116,7 @@ test('generate and countTokens drop the Claude Code beta flag on candidates that
 test('generate lets the target system-to-developer rewrite take precedence over the source system-to-user rewrite', async () => {
   installRepo();
   const observedBodies: Omit<OpenAIResponsesPayloadEx, 'model'>[] = [];
-  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+  const callOpenAIResponses = vi.fn(async (_model, body): Promise<UpstreamOpenAIResponsesResult> => {
     observedBodies.push(body as Omit<OpenAIResponsesPayloadEx, 'model'>);
     return {
       action: 'generate',
@@ -178,7 +173,7 @@ test('generate lets the target system-to-developer rewrite take precedence over 
 test('countTokens applies generation request transforms before provider dispatch', async () => {
   installRepo();
   const observedBodies: Array<Omit<AnthropicMessagesPayload, 'model'>> = [];
-  const callAnthropicMessagesCountTokens = vi.fn(async (_model, body): Promise<ProviderCallResult> => {
+  const callAnthropicMessagesCountTokens = vi.fn(async (_model, body): Promise<UpstreamCallResult> => {
     observedBodies.push(body as Omit<AnthropicMessagesPayload, 'model'>);
     return { http: Response.json({ input_tokens: 9 }), modelKey: 'k' };
   });

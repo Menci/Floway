@@ -4,8 +4,8 @@ import type { Repo } from '../../../src/repo/types.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import type { DecisionTarget, ModelPricing } from '@floway-dev/protocols/common';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
 
 const saveDecisionUpstream = async (
   repo: Repo,
@@ -23,16 +23,17 @@ const saveDecisionUpstream = async (
       apiKey: 'sk-decision',
       endpoints: {},
       modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{
-        upstreamModelId: 'raw-decision',
-        publicModelId: 'public-decision',
-        kind: 'decision',
-        endpoints: { decision: {} },
-        decisionTarget: target,
-        ...(pricing === undefined ? {} : { pricing }),
-      }],
     },
-  }));
+  }), {
+    manualModels: [{
+      upstreamModelId: 'raw-decision',
+      publicModelId: 'public-decision',
+      kind: 'decision',
+      endpoints: { decision: {} },
+      decisionTarget: target,
+      ...(pricing === undefined ? {} : { pricing }),
+    }],
+  });
 };
 
 const requestHeaders = (apiKey: string) => ({

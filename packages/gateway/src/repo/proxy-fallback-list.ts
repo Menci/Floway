@@ -1,4 +1,4 @@
-import type { ProxyFallbackEntry } from '@floway-dev/provider';
+import type { ProxyFallbackEntry } from '@floway-dev/upstream';
 
 // Built-in egress candidates occupy the same ordered fallback list as
 // operator-managed proxies, but do not resolve through the proxies table.

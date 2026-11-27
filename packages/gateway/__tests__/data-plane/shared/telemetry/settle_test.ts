@@ -4,8 +4,8 @@ import { settle } from '../../../../src/data-plane/shared/telemetry/settle.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { TelemetryModelIdentity } from '@floway-dev/provider';
 import { assertEquals, mockPerfTelemetryContext } from '@floway-dev/test-utils';
+import type { TelemetryModelIdentity } from '@floway-dev/upstream';
 
 const testTelemetryModelIdentity: TelemetryModelIdentity = {
   model: 'claude-test',

@@ -5,7 +5,7 @@ import { checkMany } from '../../access-control/check.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import { overviewBucketId, type OverviewBucket } from '../../repo/telemetry-bucket-sql.ts';
-import type { ApiKey, StoredUpstreamRecord, User } from '../../repo/types.ts';
+import type { ApiKey, StoredUpstreamMeta, User } from '../../repo/types.ts';
 import { parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryHourKey, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 
 interface TelemetryOverviewQuery {
@@ -90,7 +90,7 @@ export interface TelemetryOverviewIdentity {
   actor: ReturnType<typeof userFromContext>;
   ownedKeys: ApiKey[];
   ownedKeyIds: ReadonlySet<string>;
-  upstreams: StoredUpstreamRecord[];
+  upstreams: StoredUpstreamMeta[];
   users: User[];
   visibleUserIds: ReadonlySet<number>;
   visibleUpstreams: ReadonlySet<string>;
@@ -119,7 +119,7 @@ export const loadTelemetryOverviewIdentity = async (c: Context): Promise<Telemet
   const [ownedKeys, users, upstreams] = await Promise.all([
     repo.apiKeys.listByUserIdIncludingDeleted(actor.id),
     repo.users.listIncludingDeleted(),
-    repo.upstreams.list(),
+    repo.upstreams.listMeta(),
   ]);
   const checks = [
     ...users.map(user => ({

@@ -12,6 +12,7 @@ import {
   type BillingMetric,
   type DecimalString,
 } from '@floway-dev/protocols/common';
+import { modelsField, type UpstreamModelConfig } from '@floway-dev/upstream';
 
 export const PLAN_SCHEMA_VERSION = 1;
 
@@ -83,7 +84,11 @@ export interface BackfillPlan {
 
 interface PlanGuards {
   upstreamConfigJson: string;
-  upstreamModelsCacheJson: string | null;
+  upstreamVersion: number;
+  manualModelConfigJson: string | null;
+  modelsCacheRevision: number | null;
+  modelsCacheFetchedAt: number | null;
+  cachedModelJson: string | null;
   guardModelsCache: boolean;
   pricedSiblingExists: boolean;
 }
@@ -95,10 +100,18 @@ export interface BuiltPlan {
 
 interface UpstreamRow {
   id: string;
-  provider: string;
+  kind: string;
   enabled: number;
   config_json: string;
-  models_cache_json: string | null;
+  version: number;
+  models_cache_revision: number | null;
+  models_cache_fetched_at: number | null;
+}
+
+interface LoadedUpstream {
+  upstream: StoredUpstream;
+  version: number;
+  manualModelConfigJson: string | null;
 }
 
 interface PriceStateRow {
@@ -178,17 +191,62 @@ export const validateUsageSchema = async (database: ToolDatabase): Promise<void>
   }
 };
 
-const loadUpstream = async (database: ToolDatabase, id: string): Promise<UpstreamRow> => {
-  const result = await database.query<UpstreamRow>({
-    sql: 'SELECT id, provider, enabled, config_json, models_cache_json FROM upstreams WHERE id = ?',
-    params: [id],
-  });
-  if (result.rows.length !== 1) throw inputError('upstream-not-found', `No upstream has id ${id}`);
-  const row = result.rows[0]!;
-  if (typeof row.provider !== 'string' || typeof row.config_json !== 'string' || (row.models_cache_json !== null && typeof row.models_cache_json !== 'string')) {
-    throw new ToolError('upstream-row', `Stored upstream ${id} is malformed`, 1);
+const loadUpstream = async (database: ToolDatabase, intent: BackfillIntent): Promise<LoadedUpstream> => {
+  const [upstreamResult, manualResult, cachedResult] = await Promise.all([
+    database.query<UpstreamRow>({
+      sql: `SELECT id, kind, enabled, config_json, version,
+                   models_cache_revision, models_cache_fetched_at
+            FROM upstreams WHERE id = ?`,
+      params: [intent.upstream],
+    }),
+    database.query<{ upstream_model_id: string; config_json: string }>({
+      sql: 'SELECT upstream_model_id, config_json FROM upstream_manual_models WHERE upstream_id = ? ORDER BY position',
+      params: [intent.upstream],
+    }),
+    database.query<{ model_json: string }>({
+      sql: `SELECT model_json FROM upstream_models
+            WHERE upstream_id = ? AND model_id = ? AND upstream_model_id = ?
+            ORDER BY kind LIMIT 1`,
+      params: [intent.upstream, intent.model, intent.modelKey],
+    }),
+  ]);
+  if (upstreamResult.rows.length !== 1) throw inputError('upstream-not-found', `No upstream has id ${intent.upstream}`);
+  const row = upstreamResult.rows[0]!;
+  if (
+    typeof row.kind !== 'string'
+    || typeof row.config_json !== 'string'
+    || typeof row.version !== 'number'
+    || (row.models_cache_revision !== null && typeof row.models_cache_revision !== 'number')
+    || (row.models_cache_fetched_at !== null && typeof row.models_cache_fetched_at !== 'number')
+  ) {
+    throw new ToolError('upstream-row', `Stored upstream ${intent.upstream} is malformed`, 1);
   }
-  return row;
+  const manualModels: UpstreamModelConfig[] = manualResult.rows.length === 0
+    ? []
+    : modelsField(
+        manualResult.rows.map(entry => {
+          try {
+            return JSON.parse(entry.config_json) as unknown;
+          } catch (cause) {
+            throw new ToolError('stored-json', `Upstream ${intent.upstream} upstream_manual_models.config_json is malformed`, 1, { cause });
+          }
+        }),
+        `${row.kind} upstream ${row.id}`,
+      );
+  const matchingManualRow = manualResult.rows.find(entry => entry.upstream_model_id === intent.modelKey);
+  return {
+    upstream: {
+      id: row.id,
+      kind: row.kind,
+      configJson: row.config_json,
+      manualModels,
+      modelsCacheRevision: row.models_cache_revision,
+      modelsCacheFetchedAt: row.models_cache_fetched_at,
+      cachedModelJson: cachedResult.rows[0]?.model_json ?? null,
+    },
+    version: row.version,
+    manualModelConfigJson: matchingManualRow?.config_json ?? null,
+  };
 };
 
 const stateQuery = (intent: BackfillIntent): SqlStatement => ({
@@ -335,13 +393,8 @@ export const buildPlan = async (
 ): Promise<BuiltPlan> => {
   await validateUsageSchema(database);
   const intent = normalizeIntent(rawIntent);
-  const upstreamRow = await loadUpstream(database, intent.upstream);
-  const upstream: StoredUpstream = {
-    id: upstreamRow.id,
-    provider: upstreamRow.provider,
-    configJson: upstreamRow.config_json,
-    modelsCacheJson: upstreamRow.models_cache_json,
-  };
+  const loaded = await loadUpstream(database, intent);
+  const { upstream } = loaded;
   const [states, pricedSiblingExists] = await Promise.all([
     loadStates(database, intent),
     loadPricedSiblingExists(database, intent),
@@ -360,7 +413,11 @@ export const buildPlan = async (
     plan,
     guards: {
       upstreamConfigJson: upstream.configJson,
-      upstreamModelsCacheJson: upstream.modelsCacheJson,
+      upstreamVersion: loaded.version,
+      manualModelConfigJson: loaded.manualModelConfigJson,
+      modelsCacheRevision: upstream.modelsCacheRevision,
+      modelsCacheFetchedAt: upstream.modelsCacheFetchedAt,
+      cachedModelJson: upstream.cachedModelJson,
       guardModelsCache: resolution.status !== 'unavailable' && resolution.guardsModelsCache,
       pricedSiblingExists,
     },
@@ -437,9 +494,22 @@ const applyStatement = (plan: BackfillPlan, guards: PlanGuards): SqlStatement =>
         AND NOT EXISTS (SELECT 1 FROM drift)
         AND EXISTS (
           SELECT 1 FROM upstreams
-          WHERE id = ? AND config_json = ?
-            AND (? = 0 OR models_cache_json IS ?)
+          WHERE id = ? AND config_json = ? AND version = ?
+            AND (? = 0 OR (
+              models_cache_revision IS ?
+              AND models_cache_fetched_at IS ?
+            ))
         )
+        AND (
+          SELECT config_json FROM upstream_manual_models
+          WHERE upstream_id = ? AND upstream_model_id = ?
+          ORDER BY position LIMIT 1
+        ) IS ?
+        AND (? = 0 OR (
+          SELECT model_json FROM upstream_models
+          WHERE upstream_id = ? AND model_id = ? AND upstream_model_id = ?
+          ORDER BY kind LIMIT 1
+        ) IS ?)
         AND (SELECT present FROM sibling_evidence) = ?`,
     params: [
       ...rates.params,
@@ -450,14 +520,18 @@ const applyStatement = (plan: BackfillPlan, guards: PlanGuards): SqlStatement =>
       ...scope,
       plan.intent.upstream,
       guards.upstreamConfigJson,
+      guards.upstreamVersion,
       guards.guardModelsCache ? 1 : 0,
-      // Only a guarded plan carries the catalog into the statement. The column
-      // is 73 KB on a live Copilot upstream and doubles under hex encoding, and
-      // every provider except a cache-priced custom one short-circuits the
-      // comparison on the flag above — so inlining it unguarded pushed the
-      // statement past what `--command` can carry and failed a 6-row backfill
-      // with SQLITE_TOOBIG before any row was written.
-      guards.guardModelsCache ? guards.upstreamModelsCacheJson : null,
+      guards.guardModelsCache ? guards.modelsCacheRevision : null,
+      guards.guardModelsCache ? guards.modelsCacheFetchedAt : null,
+      plan.intent.upstream,
+      plan.intent.modelKey,
+      guards.manualModelConfigJson,
+      guards.guardModelsCache ? 1 : 0,
+      plan.intent.upstream,
+      plan.intent.model,
+      plan.intent.modelKey,
+      guards.guardModelsCache ? guards.cachedModelJson : null,
       guards.pricedSiblingExists ? 1 : 0,
     ],
   };
@@ -592,7 +666,7 @@ export interface InspectionResult {
   schemaVersion: 1;
   kind: 'usage-pricing-inspection';
   database: DatabaseIdentity;
-  enabledUpstreams: Array<{ id: string; provider: string; name: string }>;
+  enabledUpstreams: Array<{ id: string; kind: string; name: string }>;
   nullPriceSlices: Array<{
     upstream: string | null;
     model: string;
@@ -608,8 +682,8 @@ export interface InspectionResult {
 export const inspectDatabase = async (database: ToolDatabase): Promise<InspectionResult> => {
   await validateUsageSchema(database);
   const [upstreams, slices] = await Promise.all([
-    database.query<{ id: string; provider: string; name: string }>({
-      sql: 'SELECT id, provider, name FROM upstreams WHERE enabled != 0 ORDER BY sort_order, created_at',
+    database.query<{ id: string; kind: string; name: string }>({
+      sql: 'SELECT id, kind, name FROM upstreams WHERE enabled != 0 ORDER BY sort_order, created_at',
     }),
     database.query<{
       upstream: string | null;

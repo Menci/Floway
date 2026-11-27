@@ -3,7 +3,7 @@ import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage, UsageQuantities } from '../../../repo/types.ts';
 import { tokenUsageQuantities, usageMetrics } from '../../../repo/usage-metrics.ts';
 import { priceRequest, type BillableUsage, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
-import type { TelemetryModelIdentity } from '@floway-dev/provider';
+import type { TelemetryModelIdentity } from '@floway-dev/upstream';
 
 const TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];
 const INPUT_TOKEN_USAGE_KEYS = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'] as const satisfies readonly Exclude<keyof TokenUsage, 'tier'>[];

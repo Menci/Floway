@@ -11,7 +11,7 @@ import { FieldClearIcon } from '../ui/field-clear-icon';
 import { InlineCombobox } from '../ui/inline-combobox';
 import { highlight, prismTokenStyles } from '../ui/prism';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
-import { ProviderBadge } from '../upstreams/provider-badge';
+import { UpstreamBadge } from '../upstreams/upstream-kind-badge';
 import { UserIdentity } from '../users/identity';
 import type { AccessScope } from '@floway-dev/gateway/browser';
 
@@ -444,7 +444,7 @@ const optionsFor = (
     }
   } else if (active === 'instance' && kind === 'upstream') {
     for (const upstream of data.upstreams) {
-      add({ key: upstream.id, value: upstream.id, text: upstream.name, content: <ProviderBadge label={upstream.name} upstream={upstream} /> }, upstream.name.toLowerCase().includes(needle) || upstream.id.toLowerCase().includes(needle));
+      add({ key: upstream.id, value: upstream.id, text: upstream.name, content: <UpstreamBadge label={upstream.name} upstream={upstream} /> }, upstream.name.toLowerCase().includes(needle) || upstream.id.toLowerCase().includes(needle));
     }
   } else if (active === 'instance' && kind === 'user') {
     for (const user of data.users) {
@@ -508,7 +508,7 @@ function InstancePart({ data, kind, t, value }: {
   if (kind === 'upstream' && hasUpstreamInstance(value)) {
     const upstream = data.upstreams.find(candidate => candidate.id === value.upstreamId);
     return upstream
-      ? <PartToken><ProviderBadge label={upstream.name} upstream={upstream} /></PartToken>
+      ? <PartToken><UpstreamBadge label={upstream.name} upstream={upstream} /></PartToken>
       : <UnknownPart description={t('permissions.scope.unknownUpstreamId', { id: value.upstreamId })} />;
   }
   if (kind === 'user' && value?.kind === 'user') {

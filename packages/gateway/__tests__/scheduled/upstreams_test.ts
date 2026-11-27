@@ -4,7 +4,7 @@ import { initRepo } from '../../src/repo/index.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { runUpstreamScheduledTasks } from '../../src/scheduled/upstreams.ts';
 import { createSqliteTestDb } from '../repo/test-sqlite.ts';
-import { type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
+import { type Fetcher, type UpstreamRecord } from '@floway-dev/upstream';
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn<Fetcher>() }));
 vi.mock('../../src/dial/per-request.ts', () => ({ createPerRequestFetcher: async () => () => mocks.fetch }));
@@ -16,7 +16,7 @@ const access = { token: 'access', expiresAt: NOW + 86_400_000, refreshedAt: new 
 const base = (id: string, kind: UpstreamRecord['kind'], config: unknown, state: unknown): UpstreamRecord => ({
   id, kind, config, state, name: id, enabled: true, usageRefreshIntervalMinutes: 5,
   sortOrder: 0, createdAt: '', updatedAt: '', flagOverrides: {}, disabledPublicModelIds: [],
-  proxyFallbackList: [{ id: 'direct_fetch' }], modelPrefix: null, modelsCache: null, hue: 210,
+  proxyFallbackList: [{ id: 'direct_fetch' }], modelPrefix: null, hue: 210,
 });
 const copilot = (id = 'copilot') => base(id, 'copilot', {
   githubHost: 'github.com', githubToken: 'github', user: { login: 'tester', avatar_url: '', name: null, id: 1 },
@@ -27,7 +27,7 @@ const chatgpt = () => base('chatgpt', 'chatgpt', {
 const claude = (setupToken = false) => base('claude', 'claude-code', {
   accounts: [{ email: 'test@example.com', accountUuid: 'account', organizationUuid: null, subscriptionType: 'max', rateLimitTier: null }],
 }, { accounts: [{ accountUuid: 'account', tokenKind: setupToken ? 'setup-token' : 'oauth', refreshToken: setupToken ? null : 'refresh', state: 'active', stateUpdatedAt: new Date(NOW).toISOString(), accessToken: access, quotaSnapshot: null, usageProbeSnapshot: null }] });
-const ollama = () => base('ollama', 'ollama', { baseUrl: 'https://ollama.com', apiKey: 'key', cloudUsage: true, models: [] }, null);
+const ollama = () => base('ollama', 'ollama', { baseUrl: 'https://ollama.com', apiKey: 'key', cloudUsage: true }, null);
 
 let repo: SqlRepo;
 beforeEach(async () => {
@@ -40,8 +40,8 @@ beforeEach(async () => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 test('Floway dispatches every provider and persists read-only subscription probes', async () => {
-  for (const record of [copilot(), chatgpt(), claude(), ollama(), base('custom', 'custom', { baseUrl: 'https://custom.example', apiKey: '', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' }, models: [] }, null), base('azure', 'azure', { endpoint: 'https://test.openai.azure.com', apiKey: 'key', models: [{ upstreamModelId: 'model', endpoints: { openaiChatCompletions: {} } }] }, null)]) {
-    await repo.upstreams.insertForModels(record);
+  for (const record of [copilot(), chatgpt(), claude(), ollama(), base('custom', 'custom', { baseUrl: 'https://custom.example', apiKey: '', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' } }, null), base('azure', 'azure', { endpoint: 'https://test.openai.azure.com', apiKey: 'key' }, null)]) {
+    await repo.upstreams.insert({ upstream: record });
   }
   mocks.fetch.mockImplementation(async (url, init) => {
     expect(init.method ?? 'GET').toBe('GET');
@@ -70,16 +70,16 @@ test('Floway dispatches every provider and persists read-only subscription probe
 });
 
 test('opt-out, disabled upstreams, setup tokens, local Ollama and scoped-only egress issue no probes', async () => {
-  for (const record of [{ ...copilot('opt-out'), usageRefreshIntervalMinutes: 0 }, { ...copilot('disabled'), enabled: false }, claude(true), { ...ollama(), config: { baseUrl: 'https://local.example', cloudUsage: false, models: [] } }, { ...copilot('scoped'), proxyFallbackList: [{ id: 'direct_fetch', colos: ['TEST'] }] }]) {
-    await repo.upstreams.insertForModels(record);
+  for (const record of [{ ...copilot('opt-out'), usageRefreshIntervalMinutes: 0 }, { ...copilot('disabled'), enabled: false }, claude(true), { ...ollama(), config: { baseUrl: 'https://local.example', cloudUsage: false } }, { ...copilot('scoped'), proxyFallbackList: [{ id: 'direct_fetch', colos: ['TEST'] }] }]) {
+    await repo.upstreams.insert({ upstream: record });
   }
   await runUpstreamScheduledTasks(null);
   expect(mocks.fetch).not.toHaveBeenCalled();
 });
 
 test('a usage endpoint auth failure preserves inference credential health and other upstreams still run', async () => {
-  await repo.upstreams.insertForModels(chatgpt());
-  await repo.upstreams.insertForModels(ollama());
+  await repo.upstreams.insert({ upstream: chatgpt() });
+  await repo.upstreams.insert({ upstream: ollama() });
   mocks.fetch.mockImplementation(async url => new URL(url).hostname === 'chatgpt.com'
     ? new Response('usage scope denied', { status: 403 })
     : Response.json(new URL(url).pathname === '/api/usage' ? usageBody() : balanceBody()));
@@ -90,7 +90,7 @@ test('a usage endpoint auth failure preserves inference credential health and ot
 
 test('configured minutes control polling using existing usage observations', async () => {
   const record = { ...copilot(), usageRefreshIntervalMinutes: 15 };
-  await repo.upstreams.insertForModels(record);
+  await repo.upstreams.insert({ upstream: record });
   mocks.fetch.mockImplementation(async () => Response.json({ quota_snapshots: { premium_interactions: { entitlement: 300, quota_remaining: 200, percent_remaining: 200 / 3, unlimited: false } } }));
   await runUpstreamScheduledTasks('TEST');
   vi.setSystemTime(NOW + 60_000);
@@ -98,7 +98,7 @@ test('configured minutes control polling using existing usage observations', asy
   expect(mocks.fetch).toHaveBeenCalledTimes(1);
   const updateInterval = async (minutes: number) => {
     const stored = (await repo.upstreams.getById(record.id))!;
-    expect(await repo.upstreams.replaceForModels({ previous: stored, upstream: { ...stored, usageRefreshIntervalMinutes: minutes } })).not.toBeNull();
+    expect(await repo.upstreams.replace({ previous: stored, upstream: { ...stored, usageRefreshIntervalMinutes: minutes } })).not.toBeNull();
   };
   await updateInterval(1);
   await runUpstreamScheduledTasks('TEST');

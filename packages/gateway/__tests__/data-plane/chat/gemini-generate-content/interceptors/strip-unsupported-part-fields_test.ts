@@ -4,8 +4,8 @@ import { stripUnsupportedPartFields } from '../../../../../src/data-plane/chat/g
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPart, GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import { type ExecuteResult, eventResult, type GeminiGenerateContentInvocation } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { type ExecuteResult, eventResult, type GeminiGenerateContentInvocation } from '@floway-dev/upstream';
 
 const stubCtx = mockChatGatewayCtx();
 
