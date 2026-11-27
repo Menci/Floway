@@ -1,19 +1,22 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
+import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import { createUsageOverviewLoader } from '../../src/components/usage/data';
 import { i18n } from '../../src/i18n';
 import DashboardMonitorUsage, { clientLoader } from '../../src/routes/dashboard-monitor-usage';
 import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
+import { primeDefaultSession } from '../test-session';
 import { defaultUserPreferences } from '@floway-dev/protocols/browser';
 
 stubLocalStorage();
 
 afterEach(() => {
+  cleanup();
   useAuthStore.getState().clear();
   vi.unstubAllGlobals();
 });
@@ -54,10 +57,11 @@ const loaderData = {
 };
 
 const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderData']) => {
+  primeDefaultSession();
   const user = { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { ...defaultUserPreferences } };
   const router = createMemoryRouter([{
     path: '/',
-    Component: () => <Outlet context={{ user }} />,
+    Component: () => <OutcomeToastProvider><Outlet context={{ user }} /></OutcomeToastProvider>,
     children: [{
       index: true,
       Component: () => <DashboardMonitorUsage loaderData={data} matches={[] as never} params={{}} />,

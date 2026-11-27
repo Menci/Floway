@@ -1587,6 +1587,7 @@ const en = {
           invert: 'Invert series selection',
           none: 'Hide all series',
           toggleHint: 'Click to toggle. Shift-click or double-click to isolate.',
+          other: 'Other',
           otherCount_one: 'Other ({{count, number}})',
           otherCount_other: 'Other ({{count, number}})',
           otherPartial: 'Other ({{visible, number}}/{{count, number}})',

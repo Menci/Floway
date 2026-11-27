@@ -1570,6 +1570,7 @@ const zhHansCN = {
           invert: '反选序列',
           none: '隐藏全部序列',
           toggleHint: '点击切换。Shift 点击或双击可单独显示。',
+          other: '其他',
           otherCount_other: '其他（{{count, number}}）',
           otherPartial: '其他（{{visible, number}}/{{count, number}}）',
           otherToggleHint: '点击整组切换。Shift 点击或双击可单独显示。',

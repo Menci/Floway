@@ -4,7 +4,8 @@ import { metricConfig, summaryFieldForMetric } from './metrics';
 import type { DisplayUsageRecord, SearchChartModel, SearchUsageResponse, TokenChartModel, TokenCounters, TokenSummary, UsageMetric, UsageRange } from './types';
 import { decimalStringToPlottableNumber, sumDecimalStrings } from '../../lib/decimal-display';
 import type { ChartBucket } from '../charts/dashboard-time';
-import { hueForSeriesSlot } from '../charts/palette';
+import { hueForSeriesSlot, OTHER_SERIES_COLOR } from '../charts/palette';
+import { OTHER_SERIES_ID, otherSeriesGroup, partitionSeriesForOther, stableSeriesHues } from '../charts/series-grouping';
 import type { ChartSeries } from '../charts/series-legends';
 import { withUniqueSeriesLegends } from '../charts/series-legends';
 import { areaSeries, lineSeries } from '../charts/series-plot';
@@ -18,6 +19,9 @@ export const buildTokenChart = ({
   range,
   buckets,
   seriesHues,
+  seriesColors,
+  seriesMembers,
+  seriesWeights,
 }: {
   records: DisplayUsageRecord[];
   dimensionOptions: readonly MultiselectOption[];
@@ -25,6 +29,9 @@ export const buildTokenChart = ({
   range: UsageRange;
   buckets: ChartBucket[];
   seriesHues?: ReadonlyMap<string, number> | undefined;
+  seriesColors?: ReadonlyMap<string, string> | undefined;
+  seriesMembers?: ReadonlyMap<string, readonly string[]> | undefined;
+  seriesWeights?: ReadonlyMap<string, number> | undefined;
 }): TokenChartModel => {
   const { values, details } = aggregateTokenRecords(records, metric, range, buckets);
   const presentGroups = new Set(records.map(record => record.group));
@@ -39,6 +46,8 @@ export const buildTokenChart = ({
       id: option.value,
       label: option.label,
       hue: seriesHues?.get(option.value) ?? hueForSeriesSlot(slot),
+      color: seriesColors?.get(option.value),
+      members: seriesMembers?.get(option.value),
     })));
 
   const isPercent = metricConfig[metric].kind === 'percent';
@@ -57,6 +66,9 @@ export const buildTokenChart = ({
 
   return {
     entries,
+    weights: seriesWeights !== undefined
+      ? new Map(entries.map(entry => [entry.id, seriesWeights.get(entry.id) ?? 0]))
+      : tokenSeriesWeights(entries, buckets, values, details, isPercent),
     buckets,
     details,
     kind: 'token',
@@ -66,6 +78,27 @@ export const buildTokenChart = ({
       : { form: 'area', data: areaChartData(buckets, series) },
   };
 };
+
+// Cached rate is cacheRead / prompt, so prompt tokens weigh a percent metric
+// by its true denominator rather than by request count.
+export const usageRecordMetricWeight = (record: DisplayUsageRecord, metric: UsageMetric): number => {
+  if (metric === 'requests') return record.requests;
+  const counters = countersForRecord(record);
+  if (metricConfig[metric].kind === 'percent') return decimalStringToPlottableNumber(summarizeCounters(counters).prompt);
+  return plottableMetricValue(counters, metric) ?? 0;
+};
+
+const tokenSeriesWeights = (
+  entries: readonly ChartSeries[],
+  buckets: readonly ChartBucket[],
+  values: ReadonlyMap<string, ReadonlyMap<string, number | null>>,
+  details: ReadonlyMap<string, ReadonlyMap<string, TokenCounters>>,
+  isPercent: boolean,
+): Map<string, number> => new Map(entries.map(entry => [entry.id, buckets.reduce((sum, bucket) => {
+  if (!isPercent) return sum + (values.get(bucket.key)!.get(entry.id) ?? 0);
+  const detail = details.get(bucket.key)!.get(entry.id);
+  return sum + (detail === undefined ? 0 : decimalStringToPlottableNumber(summarizeCounters(detail).prompt));
+}, 0)]));
 
 type PlottedSeries = Array<{ entry: ChartSeries; data: Array<number | null> }>;
 
@@ -98,10 +131,16 @@ export const buildSearchChart = ({
   search,
   range,
   buckets,
+  foldSmallSeries,
+  hidden,
+  otherLabel,
 }: {
   search: SearchUsageResponse;
   range: UsageRange;
   buckets: ChartBucket[];
+  foldSmallSeries: boolean;
+  hidden: ReadonlySet<string>;
+  otherLabel: string;
 }): SearchChartModel => {
   const groups = new Map<string, Map<string, number>>();
   const presentGroups = new Set<string>();
@@ -126,22 +165,57 @@ export const buildSearchChart = ({
     groups.set(record.keyId, bucketValues);
   }
 
-  const entries = keyChartEntries(
+  const allWeights = new Map([...groups.entries()].map(([id, bucketValues]) => [
+    id,
+    [...bucketValues.values()].reduce((sum, value) => sum + value, 0),
+  ]));
+  const baseEntries = keyChartEntries(
     [...presentGroups],
     search.keys,
     search.records,
+    stableSeriesHues([...presentGroups], allWeights),
   );
+
+  const { top, other: otherItems } = partitionSeriesForOther(baseEntries, allWeights, foldSmallSeries);
+  let entries = baseEntries;
+  let weights = allWeights;
+
+  if (otherItems.length > 0) {
+    const otherBuckets = new Map<string, number>();
+    for (const entry of otherItems) {
+      if (hidden.has(entry.id)) continue;
+      for (const [bucket, count] of groups.get(entry.id)!) {
+        otherBuckets.set(bucket, (otherBuckets.get(bucket) ?? 0) + count);
+      }
+    }
+    const topSet = new Set(top.map(entry => entry.id));
+    const preservedTop = baseEntries.filter(entry => topSet.has(entry.id));
+    weights = new Map(preservedTop.map(entry => [entry.id, allWeights.get(entry.id)!]));
+    if (otherBuckets.size > 0) {
+      groups.set(OTHER_SERIES_ID, otherBuckets);
+      entries = withUniqueSeriesLegends([
+        ...preservedTop,
+        { id: OTHER_SERIES_ID, label: otherLabel, hue: 0, color: OTHER_SERIES_COLOR },
+      ]);
+      weights.set(OTHER_SERIES_ID, [...otherBuckets.values()].reduce((sum, value) => sum + value, 0));
+    } else {
+      entries = preservedTop;
+    }
+  }
+
   return {
     entries,
+    weights,
     buckets,
     kind: 'search',
     backends: [...backends].sort(),
     range,
+    other: otherSeriesGroup(otherItems),
     plot: {
       form: 'area',
       data: areaChartData(buckets, entries.map(entry => ({
         entry,
-        data: buckets.map(bucket => groups.get(entry.id)?.get(bucket.key) ?? 0),
+        data: buckets.map(bucket => groups.get(entry.id)!.get(bucket.key) ?? 0),
       }))),
     },
   };
@@ -198,6 +272,7 @@ const keyChartEntries = (
   presentKeyIds: string[],
   metadata: SearchUsageResponse['keys'],
   records: SearchUsageResponse['records'],
+  seriesHues?: ReadonlyMap<string, number>,
 ): ChartSeries[] => {
   const meta = new Map<string, { name: string | undefined; createdAt: string | undefined }>();
   for (const key of metadata) meta.set(key.id, { name: key.name, createdAt: key.createdAt });
@@ -222,7 +297,7 @@ const keyChartEntries = (
       return {
         id,
         label: meta.get(id)?.name ?? id.slice(0, 8),
-        hue: hueForSeriesSlot(slot),
+        hue: seriesHues?.get(id) ?? hueForSeriesSlot(slot),
         slot,
       };
     })
