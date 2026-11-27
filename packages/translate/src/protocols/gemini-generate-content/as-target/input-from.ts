@@ -20,7 +20,7 @@ import { isDataURL, parseDataURL } from '../../../shared/data-url.ts';
 import { DOCUMENT_CLOSE_TAG, documentImage, documentOpening } from '../../../shared/document.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { isPlainJSONObject } from '../../../shared/json/object.ts';
-import { geminiServiceTierFromIR } from '../service-tier.ts';
+import { generateContentServiceTierFromIR } from '../service-tier.ts';
 import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 import type {
   GeminiGenerateContentBlob,
@@ -71,7 +71,7 @@ const mediaPart = (media: IRInputMedia): GeminiGenerateContentPart => {
   case 'base64':
     return { inlineData: inlineBlob(media.data, media.media_type) };
   case 'file':
-    // A file id names an object in the source vendor's file store; Gemini
+    // A file id names an object in the source vendor's file store; GenerateContent
     // `fileData.fileUri` cannot resolve it.
     throw new TranslateInputException('Cannot translate a file id reference to Gemini GenerateContent; send the content inline or by URL.');
   }
@@ -101,7 +101,7 @@ const parseFunctionCallArguments = (argumentsJson: string): Record<string, unkno
   }
 };
 
-// Gemini `FunctionResponse.response` must be a JSON object (`google.protobuf.Struct`).
+// GenerateContent `FunctionResponse.response` must be a JSON object (`google.protobuf.Struct`).
 // Plain-object tool outputs pass through directly (matching `as-source/input-to.ts`,
 // which serializes `response` with `JSON.stringify`); non-object outputs and
 // error flags use Google's documented `output` / `error` keys.
@@ -229,12 +229,12 @@ const userMessageParts = (item: Extract<IRInputClientItem, { type: 'message'; ro
   return parts.length === 0 ? [{ text: '' }] : parts;
 };
 
-// Sentinel thoughtSignature documented by Google for non-Gemini or synthetic functionCall parts
+// Sentinel thoughtSignature documented by Google for migrated or synthetic functionCall parts
 // in multi-turn conversations (attached only to the first functionCall in a turn).
 // https://ai.google.dev/gemini-api/docs/thought-signatures
-const GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR = 'skip_thought_signature_validator';
+const SKIP_THOUGHT_SIGNATURE_VALIDATOR = 'skip_thought_signature_validator';
 
-type NormalizedGeminiContent = GeminiGenerateContentContent & { role: 'user' | 'model'; parts: GeminiGenerateContentPart[] };
+type NormalizedContent = GeminiGenerateContentContent & { role: 'user' | 'model'; parts: GeminiGenerateContentPart[] };
 
 const systemTextParts = (content: readonly IRInputTextPart[]): GeminiGenerateContentPart[] =>
   content.flatMap(part => (part.text === '' ? [] : [{ text: part.text }]));
@@ -274,7 +274,7 @@ const assistantParts = (
             ? { input: item.input }
             : item.arguments === undefined ? {} : parseFunctionCallArguments(item.arguments),
         },
-        ...(sawFunctionCall ? {} : { thoughtSignature: GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR }),
+        ...(sawFunctionCall ? {} : { thoughtSignature: SKIP_THOUGHT_SIGNATURE_VALIDATOR }),
       };
       sawFunctionCall = true;
       parts.push(part);
@@ -287,7 +287,7 @@ const assistantParts = (
 };
 
 const appendContentParts = (
-  contents: NormalizedGeminiContent[],
+  contents: NormalizedContent[],
   role: 'user' | 'model',
   parts: readonly GeminiGenerateContentPart[],
 ): void => {
@@ -303,9 +303,9 @@ const appendContentParts = (
 const buildConversation = (
   turns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>)[],
   matchedToolResults: GeminiGenerateContentToolResultLookup,
-): { readonly systemParts: GeminiGenerateContentPart[]; readonly contents: NormalizedGeminiContent[] } => {
+): { readonly systemParts: GeminiGenerateContentPart[]; readonly contents: NormalizedContent[] } => {
   const systemParts: GeminiGenerateContentPart[] = [];
-  const contents: NormalizedGeminiContent[] = [];
+  const contents: NormalizedContent[] = [];
   let hoisting = true;
   let pendingEmptyModelBoundary = false;
   let pendingToolResults: BuiltToolResult[] = [];
@@ -438,7 +438,7 @@ const thinkingLevelFromEffort = (effort: string): string => {
   }
 };
 
-// Gemini rejects setting `thinkingBudget` and `thinkingLevel` simultaneously.
+// GenerateContent rejects setting `thinkingBudget` and `thinkingLevel` simultaneously.
 // Explicit numeric budgets take `thinkingBudget`, explicit effort uses
 // `thinkingLevel` (including `thinking: { type: 'adaptive' }` with explicit
 // `output_config.effort`), and bare dynamic thinking falls back to `-1`.
@@ -527,7 +527,7 @@ export const geminiGenerateContentPayloadFromIR = (
   const toolConfig = choice === undefined ? undefined : toolConfigFromIR(choice, declaredTools);
   const generationConfig = geminiGenerateContentSettingsFromIR(request.settings);
   // Omit `auto` since GenerateContent has no matching service tier value.
-  const serviceTier = request.settings.service_tier === 'auto' ? undefined : geminiServiceTierFromIR(request.settings.service_tier);
+  const serviceTier = request.settings.service_tier === 'auto' ? undefined : generateContentServiceTierFromIR(request.settings.service_tier);
   const { systemParts, contents } = buildConversation(turns, matchedToolResults);
 
   return {

@@ -9,22 +9,22 @@ import { allocateToolNames, type ToolNameContext } from '../../composition/reque
 import type { IRInputRequestHeader, IRInputTurn } from '../../ir/input/types.ts';
 import type { GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 
-interface GeminiTargetContext extends ToolNameContext {
+interface GenerateContentTargetContext extends ToolNameContext {
   readonly fallbackModel: string;
 }
 
-interface RestoredGeminiCall extends PendingCall {
+interface RestoredGenerateContentCall extends PendingCall {
   readonly wireId?: string;
 }
 
 const restoredCallsOf = (
   piece: RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>,
-): readonly RestoredGeminiCall[] => {
+): readonly RestoredGenerateContentCall[] => {
   const calls = piece.turn.flatMap(entry => (entry.parts ?? []).flatMap(part => (part.functionCall === undefined ? [] : [part.functionCall])));
   if (calls.length !== piece.sourceCallIds.length) {
     throw new Error('Authenticated round-trip call IDs do not match restored Gemini GenerateContent function calls');
   }
-  return calls.map((call, index): RestoredGeminiCall => {
+  return calls.map((call, index): RestoredGenerateContentCall => {
     const sourceCallId = piece.sourceCallIds[index];
     if (call.id !== undefined && call.id !== '') {
       if (sourceCallId !== call.id) {
@@ -43,7 +43,7 @@ export const geminiGenerateContentTargetProtocol: TargetProtocol<
   'geminiGenerateContent',
   GeminiGenerateContentRequest,
   GeminiGenerateContentStreamEvent,
-  GeminiTargetContext
+  GenerateContentTargetContext
 > = {
   name: 'geminiGenerateContent',
   write: (
@@ -51,7 +51,7 @@ export const geminiGenerateContentTargetProtocol: TargetProtocol<
     turns: readonly (IRInputTurn | RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>)[],
   ) => {
     const restoredCallCounts = new Map<RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>, number>();
-    const matched = new Map<IRInputToolResultItemWithCallId, MatchedCall<RestoredGeminiCall>>();
+    const matched = new Map<IRInputToolResultItemWithCallId, MatchedCall<RestoredGenerateContentCall>>();
     const assigned = assignCallIds(turns, piece => {
       const calls = restoredCallsOf(piece);
       restoredCallCounts.set(piece, calls.length);

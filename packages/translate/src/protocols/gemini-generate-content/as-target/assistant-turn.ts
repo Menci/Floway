@@ -1,7 +1,7 @@
 import type { ReferenceState, ReferenceStateLeaves, ReferenceableValue, TextRule, JSONRule } from '../../../round-trip/reference/types.ts';
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
 
-type GeminiPartRule = {
+type GenerateContentPartRule = {
   text: TextRule;
   inlineData: { data: TextRule };
   audioTranscription: { text: TextRule };
@@ -9,5 +9,5 @@ type GeminiPartRule = {
 };
 
 export type GeminiGenerateContentInputAssistantTurn = Array<Omit<GeminiGenerateContentContent, 'role'> & { role: 'model' }>;
-export type GeminiGenerateContentReferenceableInputAssistantTurn<Reference> = ReferenceableValue<GeminiGenerateContentInputAssistantTurn, [{ parts: [GeminiPartRule] }], Reference>;
-export type GeminiGenerateContentInputAssistantTurnState<States extends ReferenceStateLeaves> = ReferenceState<GeminiGenerateContentInputAssistantTurn, [{ parts: [GeminiPartRule] }], States>;
+export type GeminiGenerateContentReferenceableInputAssistantTurn<Reference> = ReferenceableValue<GeminiGenerateContentInputAssistantTurn, [{ parts: [GenerateContentPartRule] }], Reference>;
+export type GeminiGenerateContentInputAssistantTurnState<States extends ReferenceStateLeaves> = ReferenceState<GeminiGenerateContentInputAssistantTurn, [{ parts: [GenerateContentPartRule] }], States>;

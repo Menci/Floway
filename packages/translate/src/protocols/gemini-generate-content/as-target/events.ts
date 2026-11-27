@@ -11,7 +11,7 @@ import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFi
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import { geminiServiceTierToIR } from '../service-tier.ts';
+import { generateContentServiceTierToIR } from '../service-tier.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE,
@@ -75,7 +75,7 @@ interface TextRun {
   readonly citationKeys: Set<string>;
 }
 
-interface GeminiChoiceState {
+interface GenerateContentChoiceState {
   readonly irIndex: number;
   message?: IRItemHandle | undefined;
   activeTextRun?: TextRun | undefined;
@@ -104,7 +104,7 @@ const ensureRunIndex = (run: TextRun): TextCoordinateIndex => {
 // https://ai.google.dev/api/generate-content#Segment
 // https://github.com/googleapis/python-genai/issues/961#issuecomment-3134170829
 const resolveGroundingTarget = (
-  choice: GeminiChoiceState,
+  choice: GenerateContentChoiceState,
   segmentSpec: NonNullable<NonNullable<GeminiGenerateContentGroundingMetadata['groundingSupports']>[number]['segment']> | undefined,
 ): { readonly run: TextRun; readonly baseByte: number } | undefined => {
   const partIndex = segmentSpec?.partIndex ?? 0;
@@ -219,13 +219,13 @@ export const readGeminiGenerateContentEvents = async function* (
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder();
   const namingOf = (wireName: string) => options.originalToolNames?.get(wireName) ?? { name: wireName };
-  const choices = new Map<number, GeminiChoiceState>();
+  const choices = new Map<number, GenerateContentChoiceState>();
   const usageAccumulator: GeminiGenerateContentUsageAccumulator = {};
   let nextIRChoiceIndex = 0;
   let started = false;
   let hasModel = false;
 
-  const choiceState = (wireIndex: number): GeminiChoiceState => {
+  const choiceState = (wireIndex: number): GenerateContentChoiceState => {
     let state = choices.get(wireIndex);
     if (state === undefined) {
       state = {
@@ -254,20 +254,20 @@ export const readGeminiGenerateContentEvents = async function* (
     handle.append(field, text, [pieceId]);
   };
 
-  const closeTextPart = (choice: GeminiChoiceState): void => {
+  const closeTextPart = (choice: GenerateContentChoiceState): void => {
     if (choice.activeTextRun === undefined) return;
     choice.activeTextRun.part.end();
     choice.activeTextRun = undefined;
   };
 
-  const closeMessage = (choice: GeminiChoiceState, status: 'completed' | 'incomplete' = 'completed'): void => {
+  const closeMessage = (choice: GenerateContentChoiceState, status: 'completed' | 'incomplete' = 'completed'): void => {
     closeTextPart(choice);
     if (choice.message === undefined) return;
     choice.message.end(status);
     choice.message = undefined;
   };
 
-  const closeReasoning = (choice: GeminiChoiceState, status: 'completed' | 'incomplete' = 'completed'): void => {
+  const closeReasoning = (choice: GenerateContentChoiceState, status: 'completed' | 'incomplete' = 'completed'): void => {
     if (choice.reasoning === undefined) return;
     choice.reasoning.end(status);
     choice.reasoning = undefined;
@@ -275,7 +275,7 @@ export const readGeminiGenerateContentEvents = async function* (
 
   const assignUsage = (usage: GeminiGenerateContentUsageMetadata): void => {
     ir.usage(usageToIR(usage, usageAccumulator));
-    const tier = geminiServiceTierToIR(typeof usage.serviceTier === 'string' ? usage.serviceTier : undefined);
+    const tier = generateContentServiceTierToIR(typeof usage.serviceTier === 'string' ? usage.serviceTier : undefined);
     if (tier !== undefined) ir.assign(['service_tier'], tier);
   };
 
@@ -296,7 +296,7 @@ export const readGeminiGenerateContentEvents = async function* (
     started = true;
   };
 
-  const applyGroundingMetadata = (choiceIndex: number, choice: GeminiChoiceState, metadata: GeminiGenerateContentGroundingMetadata): void => {
+  const applyGroundingMetadata = (choiceIndex: number, choice: GenerateContentChoiceState, metadata: GeminiGenerateContentGroundingMetadata): void => {
     const chunks = metadata.groundingChunks ?? [];
     if (chunks.length === 0) return;
     const touched = new Set<TextRun>();
@@ -338,7 +338,7 @@ export const readGeminiGenerateContentEvents = async function* (
     }
   };
 
-  const applyLogprobs = (choiceIndex: number, choice: GeminiChoiceState, candidate: GeminiGenerateContentCandidate): void => {
+  const applyLogprobs = (choiceIndex: number, choice: GenerateContentChoiceState, candidate: GeminiGenerateContentCandidate): void => {
     const chosen = candidate.logprobsResult?.chosenCandidates;
     if (chosen === undefined || chosen.length === 0) return;
     const top = candidate.logprobsResult?.topCandidates ?? [];
@@ -362,7 +362,7 @@ export const readGeminiGenerateContentEvents = async function* (
     }
   };
 
-  const readPart = (choiceIndex: number, choice: GeminiChoiceState, part: GeminiGenerateContentPart): void => {
+  const readPart = (choiceIndex: number, choice: GenerateContentChoiceState, part: GeminiGenerateContentPart): void => {
     const partIndex = appendGeminiGenerateContentPart(choice.nativeParts, part);
 
     if (part.thought === true) {
@@ -493,7 +493,7 @@ export const readGeminiGenerateContentEvents = async function* (
   };
 
   const endChoice = (
-    choice: GeminiChoiceState,
+    choice: GenerateContentChoiceState,
     finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter',
   ): void => {
     if (choice.ended) return;
@@ -527,7 +527,7 @@ export const readGeminiGenerateContentEvents = async function* (
     ir.event({
       type: 'error',
       error: {
-        message: `Gemini ended the response with ${finishReason}${suffix}`,
+        message: `GenerateContent ended the response with ${finishReason}${suffix}`,
         type: 'api_error',
         code: finishReason,
       },

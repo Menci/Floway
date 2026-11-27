@@ -18,7 +18,7 @@ import {
 
 const options = () => ({ sidecarCodec: createTestSidecarCodec('gemini-target-input') });
 
-test('translates Anthropic Messages system, documents, tool results, thinking budget, and tool choices to Gemini', async () => {
+test('translates Anthropic Messages system, documents, tool results, thinking budget, and tool choices to GenerateContent', async () => {
   const payload: AnthropicMessagesPayload = {
     model: 'gemini-2.5-pro',
     max_tokens: 4096,
@@ -126,7 +126,7 @@ test('translates Anthropic Messages system, documents, tool results, thinking bu
   });
 });
 
-test('translates OpenAI Responses namespaces, custom tools, allowed_tools subsets, effort xhigh, and reasoning_summary to Gemini', async () => {
+test('translates OpenAI Responses namespaces, custom tools, allowed_tools subsets, effort xhigh, and reasoning_summary to GenerateContent', async () => {
   const source: OpenAIResponsesRequestPayloadEx = {
     model: 'gemini-2.5-pro',
     stream: true,
@@ -260,7 +260,7 @@ test('hoists leading developer messages, handles logprobs/json_object/adaptive t
     ],
   }]);
 
-  // Responses `include` omitting logprobs sets `logprobs: false` in IR; Gemini must omit both fields.
+  // Responses `include` omitting logprobs sets `logprobs: false` in IR; GenerateContent must omit both fields.
   const withoutLogprobs = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
     stream: true,
@@ -306,9 +306,9 @@ test('hoists leading developer messages, handles logprobs/json_object/adaptive t
   });
 });
 
-test('round-trips parallel id-less Gemini functionCalls answered out of order (even with interleaved user text) and thoughtSignature', async () => {
-  const codec = createTestSidecarCodec('idless-gemini-roundtrip');
-  const geminiFrames: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [
+test('round-trips parallel id-less GenerateContent functionCalls answered out of order (even with interleaved user text) and thoughtSignature', async () => {
+  const codec = createTestSidecarCodec('idless-generate-content-roundtrip');
+  const generateContentFrames: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [
     eventFrame({
       responseId: 'gem_rt_1',
       modelVersion: 'gemini-2.5-pro',
@@ -343,7 +343,7 @@ test('round-trips parallel id-less Gemini functionCalls answered out of order (e
     input: 'Edit file',
   };
   const respTrip1 = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent(respTurn1, { sidecarCodec: codec }));
-  const respResult1 = await collectOpenAIResponsesProtocolEventsToResult(respTrip1.events(iterate(geminiFrames)));
+  const respResult1 = await collectOpenAIResponsesProtocolEventsToResult(respTrip1.events(iterate(generateContentFrames)));
   const respPatch = respResult1.output.find(item => item.type === 'custom_tool_call');
   const respRead = respResult1.output.find(item => item.type === 'function_call');
   if (respPatch === undefined || respRead === undefined) throw new Error('Expected translated tool calls');
@@ -382,7 +382,7 @@ test('round-trips parallel id-less Gemini functionCalls answered out of order (e
   ]);
 });
 
-test('returns input-error when a source file_id media reference cannot be resolved by Gemini', async () => {
+test('returns input-error when a source file_id media reference cannot be resolved by GenerateContent', async () => {
   const result = await routeOpenAIResponsesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
     stream: true,
@@ -969,7 +969,7 @@ test('covers assistant custom_tool_call/refusal, empty boundaries, single-kind l
     .toThrow(new TranslateInputException('Cannot translate json_schema response format without a schema.'));
 });
 
-test('carries application/pdf mimeType from Anthropic URL PDF documents onto Gemini fileData', async () => {
+test('carries application/pdf mimeType from Anthropic URL PDF documents onto GenerateContent fileData', async () => {
   const trip = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
     max_tokens: 256,

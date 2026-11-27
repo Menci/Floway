@@ -108,10 +108,10 @@ export const anthropicMessagesAttempt = {
       if (trip.type === 'input-error') return inputErrorResult(trip, ctx.attempt.telemetry);
       const { model: _model, ...target } = trip.target;
       const capture = captureFromDump(ctx.dump, targetApi);
-      const geminiResult = await geminiGenerateContentAttempt.countTokens({
+      const generateContentResult = await geminiGenerateContentAttempt.countTokens({
         payload: target, ctx, candidate, headers: invocation.headers,
       });
-      return reshapeTranslatedCountTokens(geminiResult, {
+      return reshapeTranslatedCountTokens(generateContentResult, {
         translateError: trip.error,
         extractCount: decoded => decoded.totalTokens,
         encodeCount: input_tokens => ({ input_tokens }),

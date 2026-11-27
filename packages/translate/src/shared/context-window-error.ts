@@ -4,7 +4,7 @@ interface MaybeErrorFields {
 }
 
 // Translated errors recognize OpenAI/Codex patterns, Copilot's message
-// fragment, and Google Gemini / Vertex AI's token-limit wording. Copilot's
+// fragment, and Google GenerateContent / Vertex AI's token-limit wording. Copilot's
 // native Messages boundary also applies its literal-substring classifier.
 // https://github.com/openai/codex/blob/6e5f665feb9b71e1500a5721036fbdb8e871f4b0/codex-rs/codex-api/src/sse/responses.rs#L1138-L1152
 // https://github.com/microsoft/debug-gym/blob/a50a8f81fe8035e11947d4d179333d64e305b491/debug_gym/llms/openai.py#L36-L42

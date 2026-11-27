@@ -579,7 +579,7 @@ test('generate lowers a standalone function_call_output to external context acro
   ]);
 });
 
-test('generate translates through Gemini, lowers agent_message, preserves rawJSON numbers, and pivots compact via the shim', async () => {
+test('generate translates through GenerateContent, lowers agent_message, preserves rawJSON numbers, and pivots compact via the shim', async () => {
   installRepo();
   let capturedBody: GeminiGenerateContentPayload | undefined;
   let wireBody = '';

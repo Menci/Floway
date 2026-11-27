@@ -42,7 +42,7 @@ const googleRpcErrorType = (status: string): string | undefined => {
 // Keep numeric `code` and canonical RPC `status` under their wire names inside
 // `provider_specific_fields` while mapping `status` to canonical `type`, avoiding
 // a second `code` key that collides on sources without a top-level `code` field.
-const classifyGeminiRpcError = (error: Readonly<Record<string, unknown>>): ErrorPayloadClassification | undefined => {
+const classifyGoogleRpcError = (error: Readonly<Record<string, unknown>>): ErrorPayloadClassification | undefined => {
   const status = typeof error.status === 'string' ? error.status : undefined;
   const httpStatus = typeof error.code === 'number' ? geminiGenerateContentStatusForHttpStatus(error.code) : undefined;
   const defaultType = (status === undefined ? undefined : googleRpcErrorType(status))
@@ -60,7 +60,7 @@ const unwrapSingleElementArray = (parsed: unknown): unknown =>
   Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : parsed;
 
 export const readGeminiGenerateContentErrorBody = (body: Uint8Array): IRErrorPayload | undefined =>
-  irErrorPayloadFromBody(body, { unwrap: unwrapSingleElementArray, classify: classifyGeminiRpcError });
+  irErrorPayloadFromBody(body, { unwrap: unwrapSingleElementArray, classify: classifyGoogleRpcError });
 
 export const geminiGenerateContentErrorPayloadFromWire = (wire: unknown): IRErrorPayload =>
-  errorPayloadFromWire(wire, { classify: classifyGeminiRpcError });
+  errorPayloadFromWire(wire, { classify: classifyGoogleRpcError });

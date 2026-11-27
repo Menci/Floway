@@ -648,7 +648,7 @@ test('maps safety refusal_details, promptFeedback blocking, failed output reason
   expect(malformed.state.choices).toEqual([]);
   expect(malformed.records.at(-1)).toEqual({
     type: 'error',
-    error: { type: 'api_error', code: 'MALFORMED_FUNCTION_CALL', message: 'Gemini ended the response with MALFORMED_FUNCTION_CALL' },
+    error: { type: 'api_error', code: 'MALFORMED_FUNCTION_CALL', message: 'GenerateContent ended the response with MALFORMED_FUNCTION_CALL' },
   });
 
   // Mid-stream failed finish with non-empty finishMessage terminates the stream with an api_error carrying the message.
@@ -664,7 +664,7 @@ test('maps safety refusal_details, promptFeedback blocking, failed output reason
   ]));
   expect(midStreamFailed.records.at(-1)).toEqual({
     type: 'error',
-    error: { type: 'api_error', code: 'MALFORMED_RESPONSE', message: 'Gemini ended the response with MALFORMED_RESPONSE: Broken wire payload' },
+    error: { type: 'api_error', code: 'MALFORMED_RESPONSE', message: 'GenerateContent ended the response with MALFORMED_RESPONSE: Broken wire payload' },
   });
 
   const beforeCandidateError = await runReader(iterate([

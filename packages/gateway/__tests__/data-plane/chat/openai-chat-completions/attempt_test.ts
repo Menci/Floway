@@ -213,7 +213,7 @@ test('generate preserves translated instructions before rewriting inline system 
   assertEquals(input[2], { type: 'message', role: 'developer', content: 'inline instructions' });
 });
 
-test('generate translates through Gemini, strips model, and preserves relay HTTP error semantics', async () => {
+test('generate translates through GenerateContent, strips model, and preserves relay HTTP error semantics', async () => {
   installRepo();
   let capturedBody: GeminiGenerateContentPayload | undefined;
   const result = await openaiChatCompletionsAttempt.generate({

@@ -212,9 +212,9 @@ test('maps Google RPC status errors across HTTP and stream phases onto client pr
     },
   })]);
 
-  // Non-Gemini targets do not unwrap Google `:streamGenerateContent` error arrays.
-  const nonGeminiTrip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));
-  expect(nonGeminiTrip.error(429, new Headers(), encodedArray)).toBeUndefined();
+  // Non-GenerateContent targets do not unwrap Google `:streamGenerateContent` error arrays.
+  const nonGenerateContentTrip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));
+  expect(nonGenerateContentTrip.error(429, new Headers(), encodedArray)).toBeUndefined();
 });
 
 test.each([
@@ -234,7 +234,7 @@ test.each([
     : { error: { code: 400, status: 'INVALID_ARGUMENT', message: 'too long' } });
 });
 
-test('Anthropic Messages via Gemini restates Gemini input-token overflow to prompt-too-long in both HTTP and stream phases', async () => {
+test('Anthropic Messages via GenerateContent restates GenerateContent input-token overflow to prompt-too-long in both HTTP and stream phases', async () => {
   const trip = await requireTrip(routeAnthropicMessagesViaGeminiGenerateContent(messages, options()));
   const googleOverflow = {
     error: {

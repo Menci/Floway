@@ -17,7 +17,7 @@ import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.
 import { isCompleteJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { GeminiGenerateContentInputAssistantTurnState, GeminiGenerateContentInputAssistantTurn } from '../as-target/assistant-turn.ts';
-import { geminiServiceTierFromIR } from '../service-tier.ts';
+import { generateContentServiceTierFromIR } from '../service-tier.ts';
 import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
 import {
   type GeminiGenerateContentCandidate,
@@ -429,7 +429,7 @@ export const writeGeminiGenerateContentEvents = async function* (
     }
 
     if (record.type === 'finish' && state.usage !== undefined) {
-      const serviceTier = geminiServiceTierFromIR(state.service_tier);
+      const serviceTier = generateContentServiceTierFromIR(state.service_tier);
       yield emit({ usageMetadata: { ...usageFromIR(state.usage), ...(serviceTier === undefined ? {} : { serviceTier }) } });
     }
   }

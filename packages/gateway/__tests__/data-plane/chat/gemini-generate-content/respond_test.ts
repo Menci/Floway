@@ -117,7 +117,7 @@ test.each([
     expectedOutcome: 'completed',
     expectErrorFrame: false,
   },
-])('Gemini SSE done frame after $name', async ({ event, expectedOutcome, expectErrorFrame }) => {
+])('GenerateContent SSE done frame after $name', async ({ event, expectedOutcome, expectErrorFrame }) => {
   const settled = Promise.withResolvers<string>();
   const dump = {
     frame: () => {},

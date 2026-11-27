@@ -221,7 +221,7 @@ test('countTokens applies generation request transforms before provider dispatch
   }]);
 });
 
-test('generate translates through Gemini, strips model, and forwards stream error arrays and raw non-JSON HTTP errors untouched', async () => {
+test('generate translates through GenerateContent, strips model, and forwards stream error arrays and raw non-JSON HTTP errors untouched', async () => {
   installRepo();
   let capturedBody: GeminiGenerateContentPayload | undefined;
   const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => {
@@ -314,7 +314,7 @@ test('generate translates through Gemini, strips model, and forwards stream erro
   expect(decodeResponseBody(htmlError.body)).toBe('<html>504 Gateway Timeout</html>');
 });
 
-test('countTokens translates through Gemini, runs request interceptors, and surfaces malformed 200 as internal-error', async () => {
+test('countTokens translates through GenerateContent, runs request interceptors, and surfaces malformed 200 as internal-error', async () => {
   installRepo();
   let capturedBody: GeminiGenerateContentPayload | undefined;
   let capturedHeaders: Headers | undefined;

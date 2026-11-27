@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { fixtureFrames } from './fixtures.ts';
 import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readGeminiGenerateContentEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { usageToIR as messagesUsageToIR } from '../../src/protocols/anthropic-messages/as-target/usage.ts';
-import { usageToIR as geminiUsageToIR } from '../../src/protocols/gemini-generate-content/as-target/usage.ts';
+import { usageToIR as generateContentUsageToIR } from '../../src/protocols/gemini-generate-content/as-target/usage.ts';
 import { usageToIR as chatUsageToIR } from '../../src/protocols/openai-chat-completions/as-target/usage.ts';
 import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';
 import { collectIR } from '../ir/output/helpers.ts';
@@ -60,7 +60,7 @@ test.each([
   ['ChatCompletions prompt_tokens', chatUsageToIR, { completion_tokens: 1, total_tokens: 1 }, { output_tokens_inclusive: 1, total_tokens: 1 }],
   ['Responses total_tokens', responsesUsageToIR, { input_tokens: 1, output_tokens: 1 }, { input_tokens_inclusive: 1, output_tokens_inclusive: 1 }],
   ['Messages output_tokens', (usage: Record<string, any>) => messagesUsageToIR(usage, {}), { input_tokens: 1 }, { input_tokens_inclusive: 1 }],
-  ['GenerateContent null and omitted fields', (usage: Record<string, any>) => geminiUsageToIR(usage), { promptTokenCount: 1, thoughtsTokenCount: null as never, cachedContentTokenCount: null as never, promptTokensDetails: [{ modality: 'toString', tokenCount: 5 }] }, { input_tokens_inclusive: 1 }],
+  ['GenerateContent null and omitted fields', (usage: Record<string, any>) => generateContentUsageToIR(usage), { promptTokenCount: 1, thoughtsTokenCount: null as never, cachedContentTokenCount: null as never, promptTokensDetails: [{ modality: 'toString', tokenCount: 5 }] }, { input_tokens_inclusive: 1 }],
 ] as const)('%s is omitted when the upstream does not report it', (_name, convert, usage, expected) => {
   expect(convert(usage)).toEqual(expected);
 });
@@ -92,7 +92,7 @@ test('GenerateContent retains prior usage counts and modality details across par
     reasoning_tokens: 40,
     input_text_tokens: 100,
   });
-  expect(() => geminiUsageToIR({ promptTokenCount: 4, cachedContentTokenCount: 5 })).toThrow(RangeError);
+  expect(() => generateContentUsageToIR({ promptTokenCount: 4, cachedContentTokenCount: 5 })).toThrow(RangeError);
 });
 
 test.each([
