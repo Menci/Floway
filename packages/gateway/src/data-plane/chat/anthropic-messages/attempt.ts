@@ -1,4 +1,4 @@
-import { anthropicErrorEnvelopeBody, anthropicErrorTypeForStatus, inputErrorResult } from './errors.ts';
+import { inputErrorResult } from './errors.ts';
 import { anthropicMessagesInterceptors, anthropicMessagesCountTokensInterceptors } from './interceptors/index.ts';
 import type { AnthropicMessagesInvocation } from './interceptors/types.ts';
 import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
@@ -113,7 +113,6 @@ export const anthropicMessagesAttempt = {
       });
       return reshapeTranslatedCountTokens(geminiResult, {
         translateError: trip.error,
-        fallbackErrorBody: (status, message) => anthropicErrorEnvelopeBody(anthropicErrorTypeForStatus(status), message),
         extractCount: decoded => decoded.totalTokens,
         encodeCount: input_tokens => ({ input_tokens }),
         performance: ctx.attempt.telemetry,

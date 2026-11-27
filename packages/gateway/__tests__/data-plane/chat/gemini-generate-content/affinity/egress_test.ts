@@ -51,11 +51,28 @@ describe('Gemini generateContent affinity egress', () => {
     for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames([
       eventFrame({
         turnToken: 'v1_turn_token',
-        candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'visible' }] } }],
+        candidates: [{
+          index: 0,
+          content: { role: 'model', parts: [{ text: 'visible' }] },
+          logprobsResult: {
+            chosenCandidates: [{ token: 'vis', logProbability: -0.25 }],
+            topCandidates: [{ candidates: [{ token: 'vis', logProbability: -0.25 }] }],
+            logProbabilitySum: -0.25,
+          },
+        }],
       }),
       eventFrame({
         turnToken: 'v1_turn_token',
-        candidates: [{ index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'natural' }] }, finishReason: 'STOP' }],
+        candidates: [{
+          index: 0,
+          content: { role: 'model', parts: [{ thoughtSignature: 'natural' }] },
+          logprobsResult: {
+            chosenCandidates: [{ token: 'ible', logProbability: -0.75 }],
+            topCandidates: [{ candidates: [{ token: 'ible', logProbability: -0.75 }] }],
+            logProbabilitySum: -0.75,
+          },
+          finishReason: 'STOP',
+        }],
         usageMetadata: { totalTokenCount: 2 },
       }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
@@ -65,6 +82,17 @@ describe('Gemini generateContent affinity egress', () => {
       candidates: [{
         index: 0,
         content: { role: 'model', parts: [{ text: 'visible', thoughtSignature: 'wrapped:natural' }] },
+        logprobsResult: {
+          chosenCandidates: [
+            { token: 'vis', logProbability: -0.25 },
+            { token: 'ible', logProbability: -0.75 },
+          ],
+          topCandidates: [
+            { candidates: [{ token: 'vis', logProbability: -0.25 }] },
+            { candidates: [{ token: 'ible', logProbability: -0.75 }] },
+          ],
+          logProbabilitySum: -1,
+        },
         finishReason: 'STOP',
       }],
       usageMetadata: { totalTokenCount: 2 },

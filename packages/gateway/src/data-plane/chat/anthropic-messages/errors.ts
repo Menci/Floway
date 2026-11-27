@@ -3,20 +3,6 @@ import { generateAnthropicId, type AnthropicMessagesStreamEventEx } from '@flowa
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/upstream';
 
-// https://platform.claude.com/docs/en/api/errors#http-errors
-export const anthropicErrorTypeForStatus = (status: number): string => {
-  switch (status) {
-  case 400: return 'invalid_request_error';
-  case 401: return 'authentication_error';
-  case 403: return 'permission_error';
-  case 404: return 'not_found_error';
-  case 413: return 'request_too_large';
-  case 429: return 'rate_limit_error';
-  case 529: return 'overloaded_error';
-  default: return 'api_error';
-  }
-};
-
 // Byte-shape matches Anthropic-direct: `{type:'error', error:{type, message},
 // request_id}` with `request_id` at the top level (alongside `error`, not
 // nested inside it) and key order load-bearing for byte-faithfulness.

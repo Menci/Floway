@@ -1,12 +1,8 @@
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import {
-  errorEnvelopeOf,
   errorPayloadFromWire,
-  errorPayloadOf,
-  extensionOf,
-  readErrorBodyEnvelope,
-  recordOf,
-  stringOf,
+  irErrorPayloadFromBody,
+  type ErrorPayloadClassification,
 } from '../../../shared/api-error.ts';
 import { geminiGenerateContentStatusForHttpStatus } from '@floway-dev/protocols/gemini-generate-content';
 
@@ -46,29 +42,15 @@ const googleRpcErrorType = (status: string): string | undefined => {
 // Keep numeric `code` and canonical RPC `status` under their wire names inside
 // `provider_specific_fields` while mapping `status` to canonical `type`, avoiding
 // a second `code` key that collides on sources without a top-level `code` field.
-const geminiRpcErrorPayloadOf = (
-  error: Readonly<Record<string, unknown>>,
-  envelopeDetails: readonly Readonly<Record<string, unknown>>[],
-  requireMessage: boolean,
-): IRErrorPayload | undefined => {
-  const status = stringOf(error.status);
+const classifyGeminiRpcError = (error: Readonly<Record<string, unknown>>): ErrorPayloadClassification | undefined => {
+  const status = typeof error.status === 'string' ? error.status : undefined;
   const httpStatus = typeof error.code === 'number' ? geminiGenerateContentStatusForHttpStatus(error.code) : undefined;
-  const mappedType = (status === undefined ? undefined : googleRpcErrorType(status))
+  const defaultType = (status === undefined ? undefined : googleRpcErrorType(status))
     ?? (httpStatus === undefined ? undefined : googleRpcErrorType(httpStatus));
-  if (typeof error.code !== 'number' && mappedType === undefined) return undefined;
-  const message = stringOf(error.message) ?? stringOf(error.msg);
-  if (message === undefined && requireMessage) return undefined;
-  const explicitType = stringOf(error.type);
-  const type = explicitType ?? mappedType;
-  const represented = new Set([
-    ...(message === undefined ? [] : [typeof error.message === 'string' ? 'message' : 'msg']),
-    ...(explicitType === undefined ? [] : ['type']),
-  ]);
-  const extra = extensionOf(error, represented, envelopeDetails);
+  if (typeof error.code !== 'number' && defaultType === undefined) return undefined;
   return {
-    message: message ?? '',
-    ...(type === undefined ? {} : { type }),
-    ...(extra === undefined ? {} : { provider_specific_fields: extra }),
+    ...(defaultType === undefined ? {} : { defaultType }),
+    omitStatusAsCode: true,
   };
 };
 
@@ -77,19 +59,8 @@ const geminiRpcErrorPayloadOf = (
 const unwrapSingleElementArray = (parsed: unknown): unknown =>
   Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : parsed;
 
-export const readGeminiGenerateContentErrorBody = (body: Uint8Array): IRErrorPayload | undefined => {
-  const envelope = readErrorBodyEnvelope(body, unwrapSingleElementArray);
-  if (envelope === undefined) return undefined;
-  return geminiRpcErrorPayloadOf(envelope.source, envelope.details, true)
-    ?? errorPayloadOf(envelope.source, envelope.details);
-};
+export const readGeminiGenerateContentErrorBody = (body: Uint8Array): IRErrorPayload | undefined =>
+  irErrorPayloadFromBody(body, { unwrap: unwrapSingleElementArray, classify: classifyGeminiRpcError });
 
-export const geminiGenerateContentErrorPayloadFromWire = (wire: unknown): IRErrorPayload => {
-  const record = recordOf(wire);
-  if (record !== undefined) {
-    const { source, details } = errorEnvelopeOf(record);
-    const payload = geminiRpcErrorPayloadOf(source, details, false);
-    if (payload !== undefined) return payload;
-  }
-  return errorPayloadFromWire(wire);
-};
+export const geminiGenerateContentErrorPayloadFromWire = (wire: unknown): IRErrorPayload =>
+  errorPayloadFromWire(wire, { classify: classifyGeminiRpcError });

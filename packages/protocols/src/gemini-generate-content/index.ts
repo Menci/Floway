@@ -136,11 +136,11 @@ export interface GeminiGenerateContentErrorResponse { error: { code: number; mes
 export type GeminiGenerateContentStreamEvent = GeminiGenerateContentResult | GeminiGenerateContentErrorResponse;
 
 export { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from './field-keys.ts';
-export { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentPromptBlockReason, isGeminiGenerateContentTerminalEvent, isGeminiGenerateContentTerminalFinishReason, collectGeminiGenerateContentProtocolEventsToResult } from './to-result.ts';
-export { appendGeminiGenerateContentPart, createGeminiGenerateContentEventAccumulator, mergeGeminiGenerateContentLogprobsResult, reassembleGeminiGenerateContentEvents, type GeminiGenerateContentEventAccumulator } from './reassemble.ts';
+export { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentPromptBlockReason, isGeminiGenerateContentTerminalEvent, collectGeminiGenerateContentProtocolEventsToResult } from './to-result.ts';
+export { appendGeminiGenerateContentPart, createGeminiGenerateContentEventAccumulator, isGeminiGenerateContentTerminalFinishReason, mergeGeminiGenerateContentLogprobsResult, reassembleGeminiGenerateContentEvents, type GeminiGenerateContentEventAccumulator } from './reassemble.ts';
 export { geminiGenerateContentProtocolFrameToSSEFrame } from './to-sse.ts';
 export { parseGeminiGenerateContentStream, type ParseGeminiGenerateContentStreamOptions } from './stream.ts';
 
-export { geminiGenerateContentPartKind, type GeminiGenerateContentPartKind } from './part.ts';
+export { geminiGenerateContentPartKind, hasGeminiGenerateContentPartData, type GeminiGenerateContentPartKind } from './part.ts';
 export { geminiGenerateContentStatusForHttpStatus } from './error-status.ts';
 export { billableUsageFromGeminiGenerateContentEvent, billableUsageFromGeminiGenerateContentUsage } from './usage.ts';

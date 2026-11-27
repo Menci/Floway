@@ -89,7 +89,7 @@ export const respondGeminiGenerateContent = async (
     downstreamAbortController: ctx.downstreamAbortController,
     protocol: {
       encode: frame => {
-        if (frame.type === 'done') return { wire: null, end: eof() };
+        if (frame.type === 'done') return { wire: null, end: { type: 'completed' } };
         const output = geminiGenerateContentProtocolFrameToSSEFrame(frame);
         const wire = output === null ? null : serializeSseFrame(output);
         const terminal = geminiSseTerminal(frame.event);

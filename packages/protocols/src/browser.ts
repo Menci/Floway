@@ -161,7 +161,7 @@ export {
   GEMINI_GENERATE_CONTENT_RESULT_KEYS,
 } from './gemini-generate-content/field-keys.ts';
 
-export { mergeGeminiGenerateContentLogprobsResult, reassembleGeminiGenerateContentEvents } from './gemini-generate-content/reassemble.ts';
+export { reassembleGeminiGenerateContentEvents } from './gemini-generate-content/reassemble.ts';
 
 export {
   GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE,

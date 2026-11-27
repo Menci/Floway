@@ -180,15 +180,15 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
             groundingSupports: [
               // Repeated snapshot entry is deduplicated without reordering (explicit partIndex: 0 matches omitted).
               { segment: { partIndex: 0, endIndex: 5 }, groundingChunkIndices: [0] },
-              // Native part index 4 ("in France.") with range 3..9 ("France") maps to UTF-16 12..18.
-              { segment: { partIndex: 4, startIndex: 3, endIndex: 9 }, groundingChunkIndices: [1] },
-              // Merged logical part index 1 ("Paris is in France.") spans across the thoughtSignature split (0..19).
+              // Omitted partIndex spans across the thoughtSignature split in the single visible text run (12..18 = "France").
+              { segment: { startIndex: 12, endIndex: 18 }, groundingChunkIndices: [1] },
+              // Explicit logical part index 1 ("Paris is in France.") resolves to the same run (0..19).
               { segment: { partIndex: 1, startIndex: 0, endIndex: 19, text: 'Paris is in France.' }, groundingChunkIndices: [0] },
               // Out-of-bounds endIndex clamps with warning; invalid/outside bounds warn and omit range; undefined endIndex omits range.
-              { segment: { partIndex: 4, startIndex: 3, endIndex: 99 }, groundingChunkIndices: [2, 3] },
-              { segment: { partIndex: 4 }, groundingChunkIndices: [2] },
-              { segment: { partIndex: 4, startIndex: 5, endIndex: 5 }, groundingChunkIndices: [2] },
-              { segment: { partIndex: 4, startIndex: 99, endIndex: 120 }, groundingChunkIndices: [2] },
+              { segment: { startIndex: 12, endIndex: 99 }, groundingChunkIndices: [2, 3] },
+              { segment: {}, groundingChunkIndices: [2] },
+              { segment: { startIndex: 5, endIndex: 5 }, groundingChunkIndices: [2] },
+              { segment: { startIndex: 99, endIndex: 120 }, groundingChunkIndices: [2] },
             ],
           },
           finishReason: 'STOP',
@@ -251,33 +251,33 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
       { text: 'in France.', thoughtSignature: 'sig_tail' },
     ]);
 
-    // 2. Native-vs-logical partIndex collision on a thoughtSignature split disambiguated by both `segment.text` and byte bounds.
+    // 2. Omitted partIndex with concatenated visible-text UTF-8 offsets maps across code execution boundaries to the open trailing text part.
     warn.mockClear();
-    const disambiguated = await runReader(iterate([
+    const concatenatedOffsets = await runReader(iterate([
       eventFrame({
-        modelVersion: 'gemini-2.5-pro',
+        modelVersion: 'gemini-3-flash-preview',
         candidates: [{
           index: 0,
           content: {
             role: 'model',
             parts: [
-              { text: 'Alpha ' },
-              { text: 'Beta', thoughtSignature: 'sig_b' },
+              { text: 'Step 1.\n\n' }, // 9 UTF-8 bytes (0..9), closed by executableCode
+              { executableCode: { language: 'PYTHON', code: 'print(7*8)' } },
+              { codeExecutionResult: { outcome: 'OUTCOME_OK', output: '56\n' } },
+              { text: 'Result: ' }, // 8 UTF-8 bytes (9..17)
+              { text: 'Tokyo has 14M.', thoughtSignature: 'sig_tail' }, // 14 UTF-8 bytes (17..31)
             ],
           },
           groundingMetadata: {
             groundingChunks: [
-              { web: { uri: 'https://example.com/ab-text', title: 'AB Text' } },
-              { web: { uri: 'https://example.com/ab-bounds', title: 'AB Bounds' } },
-              { web: { uri: 'https://example.com/ab-clamped', title: 'AB Clamped' } },
+              { web: { uri: 'https://example.com/tokyo', title: 'Tokyo' } },
+              { web: { uri: 'https://example.com/clamped', title: 'Clamped' } },
             ],
             groundingSupports: [
-              // Native 0 ("Alpha ") vs logical 0 ("Alpha Beta"): `segment.text` picks logical 0 for 6..10 ("Beta").
-              { segment: { partIndex: 0, startIndex: 6, endIndex: 10, text: 'Beta' }, groundingChunkIndices: [0] },
-              // Without `segment.text`, byte bounds (`endIndex: 10 > 6`) still select logical 0 for 6..10.
-              { segment: { partIndex: 0, startIndex: 6, endIndex: 10 }, groundingChunkIndices: [1] },
-              // Out-of-bounds `endIndex: 12` without `segment.text` falls back to logical 0 ("Alpha Beta") and clamps to 6..10.
-              { segment: { partIndex: 0, startIndex: 6, endIndex: 12 }, groundingChunkIndices: [2] },
+              // Concatenated visible offset 17..31 lands on the open second text run at local 8..22 ("Tokyo has 14M.").
+              { segment: { startIndex: 17, endIndex: 31 }, groundingChunkIndices: [0] },
+              // Out-of-bounds endIndex 40 clamps to the end of the open second text run (local 8..22).
+              { segment: { startIndex: 17, endIndex: 40 }, groundingChunkIndices: [1] },
             ],
           },
           finishReason: 'STOP',
@@ -285,36 +285,32 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
       }),
     ]));
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith('Clamping Gemini GenerateContent grounding range to streamed text', expect.objectContaining({ startByte: 6, endByte: 12, availableBytes: 10 }));
-    expect(disambiguated.state.choices[0]?.items[0]).toEqual({
+    expect(warn).toHaveBeenCalledWith('Clamping Gemini GenerateContent grounding range to streamed text', expect.objectContaining({ startByte: 17, endByte: 40, availableBytes: 31 }));
+    expect(concatenatedOffsets.state.choices[0]?.items[0]).toEqual({
       type: 'message',
-      content: [{
-        type: 'text',
-        text: 'Alpha Beta',
-        annotations: [
-          {
-            type: 'source_citation',
-            source_kind: 'url',
-            source: 'https://example.com/ab-text',
-            source_label: 'AB Text',
-            output_text_range: { start: 6, end_exclusive: 10 },
-          },
-          {
-            type: 'source_citation',
-            source_kind: 'url',
-            source: 'https://example.com/ab-bounds',
-            source_label: 'AB Bounds',
-            output_text_range: { start: 6, end_exclusive: 10 },
-          },
-          {
-            type: 'source_citation',
-            source_kind: 'url',
-            source: 'https://example.com/ab-clamped',
-            source_label: 'AB Clamped',
-            output_text_range: { start: 6, end_exclusive: 10 },
-          },
-        ],
-      }],
+      content: [
+        { type: 'text', text: 'Step 1.\n\n' },
+        {
+          type: 'text',
+          text: 'Result: Tokyo has 14M.',
+          annotations: [
+            {
+              type: 'source_citation',
+              source_kind: 'url',
+              source: 'https://example.com/tokyo',
+              source_label: 'Tokyo',
+              output_text_range: { start: 8, end_exclusive: 22 },
+            },
+            {
+              type: 'source_citation',
+              source_kind: 'url',
+              source: 'https://example.com/clamped',
+              source_label: 'Clamped',
+              output_text_range: { start: 8, end_exclusive: 22 },
+            },
+          ],
+        },
+      ],
     });
 
     // 3. Untranslated server-side parts (`executableCode`) and empty `thought` parts close the open IR text part and advance logical grounding indices.

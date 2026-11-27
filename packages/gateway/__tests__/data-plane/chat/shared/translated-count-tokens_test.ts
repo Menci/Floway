@@ -142,4 +142,15 @@ test('translates errors, applies fallback messaging, preserves api-error metadat
   capture.upstreamApiError.mockClear();
   reshapeTranslatedCountTokens(plainResult({ status: 503, headers: new Headers() }, encoder.encode('local')), opts);
   expect(capture.upstreamApiError).not.toHaveBeenCalled();
+
+  // Without a fallbackErrorBody, unrecognized upstream error responses pass through verbatim after capture.
+  capture.upstreamApiError.mockClear();
+  const { fallbackErrorBody: _fallback, ...passthroughOpts } = opts;
+  const htmlUpstreamErr = plainResult(
+    { status: 504, headers: new Headers({ 'content-type': 'text/html' }) },
+    encoder.encode('<html>504</html>'),
+    'up_1',
+  );
+  expect(reshapeTranslatedCountTokens(htmlUpstreamErr, passthroughOpts)).toBe(htmlUpstreamErr);
+  expect(capture.upstreamApiError).toHaveBeenCalledTimes(1);
 });

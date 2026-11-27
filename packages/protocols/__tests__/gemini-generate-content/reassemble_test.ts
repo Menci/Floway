@@ -118,8 +118,10 @@ test('reassembleGeminiGenerateContentEvents concatenates per-chunk logprobsResul
           topCandidates: [{ candidates: [{ token: 'lo', logProbability: -1.25 }] }],
           logProbabilitySum: -1.25,
         },
-        finishReason: 'STOP',
       }],
+    },
+    {
+      candidates: [{ index: 0, finishReason: 'STOP' }],
     },
   ]));
   assertEquals(result.candidates?.[0]?.logprobsResult, {

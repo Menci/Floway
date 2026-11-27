@@ -15,7 +15,7 @@ import {
 
 export interface ReshapeTranslatedCountTokensOptions {
   readonly translateError: TranslateTrip<unknown, unknown, unknown>['error'];
-  readonly fallbackErrorBody: (status: number, message: string) => Uint8Array;
+  readonly fallbackErrorBody?: (status: number, message: string) => Uint8Array;
   readonly extractCount: (decoded: JsonObject) => unknown;
   readonly encodeCount: (count: number) => unknown;
   readonly performance?: PerformanceTelemetryContext | undefined;
@@ -43,15 +43,18 @@ export const reshapeTranslatedCountTokens = (
       : upstreamResult.upstreamId !== undefined;
     if (fromUpstream) options.capture?.upstreamApiError({ status, headers, body: upstreamResult.body });
     const translated = options.translateError(status, headers, upstreamResult.body ?? new Uint8Array());
-    const resultHttp = translated === undefined
-      ? http
-      : {
-          status: translated.status,
-          headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, translated.headers),
-        };
-    const body = translated === undefined
-      ? options.fallbackErrorBody(status, text.trim() || 'Upstream token counting request failed.')
-      : new TextEncoder().encode(JSON.stringify(translated.body));
+    if (translated === undefined) {
+      if (options.fallbackErrorBody === undefined) return upstreamResult;
+      const body = options.fallbackErrorBody(status, text.trim() || 'Upstream token counting request failed.');
+      return upstreamResult.type === 'api-error'
+        ? { ...upstreamResult, http, body }
+        : plainResult(http, body, upstreamResult.upstreamId);
+    }
+    const resultHttp = {
+      status: translated.status,
+      headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, translated.headers),
+    };
+    const body = new TextEncoder().encode(JSON.stringify(translated.body));
     return upstreamResult.type === 'api-error'
       ? { ...upstreamResult, http: resultHttp, body }
       : plainResult(resultHttp, body, upstreamResult.upstreamId);

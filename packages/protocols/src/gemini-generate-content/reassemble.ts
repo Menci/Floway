@@ -27,26 +27,17 @@ export const mergeGeminiGenerateContentLogprobsResult = (
   earlier: GeminiGenerateContentLogprobsResult | undefined,
   later: GeminiGenerateContentLogprobsResult | undefined,
 ): GeminiGenerateContentLogprobsResult | undefined => {
-  if (earlier === undefined) {
-    return later === undefined
-      ? undefined
-      : {
-          ...(later.chosenCandidates === undefined ? {} : { chosenCandidates: [...later.chosenCandidates] }),
-          ...(later.topCandidates === undefined ? {} : { topCandidates: [...later.topCandidates] }),
-          ...(later.logProbabilitySum === undefined ? {} : { logProbabilitySum: later.logProbabilitySum }),
-        };
-  }
   if (later === undefined) return earlier;
   return {
-    ...(earlier.chosenCandidates === undefined && later.chosenCandidates === undefined
+    ...(earlier?.chosenCandidates === undefined && later.chosenCandidates === undefined
       ? {}
-      : { chosenCandidates: [...(earlier.chosenCandidates ?? []), ...(later.chosenCandidates ?? [])] }),
-    ...(earlier.topCandidates === undefined && later.topCandidates === undefined
+      : { chosenCandidates: [...(earlier?.chosenCandidates ?? []), ...(later.chosenCandidates ?? [])] }),
+    ...(earlier?.topCandidates === undefined && later.topCandidates === undefined
       ? {}
-      : { topCandidates: [...(earlier.topCandidates ?? []), ...(later.topCandidates ?? [])] }),
-    ...(earlier.logProbabilitySum === undefined && later.logProbabilitySum === undefined
+      : { topCandidates: [...(earlier?.topCandidates ?? []), ...(later.topCandidates ?? [])] }),
+    ...(earlier?.logProbabilitySum === undefined && later.logProbabilitySum === undefined
       ? {}
-      : { logProbabilitySum: (earlier.logProbabilitySum ?? 0) + (later.logProbabilitySum ?? 0) }),
+      : { logProbabilitySum: (earlier?.logProbabilitySum ?? 0) + (later.logProbabilitySum ?? 0) }),
   };
 };
 

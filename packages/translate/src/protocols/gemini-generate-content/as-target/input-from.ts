@@ -1,5 +1,7 @@
 import { klona } from 'klona/json';
 
+import type { GeminiGenerateContentInputAssistantTurn } from './assistant-turn.ts';
+import type { RestoredAssistantTurn } from '../../../composition/reading.ts';
 import type { IRInputAssistantItemWithCallIds, IRInputToolResultItemWithCallId, IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
 import type {
@@ -18,7 +20,7 @@ import { isDataURL, parseDataURL } from '../../../shared/data-url.ts';
 import { DOCUMENT_CLOSE_TAG, documentImage, documentOpening } from '../../../shared/document.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { isPlainJSONObject } from '../../../shared/json/object.ts';
-import { geminiServiceTierFromInputIR } from '../service-tier.ts';
+import { geminiServiceTierFromIR } from '../service-tier.ts';
 import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 import type {
   GeminiGenerateContentBlob,
@@ -135,68 +137,59 @@ const buildToolResult = (
     throw new Error(`Missing Gemini GenerateContent matched call metadata for tool_result '${item.call_id}'.`);
   }
   const isError = item.is_error === true;
-  if (typeof item.output === 'string') {
-    return {
-      responsePart: {
-        functionResponse: {
-          ...(matched.wireId === undefined ? {} : { id: matched.wireId }),
-          name: matched.name,
-          response: wrapFunctionResponseText(item.output, isError),
-        },
-      },
-      liftedParts: [],
-      order: matched.order,
-    };
-  }
-
-  const texts: string[] = [];
+  let response: Record<string, unknown>;
   const inlineParts: GeminiGenerateContentFunctionResponsePart[] = [];
-  const rawLiftedParts: GeminiGenerateContentPart[] = [];
-  const liftedKinds = new Set<'image' | 'file' | 'document'>();
-  for (const part of item.output) {
-    switch (part.type) {
-    case 'text':
-      texts.push(part.text);
-      break;
-    case 'image':
-    case 'file': {
-      const converted = mediaPart(part.type === 'image' ? part.image : part.file);
-      if (converted.inlineData !== undefined) {
-        inlineParts.push({ inlineData: converted.inlineData });
-      } else {
-        liftedKinds.add(part.type);
-        rawLiftedParts.push(converted);
-      }
-      break;
-    }
-    case 'document':
-      liftedKinds.add('document');
-      rawLiftedParts.push(...documentParts(part.document));
-      break;
-    }
-  }
-
   let liftedParts: GeminiGenerateContentPart[] = [];
-  let liftedPlaceholder = '';
-  if (rawLiftedParts.length > 0) {
-    const [noun, verb] = liftedKinds.size > 1
-      ? ['Attachments', 'are']
-      : liftedKinds.has('image')
-        ? ['Image output', 'is']
-        : liftedKinds.has('file')
-          ? ['File output', 'is']
-          : ['Document output', 'is'];
-    liftedPlaceholder = `${noun} ${verb} attached in the following user content.`;
-    liftedParts = [
-      { text: `${noun} from tool call ${matched.wireId ?? matched.name}:` },
-      ...rawLiftedParts,
-    ];
-  }
+  if (typeof item.output === 'string') {
+    response = wrapFunctionResponseText(item.output, isError);
+  } else {
+    const texts: string[] = [];
+    const rawLiftedParts: GeminiGenerateContentPart[] = [];
+    const liftedKinds = new Set<'image' | 'file' | 'document'>();
+    for (const part of item.output) {
+      switch (part.type) {
+      case 'text':
+        texts.push(part.text);
+        break;
+      case 'image':
+      case 'file': {
+        const converted = mediaPart(part.type === 'image' ? part.image : part.file);
+        if (converted.inlineData !== undefined) {
+          inlineParts.push({ inlineData: converted.inlineData });
+        } else {
+          liftedKinds.add(part.type);
+          rawLiftedParts.push(converted);
+        }
+        break;
+      }
+      case 'document':
+        liftedKinds.add('document');
+        rawLiftedParts.push(...documentParts(part.document));
+        break;
+      }
+    }
 
-  const joinedText = texts.join('');
-  const response = joinedText !== ''
-    ? wrapFunctionResponseText(joinedText, isError)
-    : isError ? { error: liftedPlaceholder } : { output: liftedPlaceholder };
+    let liftedPlaceholder = '';
+    if (rawLiftedParts.length > 0) {
+      const [noun, verb] = liftedKinds.size > 1
+        ? ['Attachments', 'are']
+        : liftedKinds.has('image')
+          ? ['Image output', 'is']
+          : liftedKinds.has('file')
+            ? ['File output', 'is']
+            : ['Document output', 'is'];
+      liftedPlaceholder = `${noun} ${verb} attached in the following user content.`;
+      liftedParts = [
+        { text: `${noun} from tool call ${matched.wireId ?? matched.name}:` },
+        ...rawLiftedParts,
+      ];
+    }
+
+    const joinedText = texts.join('');
+    response = joinedText !== ''
+      ? wrapFunctionResponseText(joinedText, isError)
+      : isError ? { error: liftedPlaceholder } : { output: liftedPlaceholder };
+  }
 
   return {
     responsePart: {
@@ -243,27 +236,15 @@ const GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR = 'skip_thought_signature_validato
 
 type NormalizedGeminiContent = GeminiGenerateContentContent & { role: 'user' | 'model'; parts: GeminiGenerateContentPart[] };
 
-const applySyntheticThoughtSignatures = (
-  contents: readonly NormalizedGeminiContent[],
-  syntheticFunctionCalls: WeakSet<GeminiGenerateContentPart>,
-): void => {
-  for (const content of contents) {
-    if (content.role !== 'model') continue;
-    const firstFunctionCall = content.parts.find(part => part.functionCall !== undefined);
-    if (firstFunctionCall !== undefined && firstFunctionCall.thoughtSignature === undefined && syntheticFunctionCalls.has(firstFunctionCall)) {
-      firstFunctionCall.thoughtSignature = GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR;
-    }
-  }
-};
-
 const systemTextParts = (content: readonly IRInputTextPart[]): GeminiGenerateContentPart[] =>
   content.flatMap(part => (part.text === '' ? [] : [{ text: part.text }]));
 
 const assistantParts = (
   items: readonly IRInputAssistantItemWithCallIds[],
-  syntheticFunctionCalls: WeakSet<GeminiGenerateContentPart>,
+  hasPriorFunctionCall: boolean,
 ): GeminiGenerateContentPart[] => {
   const parts: GeminiGenerateContentPart[] = [];
+  let sawFunctionCall = hasPriorFunctionCall;
 
   for (const item of items) {
     switch (item.type) {
@@ -277,8 +258,8 @@ const assistantParts = (
       }
       break;
     case 'reasoning':
-      // Readable reasoning from a non-sidecar turn has no Gemini `thoughtSignature`;
-      // drop it rather than inventing a signature.
+      // Readable reasoning from a non-sidecar turn has no GenerateContent `thoughtSignature`;
+      // omit it without inventing a signature.
       break;
     case 'function_call':
     case 'custom_tool_call': {
@@ -293,8 +274,9 @@ const assistantParts = (
             ? { input: item.input }
             : item.arguments === undefined ? {} : parseFunctionCallArguments(item.arguments),
         },
+        ...(sawFunctionCall ? {} : { thoughtSignature: GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR }),
       };
-      syntheticFunctionCalls.add(part);
+      sawFunctionCall = true;
       parts.push(part);
       break;
     }
@@ -318,18 +300,16 @@ const appendContentParts = (
   contents.push({ role, parts: [...parts] });
 };
 
-export interface GeminiGenerateContentConversation {
-  readonly systemParts: GeminiGenerateContentPart[];
-  readonly contents: NormalizedGeminiContent[];
-}
-
-export const createGeminiGenerateContentConversationWriter = (
+const buildConversation = (
+  turns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>)[],
   matchedToolResults: GeminiGenerateContentToolResultLookup,
-) => {
+): { readonly systemParts: GeminiGenerateContentPart[]; readonly contents: NormalizedGeminiContent[] } => {
   const systemParts: GeminiGenerateContentPart[] = [];
   const contents: NormalizedGeminiContent[] = [];
-  const syntheticFunctionCalls = new WeakSet<GeminiGenerateContentPart>();
+  let hoisting = true;
   let pendingEmptyModelBoundary = false;
+  let pendingToolResults: BuiltToolResult[] = [];
+  let pendingUserParts: GeminiGenerateContentPart[] = [];
 
   const flushEmptyModelBoundary = (): void => {
     if (!pendingEmptyModelBoundary) return;
@@ -348,65 +328,57 @@ export const createGeminiGenerateContentConversationWriter = (
     }
   };
 
-  return {
-    appendRestoredTurn: (turn: readonly GeminiGenerateContentContent[]): void => {
-      appendModelParts(klona(turn.flatMap(entry => entry.parts ?? [])));
-    },
-
-    appendIRSegment: (turns: readonly IRInputTurnWithCallIds[], leading: boolean): void => {
-      let hoisting = leading;
-      let pendingToolResults: BuiltToolResult[] = [];
-      let pendingUserParts: GeminiGenerateContentPart[] = [];
-
-      const flushClientRun = (): void => {
-        if (pendingToolResults.length === 0 && pendingUserParts.length === 0) return;
-        flushEmptyModelBoundary();
-        const ordered = pendingToolResults.toSorted((a, b) => a.order - b.order);
-        const parts: GeminiGenerateContentPart[] = [
-          ...ordered.map(entry => entry.responsePart),
-          ...ordered.flatMap(entry => entry.liftedParts),
-          ...pendingUserParts,
-        ];
-        pendingToolResults = [];
-        pendingUserParts = [];
-        appendContentParts(contents, 'user', parts);
-      };
-
-      for (const turn of turns) {
-        if (turn.kind === 'assistant') {
-          flushClientRun();
-          hoisting = false;
-          appendModelParts(assistantParts(turn.items, syntheticFunctionCalls));
-          continue;
-        }
-
-        for (const item of turn.items) {
-          if (item.type === 'tool_result') {
-            hoisting = false;
-            pendingToolResults.push(buildToolResult(item, matchedToolResults));
-            continue;
-          }
-          if (item.type === 'instruction' || (item.type === 'message' && item.role !== 'user')) {
-            // Gemini `contents` only admits `'user'` and `'model'` roles; non-leading
-            // system/developer turns lower inline into user text parts.
-            (hoisting ? systemParts : pendingUserParts).push(...systemTextParts(item.content));
-            if (item.type === 'instruction') hoisting = false;
-            continue;
-          }
-          hoisting = false;
-          pendingUserParts.push(...userMessageParts(item));
-        }
-      }
-
-      flushClientRun();
-    },
-
-    finish: (): GeminiGenerateContentConversation => {
-      flushEmptyModelBoundary();
-      applySyntheticThoughtSignatures(contents, syntheticFunctionCalls);
-      return { systemParts, contents };
-    },
+  const flushClientRun = (): void => {
+    if (pendingToolResults.length === 0 && pendingUserParts.length === 0) return;
+    flushEmptyModelBoundary();
+    const ordered = pendingToolResults.toSorted((a, b) => a.order - b.order);
+    const parts: GeminiGenerateContentPart[] = [
+      ...ordered.map(entry => entry.responsePart),
+      ...ordered.flatMap(entry => entry.liftedParts),
+      ...pendingUserParts,
+    ];
+    pendingToolResults = [];
+    pendingUserParts = [];
+    appendContentParts(contents, 'user', parts);
   };
+
+  for (const piece of turns) {
+    if (piece.kind === 'restored') {
+      flushClientRun();
+      hoisting = false;
+      appendModelParts(klona(piece.turn.flatMap(entry => entry.parts ?? [])));
+      continue;
+    }
+    if (piece.kind === 'assistant') {
+      flushClientRun();
+      hoisting = false;
+      const last = contents.at(-1);
+      const hasPriorFunctionCall = last?.role === 'model' && last.parts.some(part => part.functionCall !== undefined);
+      appendModelParts(assistantParts(piece.items, hasPriorFunctionCall));
+      continue;
+    }
+
+    for (const item of piece.items) {
+      if (item.type === 'tool_result') {
+        hoisting = false;
+        pendingToolResults.push(buildToolResult(item, matchedToolResults));
+        continue;
+      }
+      if (item.type === 'instruction' || (item.type === 'message' && item.role !== 'user')) {
+        // GenerateContent `contents` only admits `'user'` and `'model'` roles; non-leading
+        // system/developer turns lower inline into user text parts.
+        (hoisting ? systemParts : pendingUserParts).push(...systemTextParts(item.content));
+        if (item.type === 'instruction') hoisting = false;
+        continue;
+      }
+      hoisting = false;
+      pendingUserParts.push(...userMessageParts(item));
+    }
+  }
+
+  flushClientRun();
+  flushEmptyModelBoundary();
+  return { systemParts, contents };
 };
 
 const toolFromIR = (tool: IRInputTool): GeminiGenerateContentFunctionDeclaration => {
@@ -506,7 +478,7 @@ const outputFormatConfig = (format: IRInputOutputFormat | undefined): Partial<Ge
   return format?.type === 'json_object' ? { responseMimeType: 'application/json' } : {};
 };
 
-export const geminiGenerateContentSettingsFromIR = (
+const geminiGenerateContentSettingsFromIR = (
   settings: IRInputSettings,
 ): GeminiGenerateContentGenerationConfig | undefined => {
   const ceiling = settings.max_output_tokens ?? settings.max_visible_output_tokens;
@@ -522,7 +494,7 @@ export const geminiGenerateContentSettingsFromIR = (
     ...(settings.choice_count === undefined ? {} : { candidateCount: settings.choice_count }),
     ...(settings.presence_penalty == null ? {} : { presencePenalty: settings.presence_penalty }),
     ...(settings.frequency_penalty == null ? {} : { frequencyPenalty: settings.frequency_penalty }),
-    // Gemini rejects `generationConfig.logprobs` unless `responseLogprobs` is true,
+    // GenerateContent rejects `generationConfig.logprobs` unless `responseLogprobs` is true,
     // and OpenAI Responses sets `logprobs: false` whenever `include` omits logprobs.
     // https://ai.google.dev/api/generate-content#GenerationConfig
     ...(settings.logprobs === true
@@ -538,9 +510,11 @@ export const geminiGenerateContentSettingsFromIR = (
   return Object.keys(config).length === 0 ? undefined : config;
 };
 
-export const geminiGenerateContentHeaderFromIR = (
+export const geminiGenerateContentPayloadFromIR = (
   request: IRInputRequestHeader,
-): Omit<GeminiGenerateContentRequest, 'contents' | 'systemInstruction'> => {
+  turns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>)[],
+  matchedToolResults: GeminiGenerateContentToolResultLookup,
+): GeminiGenerateContentRequest => {
   requireStreaming(request.settings);
   const declaredTools = request.tools ?? [];
   const declarations = declaredTools.map(toolFromIR);
@@ -552,10 +526,14 @@ export const geminiGenerateContentHeaderFromIR = (
     : undefined;
   const toolConfig = choice === undefined ? undefined : toolConfigFromIR(choice, declaredTools);
   const generationConfig = geminiGenerateContentSettingsFromIR(request.settings);
-  const serviceTier = geminiServiceTierFromInputIR(request.settings.service_tier);
+  // Omit `auto` since GenerateContent has no matching service tier value.
+  const serviceTier = request.settings.service_tier === 'auto' ? undefined : geminiServiceTierFromIR(request.settings.service_tier);
+  const { systemParts, contents } = buildConversation(turns, matchedToolResults);
 
   return {
     model: request.settings.model,
+    ...(systemParts.length === 0 ? {} : { systemInstruction: { parts: systemParts } }),
+    contents,
     ...(tools === undefined ? {} : { tools }),
     ...(toolConfig === undefined ? {} : { toolConfig }),
     ...(generationConfig === undefined ? {} : { generationConfig }),

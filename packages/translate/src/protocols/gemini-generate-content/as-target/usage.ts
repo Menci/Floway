@@ -14,6 +14,40 @@ const OUTPUT_MODALITIES: Readonly<Record<string, keyof IROutputUsage>> = {
   TEXT: 'output_text_tokens',
 };
 
+export interface GeminiGenerateContentUsageAccumulator {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  cachedContentTokenCount?: number;
+  thoughtsTokenCount?: number;
+  toolUsePromptTokenCount?: number;
+  promptTokensDetails?: GeminiGenerateContentModalityTokenCount[];
+  toolUsePromptTokensDetails?: GeminiGenerateContentModalityTokenCount[];
+}
+
+const mergeUsageSnapshot = (
+  accumulator: GeminiGenerateContentUsageAccumulator,
+  incoming: GeminiGenerateContentUsageMetadata,
+): GeminiGenerateContentUsageMetadata => {
+  if (incoming.promptTokenCount != null) accumulator.promptTokenCount = incoming.promptTokenCount;
+  if (incoming.candidatesTokenCount != null) accumulator.candidatesTokenCount = incoming.candidatesTokenCount;
+  if (incoming.cachedContentTokenCount != null) accumulator.cachedContentTokenCount = incoming.cachedContentTokenCount;
+  if (incoming.thoughtsTokenCount != null) accumulator.thoughtsTokenCount = incoming.thoughtsTokenCount;
+  if (incoming.toolUsePromptTokenCount != null) accumulator.toolUsePromptTokenCount = incoming.toolUsePromptTokenCount;
+  if (incoming.promptTokensDetails != null && incoming.promptTokensDetails.length > 0) {
+    accumulator.promptTokensDetails = incoming.promptTokensDetails;
+  }
+  if (incoming.toolUsePromptTokensDetails != null && incoming.toolUsePromptTokensDetails.length > 0) {
+    accumulator.toolUsePromptTokensDetails = incoming.toolUsePromptTokensDetails;
+  }
+  return {
+    ...accumulator,
+    ...(incoming.totalTokenCount == null ? {} : { totalTokenCount: incoming.totalTokenCount }),
+    ...(incoming.candidatesTokensDetails == null || incoming.candidatesTokensDetails.length === 0
+      ? {}
+      : { candidatesTokensDetails: incoming.candidatesTokensDetails }),
+  };
+};
+
 const collectModalityCounts = (
   details: readonly GeminiGenerateContentModalityTokenCount[] | null | undefined,
   mapping: Readonly<Record<string, keyof IROutputUsage>>,
@@ -31,7 +65,11 @@ const collectModalityCounts = (
 // `promptTokenCount` + `toolUsePromptTokenCount` form inclusive input tokens,
 // and `candidatesTokenCount` + `thoughtsTokenCount` form inclusive output tokens.
 // https://ai.google.dev/api/generate-content#UsageMetadata
-export const usageToIR = (usage: GeminiGenerateContentUsageMetadata): IROutputUsage => {
+export const usageToIR = (
+  incoming: GeminiGenerateContentUsageMetadata,
+  accumulator?: GeminiGenerateContentUsageAccumulator,
+): IROutputUsage => {
+  const usage = accumulator === undefined ? incoming : mergeUsageSnapshot(accumulator, incoming);
   const result: Partial<Record<keyof IROutputUsage, number>> = {};
   const put = (key: keyof IROutputUsage, value: number | null | undefined): void => {
     if (value != null) result[key] = requireTokenCount(key, value);

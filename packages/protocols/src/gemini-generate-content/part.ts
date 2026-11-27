@@ -22,6 +22,9 @@ const GEMINI_GENERATE_CONTENT_PART_FIELD_TO_KIND: Record<GeminiGenerateContentPa
 
 const GEMINI_GENERATE_CONTENT_PART_DATA_FIELDS = Object.keys(GEMINI_GENERATE_CONTENT_PART_FIELD_TO_KIND) as GeminiGenerateContentPartDataField[];
 
+export const hasGeminiGenerateContentPartData = (part: GeminiGenerateContentPart): boolean =>
+  GEMINI_GENERATE_CONTENT_PART_DATA_FIELDS.some(field => part[field] !== undefined);
+
 // Classify the part by its single content-bearing field. Returns null when
 // the part only carries a thoughtSignature (a valid signature carrier with
 // no body). Throws when the part sets zero or multiple content fields —
