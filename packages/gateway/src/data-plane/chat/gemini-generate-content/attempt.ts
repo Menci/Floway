@@ -65,6 +65,7 @@ export const geminiGenerateContentAttempt = {
     const invocation: GeminiGenerateContentInvocation = { payload, candidate, targetApi, headers };
     return await runInterceptors(invocation, ctx, geminiGenerateContentCountTokensInterceptors, async () => {
       if (targetApi === 'geminiGenerateContent') {
+        if (candidate.rules !== undefined) applyRulesToUpstreamGeminiGenerateContent(invocation.payload, candidate.rules);
         const { http: response } = await candidate.upstream.instance.callGeminiGenerateContentCountTokens(
           candidate.model,
           invocation.payload,
@@ -89,7 +90,7 @@ export const geminiGenerateContentAttempt = {
       const anthropicMessagesResult = await anthropicMessagesAttempt.countTokens({
         payload: target, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
       });
-      return reshapeAnthropicMessagesCountAsGeminiGenerateContent(anthropicMessagesResult);
+      return reshapeAnthropicMessagesCountAsGeminiGenerateContent(anthropicMessagesResult, trip.error);
     });
   },
 };
@@ -102,6 +103,7 @@ export const geminiGenerateContentAttempt = {
 // than a passthrough of the upstream shape.
 const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (
   anthropicMessagesResult: ApiErrorResult | PlainResult,
+  translateError: (status: number, headers: Headers, body: Uint8Array) => { readonly status: number; readonly headers: Headers; readonly body: unknown } | undefined,
 ): ApiErrorResult | PlainResult => {
   const { status, headers } = anthropicMessagesResult.http;
   if (anthropicMessagesResult.type === 'plain' && anthropicMessagesResult.body === null && (status === 204 || status === 205 || status === 304)) {
@@ -110,7 +112,21 @@ const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (
   const text = decodeResponseBody(anthropicMessagesResult.body);
   const http = { status, headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, headers) };
   if (anthropicMessagesResult.type === 'api-error' || status !== 200) {
-    // Empty upstream bodies fall back to a fixed message so the Google-RPC envelope is never empty.
+    const rawBody = anthropicMessagesResult.body instanceof Uint8Array
+      ? anthropicMessagesResult.body
+      : new TextEncoder().encode(text);
+    const translated = translateError(status, headers, rawBody);
+    if (translated !== undefined) {
+      const translatedHttp = {
+        status: translated.status,
+        headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, translated.headers),
+      };
+      const body = new TextEncoder().encode(JSON.stringify(translated.body));
+      return anthropicMessagesResult.type === 'api-error'
+        ? { ...anthropicMessagesResult, http: translatedHttp, body }
+        : plainResult(translatedHttp, body, anthropicMessagesResult.upstreamId);
+    }
+    // Empty or unrecognized upstream bodies fall back to a Google-RPC envelope.
     const body = new TextEncoder().encode(JSON.stringify({
       error: { code: status, message: text || 'Upstream token counting request failed.', status: gatewayErrorStatus(status) },
     }));
