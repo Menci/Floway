@@ -1,4 +1,4 @@
-import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputClientItemWithCallIds } from '../../../composition/request/call-ids.ts';
+import type { IRInputAssistantItemWithCallIds, IRInputClientItemWithCallIds, IRInputToolResultItemWithCallId, IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputDocument, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
@@ -143,7 +143,7 @@ const assistantMessage = (items: readonly IRInputAssistantItemWithCallIds[]): Op
 
 const clientMessages = (
   items: readonly IRInputClientItemWithCallIds[],
-  legacyCallNames: ReadonlyMap<string, string>,
+  legacyCallNames: ReadonlyMap<IRInputToolResultItemWithCallId, string>,
 ): OpenAIChatCompletionsMessage[] => {
   // Attachments lifted out of consecutive tool results gather into one user message
   // after the run, so a tool-call group stays contiguous.
@@ -165,7 +165,7 @@ const clientMessages = (
 const openaiChatCompletionsClientItem = (
   item: IRInputClientItemWithCallIds,
   lift: (parts: readonly OpenAIChatCompletionsUserContentPart[]) => void,
-  legacyCallNames: ReadonlyMap<string, string>,
+  legacyCallNames: ReadonlyMap<IRInputToolResultItemWithCallId, string>,
 ): OpenAIChatCompletionsMessage[] => {
   switch (item.type) {
   case 'message':
@@ -180,7 +180,7 @@ const openaiChatCompletionsClientItem = (
     // name, and a call that states an id with a `tool` message by that id.
     // Answering a legacy call with a `tool` message would name an id no
     // assistant turn ever stated.
-    const legacyCallName = legacyCallNames.get(item.call_id);
+    const legacyCallName = legacyCallNames.get(item);
     return [legacyCallName === undefined
       ? { role: 'tool', tool_call_id: item.call_id, content: projected.content }
       : { role: 'function', name: legacyCallName, content: projected.content }];
@@ -190,7 +190,7 @@ const openaiChatCompletionsClientItem = (
 
 export const openaiChatCompletionsConversationFromIR = (
   turns: readonly IRInputTurnWithCallIds[],
-  legacyCallNames: ReadonlyMap<string, string>,
+  legacyCallNames: ReadonlyMap<IRInputToolResultItemWithCallId, string>,
 ): OpenAIChatCompletionsMessage[] => turns.flatMap(turn => turn.kind === 'assistant'
   ? assistantMessage(turn.items)
   : clientMessages(turn.items, legacyCallNames));

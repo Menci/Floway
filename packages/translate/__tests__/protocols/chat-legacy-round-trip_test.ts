@@ -1,7 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarBlock } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
+import { openaiChatCompletionsTargetProtocol } from '../../src/protocols/openai-chat-completions/as-target.ts';
 import { encodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
+import { TranslateInputException } from '../../src/shared/input-error.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { iterate } from '../shared/iterables.ts';
 import { expectTrip } from '../trip.ts';
@@ -200,4 +202,47 @@ test('OpenAI Responses answers a restored legacy call via authenticated source c
   }, context));
   expect(replay.target.messages.find(message => message.role === 'assistant')?.function_call).toEqual({ name: 'lookup', arguments: '{"x":1}' });
   expect(replay.target.messages.at(-1)).toEqual({ role: 'function', name: 'lookup', content: 'done' });
+});
+
+test('Chat target separates cross-turn duplicate call IDs, order-independent mixed calls, and rejects mismatched sourceCallIds or extra results', () => {
+  const codec = createTestSidecarCodec();
+  const header = { settings: { model: 'm', stream: true } };
+  const write = (turns: Parameters<typeof openaiChatCompletionsTargetProtocol.write>[1]) =>
+    openaiChatCompletionsTargetProtocol.write(header, turns, { sidecarCodec: codec }).payload.messages;
+
+  // Turn 0 legacy and Turn 1 modern share the exact same call_id; FIFO pairing keeps them distinct.
+  const duplicateAcrossTurns = write([
+    { kind: 'restored', turn: { role: 'assistant', function_call: { name: 'legacy_fn', arguments: '{}' } }, sourceCallIds: ['dup-id'] },
+    { kind: 'restored', turn: { role: 'assistant', tool_calls: [{ id: 'dup-id', type: 'function', function: { name: 'modern_fn', arguments: '{}' } }] }, sourceCallIds: ['dup-id'] },
+    { kind: 'client', items: [{ type: 'tool_result', call_id: 'dup-id', output: 'from-legacy' }, { type: 'tool_result', call_id: 'dup-id', output: 'from-modern' }] },
+  ]);
+  expect(duplicateAcrossTurns.slice(-2)).toEqual([
+    { role: 'function', name: 'legacy_fn', content: 'from-legacy' },
+    { role: 'tool', tool_call_id: 'dup-id', content: 'from-modern' },
+  ]);
+
+  // Mixed restored turn extracts legacy sourceCallId regardless of stream order.
+  for (const order of [['modern-id', 'synth-1'], ['synth-1', 'modern-id']] as const) {
+    const messages = write([
+      {
+        kind: 'restored',
+        turn: { role: 'assistant', function_call: { name: 'legacy_fn', arguments: '{}' }, tool_calls: [{ id: 'modern-id', type: 'function', function: { name: 'modern_fn', arguments: '{}' } }] },
+        sourceCallIds: order,
+      },
+      { kind: 'client', items: [{ type: 'tool_result', call_id: 'modern-id', output: 'M' }, { type: 'tool_result', call_id: 'synth-1', output: 'L' }] },
+    ]);
+    expect(messages.slice(-2)).toEqual([
+      { role: 'tool', tool_call_id: 'modern-id', content: 'M' },
+      { role: 'function', name: 'legacy_fn', content: 'L' },
+    ]);
+  }
+
+  // Extra result for a single legacy call throws TranslateInputException; corrupted sourceCallIds fails fast.
+  expect(() => write([
+    { kind: 'restored', turn: { role: 'assistant', function_call: { name: 'lookup', arguments: '{}' } }, sourceCallIds: [undefined] },
+    { kind: 'client', items: [{ type: 'tool_result', name: 'lookup', output: '1' }, { type: 'tool_result', name: 'lookup', output: '2' }] },
+  ])).toThrow(TranslateInputException);
+  expect(() => write([
+    { kind: 'restored', turn: { role: 'assistant', function_call: { name: 'lookup', arguments: '{}' }, tool_calls: [{ id: 'modern-id', type: 'function', function: { name: 'm', arguments: '{}' } }] }, sourceCallIds: ['modern-id'] },
+  ])).toThrow('Authenticated round-trip call IDs do not match restored Chat Completions tool calls');
 });

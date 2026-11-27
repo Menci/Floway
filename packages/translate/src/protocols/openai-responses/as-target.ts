@@ -1,6 +1,7 @@
 import { readOpenAIResponsesEvents } from './as-target/events.ts';
 import { openaiResponsesPayloadFromSegments } from './as-target/segmented-request.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
+import type { RestoredAssistantTurn } from '../../composition/reading.ts';
 import { assignCallIds, type PendingCall } from '../../composition/request/call-ids.ts';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
@@ -10,7 +11,7 @@ type ResponsesRestoredAssistantTurn = readonly CanonicalOpenAIResponsesInputItem
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json
 const RESPONSES_MAX_CALL_ID_LENGTH = 64;
 
-const callsOf = (turn: ResponsesRestoredAssistantTurn): readonly PendingCall[] =>
+const callsOf = ({ turn }: RestoredAssistantTurn<ResponsesRestoredAssistantTurn>): readonly PendingCall[] =>
   turn.flatMap(item => item.type === 'function_call' || item.type === 'custom_tool_call'
     ? [{ callId: item.call_id, name: item.name }]
     : []);
