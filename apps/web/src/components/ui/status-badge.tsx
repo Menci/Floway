@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 import { useBadgeHue, type BadgeHue } from './badge-hue';
 import { fluentComponents } from '../../fluent';
+import { hexHue, pickDistinctHue } from '../../lib/hue';
 
 const { Badge, makeStyles, mergeClasses } = fluentComponents;
 
@@ -19,13 +20,19 @@ export type BadgeTone = 'accent' | 'danger' | 'neutral' | 'success' | 'warning';
 // wash and the outline need a hue with no meaning of its own, and the label is
 // solved from it like any other.
 // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L220-L231
-const TONE_HUES: Record<BadgeTone, BadgeHue> = {
+const TONE_HUES = {
   accent: { light: '#0078d4', dark: '#4cc2ff' },
   danger: { light: '#c42b1c', dark: '#ff99a4' },
   neutral: { light: '#8a8a8a', dark: '#9a9a9a' },
   success: { light: '#0f7b0f', dark: '#6ccb5f' },
   warning: { light: '#9d5d00', dark: '#fce100' },
-};
+} satisfies Record<BadgeTone, BadgeHue>;
+
+// An identity badge -- an upstream's, a group's -- must not read as a failure,
+// so a hue picked for one keeps as clear of the critical fill, in either
+// scheme, as of a hue another badge already holds.
+export const pickIdentityHue = (existing: readonly number[]): number =>
+  pickDistinctHue(existing, [TONE_HUES.danger.light, TONE_HUES.danger.dark].map(hexHue));
 
 /** Fluent's private `tagSpacingSmall`, which is what ./chip.tsx's `small` step pads its root by.
  * https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tags/library/src/components/Tag/useTagStyles.styles.ts#L23

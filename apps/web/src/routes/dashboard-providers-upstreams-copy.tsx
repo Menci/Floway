@@ -5,12 +5,12 @@ import { requireDashboardAdmin } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi } from '../api/client';
 import type { UpstreamRecord } from '../api/types';
+import { pickIdentityHue } from '../components/ui/status-badge';
 import { loadEditorAux } from '../components/upstream-editor/data';
 import { UpstreamEditorPage } from '../components/upstream-editor/page';
 import { i18n } from '../i18n';
 import { withoutUiTextEditorMarkers } from '../i18n/ui-text-editor/markers';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
-import { pickDistinctHue } from '../lib/hue';
 
 export const handle = dashboardWorkspaceHandle;
 
@@ -79,7 +79,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const record = copyableRecord(
     source,
     withoutUiTextEditorMarkers(() => i18n.t('upstreams.copy.nameSuffix', { name: source.name })),
-    pickDistinctHue(upstreamsResult.data.map(upstream => upstream.hue)),
+    pickIdentityHue(upstreamsResult.data.map(upstream => upstream.hue)),
   );
   return {
     ...aux,

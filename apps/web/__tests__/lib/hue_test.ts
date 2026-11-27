@@ -1,7 +1,7 @@
 import { converter } from 'culori/fn';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { hueBadgeTone, pickDistinctHue } from '../../src/lib/hue';
+import { hexHue, hueBadgeTone, pickDistinctHue } from '../../src/lib/hue';
 
 const toOklch = converter('oklch');
 
@@ -39,12 +39,45 @@ describe('hueBadgeTone', () => {
 });
 
 describe('pickDistinctHue', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('takes the middle of the widest gap', () => {
-    expect(pickDistinctHue([0, 10, 20])).toBe(190);
-    expect(pickDistinctHue([0, 200, 210])).toBe(100);
+    expect(pickDistinctHue([0, 10, 20], [])).toBe(190);
+    expect(pickDistinctHue([0, 200, 210], [])).toBe(100);
   });
 
   it('measures the gap that wraps past 0 like any other', () => {
-    expect(pickDistinctHue([170, 190])).toBe(0);
+    expect(pickDistinctHue([170, 190], [])).toBe(0);
+  });
+
+  it('keeps as clear of a hue to avoid as of one in use', () => {
+    // Without the hue to avoid, the widest gap is the one opposite 200.
+    expect(pickDistinctHue([200], [])).toBe(20);
+    expect(pickDistinctHue([200], [30])).toBe(295);
+  });
+
+  it('draws an empty console from the whole circle', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    expect(pickDistinctHue([], [])).toBe(180);
+  });
+
+  it('draws an empty console from the middle half of the arc the hues to avoid leave', () => {
+    const random = vi.spyOn(Math, 'random');
+    random.mockReturnValue(0);
+    expect(pickDistinctHue([], [10, 30])).toBe(115);
+    random.mockReturnValue(1 - Number.EPSILON);
+    expect(pickDistinctHue([], [10, 30])).toBe(285);
+  });
+});
+
+describe('hexHue', () => {
+  it('reads the OKLCH hue', () => {
+    expect(hexHue('#c42b1c')).toBeCloseTo(30.1, 1);
+  });
+
+  it('refuses a colour without one', () => {
+    expect(() => hexHue('#808080')).toThrow(TypeError);
   });
 });
