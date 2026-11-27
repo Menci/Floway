@@ -233,3 +233,22 @@ test.each([
     ? { error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE } }
     : { error: { code: 400, status: 'INVALID_ARGUMENT', message: 'too long' } });
 });
+
+test('Anthropic Messages via Gemini restates Gemini input-token overflow to prompt-too-long in both HTTP and stream phases', async () => {
+  const trip = await requireTrip(routeAnthropicMessagesViaGeminiGenerateContent(messages, options()));
+  const googleOverflow = {
+    error: {
+      code: 400,
+      status: 'INVALID_ARGUMENT',
+      message: 'The input token count (1196265) exceeds the maximum number of tokens allowed (1048575).',
+    },
+  };
+  const http = trip.error(400, new Headers(), new TextEncoder().encode(JSON.stringify(googleOverflow)));
+  expect(http?.status).toBe(400);
+  expect(http?.body).toMatchObject({
+    type: 'error',
+    error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE },
+  });
+  const stream = await collect(trip.events(iterate([eventFrame(googleOverflow)])));
+  expect(stream).toEqual([eventFrame(http?.body)]);
+});

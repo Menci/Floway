@@ -6,6 +6,7 @@ import type {
   IRInputClientItem,
   IRInputDocument,
   IRInputMedia,
+  IRInputOutputFormat,
   IRInputRequestHeader,
   IRInputSettings,
   IRInputTextPart,
@@ -55,7 +56,14 @@ const dataURLPart = (value: string): GeminiGenerateContentPart => {
 const mediaPart = (media: IRInputMedia): GeminiGenerateContentPart => {
   switch (media.source_kind) {
   case 'url':
-    return isDataURL(media.url) ? dataURLPart(media.url) : { fileData: { fileUri: media.url } };
+    return isDataURL(media.url)
+      ? dataURLPart(media.url)
+      : {
+          fileData: {
+            ...(media.media_type !== undefined && media.media_type !== '' ? { mimeType: media.media_type } : {}),
+            fileUri: media.url,
+          },
+        };
   case 'data':
     return isDataURL(media.data) ? dataURLPart(media.data) : { inlineData: inlineBlob(media.data, undefined) };
   case 'base64':
@@ -488,11 +496,20 @@ const thinkingConfigFromSettings = (settings: IRInputSettings): GeminiGenerateCo
   return undefined;
 };
 
+const outputFormatConfig = (format: IRInputOutputFormat | undefined): Partial<GeminiGenerateContentGenerationConfig> => {
+  if (format?.type === 'json_schema') {
+    if (format.schema === undefined) {
+      throw new TranslateInputException('Cannot translate json_schema response format without a schema.');
+    }
+    return { responseMimeType: 'application/json', responseJsonSchema: klona(format.schema) };
+  }
+  return format?.type === 'json_object' ? { responseMimeType: 'application/json' } : {};
+};
+
 export const geminiGenerateContentSettingsFromIR = (
   settings: IRInputSettings,
 ): GeminiGenerateContentGenerationConfig | undefined => {
   const ceiling = settings.max_output_tokens ?? settings.max_visible_output_tokens;
-  const format = settings.output_format;
   const thinkingConfig = thinkingConfigFromSettings(settings);
 
   const config: GeminiGenerateContentGenerationConfig = {
@@ -514,14 +531,7 @@ export const geminiGenerateContentSettingsFromIR = (
           ...(settings.top_logprobs == null ? {} : { logprobs: settings.top_logprobs }),
         }
       : {}),
-    ...(format?.type === 'json_schema'
-      ? {
-          responseMimeType: 'application/json',
-          ...(format.schema === undefined ? {} : { responseJsonSchema: klona(format.schema) }),
-        }
-      : format?.type === 'json_object'
-        ? { responseMimeType: 'application/json' }
-        : {}),
+    ...outputFormatConfig(settings.output_format),
     ...(thinkingConfig === undefined ? {} : { thinkingConfig }),
   };
 

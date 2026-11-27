@@ -137,7 +137,7 @@ export type GeminiGenerateContentStreamEvent = GeminiGenerateContentResult | Gem
 
 export { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from './field-keys.ts';
 export { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentPromptBlockReason, isGeminiGenerateContentTerminalEvent, isGeminiGenerateContentTerminalFinishReason, collectGeminiGenerateContentProtocolEventsToResult } from './to-result.ts';
-export { appendGeminiGenerateContentPart, createGeminiGenerateContentEventAccumulator, reassembleGeminiGenerateContentEvents, type GeminiGenerateContentEventAccumulator } from './reassemble.ts';
+export { appendGeminiGenerateContentPart, createGeminiGenerateContentEventAccumulator, mergeGeminiGenerateContentLogprobsResult, reassembleGeminiGenerateContentEvents, type GeminiGenerateContentEventAccumulator } from './reassemble.ts';
 export { geminiGenerateContentProtocolFrameToSSEFrame } from './to-sse.ts';
 export { parseGeminiGenerateContentStream, type ParseGeminiGenerateContentStreamOptions } from './stream.ts';
 

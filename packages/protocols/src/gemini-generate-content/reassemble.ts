@@ -18,6 +18,38 @@ export const appendGeminiGenerateContentPart = (parts: GeminiGenerateContentPart
   else parts.push({ ...part });
   return parts.length - 1;
 };
+
+type GeminiGenerateContentLogprobsResult = NonNullable<GeminiGenerateContentCandidate['logprobsResult']>;
+
+// Streaming `logprobsResult` chunks carry per-chunk token deltas and partial sums.
+// https://github.com/googleapis/python-genai/blob/bbdca2a0d4aff88e4643ee431d7a01bed6e333b6/google/genai/tests/models/test_gc_continuation_token.py#L737-L864
+export const mergeGeminiGenerateContentLogprobsResult = (
+  earlier: GeminiGenerateContentLogprobsResult | undefined,
+  later: GeminiGenerateContentLogprobsResult | undefined,
+): GeminiGenerateContentLogprobsResult | undefined => {
+  if (earlier === undefined) {
+    return later === undefined
+      ? undefined
+      : {
+          ...(later.chosenCandidates === undefined ? {} : { chosenCandidates: [...later.chosenCandidates] }),
+          ...(later.topCandidates === undefined ? {} : { topCandidates: [...later.topCandidates] }),
+          ...(later.logProbabilitySum === undefined ? {} : { logProbabilitySum: later.logProbabilitySum }),
+        };
+  }
+  if (later === undefined) return earlier;
+  return {
+    ...(earlier.chosenCandidates === undefined && later.chosenCandidates === undefined
+      ? {}
+      : { chosenCandidates: [...(earlier.chosenCandidates ?? []), ...(later.chosenCandidates ?? [])] }),
+    ...(earlier.topCandidates === undefined && later.topCandidates === undefined
+      ? {}
+      : { topCandidates: [...(earlier.topCandidates ?? []), ...(later.topCandidates ?? [])] }),
+    ...(earlier.logProbabilitySum === undefined && later.logProbabilitySum === undefined
+      ? {}
+      : { logProbabilitySum: (earlier.logProbabilitySum ?? 0) + (later.logProbabilitySum ?? 0) }),
+  };
+};
+
 interface CandidateAccumulator {
   candidate: GeminiGenerateContentCandidate;
   content?: GeminiGenerateContentContent & { parts: GeminiGenerateContentPart[] };
@@ -51,8 +83,10 @@ export const createGeminiGenerateContentEventAccumulator = (): GeminiGenerateCon
         for (const part of incoming.content.parts ?? []) appendGeminiGenerateContentPart(content.parts, part);
         state.candidate.content = content;
       }
-      const { content: _content, finishReason, ...fields } = incoming;
+      const { content: _content, finishReason, logprobsResult, ...fields } = incoming;
       Object.assign(state.candidate, fields);
+      const mergedLogprobs = mergeGeminiGenerateContentLogprobsResult(state.candidate.logprobsResult, logprobsResult);
+      if (mergedLogprobs !== undefined) state.candidate.logprobsResult = mergedLogprobs;
       if (finishReason !== undefined && (isGeminiGenerateContentTerminalFinishReason(finishReason) || !isGeminiGenerateContentTerminalFinishReason(state.candidate.finishReason))) {
         state.candidate.finishReason = finishReason;
       }

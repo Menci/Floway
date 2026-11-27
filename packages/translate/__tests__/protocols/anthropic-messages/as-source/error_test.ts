@@ -12,6 +12,8 @@ const decoded = (result: { body: unknown }) => result.body as {
 test.each([
   ['Copilot Responses', { error: { code: 'model_max_prompt_tokens_exceeded', message: 'prompt token count of 1000000 exceeds the limit of 128000' } }],
   ['message-only signal', { error: { message: "This model's maximum context length is 4097 tokens. However, your messages resulted in 4498 tokens." } }],
+  ['Google AI Studio Gemini', { error: { code: 400, status: 'INVALID_ARGUMENT', message: 'The input token count (1196265) exceeds the maximum number of tokens allowed (1048575).' } }],
+  ['Vertex AI Gemini', { error: { code: 400, status: 'INVALID_ARGUMENT', message: 'The input token count exceeds the maximum number of tokens allowed 1048576.' } }],
 ])('restates a context overflow from the %s as the prompt-too-long wording', (_name, body) => {
   const payload = irErrorPayloadFromBody(new TextEncoder().encode(JSON.stringify(body)));
   if (payload === undefined) throw new Error('Expected parsed IR error payload');

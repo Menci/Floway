@@ -266,6 +266,7 @@ export type IRInputMedia =
   | {
     readonly source_kind: 'url'; // ChatCompletions, Responses, Messages
     readonly url: string; // ChatCompletions, Responses, Messages
+    readonly media_type?: string; // Messages
   }
   | {
     readonly source_kind: 'data'; // ChatCompletions, Responses

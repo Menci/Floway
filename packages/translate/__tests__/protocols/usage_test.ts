@@ -15,7 +15,7 @@ const sources = [
   ['ChatCompletions', readOpenAIChatCompletionsEvents, { id: 'resp_usage', model: 'served', created: 1, choices: [], service_tier: 'priority', usage: { prompt_tokens: 17, completion_tokens: 2, total_tokens: 19, prompt_tokens_details: { cached_tokens: 3, cache_write_tokens: 4 } } }, 'priority', initialUsage],
   ['Responses', readOpenAIResponsesEvents, { type: 'response.created', response: { id: 'resp_usage', model: 'served', created_at: 1, status: 'in_progress', output: [], service_tier: 'fast', usage: initialUsage } }, 'fast', initialUsage],
   ['Messages', readAnthropicMessagesEvents, { type: 'message_start', message: { id: 'msg_usage', model: 'served', usage: { input_tokens: 10, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4, speed: 'fast' } } }, 'fast', initialUsage],
-  ['GenerateContent', readGeminiGenerateContentEvents, { responseId: 'resp_usage', modelVersion: 'served', usageMetadata: { promptTokenCount: 17, cachedContentTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 19, serviceTier: FAST_SERVICE_TIER } }, 'fast', { input_tokens: 17, output_tokens: 2, total_tokens: 19, input_tokens_details: { cached_tokens: 3 } }],
+  ['GenerateContent', readGeminiGenerateContentEvents, { responseId: 'resp_usage', modelVersion: 'served', usageMetadata: { promptTokenCount: 17, cachedContentTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 19, serviceTier: FAST_SERVICE_TIER } }, 'priority', { input_tokens: 17, output_tokens: 2, total_tokens: 19, input_tokens_details: { cached_tokens: 3 } }],
 ] as const;
 
 test.each(sources)('Responses via %s exposes known initial accounting before pulling another upstream frame', async (_name, reader, event, tier, expectedUsage) => {

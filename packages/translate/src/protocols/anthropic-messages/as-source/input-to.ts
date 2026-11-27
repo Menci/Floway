@@ -55,7 +55,9 @@ const documentFromBlock = (block: Extract<AnthropicMessagesUserContentBlock, { t
   let source: IRInputDocument['source'];
   switch (native.type) {
   case 'base64': source = { source_kind: 'media', media: { source_kind: 'base64', media_type: native.media_type, data: native.data } }; break;
-  case 'url': source = { source_kind: 'media', media: { source_kind: 'url', url: native.url } }; break;
+  // Anthropic's `URLPDFSource` document URL always names a PDF.
+  // https://platform.claude.com/docs/en/build-with-claude/pdf-support
+  case 'url': source = { source_kind: 'media', media: { source_kind: 'url', url: native.url, media_type: 'application/pdf' } }; break;
   case 'file': source = { source_kind: 'media', media: { source_kind: 'file', file_id: native.file_id } }; break;
   case 'text': source = { source_kind: 'text', media_type: native.media_type, text: native.data }; break;
   case 'content': {

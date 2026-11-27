@@ -13,7 +13,7 @@ import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFi
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
-import { geminiServiceTierToOutputIR } from '../service-tier.ts';
+import { geminiServiceTierToIR } from '../service-tier.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE,
@@ -326,7 +326,7 @@ export const readGeminiGenerateContentEvents = async function* (
   const assignUsage = (usage: GeminiGenerateContentUsageMetadata): void => {
     mergeUsageMetadata(accumulatedUsage, usage);
     ir.usage(usageToIR(accumulatedUsage));
-    const tier = geminiServiceTierToOutputIR(typeof usage.serviceTier === 'string' ? usage.serviceTier : undefined);
+    const tier = geminiServiceTierToIR(typeof usage.serviceTier === 'string' ? usage.serviceTier : undefined);
     if (tier !== undefined) ir.assign(['service_tier'], tier);
   };
 

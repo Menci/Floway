@@ -961,4 +961,30 @@ test('covers assistant custom_tool_call/refusal, empty boundaries, single-kind l
       { functionResponse: { id: 'dup', name: 'beta', response: { b: 1 } } },
     ],
   });
+
+  // 5. `output_format: { type: 'json_schema' }` without a schema throws TranslateInputException.
+  expect(() => write({
+    settings: { model: 'gemini-2.5-pro', stream: true, output_format: { type: 'json_schema' } },
+  }, [{ kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text: 'hi' }] }] }]))
+    .toThrow(new TranslateInputException('Cannot translate json_schema response format without a schema.'));
+});
+
+test('carries application/pdf mimeType from Anthropic URL PDF documents onto Gemini fileData', async () => {
+  const trip = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    max_tokens: 256,
+    stream: true,
+    messages: [{
+      role: 'user',
+      content: [{ type: 'document', title: 'Spec', source: { type: 'url', url: 'https://example.com/spec.pdf' } }],
+    }],
+  }, options()));
+  expect(trip.target.contents).toEqual([{
+    role: 'user',
+    parts: [
+      { text: '<document>\n<title>Spec</title>' },
+      { fileData: { mimeType: 'application/pdf', fileUri: 'https://example.com/spec.pdf' } },
+      { text: '</document>' },
+    ],
+  }]);
 });

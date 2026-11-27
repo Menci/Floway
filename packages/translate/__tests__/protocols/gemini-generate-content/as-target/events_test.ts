@@ -84,7 +84,7 @@ test('streams merged plain text deltas, Unicode grounding citations, logprobs, a
   ]));
 
   expect(state.model).toBe('gemini-2.5-pro');
-  expect(state.service_tier).toBe('fast');
+  expect(state.service_tier).toBe('priority');
   expect(state.choices[0]?.refusal_details).toBeUndefined();
   expect(state.choices[0]?.items).toEqual([{
     type: 'message',

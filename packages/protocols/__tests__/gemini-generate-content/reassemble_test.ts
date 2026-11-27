@@ -95,3 +95,42 @@ test('reassembleGeminiGenerateContentEvents preserves a terminal finishReason ac
   ]));
   assertEquals(result.candidates?.[0]?.finishReason, 'STOP');
 });
+
+test('reassembleGeminiGenerateContentEvents concatenates per-chunk logprobsResult deltas and sums logProbabilitySum', async () => {
+  const result = await reassembleGeminiGenerateContentEvents(eventsFrom([
+    {
+      candidates: [{
+        index: 0,
+        content: { role: 'model', parts: [{ text: 'Hel' }] },
+        logprobsResult: {
+          chosenCandidates: [{ token: 'Hel', logProbability: -0.5 }],
+          topCandidates: [{ candidates: [{ token: 'Hel', logProbability: -0.5 }] }],
+          logProbabilitySum: -0.5,
+        },
+      }],
+    },
+    {
+      candidates: [{
+        index: 0,
+        content: { role: 'model', parts: [{ text: 'lo' }] },
+        logprobsResult: {
+          chosenCandidates: [{ token: 'lo', logProbability: -1.25 }],
+          topCandidates: [{ candidates: [{ token: 'lo', logProbability: -1.25 }] }],
+          logProbabilitySum: -1.25,
+        },
+        finishReason: 'STOP',
+      }],
+    },
+  ]));
+  assertEquals(result.candidates?.[0]?.logprobsResult, {
+    chosenCandidates: [
+      { token: 'Hel', logProbability: -0.5 },
+      { token: 'lo', logProbability: -1.25 },
+    ],
+    topCandidates: [
+      { candidates: [{ token: 'Hel', logProbability: -0.5 }] },
+      { candidates: [{ token: 'lo', logProbability: -1.25 }] },
+    ],
+    logProbabilitySum: -1.75,
+  });
+});
