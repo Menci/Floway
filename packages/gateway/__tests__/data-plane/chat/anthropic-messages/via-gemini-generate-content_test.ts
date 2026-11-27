@@ -259,7 +259,17 @@ test('translates Anthropic Messages count_tokens to Gemini countTokens, preserve
       model: 'gemini-2.5-pro',
       system: 'x-anthropic-billing-header: token\ncch=deadbeef1234;\nCount rules.',
       tools: [{ name: 'lookup', input_schema: { type: 'object', properties: { q: { type: 'string' } } } }],
-      messages: [{ role: 'user', content: 'How many tokens?' }],
+      messages: [
+        { role: 'user', content: 'Look up metric' },
+        { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_1', name: 'lookup', input: { q: 'latency' } }] },
+        {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 'toolu_1', content: '{"score":1.0,"id":9007199254740993}' },
+            { type: 'text', text: 'How many tokens?' },
+          ],
+        },
+      ],
     } as AnthropicMessagesPayload,
     ctx,
     candidate: makeCandidate({
@@ -278,10 +288,34 @@ test('translates Anthropic Messages count_tokens to Gemini countTokens, preserve
   expect(JSON.parse(decodeResponseBody(ok.body))).toEqual({ input_tokens: 73 });
   expect(capturedHeaders?.has('anthropic-beta')).toBe(false);
   expect(capturedHeaders?.get('x-client-tag')).toBe('keep');
-  expect(capturedBody).toEqual({
-    systemInstruction: { parts: [{ text: 'Count rules.' }] },
+  const serializedBody = JSON.stringify(capturedBody);
+  expect(serializedBody).toContain('"response":{"score":1.0,"id":9007199254740993}');
+  expect(JSON.parse(serializedBody)).toEqual({
     tools: [{ functionDeclarations: [{ name: 'lookup', parametersJsonSchema: { type: 'object', properties: { q: { type: 'string' } } } }] }],
-    contents: [{ role: 'user', parts: [{ text: 'How many tokens?' }] }],
+    systemInstruction: { parts: [{ text: 'Count rules.' }] },
+    contents: [
+      { role: 'user', parts: [{ text: 'Look up metric' }] },
+      {
+        role: 'model',
+        parts: [{
+          functionCall: { id: 'toolu_1', name: 'lookup', args: { q: 'latency' } },
+          thoughtSignature: 'skip_thought_signature_validator',
+        }],
+      },
+      {
+        role: 'user',
+        parts: [
+          {
+            functionResponse: {
+              id: 'toolu_1',
+              name: 'lookup',
+              response: { score: 1, id: 9007199254740992 },
+            },
+          },
+          { text: 'How many tokens?' },
+        ],
+      },
+    ],
   });
 
   const rateLimited = await anthropicMessagesAttempt.countTokens({

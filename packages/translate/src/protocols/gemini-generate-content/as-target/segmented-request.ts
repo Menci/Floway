@@ -3,6 +3,7 @@ import { klona } from 'klona/json';
 import type { GeminiGenerateContentInputAssistantTurn } from './assistant-turn.ts';
 import {
   appendContentParts,
+  applySyntheticThoughtSignatures,
   geminiGenerateContentConversationFromIR,
   geminiGenerateContentHeaderFromIR,
   type GeminiGenerateContentCallLookup,
@@ -38,6 +39,7 @@ export const geminiGenerateContentPayloadFromSegments = (
 ): GeminiGenerateContentRequest => {
   const systemParts: GeminiGenerateContentPart[] = [];
   const contents: GeminiGenerateContentContent[] = [];
+  const syntheticFunctionCalls = new WeakSet<GeminiGenerateContentPart>();
 
   for (const piece of segmentTurns(turns)) {
     if (piece.kind === 'restored') {
@@ -47,10 +49,12 @@ export const geminiGenerateContentPayloadFromSegments = (
       }
       continue;
     }
-    const segment = geminiGenerateContentConversationFromIR(piece.turns, piece.leading, callLookup);
+    const segment = geminiGenerateContentConversationFromIR(piece.turns, piece.leading, callLookup, syntheticFunctionCalls);
     systemParts.push(...segment.systemParts);
     for (const content of segment.contents) appendMergedContent(contents, content);
   }
+
+  applySyntheticThoughtSignatures(contents, syntheticFunctionCalls);
 
   return {
     ...geminiGenerateContentHeaderFromIR(request, options),

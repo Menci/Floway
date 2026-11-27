@@ -492,7 +492,10 @@ test('serializes non-sidecar parallel tool calls with default empty args and tho
       // Empty mid-turn developer guidance yields 0 parts, forcing consecutive IR and restored model turns adjacent.
       { type: 'message', role: 'developer', content: '' },
       ...restoredItems,
+      { type: 'message', role: 'developer', content: '' },
+      { type: 'function_call', call_id: 'call_extra', name: 'ping', arguments: '' },
       { type: 'function_call_output', call_id: restoredCall.call_id, output: 'pong' },
+      { type: 'function_call_output', call_id: 'call_extra', output: 'pong2' },
     ],
   }, { sidecarCodec: codec }));
   expect(mergedModels.target.contents).toEqual([
@@ -502,10 +505,37 @@ test('serializes non-sidecar parallel tool calls with default empty args and tho
       parts: [
         { text: 'Let me check.' },
         { functionCall: { name: 'ping', args: {} }, thoughtSignature: 'real_gemini_sig' },
+        { functionCall: { id: 'call_extra', name: 'ping', args: {} } },
       ],
     },
-    { role: 'user', parts: [{ functionResponse: { name: 'ping', response: { output: 'pong' } } }] },
+    {
+      role: 'user',
+      parts: [
+        { functionResponse: { name: 'ping', response: { output: 'pong' } } },
+        { functionResponse: { id: 'call_extra', name: 'ping', response: { output: 'pong2' } } },
+      ],
+    },
   ]);
+
+  const consecutiveAssistantCalls = expectTrip(await routeOpenAIChatCompletionsViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    stream: true,
+    tools: [{ type: 'function', function: { name: 'ping', parameters: { type: 'object', properties: {} } } }],
+    messages: [
+      { role: 'user', content: 'Twice' },
+      { role: 'assistant', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'ping', arguments: '{}' } }] },
+      { role: 'assistant', tool_calls: [{ id: 'c2', type: 'function', function: { name: 'ping', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'c1', content: 'one' },
+      { role: 'tool', tool_call_id: 'c2', content: 'two' },
+    ],
+  }, { sidecarCodec: codec }));
+  expect(consecutiveAssistantCalls.target.contents[1]).toEqual({
+    role: 'model',
+    parts: [
+      { functionCall: { id: 'c1', name: 'ping', args: {} }, thoughtSignature: 'skip_thought_signature_validator' },
+      { functionCall: { id: 'c2', name: 'ping', args: {} } },
+    ],
+  });
 });
 
 test('maps Anthropic adaptive thinking with and without explicit effort, and restores Chat tool sidecar when client omits refusal null', async () => {

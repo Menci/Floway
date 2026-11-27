@@ -222,15 +222,30 @@ const userMessageParts = (item: Extract<IRInputClientItem, { type: 'message'; ro
 // https://ai.google.dev/gemini-api/docs/thought-signatures
 const GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR = 'skip_thought_signature_validator';
 
+export const applySyntheticThoughtSignatures = (
+  contents: readonly GeminiGenerateContentContent[],
+  syntheticFunctionCalls: WeakSet<GeminiGenerateContentPart>,
+): void => {
+  for (const content of contents) {
+    if (content.role !== 'model') continue;
+    const parts = content.parts ?? [];
+    if (parts.some(part => part.thoughtSignature !== undefined)) continue;
+    const firstFunctionCall = parts.find(part => part.functionCall !== undefined);
+    if (firstFunctionCall !== undefined && syntheticFunctionCalls.has(firstFunctionCall)) {
+      firstFunctionCall.thoughtSignature = GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR;
+    }
+  }
+};
+
 const systemTextParts = (content: readonly IRInputTextPart[]): GeminiGenerateContentPart[] =>
   content.flatMap(part => (part.text === '' ? [] : [{ text: part.text }]));
 
 const assistantParts = (
   items: readonly IRInputAssistantItemWithCallIds[],
   callLookup: GeminiGenerateContentCallLookup,
+  syntheticFunctionCalls: WeakSet<GeminiGenerateContentPart>,
 ): GeminiGenerateContentPart[] => {
   const parts: GeminiGenerateContentPart[] = [];
-  let signedFunctionCall = false;
 
   for (const item of items) {
     switch (item.type) {
@@ -249,31 +264,29 @@ const assistantParts = (
       break;
     case 'function_call': {
       callLookup.set(item.call_id, { name: item.name, id: item.call_id });
-      const thoughtSignature = signedFunctionCall ? undefined : GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR;
-      signedFunctionCall = true;
-      parts.push({
+      const part: GeminiGenerateContentPart = {
         functionCall: {
           id: item.call_id,
           name: item.name,
           // Emit `{}` when arguments are absent so Go relays without `omitempty` (e.g. New-API) do not serialize `"args": null`.
           args: item.arguments === undefined ? {} : parseFunctionCallArguments(item.arguments),
         },
-        ...(thoughtSignature === undefined ? {} : { thoughtSignature }),
-      });
+      };
+      syntheticFunctionCalls.add(part);
+      parts.push(part);
       break;
     }
     case 'custom_tool_call': {
       callLookup.set(item.call_id, { name: item.name, id: item.call_id });
-      const thoughtSignature = signedFunctionCall ? undefined : GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR;
-      signedFunctionCall = true;
-      parts.push({
+      const part: GeminiGenerateContentPart = {
         functionCall: {
           id: item.call_id,
           name: item.name,
           args: { input: item.input },
         },
-        ...(thoughtSignature === undefined ? {} : { thoughtSignature }),
-      });
+      };
+      syntheticFunctionCalls.add(part);
+      parts.push(part);
       break;
     }
     }
@@ -306,6 +319,7 @@ export const geminiGenerateContentConversationFromIR = (
   turns: readonly IRInputTurnWithCallIds[],
   leading: boolean,
   callLookup: GeminiGenerateContentCallLookup,
+  syntheticFunctionCalls: WeakSet<GeminiGenerateContentPart>,
 ): GeminiGenerateContentConversation => {
   const systemParts: GeminiGenerateContentPart[] = [];
   const contents: GeminiGenerateContentContent[] = [];
@@ -314,7 +328,7 @@ export const geminiGenerateContentConversationFromIR = (
   for (const turn of turns) {
     if (turn.kind === 'assistant') {
       hoisting = false;
-      appendContentParts(contents, 'model', assistantParts(turn.items, callLookup));
+      appendContentParts(contents, 'model', assistantParts(turn.items, callLookup, syntheticFunctionCalls));
       continue;
     }
 
