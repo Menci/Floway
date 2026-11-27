@@ -988,3 +988,97 @@ test('carries application/pdf mimeType from Anthropic URL PDF documents onto Gen
     ],
   }]);
 });
+
+test('envelopes root combinator tool schemas on GenerateContent, unwraps calls, and round-trips via thin references', async () => {
+  const codec = createTestSidecarCodec('generate-content-root-union');
+  const tools = [{
+    type: 'function' as const,
+    name: 'search_item',
+    description: 'Search by id or query',
+    parameters: {
+      type: 'object',
+      anyOf: [
+        { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] },
+        { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+      ],
+    },
+  }];
+
+  const trip1 = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-3-flash-preview',
+    stream: true,
+    tools,
+    input: 'Search for floway.',
+  }, { sidecarCodec: codec }));
+  expect(trip1.target.tools).toEqual([{
+    functionDeclarations: [{
+      name: 'search_item',
+      description: 'Search by id or query',
+      parametersJsonSchema: {
+        type: 'object',
+        properties: {
+          arguments: tools[0].parameters,
+        },
+        required: ['arguments'],
+        additionalProperties: false,
+      },
+    }],
+  }]);
+
+  const result1 = await collectOpenAIResponsesProtocolEventsToResult(trip1.events(iterate([
+    eventFrame({
+      modelVersion: 'gemini-3-flash-preview',
+      candidates: [{
+        index: 0,
+        content: {
+          role: 'model',
+          parts: [{
+            functionCall: { name: 'search_item', args: { arguments: { query: 'floway' } } },
+            thoughtSignature: 'sig_enveloped',
+          }],
+        },
+        finishReason: 'STOP',
+      }],
+    }),
+  ])));
+  const call1 = result1.output.find(item => item.type === 'function_call');
+  expect(call1).toMatchObject({ type: 'function_call', name: 'search_item', arguments: '{"query":"floway"}' });
+
+  // Turn 2 with sidecar restores the wrapped native args + thoughtSignature via thin reference.
+  const trip2Restored = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-3-flash-preview',
+    stream: true,
+    tools,
+    input: [
+      { type: 'message', role: 'user', content: 'Search for floway.' },
+      ...toOpenAIResponsesInputItems(result1.output),
+      { type: 'function_call_output', call_id: call1!.call_id, output: '{"hit":true}' },
+    ],
+  }, { sidecarCodec: codec }));
+  expect(trip2Restored.target.contents[1]).toEqual({
+    role: 'model',
+    parts: [{
+      functionCall: { name: 'search_item', args: { arguments: { query: 'floway' } } },
+      thoughtSignature: 'sig_enveloped',
+    }],
+  });
+
+  // Turn 2 without sidecar wraps synthetic history arguments into `{ arguments: ... }`.
+  const trip2Synthetic = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-3-flash-preview',
+    stream: true,
+    tools,
+    input: [
+      { type: 'message', role: 'user', content: 'Search for floway.' },
+      { type: 'function_call', call_id: 'call_syn', name: 'search_item', arguments: '{"id":42}' },
+      { type: 'function_call_output', call_id: 'call_syn', output: '{"hit":true}' },
+    ],
+  }, { sidecarCodec: codec }));
+  expect(trip2Synthetic.target.contents[1]).toEqual({
+    role: 'model',
+    parts: [{
+      functionCall: { id: 'call_syn', name: 'search_item', args: { arguments: { id: 42 } } },
+      thoughtSignature: 'skip_thought_signature_validator',
+    }],
+  });
+});

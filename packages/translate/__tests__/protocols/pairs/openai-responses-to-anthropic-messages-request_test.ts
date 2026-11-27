@@ -318,7 +318,7 @@ test('buildTargetPayload rejects root unions with dynamic recursive references',
       }],
     }),
     TranslateInputException,
-    'Cannot translate an Anthropic tool schema with a root combinator and dynamic recursive references.',
+    'Cannot translate a tool schema with a root combinator and dynamic recursive references.',
   );
 });
 

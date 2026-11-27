@@ -1,5 +1,7 @@
+import type { IRJSONObject } from '../../../ir/common/json.ts';
 import type { ReferenceState, ReferenceStateLeaves, ReferenceableValue, TextRule, JSONRule } from '../../../round-trip/reference/types.ts';
-import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
+import type { ToolArgumentsEnvelope } from '../../../shared/tool-schema-envelope.ts';
+import type { GeminiGenerateContentContent, GeminiGenerateContentFunctionCall, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
 
 type GenerateContentPartRule = {
   text: TextRule;
@@ -8,6 +10,27 @@ type GenerateContentPartRule = {
   functionCall: { args: JSONRule };
 };
 
+type ReferenceableFunctionCallArgs<Reference> =
+  | ReferenceableValue<NonNullable<GeminiGenerateContentFunctionCall['args']>, JSONRule, Reference>
+  | ToolArgumentsEnvelope<ReferenceableValue<IRJSONObject, JSONRule, Reference>>;
+
+type ReferenceableGenerateContentPart<Part, Reference> = Part extends { functionCall: GeminiGenerateContentFunctionCall }
+  ? Omit<Part, 'functionCall'> & {
+    functionCall: Omit<Part['functionCall'], 'args'> & { args?: ReferenceableFunctionCallArgs<Reference> };
+  }
+  : ReferenceableValue<Part, GenerateContentPartRule, Reference>;
+
+type GenerateContentPartState<States extends ReferenceStateLeaves> =
+  | ReferenceState<GeminiGenerateContentPart, GenerateContentPartRule, States>
+  | { functionCall: { args: States['json'] | ToolArgumentsEnvelope<States['json']> } };
+
 export type GeminiGenerateContentInputAssistantTurn = Array<Omit<GeminiGenerateContentContent, 'role'> & { role: 'model' }>;
-export type GeminiGenerateContentReferenceableInputAssistantTurn<Reference> = ReferenceableValue<GeminiGenerateContentInputAssistantTurn, [{ parts: [GenerateContentPartRule] }], Reference>;
-export type GeminiGenerateContentInputAssistantTurnState<States extends ReferenceStateLeaves> = ReferenceState<GeminiGenerateContentInputAssistantTurn, [{ parts: [GenerateContentPartRule] }], States>;
+export type GeminiGenerateContentReferenceableInputAssistantTurn<Reference> = Array<
+  Omit<GeminiGenerateContentContent, 'role' | 'parts'> & {
+    role: 'model';
+    parts?: ReferenceableGenerateContentPart<GeminiGenerateContentPart, Reference>[];
+  }
+>;
+export type GeminiGenerateContentInputAssistantTurnState<States extends ReferenceStateLeaves> = Array<{
+  parts?: Array<GenerateContentPartState<States> | undefined>;
+}>;

@@ -7,10 +7,12 @@ import type { RestoredAssistantTurn } from '../../composition/reading.ts';
 import { assignCallIds, type IRInputToolResultItemWithCallId, type MatchedCall, type PendingCall } from '../../composition/request/call-ids.ts';
 import { allocateToolNames, type ToolNameContext } from '../../composition/request/tool-names.ts';
 import type { IRInputRequestHeader, IRInputTurn } from '../../ir/input/types.ts';
+import { envelopeRootToolSchemas } from '../../shared/tool-schema-envelope.ts';
 import type { GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 
 interface GenerateContentTargetContext extends ToolNameContext {
   readonly fallbackModel: string;
+  readonly envelopedFunctionToolNames: ReadonlySet<string>;
 }
 
 interface RestoredGenerateContentCall extends PendingCall {
@@ -62,12 +64,13 @@ export const geminiGenerateContentTargetProtocol: TargetProtocol<
       },
     });
     const flattened = allocateToolNames(request, assigned);
-    // Call positions stay invariant across `assignCallIds` and `allocateToolNames`,
-    // so indexing non-restored calls by `match.order` binds every `tool_result`
-    // to its allocated wire name without re-matching.
+    const enveloped = envelopeRootToolSchemas(flattened.request, flattened.turns);
+    // Call positions stay invariant across `assignCallIds`, `allocateToolNames`,
+    // and `envelopeRootToolSchemas`, so indexing non-restored calls by
+    // `match.order` binds every `tool_result` to its allocated wire name.
     const assistantWireNameByOrder: (string | undefined)[] = [];
     let order = 0;
-    for (const piece of flattened.turns) {
+    for (const piece of enveloped.turns) {
       if (piece.kind === 'restored') {
         order += restoredCallCounts.get(piece)!;
       } else if (piece.kind === 'assistant') {
@@ -85,13 +88,17 @@ export const geminiGenerateContentTargetProtocol: TargetProtocol<
         : { name: assistantWireNameByOrder[match.order]!, wireId: match.callId, order: match.order });
     }
     const payload = geminiGenerateContentPayloadFromIR(
-      flattened.request,
-      flattened.turns,
+      enveloped.request,
+      enveloped.turns,
       matchedToolResults,
     );
     return {
       payload,
-      context: { ...flattened.context, fallbackModel: payload.model },
+      context: {
+        ...flattened.context,
+        fallbackModel: payload.model,
+        envelopedFunctionToolNames: enveloped.names,
+      },
     };
   },
   readEvents: (frames, context, roundTripReader) =>

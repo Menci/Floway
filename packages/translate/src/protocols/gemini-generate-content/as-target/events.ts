@@ -11,6 +11,7 @@ import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFi
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
+import { unwrapToolArguments } from '../../../shared/tool-schema-envelope.ts';
 import { generateContentServiceTierToIR } from '../service-tier.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
@@ -214,6 +215,7 @@ export const readGeminiGenerateContentEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>,
   options: Partial<ToolNameContext> & {
     readonly fallbackModel?: string;
+    readonly envelopedFunctionToolNames?: ReadonlySet<string>;
     readonly roundTrip: RoundTripReader<'geminiGenerateContent'>;
   },
 ): AsyncGenerator<IRRecord> {
@@ -425,6 +427,19 @@ export const readGeminiGenerateContentEvents = async function* (
         const item = ir.item(choiceIndex, { type: 'custom_tool_call', call_id: callId, ...naming, input: '' });
         const unwrapped = unwrapCustomToolInput(argsJson);
         if (unwrapped !== '') item.append('input', unwrapped);
+        item.end('completed');
+      } else if (options.envelopedFunctionToolNames?.has(call.name) === true) {
+        const item = ir.item(choiceIndex, { type: 'function_call', call_id: callId, ...naming, arguments: '' });
+        const { json, objectArgument } = unwrapToolArguments(argsJson);
+        if (objectArgument && isPlainJSONObject(call.args)) {
+          // Only the inner object appears in the source turn and can be referenced on replay.
+          const jsonField = createReadFieldState('json');
+          const pieceId = appendReadField(options.roundTrip.builder, jsonField, json);
+          choice.partsFieldState[partIndex] = { functionCall: { args: { arguments: jsonField } } };
+          item.append('arguments', json, [pieceId]);
+        } else {
+          item.append('arguments', json);
+        }
         item.end('completed');
       } else {
         const item = ir.item(choiceIndex, { type: 'function_call', call_id: callId, ...naming, arguments: '' });

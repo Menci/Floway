@@ -1,8 +1,8 @@
-import type { RestoredAssistantTurn } from '../../../composition/reading.ts';
-import type { IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
-import type { IRInputRequestHeader, IRInputTool } from '../../../ir/input/types.ts';
-import { TranslateInputException } from '../../../shared/input-error.ts';
-import { isPlainJSONObject, parseJSONObject } from '../../../shared/json/object.ts';
+import { TranslateInputException } from './input-error.ts';
+import { isPlainJSONObject, parseJSONObject } from './json/object.ts';
+import type { RestoredAssistantTurn } from '../composition/reading.ts';
+import type { IRInputTurnWithCallIds } from '../composition/request/call-ids.ts';
+import type { IRInputRequestHeader, IRInputTool } from '../ir/input/types.ts';
 import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
 const ENVELOPE_KEY = 'arguments';
@@ -37,7 +37,7 @@ const relocateSchema = (schema: Record<string, unknown>, rebaseReferences: boole
   const relocateChild = (value: unknown): unknown => isPlainJSONObject(value) ? relocateSchema(value, rebase) : value;
   return Object.fromEntries(Object.entries(schema).map(([keyword, value]) => {
     if (DYNAMIC_RECURSION_KEYS.has(keyword)) {
-      throw new TranslateInputException('Cannot translate an Anthropic tool schema with a root combinator and dynamic recursive references.');
+      throw new TranslateInputException('Cannot translate a tool schema with a root combinator and dynamic recursive references.');
     }
     if (keyword === '$ref' && rebase && typeof value === 'string') return [keyword, rewriteLocalReference(value)];
     if (SCHEMA_MAP_KEYWORDS.has(keyword) && isPlainJSONObject(value)) {
@@ -49,11 +49,12 @@ const relocateSchema = (schema: Record<string, unknown>, rebaseReferences: boole
   }));
 };
 
-// Anthropic accepts JSON Schema combinators below input_schema but rejects them
-// at its root. Dynamic recursive references cannot be relocated under a property
-// without changing their resource traversal, so reject those schemas instead of
-// silently changing validation semantics.
+// Anthropic Messages `input_schema` and GenerateContent `parametersJsonSchema`
+// accept JSON Schema combinators below root properties while rejecting or
+// mis-enforcing them at the tool schema root. Dynamic recursive references
+// cannot be relocated under a property without changing resource traversal.
 // https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#specifying-client-tools
+// https://ai.google.dev/api/caching#FunctionDeclaration
 export const envelopeRootToolSchema = (schema: Record<string, unknown>): Record<string, unknown> => ({
   type: 'object',
   properties: { [ENVELOPE_KEY]: relocateSchema(schema, true) },
@@ -84,16 +85,16 @@ export const unwrapToolArguments = (wrapped: string): { json: string; objectArgu
     : { json: JSON.stringify(argument), objectArgument: isPlainJSONObject(argument) };
 };
 
-export interface EnvelopedAnthropicMessagesTools<Restored> {
+export interface EnvelopedRootTools<Restored> {
   readonly request: IRInputRequestHeader;
   readonly turns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<Restored>)[];
   readonly names: ReadonlySet<string>;
 }
 
-export const envelopeAnthropicMessagesRootToolSchemas = <Restored>(
+export const envelopeRootToolSchemas = <Restored>(
   request: IRInputRequestHeader,
   turns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<Restored>)[],
-): EnvelopedAnthropicMessagesTools<Restored> => {
+): EnvelopedRootTools<Restored> => {
   const names = new Set((request.tools ?? []).flatMap(tool =>
     tool.type === 'function' && tool.parameters !== undefined && hasRootToolSchemaCombinator(tool.parameters) ? [tool.name] : []));
   if (names.size === 0) return { request, turns, names };
