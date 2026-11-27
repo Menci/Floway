@@ -49,21 +49,26 @@ test('an invented id does not collide with one the conversation states', () => {
   assertThrows(() => assignCallIds([call('read'), result('read', 'read_call_1')], () => []), TranslateInputException);
 });
 
-test('allocates collision-free IDs for id-less restored calls and reports exact restored matches FIFO', () => {
+test('allocates collision-free IDs for id-less restored calls and reports exact call order for restored and ordinary matches', () => {
   interface TaggedCall extends PendingCall {
     readonly tag: string;
   }
   const first: RestoredAssistantTurn<string> = { kind: 'restored', turn: 'first', sourceCallIds: [undefined] };
   const second: RestoredAssistantTurn<string> = { kind: 'restored', turn: 'second', sourceCallIds: ['dup'] };
   const third: RestoredAssistantTurn<string> = { kind: 'restored', turn: 'third', sourceCallIds: ['dup'] };
-  const matched: Array<[string, string]> = [];
+  const matched: Array<[number, string, string | undefined]> = [];
   const turns = assignCallIds<string, TaggedCall>(
-    [first, second, third, result('lookup'), result(undefined, 'dup'), result(undefined, 'dup')],
+    [first, second, third, call('extra', 'ord_1'), result('lookup'), result(undefined, 'dup'), result(undefined, 'ord_1'), result(undefined, 'dup')],
     piece => piece.turn === 'first'
       ? [{ name: 'lookup', tag: 'idless' }]
       : [{ name: 'lookup', callId: 'dup', tag: piece.turn }],
-    { onMatch: (item, matchedCall) => { matched.push([item.call_id, matchedCall.tag]); } },
+    { onMatch: (item, match) => { matched.push([match.order, item.call_id, match.restored?.tag]); } },
   );
-  assertEquals(matched, [['lookup_call_1', 'idless'], ['dup', 'second'], ['dup', 'third']]);
+  assertEquals(matched, [
+    [0, 'lookup_call_1', 'idless'],
+    [1, 'dup', 'second'],
+    [3, 'ord_1', undefined],
+    [2, 'dup', 'third'],
+  ]);
   assertEquals(lastResult(turns).call_id, 'dup');
 });

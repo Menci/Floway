@@ -62,8 +62,8 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
   write: (request, turns) => {
     const legacyResults = new Map<IRInputToolResultItemWithCallId, string>();
     const assigned = assignCallIds(turns, callsOf, {
-      onMatch: (result, call) => {
-        if (call.legacy) legacyResults.set(result, call.name);
+      onMatch: (result, match) => {
+        if (match.restored?.legacy) legacyResults.set(result, match.name);
       },
     });
     const flattened = allocateToolNames(request, assigned);

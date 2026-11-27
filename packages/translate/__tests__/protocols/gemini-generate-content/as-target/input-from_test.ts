@@ -424,6 +424,16 @@ test('maps toolConfig variants (none, required, allowed_tools empty/all/undeclar
     type: 'input-error',
     message: 'Cannot translate required allowed_tools with an empty callable subset.',
   });
+  expect(await routeOpenAIChatCompletionsViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    stream: true,
+    tools: [{ type: 'function', function: { name: 'a', parameters: { type: 'object', properties: {} } } }],
+    tool_choice: { type: 'allowed_tools', allowed_tools: { mode: 'required', tools: [] } },
+    messages: [{ role: 'user', content: 'Go' }],
+  }, options())).toMatchObject({
+    type: 'input-error',
+    message: 'Gemini GenerateContent cannot require a tool call from an empty allowed_tools list.',
+  });
   expect(expectTrip(await runChoice({
     type: 'allowed_tools',
     mode: 'auto',
@@ -896,4 +906,45 @@ test('covers assistant custom_tool_call/refusal, empty boundaries, single-kind l
   expect(() => write({ settings: { model: 'gemini-2.5-pro', stream: false } }, [])).toThrow(
     'A translation target requires a streaming request',
   );
+
+  // 3. Cross-segment empty/reasoning-only model turns next to real restored/IR model turns emit no spurious `{ text: '' }`.
+  const crossSegmentBoundaries = write({ settings: { model: 'gemini-2.5-pro', stream: true } }, [
+    { kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text: 'A' }] }] },
+    { kind: 'assistant', items: [{ type: 'reasoning', id: 'r1', summary: ['dropped'] }] },
+    { kind: 'restored', turn: [{ role: 'model', parts: [{ text: 'Restored reply' }] }], sourceCallIds: [] },
+    { kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text: 'B' }] }] },
+    { kind: 'restored', turn: [{ role: 'model', parts: [] }], sourceCallIds: [] },
+    { kind: 'assistant', items: [{ type: 'message', content: [{ type: 'text', text: 'IR reply' }] }] },
+  ]);
+  expect(crossSegmentBoundaries.contents).toEqual([
+    { role: 'user', parts: [{ text: 'A' }] },
+    { role: 'model', parts: [{ text: 'Restored reply' }] },
+    { role: 'user', parts: [{ text: 'B' }] },
+    { role: 'model', parts: [{ text: 'IR reply' }] },
+  ]);
+
+  // 4. Duplicate call_ids paired with an id-less named tool_result keep exact call names and call order.
+  const duplicateIdsWithNamedResult = write({ settings: { model: 'gemini-2.5-pro', stream: true } }, [
+    {
+      kind: 'assistant',
+      items: [
+        { type: 'function_call', call_id: 'dup', name: 'alpha', arguments: '{}' },
+        { type: 'function_call', call_id: 'dup', name: 'beta', arguments: '{}' },
+      ],
+    },
+    {
+      kind: 'client',
+      items: [
+        { type: 'tool_result', name: 'beta', output: '{"b":1}' },
+        { type: 'tool_result', call_id: 'dup', output: '{"a":1}' },
+      ],
+    },
+  ]);
+  expect(duplicateIdsWithNamedResult.contents[1]).toEqual({
+    role: 'user',
+    parts: [
+      { functionResponse: { id: 'dup', name: 'alpha', response: { a: 1 } } },
+      { functionResponse: { id: 'dup', name: 'beta', response: { b: 1 } } },
+    ],
+  });
 });

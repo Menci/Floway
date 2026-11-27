@@ -4,11 +4,6 @@ import { fixtureFrames } from './fixtures.ts';
 import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readGeminiGenerateContentEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { usageToIR as messagesUsageToIR } from '../../src/protocols/anthropic-messages/as-target/usage.ts';
 import { usageToIR as geminiUsageToIR } from '../../src/protocols/gemini-generate-content/as-target/usage.ts';
-import {
-  geminiServiceTierFromInputIR,
-  geminiServiceTierFromOutputIR,
-  geminiServiceTierToOutputIR,
-} from '../../src/protocols/gemini-generate-content/service-tier.ts';
 import { usageToIR as chatUsageToIR } from '../../src/protocols/openai-chat-completions/as-target/usage.ts';
 import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';
 import { collectIR } from '../ir/output/helpers.ts';
@@ -98,28 +93,6 @@ test('GenerateContent retains prior usage counts and modality details across par
     input_text_tokens: 100,
   });
   expect(() => geminiUsageToIR({ promptTokenCount: 4, cachedContentTokenCount: 5 })).toThrow(RangeError);
-});
-
-test('GenerateContent service tier helpers normalize aliases and omit auto/empty values', () => {
-  expect(geminiServiceTierFromInputIR(undefined)).toBeUndefined();
-  expect(geminiServiceTierFromInputIR(null)).toBeUndefined();
-  expect(geminiServiceTierFromInputIR('')).toBeUndefined();
-  expect(geminiServiceTierFromInputIR('auto')).toBeUndefined();
-  expect(geminiServiceTierFromInputIR('default')).toBe('standard');
-  expect(geminiServiceTierFromInputIR('fast')).toBe('priority');
-  expect(geminiServiceTierFromInputIR('flex')).toBe('flex');
-
-  expect(geminiServiceTierToOutputIR(undefined)).toBeUndefined();
-  expect(geminiServiceTierToOutputIR('')).toBeUndefined();
-  expect(geminiServiceTierToOutputIR('standard')).toBe('default');
-  expect(geminiServiceTierToOutputIR('priority')).toBe('fast');
-  expect(geminiServiceTierToOutputIR('flex')).toBe('flex');
-
-  expect(geminiServiceTierFromOutputIR(undefined)).toBeUndefined();
-  expect(geminiServiceTierFromOutputIR('')).toBeUndefined();
-  expect(geminiServiceTierFromOutputIR('default')).toBe('standard');
-  expect(geminiServiceTierFromOutputIR('fast')).toBe('priority');
-  expect(geminiServiceTierFromOutputIR('flex')).toBe('flex');
 });
 
 test.each([

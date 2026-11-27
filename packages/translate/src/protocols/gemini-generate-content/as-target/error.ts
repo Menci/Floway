@@ -52,9 +52,9 @@ const geminiRpcErrorPayloadOf = (
   requireMessage: boolean,
 ): IRErrorPayload | undefined => {
   const status = stringOf(error.status);
-  const rpcStatus = (status !== undefined && status !== '' ? status : undefined)
-    ?? (typeof error.code === 'number' ? geminiGenerateContentStatusForHttpStatus(error.code) : undefined);
-  const mappedType = rpcStatus === undefined ? undefined : googleRpcErrorType(rpcStatus);
+  const httpStatus = typeof error.code === 'number' ? geminiGenerateContentStatusForHttpStatus(error.code) : undefined;
+  const mappedType = (status === undefined ? undefined : googleRpcErrorType(status))
+    ?? (httpStatus === undefined ? undefined : googleRpcErrorType(httpStatus));
   if (typeof error.code !== 'number' && mappedType === undefined) return undefined;
   const message = stringOf(error.message) ?? stringOf(error.msg);
   if (message === undefined && requireMessage) return undefined;

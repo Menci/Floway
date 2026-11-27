@@ -251,12 +251,7 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
       { text: 'in France.', thoughtSignature: 'sig_tail' },
     ]);
 
-    // 2. Native-vs-logical partIndex collision disambiguated by segment.text:
-    //    part 0 = text "Alpha " (native 0, logical 0)
-    //    part 1 = text "Beta" with thoughtSignature (native 1, still logical 0)
-    //    part 2 = functionCall (native 2, logical 1)
-    //    part 3 = text "Gamma" (native 3, logical 2)
-    //    Wait: native 0 vs logical 0 on range 0..10 ("Alpha Beta") vs native 0 ("Alpha ") on 0..6.
+    // 2. Native-vs-logical partIndex collision on a thoughtSignature split disambiguated by both `segment.text` and byte bounds.
     warn.mockClear();
     const disambiguated = await runReader(iterate([
       eventFrame({
@@ -271,10 +266,15 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
             ],
           },
           groundingMetadata: {
-            groundingChunks: [{ web: { uri: 'https://example.com/ab', title: 'AB' } }],
+            groundingChunks: [
+              { web: { uri: 'https://example.com/ab-text', title: 'AB Text' } },
+              { web: { uri: 'https://example.com/ab-bounds', title: 'AB Bounds' } },
+            ],
             groundingSupports: [
-              // Native index 0 ("Alpha ") vs logical index 0 ("Alpha Beta"): `segment.text` picks logical 0..10.
+              // Native 0 ("Alpha ") vs logical 0 ("Alpha Beta"): `segment.text` picks logical 0 for 6..10 ("Beta").
               { segment: { partIndex: 0, startIndex: 6, endIndex: 10, text: 'Beta' }, groundingChunkIndices: [0] },
+              // Without `segment.text`, byte bounds (`endIndex: 10 > 6`) still select logical 0 for 6..10.
+              { segment: { partIndex: 0, startIndex: 6, endIndex: 10 }, groundingChunkIndices: [1] },
             ],
           },
           finishReason: 'STOP',
@@ -287,17 +287,87 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
       content: [{
         type: 'text',
         text: 'Alpha Beta',
-        annotations: [{
-          type: 'source_citation',
-          source_kind: 'url',
-          source: 'https://example.com/ab',
-          source_label: 'AB',
-          output_text_range: { start: 6, end_exclusive: 10 },
-        }],
+        annotations: [
+          {
+            type: 'source_citation',
+            source_kind: 'url',
+            source: 'https://example.com/ab-text',
+            source_label: 'AB Text',
+            output_text_range: { start: 6, end_exclusive: 10 },
+          },
+          {
+            type: 'source_citation',
+            source_kind: 'url',
+            source: 'https://example.com/ab-bounds',
+            source_label: 'AB Bounds',
+            output_text_range: { start: 6, end_exclusive: 10 },
+          },
+        ],
       }],
     });
 
-    // 3. Late grounding on a closed text part warns and drops safely; mid-character UTF-8 split warns and omits range.
+    // 3. Untranslated server-side parts (`executableCode`) and empty `thought` parts advance logical grounding indices without losing later text citations.
+    warn.mockClear();
+    const afterUntranslated = await runReader(iterate([
+      eventFrame({
+        modelVersion: 'gemini-2.5-pro',
+        candidates: [{
+          index: 0,
+          content: {
+            role: 'model',
+            parts: [
+              { thought: true, text: 't1' },
+              { thought: true, text: 't2', thoughtSignature: 's_t' },
+              { text: 'Hello ' },
+              { text: 'world!', thoughtSignature: 's_w' },
+              { executableCode: { language: 'PYTHON', code: '1+1' } },
+              { text: 'Done.' },
+              { thought: true, thoughtSignature: 's_empty' },
+              { text: 'End' },
+            ],
+          },
+          groundingMetadata: {
+            groundingChunks: [
+              { web: { uri: 'https://example.com/done', title: 'Done' } },
+              { web: { uri: 'https://example.com/end', title: 'End' } },
+            ],
+            groundingSupports: [
+              // Logical 3 ("Done.") collides with native 3 ("world!") and resolves to UTF-16 12..17.
+              { segment: { partIndex: 3, startIndex: 0, endIndex: 5, text: 'Done.' }, groundingChunkIndices: [0] },
+              // Logical 5 ("End") after empty thought resolves to UTF-16 17..20.
+              { segment: { partIndex: 5, startIndex: 0, endIndex: 3, text: 'End' }, groundingChunkIndices: [1] },
+            ],
+          },
+          finishReason: 'STOP',
+        }],
+      }),
+    ]));
+    expect(warn).not.toHaveBeenCalled();
+    expect(afterUntranslated.state.choices[0]?.items[1]).toEqual({
+      type: 'message',
+      content: [{
+        type: 'text',
+        text: 'Hello world!Done.End',
+        annotations: [
+          {
+            type: 'source_citation',
+            source_kind: 'url',
+            source: 'https://example.com/done',
+            source_label: 'Done',
+            output_text_range: { start: 12, end_exclusive: 17 },
+          },
+          {
+            type: 'source_citation',
+            source_kind: 'url',
+            source: 'https://example.com/end',
+            source_label: 'End',
+            output_text_range: { start: 17, end_exclusive: 20 },
+          },
+        ],
+      }],
+    });
+
+    // 4. Late grounding on a closed text part warns and drops safely; mid-character UTF-8 split warns and omits range.
     warn.mockClear();
     const closedPart = await runReader(iterate([
       eventFrame({
@@ -528,7 +598,7 @@ test('maps safety refusal_details, promptFeedback blocking, failed output reason
     error: { type: 'api_error', code: 'MALFORMED_FUNCTION_CALL', message: 'Gemini ended the response with MALFORMED_FUNCTION_CALL' },
   });
 
-  // Mid-stream failed finish with non-empty finishMessage surfaces the message and closes prior open items cleanly.
+  // Mid-stream failed finish with non-empty finishMessage terminates the stream with an api_error carrying the message.
   const midStreamFailed = await runReader(iterate([
     eventFrame({
       modelVersion: 'gemini-2.5-pro',

@@ -58,6 +58,11 @@ test('maps numeric-only, status-only, explicit-type, unmapped, and message-less 
     message: 'rate limited',
     provider_specific_fields: { code: 429, status: '' },
   });
+  expect(readGeminiGenerateContentErrorBody(encode({ error: { code: 429, status: 'TOO_MANY_REQUESTS', message: 'relay limit' } }))).toEqual({
+    type: 'rate_limit_error',
+    message: 'relay limit',
+    provider_specific_fields: { code: 429, status: 'TOO_MANY_REQUESTS' },
+  });
   expect(readGeminiGenerateContentErrorBody(encode({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } }))).toBeUndefined();
   expect(geminiGenerateContentErrorPayloadFromWire({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } })).toEqual({
     type: 'rate_limit_error',

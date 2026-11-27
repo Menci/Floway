@@ -24,9 +24,16 @@ export interface PendingCall {
   readonly callId?: string;
 }
 
+export interface MatchedCall<Call extends PendingCall = PendingCall> {
+  readonly order: number;
+  readonly name: string;
+  readonly callId: string;
+  readonly restored?: Call;
+}
+
 export interface AssignCallIdsOptions<Call extends PendingCall = PendingCall> {
   readonly maxGeneratedCallIdLength?: number;
-  readonly onMatch?: (result: IRInputToolResultItemWithCallId, call: Call) => void;
+  readonly onMatch?: (result: IRInputToolResultItemWithCallId, match: MatchedCall<Call>) => void;
 }
 
 /**
@@ -39,12 +46,8 @@ export const assignCallIds = <Restored, Call extends PendingCall = PendingCall>(
   restoredCalls: (piece: RestoredAssistantTurn<Restored>) => readonly Call[],
   options: AssignCallIdsOptions<Call> = {},
 ): readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<Restored>)[] => {
-  interface TrackedPendingCall {
-    readonly name: string;
-    readonly callId: string;
-    readonly restored?: Call;
-  }
-  const pending: TrackedPendingCall[] = [];
+  const pending: MatchedCall<Call>[] = [];
+  let nextOrder = 0;
   let allocated = 0;
   // Every id this conversation states, read before allocating anything: an id
   // this step invents must not collide with one stated later in the same
@@ -80,7 +83,7 @@ export const assignCallIds = <Restored, Call extends PendingCall = PendingCall>(
   // A stated answer releases the call it names; an unstated one takes the
   // oldest call of its name, or the oldest call at all when the source stated
   // no name either.
-  const answer = (callId: string | undefined, name: string | undefined): TrackedPendingCall => {
+  const answer = (callId: string | undefined, name: string | undefined): MatchedCall<Call> => {
     const index = callId !== undefined
       ? pending.findIndex(call => call.callId === callId)
       : name === undefined ? 0 : pending.findIndex(call => call.name === name);
@@ -97,7 +100,7 @@ export const assignCallIds = <Restored, Call extends PendingCall = PendingCall>(
   return turns.map((piece): IRInputTurnWithCallIds | RestoredAssistantTurn<Restored> => {
     if (piece.kind === 'restored') {
       for (const call of restoredByPiece.get(piece) ?? []) {
-        pending.push({ name: call.name, callId: call.callId ?? allocate(call.name), restored: call });
+        pending.push({ order: nextOrder++, name: call.name, callId: call.callId ?? allocate(call.name), restored: call });
       }
       return piece;
     }
@@ -106,7 +109,7 @@ export const assignCallIds = <Restored, Call extends PendingCall = PendingCall>(
         if (item.type !== 'tool_result') return item;
         const matched = answer(item.call_id, item.name);
         const assigned: IRInputToolResultItemWithCallId = { ...item, call_id: matched.callId };
-        if (matched.restored !== undefined) options.onMatch?.(assigned, matched.restored);
+        options.onMatch?.(assigned, matched);
         return assigned;
       });
       return { kind: 'client', items };
@@ -114,7 +117,7 @@ export const assignCallIds = <Restored, Call extends PendingCall = PendingCall>(
     const items: IRInputAssistantItemWithCallIds[] = piece.items.map(item => {
       if (item.type !== 'function_call' && item.type !== 'custom_tool_call') return item;
       const callId = item.call_id ?? allocate(item.name);
-      pending.push({ name: item.name, callId });
+      pending.push({ order: nextOrder++, name: item.name, callId });
       return { ...item, call_id: callId };
     });
     return { kind: 'assistant', items };

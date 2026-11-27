@@ -65,10 +65,8 @@ const USAGE_METADATA_KEYS: readonly (keyof GeminiGenerateContentUsageMetadata)[]
   'thoughtsTokenCount',
   'toolUsePromptTokenCount',
   'promptTokensDetails',
-  'cacheTokensDetails',
   'candidatesTokensDetails',
   'toolUsePromptTokensDetails',
-  'serviceTier',
 ];
 
 const mapFinishReason = (
@@ -187,6 +185,7 @@ interface TextPartRecord {
   readonly part: IRPartHandle;
   readonly citations: IROutputSourceCitation[];
   readonly citationKeys: Set<string>;
+  utf16Length: number;
 }
 
 interface TextSegment {
@@ -199,7 +198,9 @@ interface TextSegment {
 interface GeminiChoiceState {
   readonly irIndex: number;
   message?: IRItemHandle | undefined;
-  activeTextSegment?: TextSegment | undefined;
+  activeTextPart?: TextPartRecord | undefined;
+  activeLogicalTextSegment?: TextSegment | undefined;
+  activeLogicalFirstNativeIndex?: number | undefined;
   reasoning?: IRItemHandle | undefined;
   readonly nativeParts: GeminiGenerateContentPart[];
   readonly partsFieldState: PartsFieldState;
@@ -303,8 +304,14 @@ export const readGeminiGenerateContentEvents = async function* (
     handle.append(field, text, [pieceId]);
   };
 
+  const endLogicalText = (choice: GeminiChoiceState): void => {
+    choice.activeLogicalTextSegment = undefined;
+    choice.activeLogicalFirstNativeIndex = undefined;
+  };
+
   const closeMessage = (choice: GeminiChoiceState, status: 'completed' | 'incomplete' = 'completed'): void => {
-    choice.activeTextSegment = undefined;
+    choice.activeTextPart = undefined;
+    endLogicalText(choice);
     if (choice.message === undefined) return;
     choice.message.end(status);
     choice.message = undefined;
@@ -403,6 +410,7 @@ export const readGeminiGenerateContentEvents = async function* (
     const isThought = part.thought === true;
 
     if (isThought) {
+      endLogicalText(choice);
       if (choice.lastLogicalKind !== 'thought') {
         choice.logicalPartCount++;
         choice.lastLogicalKind = 'thought';
@@ -421,27 +429,38 @@ export const readGeminiGenerateContentEvents = async function* (
       if (part.text === '') return;
       closeReasoning(choice);
       choice.message ??= ir.item(choiceIndex, { type: 'message', content: [] });
-      if (choice.activeTextSegment === undefined) {
-        const textPart: TextPartRecord = {
-          part: choice.message.part({ type: 'text', text: '' }),
-          citations: [],
-          citationKeys: new Set(),
-        };
-        const logicalSegment: TextSegment = { textPart, utf16Base: 0, text: '' };
-        choice.activeTextSegment = logicalSegment;
+      choice.activeTextPart ??= {
+        part: choice.message.part({ type: 'text', text: '' }),
+        citations: [],
+        citationKeys: new Set(),
+        utf16Length: 0,
+      };
+      const textPart = choice.activeTextPart;
+      let logicalSegment = choice.activeLogicalTextSegment;
+      if (logicalSegment === undefined) {
+        logicalSegment = { textPart, utf16Base: textPart.utf16Length, text: '' };
+        choice.activeLogicalTextSegment = logicalSegment;
+        choice.activeLogicalFirstNativeIndex = partIndex;
         const logicalIndex = choice.logicalPartCount++;
         choice.lastLogicalKind = 'text';
         choice.textSegmentsByLogicalIndex.set(logicalIndex, logicalSegment);
+        choice.textSegmentsByNativeIndex.set(partIndex, logicalSegment);
         choice.firstTextSegment ??= logicalSegment;
       }
-      const { textPart } = choice.activeTextSegment;
       let nativeSegment = choice.textSegmentsByNativeIndex.get(partIndex);
       if (nativeSegment === undefined) {
-        nativeSegment = {
-          textPart,
-          utf16Base: choice.activeTextSegment.text.length,
-          text: '',
-        };
+        // Fork the first native part's snapshot when a second native part enters the
+        // same logical text run (e.g. a mid-text `thoughtSignature` chunk) so logical
+        // and per-native grounding offsets stay distinct without duplicating common runs.
+        const firstIndex = choice.activeLogicalFirstNativeIndex;
+        if (firstIndex !== undefined && choice.textSegmentsByNativeIndex.get(firstIndex) === logicalSegment) {
+          choice.textSegmentsByNativeIndex.set(firstIndex, {
+            textPart,
+            utf16Base: logicalSegment.utf16Base,
+            text: logicalSegment.text,
+          });
+        }
+        nativeSegment = { textPart, utf16Base: textPart.utf16Length, text: '' };
         choice.textSegmentsByNativeIndex.set(partIndex, nativeSegment);
       }
       const existingState = choice.partsFieldState[partIndex];
@@ -449,10 +468,13 @@ export const readGeminiGenerateContentEvents = async function* (
       const textField = existingTextField ?? createReadFieldState('text');
       if (existingTextField === undefined) choice.partsFieldState[partIndex] = { text: textField };
       appendTextField(textPart.part, 'text', part.text, textField);
-      nativeSegment.text += part.text;
-      nativeSegment.coordinateIndex?.append(part.text);
-      choice.activeTextSegment.text += part.text;
-      choice.activeTextSegment.coordinateIndex?.append(part.text);
+      logicalSegment.text += part.text;
+      logicalSegment.coordinateIndex?.append(part.text);
+      if (nativeSegment !== logicalSegment) {
+        nativeSegment.text += part.text;
+        nativeSegment.coordinateIndex?.append(part.text);
+      }
+      textPart.utf16Length += part.text.length;
       return;
     }
 
@@ -490,6 +512,7 @@ export const readGeminiGenerateContentEvents = async function* (
     }
 
     if (part.inlineData !== undefined) {
+      endLogicalText(choice);
       choice.logicalPartCount++;
       choice.lastLogicalKind = 'other';
       const mimeType = part.inlineData.mimeType.toLowerCase();
@@ -497,9 +520,9 @@ export const readGeminiGenerateContentEvents = async function* (
       const isImage = !isAudio && mimeType.startsWith('image/');
       if (!isAudio && !isImage) return;
       closeReasoning(choice);
-      if (choice.activeTextSegment !== undefined) {
-        choice.activeTextSegment.textPart.part.end();
-        choice.activeTextSegment = undefined;
+      if (choice.activeTextPart !== undefined) {
+        choice.activeTextPart.part.end();
+        choice.activeTextPart = undefined;
       }
       choice.message ??= ir.item(choiceIndex, { type: 'message', content: [] });
 
@@ -537,6 +560,7 @@ export const readGeminiGenerateContentEvents = async function* (
     }
 
     if (part.executableCode !== undefined || part.codeExecutionResult !== undefined || part.toolCall !== undefined || part.toolResponse !== undefined || part.fileData !== undefined) {
+      endLogicalText(choice);
       choice.logicalPartCount++;
       choice.lastLogicalKind = 'other';
     }

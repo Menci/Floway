@@ -233,9 +233,9 @@ const userMessageParts = (item: Extract<IRInputClientItem, { type: 'message'; ro
 // https://ai.google.dev/gemini-api/docs/thought-signatures
 const GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR = 'skip_thought_signature_validator';
 
-export type NormalizedGeminiContent = GeminiGenerateContentContent & { role: 'user' | 'model'; parts: GeminiGenerateContentPart[] };
+type NormalizedGeminiContent = GeminiGenerateContentContent & { role: 'user' | 'model'; parts: GeminiGenerateContentPart[] };
 
-export const applySyntheticThoughtSignatures = (
+const applySyntheticThoughtSignatures = (
   contents: readonly NormalizedGeminiContent[],
   syntheticFunctionCalls: WeakSet<GeminiGenerateContentPart>,
 ): void => {
@@ -296,7 +296,7 @@ const assistantParts = (
   return parts;
 };
 
-export const appendContentParts = (
+const appendContentParts = (
   contents: NormalizedGeminiContent[],
   role: 'user' | 'model',
   parts: readonly GeminiGenerateContentPart[],
@@ -315,77 +315,90 @@ export interface GeminiGenerateContentConversation {
   readonly contents: NormalizedGeminiContent[];
 }
 
-export const geminiGenerateContentConversationFromIR = (
-  turns: readonly IRInputTurnWithCallIds[],
-  leading: boolean,
+export const createGeminiGenerateContentConversationWriter = (
   matchedToolResults: GeminiGenerateContentToolResultLookup,
-  syntheticFunctionCalls: WeakSet<GeminiGenerateContentPart>,
-  previousRole?: 'user' | 'model',
-): GeminiGenerateContentConversation => {
+) => {
   const systemParts: GeminiGenerateContentPart[] = [];
   const contents: NormalizedGeminiContent[] = [];
-  let hoisting = leading;
-  let pendingToolResults: BuiltToolResult[] = [];
-  let pendingUserParts: GeminiGenerateContentPart[] = [];
+  const syntheticFunctionCalls = new WeakSet<GeminiGenerateContentPart>();
   let pendingEmptyModelBoundary = false;
 
   const flushEmptyModelBoundary = (): void => {
     if (!pendingEmptyModelBoundary) return;
     pendingEmptyModelBoundary = false;
-    // Non-sidecar reasoning-only or empty assistant turns drop their unverified
-    // content; keep an empty model boundary so surrounding user turns do not merge.
+    // Non-sidecar reasoning-only or empty model turns have no wireable content;
+    // emit an empty text part so surrounding user turns do not merge.
     appendContentParts(contents, 'model', [{ text: '' }]);
   };
 
-  const flushClientRun = (): void => {
-    if (pendingToolResults.length === 0 && pendingUserParts.length === 0) return;
-    flushEmptyModelBoundary();
-    const ordered = pendingToolResults.toSorted((a, b) => a.order - b.order);
-    const parts: GeminiGenerateContentPart[] = [
-      ...ordered.map(entry => entry.responsePart),
-      ...ordered.flatMap(entry => entry.liftedParts),
-      ...pendingUserParts,
-    ];
-    pendingToolResults = [];
-    pendingUserParts = [];
-    appendContentParts(contents, 'user', parts);
+  const appendModelParts = (parts: readonly GeminiGenerateContentPart[]): void => {
+    if (parts.length > 0) {
+      pendingEmptyModelBoundary = false;
+      appendContentParts(contents, 'model', parts);
+    } else if (contents.at(-1)?.role !== 'model') {
+      pendingEmptyModelBoundary = true;
+    }
   };
 
-  for (const turn of turns) {
-    if (turn.kind === 'assistant') {
+  return {
+    appendRestoredTurn: (turn: readonly GeminiGenerateContentContent[]): void => {
+      appendModelParts(klona(turn.flatMap(entry => entry.parts ?? [])));
+    },
+
+    appendIRSegment: (turns: readonly IRInputTurnWithCallIds[], leading: boolean): void => {
+      let hoisting = leading;
+      let pendingToolResults: BuiltToolResult[] = [];
+      let pendingUserParts: GeminiGenerateContentPart[] = [];
+
+      const flushClientRun = (): void => {
+        if (pendingToolResults.length === 0 && pendingUserParts.length === 0) return;
+        flushEmptyModelBoundary();
+        const ordered = pendingToolResults.toSorted((a, b) => a.order - b.order);
+        const parts: GeminiGenerateContentPart[] = [
+          ...ordered.map(entry => entry.responsePart),
+          ...ordered.flatMap(entry => entry.liftedParts),
+          ...pendingUserParts,
+        ];
+        pendingToolResults = [];
+        pendingUserParts = [];
+        appendContentParts(contents, 'user', parts);
+      };
+
+      for (const turn of turns) {
+        if (turn.kind === 'assistant') {
+          flushClientRun();
+          hoisting = false;
+          appendModelParts(assistantParts(turn.items, syntheticFunctionCalls));
+          continue;
+        }
+
+        for (const item of turn.items) {
+          if (item.type === 'tool_result') {
+            hoisting = false;
+            pendingToolResults.push(buildToolResult(item, matchedToolResults));
+            continue;
+          }
+          if (item.type === 'instruction' || (item.type === 'message' && item.role !== 'user')) {
+            // Gemini `contents` only admits `'user'` and `'model'` roles; non-leading
+            // system/developer turns lower inline into user text parts.
+            (hoisting ? systemParts : pendingUserParts).push(...systemTextParts(item.content));
+            if (item.type === 'instruction') hoisting = false;
+            continue;
+          }
+          hoisting = false;
+          pendingUserParts.push(...userMessageParts(item));
+        }
+      }
+
       flushClientRun();
-      hoisting = false;
-      const parts = assistantParts(turn.items, syntheticFunctionCalls);
-      if (parts.length > 0) {
-        pendingEmptyModelBoundary = false;
-        appendContentParts(contents, 'model', parts);
-      } else if ((contents.at(-1)?.role ?? previousRole) !== 'model') {
-        pendingEmptyModelBoundary = true;
-      }
-      continue;
-    }
+    },
 
-    for (const item of turn.items) {
-      if (item.type === 'tool_result') {
-        hoisting = false;
-        pendingToolResults.push(buildToolResult(item, matchedToolResults));
-        continue;
-      }
-      if (item.type === 'instruction' || (item.type === 'message' && item.role !== 'user')) {
-        // Gemini `contents` only admits `'user'` and `'model'` roles; non-leading
-        // system/developer turns lower inline into user text parts.
-        (hoisting ? systemParts : pendingUserParts).push(...systemTextParts(item.content));
-        if (item.type === 'instruction') hoisting = false;
-        continue;
-      }
-      hoisting = false;
-      pendingUserParts.push(...userMessageParts(item));
-    }
-  }
-
-  flushClientRun();
-  flushEmptyModelBoundary();
-  return { systemParts, contents };
+    finish: (): GeminiGenerateContentConversation => {
+      flushEmptyModelBoundary();
+      applySyntheticThoughtSignatures(contents, syntheticFunctionCalls);
+      return { systemParts, contents };
+    },
+  };
 };
 
 const toolFromIR = (tool: IRInputTool): GeminiGenerateContentFunctionDeclaration => {
