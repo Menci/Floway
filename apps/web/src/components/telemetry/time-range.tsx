@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { ResetCyclePicker } from './reset-cycle-picker';
-import type { ResetCycleHistory } from './reset-cycles';
+import { readResetCycles } from './reset-cycles';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { calendarDate, parseCalendarDate } from '../../lib/calendar-date';
@@ -15,7 +15,7 @@ import { ScrollArea } from '../ui/scroll-area';
 const { Popover, PopoverSurface } = fluentComponents;
 type RangePicker = 'custom' | 'reset-cycle';
 
-export function TelemetryTimeRange({ addressOf, ariaLabel, disabled = false, loadedAt, onChange, onEditingChange, range, resetCycles = null }: {
+export function TelemetryTimeRange({ addressOf, ariaLabel, disabled = false, loadedAt, onChange, onEditingChange, range, resetUpstreamId = null }: {
   addressOf: ((range: DashboardRange) => string) | null;
   ariaLabel: string;
   disabled?: boolean;
@@ -23,7 +23,7 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, disabled = false, loa
   onChange: (range: DashboardRange) => void;
   onEditingChange: (editing: boolean) => void;
   range: DashboardRange;
-  resetCycles?: ResetCycleHistory | null;
+  resetUpstreamId?: string | null;
 }) {
   const { t } = useTranslation();
   const popupId = useId();
@@ -31,6 +31,9 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, disabled = false, loa
   const [session, setSession] = useState({ serial: 0, date: isCalendarRange(range) ? range.start : calendarDate(new Date(loadedAt)), picker: 'custom' as RangePicker, open: false });
   const [calendarAnchor, setCalendarAnchor] = useState<HTMLElement | null>(null);
   const [cycleAnchor, setCycleAnchor] = useState<HTMLElement | null>(null);
+  const [capability, setCapability] = useState<{ upstreamId: string; supported: boolean }>();
+  const cycleAvailable = resetUpstreamId !== null && (isResetRange(range)
+    || (capability?.upstreamId === resetUpstreamId && capability.supported));
   const { picker, open } = session;
   const isCyclePicker = picker === 'reset-cycle';
   const anchor = isCyclePicker ? cycleAnchor : calendarAnchor;
@@ -72,14 +75,23 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, disabled = false, loa
     return () => document.removeEventListener('pointerdown', outside, true);
   }, [close, owns]);
   useEffect(() => {
-    if (resetCycles === null && editingRef.current === 'reset-cycle') close();
-  }, [close, resetCycles]);
+    if (resetUpstreamId === null) return;
+    const controller = new AbortController();
+    void readResetCycles(resetUpstreamId, Date.now(), controller.signal, { view: 'availability' }).then(result => {
+      // A failed capability check leaves the picker available for an explicit retry.
+      if (!controller.signal.aborted) setCapability({ upstreamId: resetUpstreamId, supported: result.data?.supported ?? true });
+    });
+    return () => controller.abort();
+  }, [resetUpstreamId]);
+  useEffect(() => {
+    if (!cycleAvailable && editingRef.current === 'reset-cycle') close();
+  }, [close, cycleAvailable]);
   const blur = (target: EventTarget | null) => {
     if (editingRef.current !== 'custom' || owns(target)) return;
     queueMicrotask(() => { if (editingRef.current === 'custom' && document.hasFocus() && !owns(document.activeElement)) close(); });
   };
   const formatEndpoint = (date: string) => numericDate(parseCalendarDate(date), true);
-  return <div className="floway-telemetry-range ml-auto" inert={disabled} ref={groupRef} onBlurCapture={event => blur(event.relatedTarget)} onKeyDown={event => {
+  return <div className="floway-telemetry-range ml-auto" data-reset-cycles={cycleAvailable || undefined} inert={disabled} ref={groupRef} onBlurCapture={event => blur(event.relatedTarget)} onKeyDown={event => {
     if (event.key !== 'Escape' || !editingRef.current) return;
     event.preventDefault(); event.stopPropagation(); finish();
   }}>
@@ -87,7 +99,7 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, disabled = false, loa
       {isCalendarRange(range) && <button aria-label={t('monitoring.controls.range.choose')} className="floway-telemetry-range-caption-button winui-focus-rect" onClick={() => begin('custom')} type="button">
         {formatEndpoint(range.start)}{' - '}{formatEndpoint(range.end)}
       </button>}
-      {isResetRange(range) && resetCycles !== null && <button aria-label={t('monitoring.controls.resetCycle.choose')} className="floway-telemetry-range-caption-button winui-focus-rect" onClick={() => begin('reset-cycle')} type="button">
+      {isResetRange(range) && cycleAvailable && <button aria-label={t('monitoring.controls.resetCycle.choose')} className="floway-telemetry-range-caption-button winui-focus-rect" onClick={() => begin('reset-cycle')} type="button">
         {numericDateTime(new Date(range.start))}{' - '}{numericDateTime(new Date(range.end ?? loadedAt))}
       </button>}
     </div>
@@ -95,7 +107,7 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, disabled = false, loa
       { value: 'today', label: t('monitoring.controls.range.oneDay'), ...(addressOf === null ? { button: true } : { to: addressOf('today') }) },
       { value: '7d', label: t('monitoring.controls.range.sevenDays'), ...(addressOf === null ? { button: true } : { to: addressOf('7d') }) },
       { value: '30d', label: t('monitoring.controls.range.thirtyDays'), ...(addressOf === null ? { button: true } : { to: addressOf('30d') }) },
-      ...(resetCycles === null ? [] : [{
+      ...(!cycleAvailable ? [] : [{
         value: 'reset-cycle', label: t('monitoring.controls.resetCycle.filter'), button: true,
         elementRef: setCycleAnchor, ariaExpanded: open && isCyclePicker, ariaControls: popupId,
       }]),
@@ -117,7 +129,7 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, disabled = false, loa
         onBlurCapture={event => blur(event.relatedTarget)} ref={surfaceRef}>
         {isCyclePicker
           ? <ScrollArea axes="vertical" className="floway-reset-cycle-scroller" contentClassName="floway-reset-cycle-scroll-content" noTabIndex>
-              {resetCycles && <ResetCyclePicker history={resetCycles} key={session.serial} loadedAt={loadedAt} range={range} onApply={finish} onCancel={() => finish()} />}
+              {resetUpstreamId !== null && <ResetCyclePicker upstreamId={resetUpstreamId} key={`${resetUpstreamId}:${session.serial}`} loadedAt={loadedAt} range={range} onApply={finish} onCancel={() => finish()} />}
             </ScrollArea>
           : <CalendarRange autoFocus displayDate={session.date} key={session.serial} onChange={select} value={draft} />}
       </PopoverSurface>

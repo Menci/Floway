@@ -87,31 +87,37 @@ export class SqlUpstreamMetricsRepo implements UpstreamMetricsRepo {
     `).bind(upstreamId, name, labelsJson, start, end).first<Pick<UpstreamMetricRecord, 'timestamp' | 'value'>>();
   }
 
-  async queryResetStarts(upstreamId: string, identity: UpstreamMetricIdentity, threshold: UpstreamMetricResetThreshold, before: number): Promise<number[]> {
+  async queryResetStarts(
+    upstreamId: string, identity: UpstreamMetricIdentity, threshold: UpstreamMetricResetThreshold, before: number,
+    { from = Number.MIN_SAFE_INTEGER, order = 'desc', limit = -1 }: NonNullable<Parameters<UpstreamMetricsRepo['queryResetStarts']>[4]> = {},
+  ): Promise<number[]> {
     const metric = encodeIdentity(identity);
     const allowance = typeof threshold.full === 'number' ? null : encodeIdentity(threshold.full);
-    // An absolute balance is meaningful only against the allowance observed at
-    // the same instant. A reduction of the allowance alone is not a refill.
-    const full = allowance === null ? '?' : `(SELECT value FROM upstream_metrics allowance
-      WHERE allowance.upstream_id = sample.upstream_id AND allowance.metric_name = ? AND allowance.metric_labels = ?
-        AND allowance.bucket = sample.bucket AND allowance.timestamp = sample.timestamp AND allowance.value > 0)`;
-    const bindings = allowance === null ? [threshold.full as number] : [allowance.name, allowance.labelsJson];
+    const fullAt = (sample: 'sample' | 'previous') => allowance === null ? '?' : `(SELECT value FROM upstream_metrics allowance
+      WHERE allowance.upstream_id = ${sample}.upstream_id AND allowance.metric_name = ? AND allowance.metric_labels = ?
+        AND allowance.bucket = ${sample}.bucket AND allowance.timestamp = ${sample}.timestamp AND allowance.value > 0)`;
+    const fullBindings = allowance === null ? [threshold.full as number] : [allowance.name, allowance.labelsJson];
     const depleted = threshold.direction === 'used' ? '>' : '<';
     const { results } = await this.db.prepare(`
-      WITH observations AS (
-        SELECT timestamp, value, ${full} AS full_value FROM upstream_metrics sample
-        WHERE upstream_id = ? AND metric_name = ? AND metric_labels = ? AND timestamp < ?
-      ), transitions AS (
-        SELECT timestamp, value, full_value,
-          LAG(value) OVER (ORDER BY timestamp) AS previous_value,
-          LAG(full_value) OVER (ORDER BY timestamp) AS previous_full_value
-        FROM observations
-      )
-      SELECT timestamp FROM transitions
-      WHERE value = full_value AND previous_value ${depleted} previous_full_value
-        ${allowance === null ? '' : 'AND value > previous_value'}
-      ORDER BY timestamp DESC
-    `).bind(...bindings, upstreamId, metric.name, metric.labelsJson, before).all<{ timestamp: number }>();
+      SELECT sample.timestamp FROM upstream_metrics sample
+      WHERE sample.upstream_id = ? AND sample.metric_name = ? AND sample.metric_labels = ?
+        AND sample.timestamp >= ? AND sample.timestamp < ?
+        AND sample.value = ${fullAt('sample')}
+        AND EXISTS (
+          SELECT 1 FROM upstream_metrics previous
+          WHERE previous.upstream_id = sample.upstream_id AND previous.metric_name = sample.metric_name
+            AND previous.metric_labels = sample.metric_labels
+            AND previous.timestamp = (
+              SELECT earlier.timestamp FROM upstream_metrics earlier
+              WHERE earlier.upstream_id = sample.upstream_id AND earlier.metric_name = sample.metric_name
+                AND earlier.metric_labels = sample.metric_labels AND earlier.timestamp < sample.timestamp
+              ORDER BY earlier.timestamp DESC LIMIT 1
+            )
+            AND previous.value ${depleted} ${fullAt('previous')}
+            ${allowance === null ? '' : 'AND sample.value > previous.value'}
+        )
+      ORDER BY sample.timestamp ${order === 'asc' ? 'ASC' : 'DESC'} LIMIT ?
+    `).bind(upstreamId, metric.name, metric.labelsJson, from, before, ...fullBindings, ...fullBindings, limit).all<{ timestamp: number }>();
     return results.map(({ timestamp }) => timestamp);
   }
 }

@@ -28,7 +28,8 @@ test('a newly observed reset advances the current cycle but leaves the applied h
 test('a history request failure cannot silently substitute a calendar range', async () => {
   const history = resetHistory(loadedAt);
   const range = resetRangeAt(history.upstreamId, history.metrics[0]!, 0)!;
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'History unavailable' }, { status: 500 })));
+  const fetchHistory = vi.fn(async () => Response.json({ error: 'History unavailable' }, { status: 500 }));
+  vi.stubGlobal('fetch', fetchHistory);
   const signal = new AbortController().signal;
   const load = vi.fn(async () => 'observations');
   await expect(loadWithResetCycles(history.upstreamId, range, loadedAt, signal, load)).resolves.toMatchObject({
@@ -36,6 +37,7 @@ test('a history request failure cannot silently substitute a calendar range', as
   });
   expect(load).not.toHaveBeenCalled();
   await expect(loadWithResetCycles(history.upstreamId, '7d', loadedAt, signal, load)).resolves.toMatchObject({
-    data: 'observations', range: '7d', error: { message: 'History unavailable' },
+    data: 'observations', range: '7d', error: null,
   });
+  expect(fetchHistory).toHaveBeenCalledTimes(1);
 });

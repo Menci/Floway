@@ -8,7 +8,7 @@ import type {
   UsageRange,
 } from './types';
 import { api, callApi, type ApiResult } from '../../api/client';
-import { dashboardFixedRangeQuery } from '../charts/dashboard-time';
+import { dashboardFixedRangeQuery, isResetRange } from '../charts/dashboard-time';
 import { loadWithResetCycles, singleTelemetryUpstream } from '../telemetry/reset-cycles';
 import { canContinueTelemetrySnapshot, mergeTelemetrySnapshot, sameTelemetryBucketGrid, sameTelemetryScope } from '../telemetry/snapshot';
 import type {
@@ -106,7 +106,9 @@ const loadUsageAndSearch = async (
   let searchView = searchViewFor(knownAuditableUserIds);
   let usageResult;
   let searchResult;
-  if (knownAuditableUserIds === undefined) {
+  if (isResetRange(range)) {
+    usageResult = await loadUsageOverview(range, groupBy, filters, loadedAt, signal);
+  } else if (knownAuditableUserIds === undefined) {
     usageResult = await loadUsageOverview(range, groupBy, filters, loadedAt, signal);
     searchView = searchViewFor(usageResult.data?.auditableUserIds);
     searchResult = await loadSearch(searchView);
@@ -121,7 +123,7 @@ const loadUsageAndSearch = async (
       searchResult = await loadSearch(searchView);
     }
   }
-  const searchData = searchResult.error ? null : searchResult.data;
+  const searchData = searchResult?.data ?? null;
   if (searchData !== null && (Array.isArray(searchData) || searchData.view !== searchView)) {
     throw new TypeError(`Search usage response does not match the requested ${searchView} view`);
   }
@@ -129,7 +131,7 @@ const loadUsageAndSearch = async (
     usage: usageResult.data ?? null,
     search: searchData ? searchUsageForDisplay(searchData) : null,
     upstreams: usageResult.data?.upstreams ?? [],
-    error: usageResult.error ?? searchResult.error ?? null,
+    error: usageResult.error ?? searchResult?.error ?? null,
   };
 };
 

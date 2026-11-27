@@ -135,7 +135,7 @@ it('uses exact reset observations for the upstream metrics query and hour bucket
   renderPage();
   fireEvent.click(await waitFor(() => metricsButton('First')));
   fireEvent.click(await screen.findByRole('radio', { name: 'By Reset Cycle' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Older cycle' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Older cycle' }));
   fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
   await waitFor(() => expect(requested).toHaveLength(4));
   const metricQuery = requested.filter(url => url.pathname === '/api/upstream-metrics')[1]!.searchParams;

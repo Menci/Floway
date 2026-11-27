@@ -774,7 +774,8 @@ export interface UpstreamMetricsRepo {
   query(upstreamId: string, start: number, end: number, step: number): Promise<UpstreamMetricRecord[]>;
   latestSample(upstreamId: string, identity: UpstreamMetricIdentity, start: number, end: number): Promise<Pick<UpstreamMetricRecord, 'timestamp' | 'value'> | null>;
   listIdentities(upstreamId: string, before: number): Promise<UpstreamMetricIdentity[]>;
-  queryResetStarts(upstreamId: string, identity: UpstreamMetricIdentity, threshold: UpstreamMetricResetThreshold, before: number): Promise<number[]>;
+  queryResetStarts(upstreamId: string, identity: UpstreamMetricIdentity, threshold: UpstreamMetricResetThreshold, before: number,
+    options?: { from?: number | undefined; order?: 'asc' | 'desc'; limit?: number }): Promise<number[]>;
 }
 
 export interface Repo {

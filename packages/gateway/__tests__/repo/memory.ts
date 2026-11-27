@@ -2234,19 +2234,20 @@ export class InMemoryRepo implements Repo {
         && record.timestamp >= start && record.timestamp < end).toSorted((a, b) => b.timestamp - a.timestamp)[0];
       return sample === undefined ? null : { timestamp: sample.timestamp, value: sample.value };
     },
-    queryResetStarts: async (upstreamId, identity, threshold, before) => {
+    queryResetStarts: async (upstreamId, identity, threshold, before, { from = -Infinity, order = 'desc', limit = Infinity } = {}) => {
       const series = (key: string) => this.upstreamMetricRecords.filter(row =>
         row.upstreamId === upstreamId && row.timestamp < before && upstreamMetricIdentityKey(row) === key);
       const allowance = typeof threshold.full === 'number' ? null : new Map(series(upstreamMetricIdentityKey(threshold.full))
         .filter(row => row.value > 0).map(row => [row.timestamp, row.value]));
       const samples = series(upstreamMetricIdentityKey(identity)).toSorted((a, b) => a.timestamp - b.timestamp)
         .map(row => ({ ...row, full: typeof threshold.full === 'number' ? threshold.full : allowance?.get(row.timestamp) }));
-      return samples.flatMap((sample, index) => {
+      const starts = samples.flatMap((sample, index) => {
         const previous = samples[index - 1];
-        return sample.value === sample.full && previous?.full !== undefined
+        return sample.timestamp >= from && sample.value === sample.full && previous?.full !== undefined
           && (threshold.direction === 'used' ? previous.value > previous.full : previous.value < previous.full)
           && (allowance === null || sample.value > previous.value) ? [sample.timestamp] : [];
-      }).reverse();
+      });
+      return (order === 'asc' ? starts : starts.reverse()).slice(0, limit);
     },
   };
   apiKeys: ApiKeyRepo;

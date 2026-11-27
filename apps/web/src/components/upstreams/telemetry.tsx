@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-import type { ApiResult, GlobalError } from '../../api/client';
+import type { ApiResult } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { useTranslation } from '../../i18n/translation';
 import { useUserPreferences } from '../../lib/use-preferences';
@@ -41,7 +41,7 @@ export const loadUpstreamTelemetry = async (query: UpstreamTelemetryQuery, loade
   const [usage, metrics] = loaded.data;
   if (usage.error) return { error: usage.error };
   if (metrics.error) return { error: metrics.error };
-  return { data: { query: { ...query, range: loaded.range }, loadedAt, usage: usage.data, metrics: metrics.data, resetCycles: loaded.resetCycles, resetCyclesError: loaded.error } };
+  return { data: { query: { ...query, range: loaded.range }, loadedAt, usage: usage.data, metrics: metrics.data, resetCycles: loaded.resetCycles } };
 };
 export interface UpstreamTelemetryData {
   query: UpstreamTelemetryQuery;
@@ -49,7 +49,6 @@ export interface UpstreamTelemetryData {
   usage: UsageOverviewResponse;
   metrics: NonNullable<Awaited<ReturnType<typeof loadUpstreamMetrics>>['data']>;
   resetCycles: ResetCycleHistory | null;
-  resetCyclesError: GlobalError | null;
 }
 
 export function UpstreamTelemetryRow({ data, immediateCollapse, record, busy, currentUserId, onQueryChange, onRangeEditingChange }: {
@@ -102,14 +101,14 @@ function UpstreamTelemetryPanel({ data, record, busy, currentUserId, onQueryChan
     };
   }, [data.metrics, preferences.quotaDisplay, record, t]);
   return <LinkedChartHoverProvider><div className={`${PANEL_INSET_CLASS} ${PANEL_STACK_CLASS} min-w-0`} id={`upstream-telemetry-${encodeURIComponent(record.id)}`}>
-    <CycleQuota range={query.range} quota={data.resetCycles?.quota} />
+    <CycleQuota loadedAt={loadedAt} range={query.range} quota={data.resetCycles?.quota} />
     <div className="flex items-end gap-3 min-w-0 flex-wrap">
       <UsageGrouping disabled={busy} dimensions={dimensions} groupBy={query.groupBy} onChange={groupBy => onQueryChange({ ...query, ...changeTelemetryGroupBy(query, groupBy, identityContext) })} />
       <TelemetryFilterFields disabled={busy} dimensions={dimensions} filters={query.filters} groupBy={query.groupBy}
         onFilterChange={(key, values) => onQueryChange({ ...query, ...changeTelemetryFilter(query, key, values, identityContext) })}
         selectedLabel={count => t('monitoring.usage.filters.selected', { count })} />
       <TelemetryTimeRange addressOf={null} ariaLabel={t('monitoring.usage.range.label')} disabled={busy} loadedAt={loadedAt}
-        onChange={range => onQueryChange({ ...query, range })} onEditingChange={onRangeEditingChange} range={query.range} resetCycles={data.resetCycles} />
+        onChange={range => onQueryChange({ ...query, range })} onEditingChange={onRangeEditingChange} range={query.range} resetUpstreamId={record.id} />
     </div>
     <TokenUsageCharts usage={data.usage} dimensions={dimensions} upstreams={upstreams} groupBy={query.groupBy} range={query.range} loadedAt={loadedAt}
       metric={metric} onMetricChange={setMetric} hidden={hidden} onHiddenChange={setHidden} title={t('monitoring.upstreams.tabs.usage')} />

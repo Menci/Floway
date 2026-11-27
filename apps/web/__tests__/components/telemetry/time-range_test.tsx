@@ -10,12 +10,13 @@ import { TelemetryTimeRange } from '../../../src/components/telemetry/time-range
 import { renderInApp } from '../../render';
 
 const now = Date.UTC(2026, 9, 10, 14, 30);
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 const renderEditor = (initial: DashboardRange = 'today', resetCycles: ResetCycleHistory | null = null) => {
   vi.stubEnv('TZ', 'UTC');
   vi.spyOn(Date, 'now').mockReturnValue(now);
   vi.spyOn(document, 'hasFocus').mockReturnValue(true);
   vi.spyOn(window, 'matchMedia').mockImplementation(query => ({ matches: query === '(prefers-reduced-motion: reduce)', media: query, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, onchange: null, dispatchEvent: () => true } as MediaQueryList));
+  if (resetCycles !== null) vi.stubGlobal('fetch', vi.fn(async () => Response.json(resetCycles)));
   const change = vi.fn<(range: DashboardRange) => void>();
   const editing = vi.fn();
   let commitLoaded!: Dispatch<SetStateAction<DashboardRange>>;
@@ -25,7 +26,7 @@ const renderEditor = (initial: DashboardRange = 'today', resetCycles: ResetCycle
       const [range, setRange] = useState(initial);
       commitLoaded = setRange;
       return <>
-        <TelemetryTimeRange addressOf={() => '/'} ariaLabel="Range" loadedAt={now} onChange={change} onEditingChange={editing} range={range} resetCycles={resetCycles} />
+        <TelemetryTimeRange addressOf={() => '/'} ariaLabel="Range" loadedAt={now} onChange={change} onEditingChange={editing} range={range} resetUpstreamId={resetCycles?.upstreamId ?? null} />
         <button type="button">Outside</button>
       </>;
     },
@@ -54,10 +55,10 @@ test('only Custom opens a day range and the second date closes and applies once'
 test('browses earlier cycles and switches quota windows before applying the displayed time span', async () => {
   const history = resetHistory(now);
   const { change, editing } = renderEditor('today', history);
-  const trigger = screen.getByRole('radio', { name: 'By Reset Cycle' });
+  const trigger = await screen.findByRole('radio', { name: 'By Reset Cycle' });
   trigger.focus();
   fireEvent.click(trigger);
-  expect(screen.getByText('Current cycle')).toBeTruthy();
+  expect(await screen.findByText('Current cycle')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Newer cycle' }).getAttribute('aria-disabled')).toBe('true');
   const older = screen.getByRole('button', { name: 'Older cycle' });
   fireEvent.click(older);
@@ -79,10 +80,10 @@ test('browses earlier cycles and switches quota windows before applying the disp
   expect(document.activeElement).toBe(trigger);
 });
 
-test('offers no date range until a refill has been observed', () => {
+test('offers no date range until a refill has been observed', async () => {
   const { change } = renderEditor('today', { ...resetHistory(now), metrics: [] });
-  fireEvent.click(screen.getByRole('radio', { name: 'By Reset Cycle' }));
-  expect(screen.getByText('No quota resets observed yet')).toBeTruthy();
+  fireEvent.click(await screen.findByRole('radio', { name: 'By Reset Cycle' }));
+  expect(await screen.findByText('No quota resets observed yet')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Apply' }).hasAttribute('disabled')).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   expect(change).not.toHaveBeenCalled();

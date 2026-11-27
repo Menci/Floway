@@ -3,8 +3,9 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { formatUsd, formatUsdNumber } from '../../lib/decimal-display';
 import { formatNumber } from '../../lib/format-number';
+import { numericDateTime } from '../../lib/format-time';
 import { useLocale } from '../../lib/use-locale';
-import { isResetRange, type DashboardRange } from '../charts/dashboard-time';
+import { dashboardInterval, isResetRange, type DashboardRange } from '../charts/dashboard-time';
 
 const { Text, Tooltip } = fluentComponents;
 const unavailableReasons = {
@@ -13,7 +14,7 @@ const unavailableReasons = {
   scope: 'monitoring.controls.resetCycle.quota.differentScope',
 } as const;
 
-export function CycleQuota({ range, quota }: { range: DashboardRange; quota?: ResetCycleHistory['quota'] }) {
+export function CycleQuota({ range, loadedAt, quota }: { range: DashboardRange; loadedAt: number; quota?: ResetCycleHistory['quota'] }) {
   const { t } = useTranslation();
   const locale = useLocale();
   if (!isResetRange(range)) return null;
@@ -34,9 +35,16 @@ export function CycleQuota({ range, quota }: { range: DashboardRange; quota?: Re
     hint = t(unavailableReasons[quota?.reason ?? 'observations']);
   }
 
+  const interval = dashboardInterval(range, loadedAt);
   return <div className="min-w-0 max-w-full justify-self-end text-right">
     <Tooltip content={hint} relationship="description">
       <Text className="text-fui-fg2 tabular-nums winui-focus-rect [overflow-wrap:anywhere]" role="note" size={200} tabIndex={0}>{text}</Text>
     </Tooltip>
+    <Text as="p" className="text-fui-fg2" size={200}>
+      {t('monitoring.controls.resetCycle.chartHours', {
+        start: numericDateTime(new Date(interval.start)),
+        end: numericDateTime(new Date(interval.end)),
+      })}
+    </Text>
   </div>;
 }

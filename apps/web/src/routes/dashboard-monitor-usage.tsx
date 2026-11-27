@@ -6,11 +6,12 @@ import type { Route } from './+types/dashboard-monitor-usage';
 import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
-import { dashboardChartBuckets, sameDashboardRange } from '../components/charts/dashboard-time';
+import { dashboardChartBuckets, isResetRange, sameDashboardRange } from '../components/charts/dashboard-time';
 import { SEARCH_BACKEND_LABEL_KEYS } from '../components/search/backend';
 import { CycleQuota } from '../components/telemetry/cycle-quota';
 import { TelemetryFilterFields } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
+import { singleTelemetryUpstream } from '../components/telemetry/reset-cycles';
 import { TelemetryTimeRange } from '../components/telemetry/time-range';
 import { useTelemetryPolling } from '../components/telemetry/use-poll';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
@@ -137,7 +138,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   );
   // Recorded search traffic stays visible after the operator turns search off.
   // A failed fetch does not establish that there was no search traffic.
-  const showSearch = searchChart === null || searchChart.entries.length > 0;
+  const showSearch = !isResetRange(loadedQuery.range) && (searchChart === null || searchChart.entries.length > 0);
 
   const changeGroupBy = (next: UsageGroupBy) => {
     if (next === query.groupBy) return;
@@ -167,7 +168,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
 
     <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
-      <CycleQuota range={loadedQuery.range} quota={resetCycles?.quota} />
+      <CycleQuota loadedAt={loadedAt} range={loadedQuery.range} quota={resetCycles?.quota} />
       <div className="flex items-end gap-3 min-w-0 flex-wrap">
         {availableDimensions && <UsageGrouping disabled={refreshing} dimensions={availableDimensions} groupBy={loadedQuery.groupBy} onChange={changeGroupBy} />}
         <TelemetryTimeRange
@@ -177,7 +178,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
           onChange={changeRange}
           onEditingChange={setEditingRange}
           range={loadedQuery.range}
-          resetCycles={resetCycles}
+          resetUpstreamId={singleTelemetryUpstream(loadedQuery.filters.upstream, 'usage')}
         />
       </div>
       {availableDimensions && <div className="flex items-end gap-3 min-w-0 flex-wrap">

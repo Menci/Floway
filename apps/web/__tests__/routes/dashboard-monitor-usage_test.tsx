@@ -155,6 +155,7 @@ describe('usage dimension controls', () => {
     const overview = requests.find(url => url.pathname === '/api/token-usage/overview');
     expect(overview?.searchParams.get('start')).toBe('2026-08-04T23');
     expect(overview?.searchParams.get('end')).toBe('2026-08-05T04');
+    expect(requests.some(url => url.pathname === '/api/search-usage')).toBe(false);
     const { unmount } = renderPage(selected);
     expect(screen.getByRole('radio', { name: 'By Reset Cycle' }).getAttribute('aria-checked')).toBe('true');
     unmount();

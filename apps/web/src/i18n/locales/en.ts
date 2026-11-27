@@ -1582,6 +1582,8 @@ const en = {
           newer: 'Newer cycle',
           current: 'Current cycle',
           previous: 'Previous cycle',
+          historical: 'Historical cycle',
+          chartHours: 'Usage and performance charts show whole hours ({{start}} – {{end}}). Cycles in the same hour can share data.',
           ago: '{{count, number}} cycles ago',
           waiting: 'No quota resets observed yet',
           apply: 'Apply',

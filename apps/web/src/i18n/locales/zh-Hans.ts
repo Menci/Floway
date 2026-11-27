@@ -1565,6 +1565,8 @@ const zhHansCN = {
           newer: '往后一个周期',
           current: '本周期',
           previous: '前一个周期',
+          historical: '历史周期',
+          chartHours: '用量和性能图表按整小时汇总（{{start}} 至 {{end}}）。同一小时内的周期可能显示相同数据。',
           ago: '前 {{count, number}} 个周期',
           waiting: '尚未观测到额度重置',
           apply: '应用',

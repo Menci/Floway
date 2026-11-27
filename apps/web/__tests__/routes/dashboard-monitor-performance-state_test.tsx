@@ -98,12 +98,12 @@ describe('Performance table state', () => {
     }));
     const { router } = renderPage('fu=up-1', overview, undefined, history);
     expect(screen.queryByText('Estimated cycle quota: $42.00')).toBeNull();
-    fireEvent.click(screen.getByRole('radio', { name: 'By Reset Cycle' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Older cycle' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'By Reset Cycle' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Older cycle' }));
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     await waitFor(() => expect(urlSearch(router).get('r')).toBe('reset-cycle'));
     expect(screen.getByText('Estimated cycle quota: $42.00')).toBeTruthy();
-    expect(requests.find(url => url.pathname === '/api/upstream-reset-cycles')?.searchParams.get('cycle_start')).toBe(String(history.metrics[0]!.starts[1]));
+    expect(requests.find(url => url.pathname === '/api/upstream-reset-cycles' && url.searchParams.has('cycle_start'))?.searchParams.get('cycle_start')).toBe(String(history.metrics[0]!.starts[1]));
     const readings = requests.find(url => url.pathname === '/api/performance/overview');
     expect(readings?.searchParams.get('format')).toBe('buckets');
     expect(readings?.searchParams.get('filter_upstream')).toBe('up-1');

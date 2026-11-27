@@ -207,7 +207,6 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     setOverview(performanceOverviewForDisplay(result.data));
     setScope(result.data.snapshot.scope);
     setResetCycles(loaded.resetCycles);
-    if (loaded.error) setError(loaded.error);
     return activeQuery === query ? true : activeQuery;
   }, [query, regionAvailable, performanceLoader]);
 
@@ -363,7 +362,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       if (activeBreakdown === undefined) throw new RangeError('Performance overview has no available breakdown dimension');
       return <>
         <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
-          <CycleQuota range={loadedQuery.range} quota={resetCycles?.quota} />
+          <CycleQuota loadedAt={loadedAt} range={loadedQuery.range} quota={resetCycles?.quota} />
           <div className="flex items-end gap-3 min-w-0 flex-wrap">
             <TelemetryGroupByField
               disabled={refreshing}
@@ -387,7 +386,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
               onChange={changeRange}
               onEditingChange={setEditingRange}
               range={loadedQuery.range}
-              resetCycles={resetCycles}
+              resetUpstreamId={singleTelemetryUpstream(loadedQuery.filters.upstream, 'performance')}
             />
           </div>
           <div className="flex items-end gap-3 min-w-0 flex-wrap">

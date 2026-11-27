@@ -5,7 +5,7 @@ import { userFromContext, type AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { upstreamMetricsQuery, upstreamResetCyclesQuery } from '../schemas.ts';
-import { upstreamMetricIdentityKey, type UpstreamMetricDisplay, type UpstreamMetricIdentity } from '@floway-dev/upstream';
+import { normalizeUpstreamMetricIdentity, type UpstreamMetricDisplay, type UpstreamMetricIdentity } from '@floway-dev/upstream';
 
 const auditableUpstream = async (c: AuthedContext, upstreamId: string) => {
   const [allowed] = await checkMany(userFromContext(c), [{
@@ -30,37 +30,66 @@ interface ResetCycles {
     identity: UpstreamMetricIdentity;
     display: Pick<UpstreamMetricDisplay, 'name' | 'labelKey' | 'labelValues' | 'windowSeconds'>;
     starts: number[];
+    hasMore?: true;
   }>;
   quota?: CycleQuota;
 }
 
+const RESET_CYCLE_PAGE_SIZE = 24;
+
+const parseCycleMetric = (value: string): UpstreamMetricIdentity | null => {
+  try {
+    const parts: unknown = JSON.parse(value);
+    return Array.isArray(parts) && parts.length === 2 ? normalizeUpstreamMetricIdentity(parts[0], parts[1]) : null;
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof TypeError) return null;
+    throw error;
+  }
+};
+
 export const upstreamResetCycles = async (c: CtxWithQuery<typeof upstreamResetCyclesQuery>) => {
-  const { upstream_id, before, cycle_metric, cycle_start } = c.req.valid('query');
+  const { upstream_id, before, after, view, cycle_metric, cycle_start, current } = c.req.valid('query');
   const upstream = await auditableUpstream(c, upstream_id);
   const resolve = upstream === undefined ? undefined : metricDisplayResolverForKind(upstream.kind);
+  const response: ResetCycles = { upstreamId: upstream_id, supported: resolve !== undefined, metrics: [] };
   // A filter that is unavailable must not distinguish a missing upstream
   // from one that the operator cannot audit.
-  if (resolve === undefined) return c.json<ResetCycles>({ upstreamId: upstream_id, supported: false, metrics: [] });
+  if (resolve === undefined || view === 'availability') return c.json(response);
+
   const repo = getRepo();
-  const identities = await repo.upstreamMetrics.listIdentities(upstream_id, before);
-  const metrics = await Promise.all(identities.flatMap(identity => {
+  const selectedMetric = cycle_metric === undefined ? undefined : parseCycleMetric(cycle_metric);
+  if (selectedMetric === null) return c.json({ error: 'Invalid cycle metric identity' }, 400);
+  const identities = selectedMetric === undefined ? await repo.upstreamMetrics.listIdentities(upstream_id, before) : [selectedMetric];
+  const metrics = identities.flatMap(identity => {
     const display = resolve(identity, { quotaDisplay: 'remaining' });
     if (display?.resetThreshold === undefined) return [];
     const { name, labelKey, labelValues, windowSeconds, resetThreshold } = display;
-    return [repo.upstreamMetrics.queryResetStarts(upstream_id, identity, resetThreshold, before).then(starts => ({
-      identity, display: { name, labelKey, ...(labelValues === undefined ? {} : { labelValues }), windowSeconds }, starts,
-    }))];
-  }));
-  const data = { upstreamId: upstream_id, supported: true, metrics };
-  const selected = cycle_metric === undefined ? undefined
-    : metrics.find(metric => upstreamMetricIdentityKey(metric.identity) === cycle_metric);
-  if (selected === undefined) return c.json<ResetCycles>(data);
-  const offset = cycle_start === undefined ? 0 : selected.starts.indexOf(cycle_start);
-  const start = selected.starts[offset];
-  if (start === undefined || (cycle_start !== undefined && offset === 0)) return c.json<ResetCycles>(data);
-  const display = resolve(selected.identity, { quotaDisplay: 'used' });
-  if (display === null) throw new Error('Missing display for selected quota metric');
-  const quota = await estimateCycleQuota(repo, upstream_id, selected.identity, display,
-    { start, next: selected.starts[offset - 1] ?? null, before });
-  return c.json<ResetCycles>({ ...data, quota });
+    return [{ identity, display: { name, labelKey, ...(labelValues === undefined ? {} : { labelValues }), windowSeconds }, resetThreshold }];
+  });
+
+  if (view === 'history' || cycle_metric === undefined) {
+    response.metrics = await Promise.all(metrics.map(async ({ identity, display, resetThreshold }) => {
+      const starts = await repo.upstreamMetrics.queryResetStarts(upstream_id, identity, resetThreshold, before, {
+        ...(after === undefined ? {} : { from: after + 1, order: 'asc' }),
+        limit: RESET_CYCLE_PAGE_SIZE + 1,
+      });
+      const page = starts.slice(0, RESET_CYCLE_PAGE_SIZE);
+      return { identity, display, starts: after === undefined ? page : page.reverse(), ...(starts.length > RESET_CYCLE_PAGE_SIZE && { hasMore: true as const }) };
+    }));
+    return c.json(response);
+  }
+
+  const [metric] = metrics;
+  if (metric === undefined) return c.json(response);
+  const { identity, display, resetThreshold } = metric;
+  const historical = cycle_start !== undefined && current === undefined;
+  const [start, next] = await repo.upstreamMetrics.queryResetStarts(upstream_id, identity, resetThreshold, before, {
+    from: cycle_start, order: historical ? 'asc' : 'desc', limit: historical ? 2 : 1,
+  });
+  if (start === undefined || (historical && (start !== cycle_start || next === undefined))) return c.json(response);
+  const usedDisplay = resolve(identity, { quotaDisplay: 'used' });
+  if (usedDisplay === null) throw new Error('Missing display for selected quota metric');
+  response.metrics = [{ identity, display, starts: next === undefined ? [start] : [next, start] }];
+  response.quota = await estimateCycleQuota(repo, upstream_id, identity, usedDisplay, { start, next: next ?? null, before });
+  return c.json(response);
 };

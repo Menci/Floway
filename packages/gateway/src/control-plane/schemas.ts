@@ -916,9 +916,17 @@ export const upstreamMetricsQuery = z.object({
   step: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().positive()),
 }).refine(query => query.end > query.start, { message: 'Metrics interval end must be later than start' });
 
+const resetCycleTimestamp = z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().nonnegative());
+
 export const upstreamResetCyclesQuery = z.object({
   upstream_id: z.string().min(1),
-  before: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().positive()),
+  before: resetCycleTimestamp.refine(value => value > 0),
+  view: z.enum(['availability', 'history']).optional(),
   cycle_metric: z.string().min(1).optional(),
-  cycle_start: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().nonnegative()).optional(),
-}).refine(query => query.cycle_start === undefined || query.cycle_metric !== undefined, { message: 'A cycle start requires a metric identity' });
+  cycle_start: resetCycleTimestamp.optional(),
+  after: resetCycleTimestamp.optional(),
+  current: z.literal('1').optional(),
+}).refine(query => (query.cycle_start === undefined && query.current === undefined) || (query.view === undefined && query.cycle_metric !== undefined),
+  { message: 'A selected cycle requires a metric identity' })
+  .refine(query => query.after === undefined || (query.view === 'history' && query.cycle_metric !== undefined && query.after < query.before),
+    { message: 'An ascending history page requires a metric identity and a valid interval' });
