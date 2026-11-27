@@ -287,7 +287,7 @@ function RequestRowContent({ compact, exportable, showSourceKey, sharedKeyNames,
           {showSourceKey && compact
             ? keyLabel('flex-1 min-w-16')
             : <Tooltip content={`${record.method} ${record.path}`} relationship="description">
-                <Text size={200} className={mergeClasses('min-w-0 flex-1 text-fui-fg3 font-mono', pathLineCrowded && 'min-w-16')} truncate wrap={false}>
+                <Text size={200} className={mergeClasses('min-w-0 flex-1 text-fui-fg3 font-mono mono-size-xs', pathLineCrowded && 'min-w-16')} truncate wrap={false}>
                   {record.path}
                 </Text>
               </Tooltip>}
