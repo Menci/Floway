@@ -16,13 +16,18 @@ export interface SidecarRecognition<Turn> {
   readonly collectCandidates: (turn: Turn) => ReplayContent[];
 }
 
+export interface ResolvedRoundTripAssistantTurn<Target extends keyof InputAssistantTurnByProtocol> {
+  readonly turn: InputAssistantTurnFor<Target>;
+  readonly synthesizedCallIds?: readonly (string | null)[];
+}
+
 export const roundTripAssistantTurn = async <Source extends keyof InputAssistantTurnByProtocol, Target extends keyof InputAssistantTurnByProtocol, SourceTurn>(
   source: Source,
   target: Target,
   turn: SourceTurn,
   codec: SidecarCodec,
   recognition: SidecarRecognition<SourceTurn>,
-): Promise<InputAssistantTurnFor<Target> | undefined> => {
+): Promise<ResolvedRoundTripAssistantTurn<Target> | undefined> => {
   const { inspect, verify, collectCandidates } = recognition;
   let selected: { carrier: SidecarOccurrence<SourceTurn>; sidecar: AnyRoundTripSidecar } | undefined;
   for (const carrier of inspect(turn)) {
@@ -36,5 +41,8 @@ export const roundTripAssistantTurn = async <Source extends keyof InputAssistant
   if (!(await verify(sourceTurn, selected.sidecar.sourceTurnDigest, selected.sidecar.v))) return undefined;
   const resolved = await restoreAssistantTurn(target, collectCandidates(sourceTurn), selected.sidecar.targetTurn, selected.sidecar.referencedContentHashes);
   if (!resolved.ok) throw new Error(`Authenticated assistant-turn sidecar restoration failed: ${resolved.reason}`);
-  return resolved.value;
+  return {
+    turn: resolved.value,
+    ...(selected.sidecar.synthesizedCallIds === undefined ? {} : { synthesizedCallIds: selected.sidecar.synthesizedCallIds }),
+  };
 };

@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest';
 
+import { computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarBlock } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
+import { encodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { iterate } from '../shared/iterables.ts';
 import { expectTrip } from '../trip.ts';
@@ -7,7 +9,8 @@ import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesP
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { routeAnthropicMessagesViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIChatCompletions } from '@floway-dev/translate';
+import { collectOpenAIResponsesProtocolEventsToResult, toOpenAIResponsesInputItems, type OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
+import { routeAnthropicMessagesViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIChatCompletions, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const nativeFrames = (mode: 'legacy' | 'modern' | 'mixed', name: string, arguments_ = '{"x":1}'): ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] => {
   const chunk = (delta: OpenAIChatCompletionsAssistantDeltaEx, finish_reason: 'function_call' | 'tool_calls' | null = null) => eventFrame({
@@ -105,8 +108,7 @@ test('Gemini keeps modern IDs separate when a vendor stream includes both call f
   expect(results[0]).toMatchObject({ role: 'tool', tool_call_id: 'native-modern' });
   expect(results[1]).toMatchObject({ role: 'function', name: 'lookup' });
 });
-test('a source-ID-only result cannot answer a restored legacy call', async () => {
-  // The restored native call states no id, and source-side ids are not consulted.
+test('Anthropic Messages answers a restored legacy call via sidecar synthesizedCallIds', async () => {
   const context = { sidecarCodec: createTestSidecarCodec() };
   const payload: AnthropicMessagesPayload = {
     model: 'public-model', max_tokens: 64, stream: true,
@@ -123,5 +125,53 @@ test('a source-ID-only result cannot answer a restored legacy call', async () =>
     { role: 'assistant', content: 'meanwhile' },
     { role: 'user', content: [{ type: 'tool_result', tool_use_id: call.id, content: 'late' }] },
   );
+  const replay = expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context));
+  expect(replay.target.messages.find(message => message.role === 'assistant')?.function_call).toEqual({ name: 'lookup', arguments: '{"x":1}' });
+  expect(replay.target.messages.at(-1)).toEqual({ role: 'function', name: 'lookup', content: 'late' });
+});
+
+test('OpenAI Responses answers a restored legacy call via sidecar synthesizedCallIds', async () => {
+  const context = { sidecarCodec: createTestSidecarCodec() };
+  const payload: OpenAIResponsesRequestPayloadEx = {
+    model: 'public-model', stream: true,
+    input: [{ type: 'message', role: 'user', content: 'Call lookup' }],
+    tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object', properties: { x: { type: 'integer' } } } }],
+  };
+  const trip = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(payload, context));
+  const result = await collectOpenAIResponsesProtocolEventsToResult(trip.events(iterate(nativeFrames('legacy', 'lookup'))));
+  const call = result.output.find(item => item.type === 'function_call');
+  if (call === undefined) throw new Error('Expected a public Responses function call');
+  const replay = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions({
+    ...payload,
+    input: [
+      ...(Array.isArray(payload.input) ? payload.input : []),
+      ...toOpenAIResponsesInputItems(result.output),
+      { type: 'function_call_output', call_id: call.call_id, output: 'done' },
+    ],
+  }, context));
+  expect(replay.target.messages.find(message => message.role === 'assistant')?.function_call).toEqual({ name: 'lookup', arguments: '{"x":1}' });
+  expect(replay.target.messages.at(-1)).toEqual({ role: 'function', name: 'lookup', content: 'done' });
+});
+
+test('a legacy v2 sidecar without synthesizedCallIds rejects a source-ID-only result for a restored legacy call', async () => {
+  const codec = createTestSidecarCodec();
+  const context = { sidecarCodec: codec };
+  const assistantTurn = [{ role: 'assistant' as const, content: [{ type: 'tool_use' as const, id: 'toolu_legacy', name: 'lookup', input: { x: 1 } }] }];
+  const carrier = await encodeRoundTripSidecar(codec, {
+    v: 2,
+    source: 'anthropicMessages',
+    target: 'openaiChatCompletions',
+    targetTurn: { role: 'assistant', content: null, function_call: { name: 'lookup', arguments: '{"x":1}' } },
+    sourceTurnDigest: await computeAnthropicMessagesTurnDigest(assistantTurn),
+  });
+  const payload: AnthropicMessagesPayload = {
+    model: 'public-model', max_tokens: 64, stream: true,
+    messages: [
+      { role: 'user', content: 'Call lookup' },
+      { role: 'assistant', content: [...assistantTurn[0].content, createAnthropicMessagesSidecarBlock(carrier)] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_legacy', content: 'late' }] },
+    ],
+    tools: [{ name: 'lookup', input_schema: { type: 'object', properties: { x: { type: 'integer' } } } }],
+  };
   await expect(routeAnthropicMessagesViaOpenAIChatCompletions(payload, context)).resolves.toMatchObject({ type: 'input-error' });
 });

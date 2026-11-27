@@ -193,6 +193,7 @@ export const writeOpenAIResponsesEvents = async function* (
   let finishReason: Extract<IRRecord, { type: 'choice_end' }>['finish_reason'] = 'stop';
   const outputUnits: ResponsesOutputUnit[] = [];
   const nativeState: OpenAIResponsesOutputAssistantTurnState<EmittedFieldStates> = [];
+  const synthesizedCallIds = new Map<number, string>();
   const units = createIRUnitRegistry<ResponsesOutputUnit>();
   const messageUnits = new Map<number, ResponsesOutputUnit[]>();
   const logprobGroups = new Map<string, number>();
@@ -503,6 +504,7 @@ export const writeOpenAIResponsesEvents = async function* (
     const custom = unit.kind === 'custom_tool_call';
     const id = createRandomOpenAIResponsesItemId(custom ? 'custom_tool_call' : 'function_call');
     const resolvedCallId = callId === IRAbsent ? createRandomOpenAIResponsesItemId('function_call') : callId;
+    if (callId === IRAbsent) synthesizedCallIds.set(unit.path[3] as number, resolvedCallId);
     unit.id = id;
     unit.callId = resolvedCallId;
     // The announcement states the same pair the terminal snapshot does: a call
@@ -837,7 +839,14 @@ export const writeOpenAIResponsesEvents = async function* (
       nativeState.length = nativeOutput.length;
       const sourceTurnDigest = await computeOpenAIResponsesTurnDigest(nativeOutput);
       const input = toOpenAIResponsesInputAssistantTurn<EmittedFieldStates>(nativeOutput, nativeState);
-      const data = await options.roundTrip.encodeSidecar(0, sourceTurnDigest, input.turn, input.state, collectOpenAIResponsesTextPlacements(input.turn));
+      const data = await options.roundTrip.encodeSidecar(
+        0,
+        sourceTurnDigest,
+        input.turn,
+        input.state,
+        collectOpenAIResponsesTextPlacements(input.turn),
+        synthesizedCallIds,
+      );
       sidecar = { ...createOpenAIResponsesSidecarItem(createRandomOpenAIResponsesItemId('reasoning'), data), status: 'completed' };
       const outputIndex = outputUnits.length;
       yield emit({ type: 'response.output_item.added', output_index: outputIndex, item: sidecar });

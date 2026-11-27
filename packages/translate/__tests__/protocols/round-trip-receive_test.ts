@@ -8,7 +8,7 @@ import { hashRoundTripContent } from '../../src/round-trip/hash.ts';
 import type { AssistantTurnProtocol, InputAssistantTurnFor } from '../../src/round-trip/input-assistant-turn.ts';
 import type { ReferenceableInputAssistantTurnFor } from '../../src/round-trip/reference/assistant-turn-types.ts';
 import { ContentReference } from '../../src/round-trip/reference/types.ts';
-import { encodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
+import { ROUND_TRIP_SIDECAR_VERSION, encodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { expectTrip } from '../trip.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
@@ -149,4 +149,40 @@ test('preserves ordinary GenerateContent null-argument handling', async () => {
   expect(messagesTrip.target.messages).toMatchObject([
     { role: 'assistant', content: [{ type: 'tool_use', name: 'lookup', input: null }] },
   ]);
+});
+
+test('restores a v2 Chat Completions tool-call turn when the client omits null fields on replay', async () => {
+  const toolCalls = [{ id: 'call_1', type: 'function' as const, function: { name: 'lookup', arguments: '{"x":1}' } }];
+  const native: InputAssistantTurnFor<'anthropicMessages'> = {
+    role: 'assistant',
+    content: [
+      { type: 'thinking', thinking: 'plan', signature: 'native-sig' },
+      { type: 'tool_use', id: 'call_1', name: 'lookup', input: { x: 1 } },
+    ],
+  };
+  const digest = await computeOpenAIChatCompletionsTurnDigest({
+    role: 'assistant',
+    content: null,
+    refusal: null,
+    function_call: null,
+    tool_calls: toolCalls,
+  });
+  const carrier = await encodeRoundTripSidecar(createTestSidecarCodec(), {
+    v: ROUND_TRIP_SIDECAR_VERSION,
+    source: 'openaiChatCompletions',
+    target: 'anthropicMessages',
+    targetTurn: native,
+    sourceTurnDigest: digest,
+  });
+  const replayedAssistant: OpenAIChatCompletionsAssistantMessageEx = {
+    role: 'assistant',
+    tool_calls: toolCalls,
+    reasoning_details: [{ type: 'reasoning.encrypted', data: carrier }],
+  };
+  const trip = expectTrip(await routeOpenAIChatCompletionsViaAnthropicMessages({
+    model: 'source',
+    stream: true,
+    messages: [replayedAssistant, { role: 'tool', tool_call_id: 'call_1', content: 'done' }],
+  }, context));
+  expect(trip.target.messages[0]).toEqual(native);
 });

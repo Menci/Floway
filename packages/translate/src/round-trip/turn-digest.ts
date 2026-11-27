@@ -42,7 +42,7 @@ export const createTurnDigestVerifier = <Turn>(
   materialOf: TurnDigestMaterialByVersion<Turn>,
 ): (turn: Turn, sourceTurnDigest: RoundTripTurnDigest, version: number) => Promise<boolean> => (turn, sourceTurnDigest, version) => {
   if (typeof materialOf === 'function') {
-    return version === 1 || version === 2
+    return version === 1 || version === 2 || version === 3
       ? verifyRoundTripTurnDigest(materialOf(turn), sourceTurnDigest)
       : Promise.resolve(false);
   }

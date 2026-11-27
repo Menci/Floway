@@ -5,22 +5,25 @@ import { tagContentReferences, untagContentReferences } from './reference/conten
 import type { ContentReference } from './reference/types.ts';
 import type { RoundTripTurnDigest } from './turn-digest.ts';
 
-export const ROUND_TRIP_SIDECAR_VERSION = 2;
-export type RoundTripSidecarVersion = 1 | 2;
+export const ROUND_TRIP_SIDECAR_VERSION = 3;
+export type RoundTripSidecarVersion = 1 | 2 | 3;
 
 const isSupportedSidecarVersion = (value: unknown): value is RoundTripSidecarVersion =>
-  value === 1 || value === 2;
+  value === 1 || value === 2 || value === 3;
 
 // One wire version covers every translation subsystem. A field whose format can
 // change derives its own format version from this `v` (`v: 2` selects the v2
-// turn-digest material while retaining `v: 1` verification) instead of carrying
-// a second version member, so advancing any subsystem advances this single `v`.
+// turn-digest material while retaining `v: 1` verification; `v: 3` adds optional
+// `synthesizedCallIds` for target calls emitted with `IRAbsent`) instead of
+// carrying a second version member, so advancing any subsystem advances this
+// single `v`.
 export type RoundTripSidecar<Target extends AssistantTurnProtocol> = {
   v: RoundTripSidecarVersion;
   source: AssistantTurnProtocol;
   target: Target;
   targetTurn: ReferenceableInputAssistantTurnFor<Target, ContentReference>;
   referencedContentHashes?: Uint8Array[];
+  synthesizedCallIds?: (string | null)[];
   sourceTurnDigest: RoundTripTurnDigest;
 };
 
@@ -52,6 +55,12 @@ function assertRoundTripEnvelope(value: Record<string, unknown>): asserts value 
   if (value.referencedContentHashes !== undefined
     && (!Array.isArray(value.referencedContentHashes) || value.referencedContentHashes.some(hash => !(hash instanceof Uint8Array)))) {
     throw new TypeError('Assistant-turn sidecar referenced contents are invalid');
+  }
+  if (value.synthesizedCallIds !== undefined) {
+    if (value.v < 3) throw new TypeError('Assistant-turn sidecar synthesized call IDs require version 3');
+    if (!Array.isArray(value.synthesizedCallIds) || value.synthesizedCallIds.some(id => id !== null && (typeof id !== 'string' || id === ''))) {
+      throw new TypeError('Assistant-turn sidecar synthesized call IDs are invalid');
+    }
   }
   if (!(value.sourceTurnDigest instanceof Uint8Array)) throw new TypeError('Assistant-turn sidecar turn digest is invalid');
 }
