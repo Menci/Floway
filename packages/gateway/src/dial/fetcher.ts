@@ -1,13 +1,12 @@
 import type { ProxyEntry } from './proxy-catalog.ts';
 import { createReplayableRequest, type ReplayableRequest } from './replayable-request.ts';
-import { runUpstreamTransport } from './transport-error.ts';
+import { isUpstreamTransportError } from './transport-error.ts';
 import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
-import type { HttpContentDecoders, HttpRequest } from '@floway-dev/http';
+import { HttpTransportError, isCausedBy, type FetchResponse, type HttpContentDecoders, type HttpRequest } from '@floway-dev/http';
 import type { SocketDial } from '@floway-dev/platform';
 import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunDirectConnectRequestOptions, type RunProxiedRequestOptions } from '@floway-dev/proxy';
 import type { Fetcher, FetchInit, ProxyFallbackEntry } from '@floway-dev/upstream';
-import { isAbortError } from '@floway-dev/upstream';
 
 interface CreateFetcherInput {
   repo: Pick<Repo, 'proxyBackoffs'>;
@@ -28,7 +27,7 @@ interface CreateFetcherInput {
     target: ProxyRequestTarget,
     request: HttpRequest,
     options: RunProxiedRequestOptions,
-  ) => Promise<Response>;
+  ) => Promise<FetchResponse>;
   // Per-request indirection for the runtime-native fetch sentinel.
   runDirectFetch: Fetcher;
   // Runtime-agnostic raw TCP + userspace-TLS request runner.
@@ -36,7 +35,7 @@ interface CreateFetcherInput {
     target: ProxyRequestTarget,
     request: HttpRequest,
     options: RunDirectConnectRequestOptions,
-  ) => Promise<Response>;
+  ) => Promise<FetchResponse>;
   /**
    * Platform-injected byte-stream dial, threaded into runProxied. Each dialer
    * asks through `SocketDialOptions` for either a raw connection or one
@@ -118,7 +117,7 @@ const runFallbacks = async (
   request: ReplayableRequest,
   directFetchBeforeDialTransport: boolean,
   hasDirectFetch: boolean,
-): Promise<Response> => {
+): Promise<FetchResponse> => {
   // A direct-fetch attempt before a dial transport can consume native
   // Blob/FormData bodies. Prepare the dial request first so those bodies are
   // buffered while replayable factories remain reusable by every attempt.
@@ -143,6 +142,7 @@ const runFallbacks = async (
   // every real failure.
   const triedThisCall = new Set<string>();
   for (const id of list) {
+    if (errors.length > 0 && request.signal?.aborted) break;
     if (skip.has(id)) continue;
     triedThisCall.add(id);
     const result = await tryOne(id, input, request, url, errors, hasDirectFetch);
@@ -150,16 +150,15 @@ const runFallbacks = async (
   }
 
   for (const id of list) {
+    if (errors.length > 0 && request.signal?.aborted) break;
     if (triedThisCall.has(id)) continue;
     const result = await tryOne(id, input, request, url, errors, hasDirectFetch);
     if (result) return result;
   }
 
-  // A single fallback entry that failed once still produces just one
-  // ProxyDialError in `errors` — surface it directly so callers don't see
-  // a meaningless AggregateError wrapper.
-  if (errors.length === 1) throw errors[0];
-  throw new AggregateError(errors, 'all proxies failed at the dial layer');
+  const failure = errors.length === 1 ? errors[0] : new AggregateError(errors, 'all proxies failed at the dial layer');
+  if (failure instanceof HttpTransportError || !isUpstreamTransportError(failure)) throw failure;
+  throw new HttpTransportError(failure);
 };
 
 const tryOne = async (
@@ -169,7 +168,8 @@ const tryOne = async (
   url: string,
   errors: unknown[],
   hasDirectFetch: boolean,
-): Promise<Response | null> => {
+): Promise<FetchResponse | null> => {
+  request.signal?.throwIfAborted();
   const { upstreamId } = input;
   let directSocketDial: SocketDial | undefined;
   try {
@@ -177,18 +177,18 @@ const tryOne = async (
       // Direct egress is the runtime's fetch — it never raises ProxyDialError,
       // so we don't touch the backoff table for this entry.
       const init = request.fetchInit();
-      return await runUpstreamTransport(() => input.runDirectFetch(url, init));
+      return await input.runDirectFetch(url, init);
     }
     if (id === DIRECT_CONNECT_ID) {
       const prepared = await request.prepared();
       const socketDial = input.socketDial();
       directSocketDial = socketDial;
       const options = { socketDial, signal: request.signal, contentDecoders: input.contentDecoders?.() };
-      return await runUpstreamTransport(() => input.runDirectConnect(
+      return await input.runDirectConnect(
         prepared.target,
         prepared.request,
         options,
-      ));
+      );
     }
     const config = input.proxyById.get(id);
     if (!config) {
@@ -211,12 +211,12 @@ const tryOne = async (
       signal: request.signal,
     };
     if (config.dialTimeoutMs !== null) options.dialTimeoutMs = config.dialTimeoutMs;
-    const response = await runUpstreamTransport(() => input.runProxied(
+    const response = await input.runProxied(
       config.config,
       prepared.target,
       prepared.request,
       options,
-    ));
+    );
     // A successful dial after a previous failure must clear the backoff so
     // the next failure restarts at n=1 instead of resuming the geometric
     // schedule from where it left off. Mirror the failure-path policy: a
@@ -235,17 +235,11 @@ const tryOne = async (
     // Caller-driven cancellation must propagate up immediately. Without
     // this, a client disconnect would let the dial chain continue burning
     // the deadline budget against every other entry in the list.
-    if (isAbortError(err)) {
+    if (isCausedBy(err, request.signal?.reason)) {
       throw err;
     }
     if (id === DIRECT_FETCH_ID) {
-      // Direct egress can fail for the same dial-shaped reasons a proxy can
-      // (TCP refused, GFW SNI reset, DNS, connect timeout). Runtime fetch
-      // surfaces those as plain Errors / TypeErrors, not ProxyDialError, but
-      // for fallback semantics they ARE dial failures — request bytes never
-      // reached an upstream. Advance to the next entry like we would for a
-      // proxy, just without touching the backoff table (no proxy entity to
-      // throttle here).
+      if (!(err instanceof HttpTransportError)) throw err;
       errors.push(err);
       return null;
     }
@@ -253,9 +247,9 @@ const tryOne = async (
       if (err instanceof ProxyDialError) {
         // The Cloudflare socket adapter tags only a rejected socket.opened.
         // Fetch owns the outcome here, including an HTTP error or rejection.
-        if (!hasDirectFetch && err.stage === 'tcp-connect' && directSocketDial?.shouldConnectErrorFallbackToFetch?.(err.cause)) {
+        if (!hasDirectFetch && !request.signal?.aborted && err.stage === 'tcp-connect' && directSocketDial?.shouldConnectErrorFallbackToFetch?.(err.cause)) {
           const init = request.fetchInit();
-          return await runUpstreamTransport(() => input.runDirectFetch(url, init));
+          return await input.runDirectFetch(url, init);
         }
         errors.push(err);
         return null;

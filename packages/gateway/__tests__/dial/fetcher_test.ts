@@ -5,6 +5,7 @@ import type { ProxyEntry } from '../../src/dial/proxy-catalog.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import { buildCustomUpstreamRecord } from '../test-utils/app.ts';
+import { HttpTransportError } from '@floway-dev/http';
 import { ProxyDialError, type ProxyConfig, type SocketDial } from '@floway-dev/proxy';
 import { isReplayableBody, type ReplayableBody } from '@floway-dev/upstream';
 
@@ -92,18 +93,19 @@ describe('createFetcher', () => {
 
   it('non-ProxyDialError errors propagate immediately and do not update backoff', async () => {
     const repo = await seededRepo();
+    const failure = new TypeError('upstream request construction failed');
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
       fallbackList: [{ id: 'a' }],
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
-      runProxied: async () => { throw new Error('upstream 500'); },
+      runProxied: async () => { throw failure; },
       runDirectFetch: async () => new Response('ok'),
       runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
-    await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toThrow('upstream 500');
+    await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBe(failure);
     expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
   });
 
@@ -162,15 +164,17 @@ describe('createFetcher', () => {
     });
     const cloudflareDial = { ...stubSocketDial, shouldConnectErrorFallbackToFetch: (error: unknown) => error === blocked };
 
-    await expect(run('inner-tls', blocked, cloudflareDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
-    await expect(run('tcp-connect', new Error('connection refused'), cloudflareDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
-    await expect(run('tcp-connect', blocked, stubSocketDial)('https://example.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
+    await expect(run('inner-tls', blocked, cloudflareDial)('https://example.com', { method: 'GET' })).rejects.toMatchObject({ cause: { stage: 'inner-tls', cause: blocked } });
+    await expect(run('tcp-connect', new Error('connection refused'), cloudflareDial)('https://example.com', { method: 'GET' })).rejects.toMatchObject({ cause: { stage: 'tcp-connect' } });
+    await expect(run('tcp-connect', blocked, stubSocketDial)('https://example.com', { method: 'GET' })).rejects.toMatchObject({ cause: { stage: 'tcp-connect', cause: blocked } });
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('rethrows AbortError without continuing the chain', async () => {
+  it('rethrows the caller cancellation without continuing the chain', async () => {
     const repo = await seededRepo();
     const calls: string[] = [];
+    const controller = new AbortController();
+    const reason = new Error('client gone');
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
@@ -183,16 +187,42 @@ describe('createFetcher', () => {
       },
       runDirectFetch: async () => {
         calls.push('direct');
-        throw new DOMException('client gone', 'AbortError');
+        controller.abort(reason);
+        throw reason;
       },
       runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
-    await expect(fetcher('https://api.openai.com', { method: 'GET' }))
-      .rejects.toMatchObject({ name: 'AbortError' });
+    await expect(fetcher('https://api.openai.com', { method: 'GET', signal: controller.signal })).rejects.toBe(reason);
     expect(calls).toEqual(['direct']);
     // No proxy was attempted, so backoff stays empty.
     expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
+  });
+
+  it.each([false, true])('advances after a rejected direct fetch only with transport evidence (marked=%s)', async marked => {
+    const failure = new TypeError('native fetch failed');
+    const next = new Response('fallback');
+    const runDirectConnect = vi.fn(async () => next);
+    const fetcher = createFetcher({
+      repo: new InMemoryRepo(),
+      upstreamId: null,
+      runtimeLocation: 'TEST',
+      proxyById: new Map(),
+      fallbackList: [{ id: 'direct_fetch' }, { id: 'direct_connect' }],
+      runProxied: async () => { throw new Error('unexpected proxy'); },
+      runDirectFetch: async () => { throw marked ? new HttpTransportError(failure) : failure; },
+      runDirectConnect,
+      socketDial: () => stubSocketDial,
+    });
+
+    const pending = fetcher('https://upstream.test', { method: 'GET' });
+    if (marked) {
+      await expect(pending).resolves.toBe(next);
+      expect(runDirectConnect).toHaveBeenCalledOnce();
+    } else {
+      await expect(pending).rejects.toBe(failure);
+      expect(runDirectConnect).not.toHaveBeenCalled();
+    }
   });
 
   it('opens a fresh replayable body stream for each fallback attempt', async () => {
