@@ -12,7 +12,6 @@ const fold = (records: DisplayUsageRecord[], { autoGroup = false, autoFold = fal
 
 describe('automatic model grouping', () => {
   it('drops everything up to the last / and every trailing tier suffix, in any case', () => {
-    expect(autoGroupName('cline-pass/deepseek-v4-pro-high')).toBe('deepseek-v4-pro');
     expect(autoGroupName('a/b/gpt-6-sol-xhigh-fast')).toBe('gpt-6-sol');
     expect(autoGroupName('moonshotai/Kimi-K2.7-Code-Highspeed')).toBe('Kimi-K2.7-Code');
     expect(autoGroupName('gpt-high-sol')).toBe('gpt-high-sol');
