@@ -57,6 +57,8 @@ describe('dialShadowsocks2022 — SIP022 happy path', () => {
     const reader = result.readable.getReader();
     const first = await reader.read();
     expect(new TextDecoder().decode(first.value!)).toBe('OK');
+    srv.endResponse();
+    await expect(reader.read()).resolves.toMatchObject({ done: true });
   });
 });
 

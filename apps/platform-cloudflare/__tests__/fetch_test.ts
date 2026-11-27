@@ -62,3 +62,35 @@ test('returns an early response when the upstream stops consuming the upload', a
   expect(response.status).toBe(413);
   await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith(stopped));
 });
+
+test('tags the Workers network failure and preserves an upload-origin error with the same shape', async () => {
+  const native = Object.assign(new Error('Network connection lost.'), { retryable: true });
+  vi.stubGlobal('fetch', vi.fn(async () => { throw native; }));
+  await expect(cloudflareFetch('https://example.com', {})).rejects.toMatchObject({ name: 'HttpTransportError', cause: native });
+
+  const bug = Object.assign(new Error('Network connection lost.'), { retryable: true });
+  const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(bug); } });
+  vi.stubGlobal('fetch', vi.fn(async (_url, init: RequestInit) => {
+    await (init.body as ReadableStream<Uint8Array>).getReader().read();
+    throw new Error('unreachable');
+  }));
+  await expect(cloudflareFetch('https://example.com', { method: 'POST', body })).rejects.toBe(bug);
+});
+
+test('reports tagged body loss through the original Response after a later abort', async () => {
+  let source!: ReadableStreamDefaultController<Uint8Array>;
+  const nativeResponse = new Response(new ReadableStream({ start(controller) { source = controller; } }));
+  vi.stubGlobal('fetch', vi.fn(async () => nativeResponse));
+  const caller = new AbortController();
+  const response = await cloudflareFetch('https://example.com', { signal: caller.signal });
+  expect(response).toBe(nativeResponse);
+  const reader = response.body!.getReader();
+  const failure = Object.assign(new Error('Network connection lost.'), { retryable: true });
+  source.error(failure);
+  await expect(reader.closed).rejects.toBe(failure);
+  const reason = new Error('late cancellation');
+  caller.abort(reason);
+  await expect(reader.read()).rejects.toBe(failure);
+  expect(response.classifyBodyFailure?.(failure)).toEqual({ kind: 'transport', cause: failure });
+  expect(response.classifyBodyFailure?.(reason)).toBeUndefined();
+});

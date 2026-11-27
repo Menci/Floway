@@ -71,6 +71,8 @@ describe('dialShadowsocks — AEAD frame round trip', () => {
     const reader = result.readable.getReader();
     const first = await reader.read();
     expect(new TextDecoder().decode(first.value!)).toBe('DATA');
+    srv.endResponse();
+    await expect(reader.read()).resolves.toMatchObject({ done: true });
   });
 
   it('flags an AEAD auth failure on the very first frame as proxy-handshake', async () => {

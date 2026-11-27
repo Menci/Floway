@@ -1,5 +1,26 @@
 import type net from 'node:net';
-import { PassThrough, pipeline, Readable } from 'node:stream';
+import { PassThrough, pipeline, Readable, type Duplex } from 'node:stream';
+
+import { isNodeSocketFailure } from './network-failure.ts';
+import { HttpTransportError, isCausedBy, mapReadableFailure, signalAbortReason } from '@floway-dev/http';
+
+export const bindSocketAbort = (socket: Duplex, signal: AbortSignal | undefined): void => {
+  if (signal === undefined) return;
+  const abort = (): void => {
+    if (!socket.destroyed) socket.destroy(signalAbortReason(signal));
+  };
+  signal.addEventListener('abort', abort, { once: true });
+  socket.once('close', () => signal.removeEventListener('abort', abort));
+  if (signal.aborted) abort();
+};
+
+export const socketFailure = (
+  cause: unknown,
+  signal: AbortSignal | undefined,
+  isTransport: (cause: unknown) => boolean = isNodeSocketFailure,
+): unknown => isCausedBy(cause, signal?.reason) || cause instanceof HttpTransportError || !isTransport(cause)
+  ? cause
+  : new HttpTransportError(cause);
 
 // Shared projection of a Node duplex socket (net.Socket or tls.TLSSocket)
 // onto the Web Streams duplex the rest of the workspace consumes. Both the
@@ -17,14 +38,17 @@ import { PassThrough, pipeline, Readable } from 'node:stream';
 // https://github.com/nodejs/node/blob/aa4c77582be995286fc6e00aaf530dc7ade102a9/lib/internal/webstreams/adapters.js#L424-L502
 // https://github.com/nodejs/node/blob/783b3824831053fb020c17d456505ed76dfaef87/lib/internal/webstreams/adapters.js#L500-L527
 // https://github.com/nodejs/node/blob/aa4c77582be995286fc6e00aaf530dc7ade102a9/lib/internal/streams/pipeline.js#L213-L267
-export const socketToReadable = (socket: net.Socket): ReadableStream<Uint8Array> => {
+export const socketToReadable = (
+  socket: net.Socket,
+  identify: (cause: unknown) => unknown,
+): ReadableStream<Uint8Array> => {
   const readable = new PassThrough({ highWaterMark: socket.readableHighWaterMark });
   pipeline(socket, readable, error => {
     // pipeline has already propagated the error into readable; keep the
     // callback as a final invariant guard for non-standard stream behavior.
     if (error && !readable.errored) readable.destroy(error);
   });
-  return Readable.toWeb(readable) as ReadableStream<Uint8Array>;
+  return mapReadableFailure(Readable.toWeb(readable) as ReadableStream<Uint8Array>, identify);
 };
 
 // Hand-rolled adapter from a Node duplex socket to a WritableStream.
@@ -37,9 +61,12 @@ export const socketToReadable = (socket: net.Socket): ReadableStream<Uint8Array>
 // is flushed and naturally backpressures behind socket buffering), close
 // half-closes the write side, abort destroys the socket, and a socket
 // 'error' propagates into the writer via controller.error().
-export const socketToWritable = (socket: net.Socket): WritableStream<Uint8Array> => {
+export const socketToWritable = (
+  socket: net.Socket,
+  identify: (cause: unknown) => unknown,
+): WritableStream<Uint8Array> => {
   let controller: WritableStreamDefaultController | null = null;
-  const onError = (err: Error): void => { controller?.error(err); };
+  const onError = (err: Error): void => { controller?.error(identify(err)); };
   socket.on('error', onError);
   socket.once('close', () => { socket.off('error', onError); });
   return new WritableStream<Uint8Array>({
@@ -47,7 +74,7 @@ export const socketToWritable = (socket: net.Socket): WritableStream<Uint8Array>
     write(chunk) {
       return new Promise<void>((resolve, reject) => {
         socket.write(chunk, err => {
-          if (err) reject(err);
+          if (err) reject(identify(socket.errored ?? err));
           else resolve();
         });
       });

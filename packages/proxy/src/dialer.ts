@@ -10,8 +10,8 @@ import { dialSocks5 } from './protocols/socks5.ts';
 import { dialTrojan } from './protocols/trojan.ts';
 import { dialVlessTcpTls, dialVlessWsTls } from './protocols/vless.ts';
 import type { ProxyConfig } from './proxy-config.ts';
-import type { DialedSocket, DialOptions, DialResult, DialTarget, ProxyRequestTarget } from './types.ts';
-import { fetchOnStream, signalAbortReason, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
+import type { DialOptions, DialResult, DialTarget, ProxyRequestTarget } from './types.ts';
+import { fetchOnStream, HttpTransportError, isCausedBy, signalAbortReason, type DuplexStream, type FetchResponse, type HttpRequest, type TlsStream } from '@floway-dev/http';
 
 /**
  * Open a transport-only duplex byte stream to `target.host:target.port`
@@ -30,7 +30,16 @@ export const dial = async (
       `${config.kind}: dial to ${config.host}:${config.port} → ${target.host}:${target.port} exceeded deadline of ${options.dialTimeoutMs ?? DEFAULT_DIAL_DEADLINE_MS}ms`,
       'tcp-connect',
     ),
-    innerOptions => dispatchDial(config, target, innerOptions),
+    async innerOptions => {
+      try {
+        return await dispatchDial(config, target, innerOptions);
+      } catch (cause) {
+        if (cause instanceof HttpTransportError && !isCausedBy(cause, innerOptions.signal?.reason)) {
+          throw new ProxyDialError('proxy handshake transport failed', 'proxy-handshake', { cause });
+        }
+        throw cause;
+      }
+    },
   );
 
 const withDialDeadline = async <T>(
@@ -43,36 +52,18 @@ const withDialDeadline = async <T>(
   if (callerSignal?.aborted) {
     throw signalAbortReason(callerSignal);
   }
-  // We multiplex the caller signal and our deadline into a single internal
-  // AbortController. Setting the abort `reason` to a ProxyDialError on
-  // deadline lets us surface the deadline as a typed error after dispatch
-  // unwinds — even if the underlying runner returned a different exception
-  // because abort propagation was racy.
-  const internal = new AbortController();
-  const onCallerAbort = (): void => {
-    internal.abort(signalAbortReason(callerSignal!));
-  };
-  if (callerSignal) {
-    callerSignal.addEventListener('abort', onCallerAbort, { once: true });
-  }
-  const timer = setTimeout(
-    () => internal.abort(timeoutError()),
-    deadlineMs,
-  );
-  const innerOptions: DialOptions = {
-    ...options,
-    signal: internal.signal,
-  };
+  // The socket keeps the composed signal for its lifetime. Only the dial
+  // deadline is disarmed when the handshake hands the connection off.
+  const deadline = new AbortController();
+  const signal = callerSignal === undefined ? deadline.signal : AbortSignal.any([callerSignal, deadline.signal]);
+  const timer = setTimeout(() => deadline.abort(timeoutError()), deadlineMs);
   try {
-    return await run(innerOptions);
-  } catch (err) {
-    if (internal.signal.aborted && internal.signal.reason instanceof ProxyDialError) {
-      throw internal.signal.reason;
-    }
-    throw err;
+    return await run({ ...options, signal });
+  } catch (cause) {
+    if (isCausedBy(cause, deadline.signal.reason)) throw deadline.signal.reason;
+    throw cause;
   } finally {
     clearTimeout(timer);
-    if (callerSignal) callerSignal.removeEventListener('abort', onCallerAbort);
   }
 };
 
@@ -118,7 +109,7 @@ export const runProxiedRequest = async (
   target: ProxyRequestTarget,
   request: HttpRequest,
   options: RunProxiedRequestOptions,
-): Promise<Response> => {
+): Promise<FetchResponse> => {
   const dialed = await dial(config, target, options);
   return await runRequestOnStream(dialed, target, request, options);
 };
@@ -132,7 +123,7 @@ export const runDirectConnectRequest = async (
   target: ProxyRequestTarget,
   request: HttpRequest,
   options: RunDirectConnectRequestOptions,
-): Promise<Response> => {
+): Promise<FetchResponse> => {
   const deadlineMs = options.dialTimeoutMs ?? DEFAULT_DIAL_DEADLINE_MS;
   const socket = await withDialDeadline(
     options,
@@ -148,13 +139,7 @@ export const runDirectConnectRequest = async (
     ),
   );
 
-  try {
-    const response = await runRequestOnStream(socket, target, request, options);
-    return closeSocketWithResponse(response, socket, options.signal);
-  } catch (error) {
-    await socket.close().catch(() => {});
-    throw error;
-  }
+  return await runRequestOnStream(socket, target, request, options);
 };
 
 const runRequestOnStream = async (
@@ -162,9 +147,12 @@ const runRequestOnStream = async (
   target: ProxyRequestTarget,
   request: HttpRequest,
   options: RunProxiedRequestOptions,
-): Promise<Response> => {
+): Promise<FetchResponse> => {
+  let closed: Promise<void> | undefined;
+  const close = (): Promise<void> => closed ??= Promise.resolve().then(() => dialed.close());
   let stream: DuplexStream = { readable: dialed.readable, writable: dialed.writable };
   try {
+    if (options.signal?.aborted) throw signalAbortReason(options.signal);
     // Route DialResult.prefix to the next byte sink: into the TLS upgrade
     // when wrapping, otherwise into the fetch-body prefix.
     let fetchPrefix: Uint8Array | undefined;
@@ -180,11 +168,13 @@ const runRequestOnStream = async (
         });
       } catch (cause) {
         // The dialer's framing pump can surface a typed ProxyDialError
-        // (CONNECT 4xx, VLESS bad-version, SS auth fail, …) into the
+        // (VLESS bad-version, SS auth fail, …) into the
         // handshake as the underlying transport error. Preserve the original
         // stage rather than mis-tagging it as inner-tls.
-        if (cause instanceof ProxyDialError) throw cause;
-        throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
+        if (cause instanceof HttpTransportError && !isCausedBy(cause, options.signal?.reason)) {
+          throw new ProxyDialError('inner tls handshake to upstream failed', 'inner-tls', { cause });
+        }
+        throw cause;
       }
       stream = tls;
     } else {
@@ -202,7 +192,8 @@ const runRequestOnStream = async (
       const hostValue = target.port === defaultPort ? hostUriPart : `${hostUriPart}:${target.port}`;
       headers = [['Host', hostValue], ...headers];
     }
-    return await fetchOnStream(stream, { ...request, headers }, fetchPrefix, options.contentDecoders);
+    const response = await fetchOnStream(stream, { ...request, headers }, fetchPrefix, options.contentDecoders, options.signal);
+    return await closeSocketWithResponse(response, close);
   } catch (err) {
     // Any throw past `dial()` means the active stream will never be returned
     // to the caller. Cancel the topmost layer (the post-TLS readable when
@@ -212,65 +203,69 @@ const runRequestOnStream = async (
     // protocol's IIFE / framing pump observes the underlying read failure
     // and closes the socket.
     void stream.readable.cancel(err).catch(() => {});
+    await close().catch(() => {});
     throw err;
   }
 };
 
-const closeSocketWithResponse = (response: Response, socket: DialedSocket, signal?: AbortSignal): Response => {
-  let closePromise: Promise<void> | null = null;
-  const close = (): Promise<void> => {
-    closePromise ??= socket.close().catch(() => {});
-    if (signal !== undefined) signal.removeEventListener('abort', onAbort);
-    return closePromise;
-  };
-  const onAbort = (): void => { void close(); };
-
-  // Reading the body to its end and cancelling it are the ordinary teardown
-  // paths, and both of them require someone to still be holding the body. An
-  // abort raised after the dial resolved has no other way to reach this
-  // socket: the dial-stage listener is detached once `withDialDeadline`
-  // returns, and the runtime's own `signal` support on connect() covers the
-  // handshake only.
-  if (signal !== undefined) {
-    signal.addEventListener('abort', onAbort, { once: true });
-    // addEventListener on an already-aborted signal never fires, so an abort
-    // that landed while the request was in flight would otherwise be lost.
-    if (signal.aborted) void close();
-  }
-
+const closeSocketWithResponse = async (response: FetchResponse, close: () => Promise<void>): Promise<FetchResponse> => {
   if (response.body === null) {
-    void close();
+    await close();
     return response;
   }
 
   const reader = response.body.getReader();
+  let cancelled = false;
+  let released = false;
+  const release = (): void => {
+    reader.releaseLock();
+    released = true;
+  };
   const body = new ReadableStream<Uint8Array>({
     async pull(controller) {
+      let result: ReadableStreamReadResult<Uint8Array>;
       try {
-        const result = await reader.read();
-        if (result.done) {
-          controller.close();
-          void close();
-        } else {
-          controller.enqueue(result.value);
-        }
+        result = await reader.read();
       } catch (error) {
+        if (cancelled) return;
+        release();
         controller.error(error);
-        void close();
+        void close().catch(() => {});
+        return;
+      }
+      if (cancelled) return;
+      if (result.done) {
+        release();
+        await close();
+        if (!cancelled) controller.close();
+      } else {
+        controller.enqueue(result.value);
       }
     },
     async cancel(reason) {
-      try {
-        await reader.cancel(reason);
-      } finally {
-        await close();
+      cancelled = true;
+      if (!released) {
+        try {
+          await reader.cancel(reason);
+        } catch (cause) {
+          void close().catch(() => {});
+          throw cause;
+        } finally {
+          release();
+        }
       }
+      await close();
     },
-  });
+  }, { highWaterMark: 0 });
 
-  return new Response(body, {
+  return Object.assign(new Response(body, {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,
+  }), {
+    ...(response.headerLines === undefined ? {} : { headerLines: response.headerLines }),
+    classifyBodyFailure: (cause: unknown) => cause instanceof ProxyDialError && cause.stage !== 'config'
+      ? { kind: 'transport' as const, cause }
+      : response.classifyBodyFailure?.(cause),
   });
 };

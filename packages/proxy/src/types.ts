@@ -118,9 +118,7 @@ export interface SocketDialOptions {
  * off). `prefix`, when present, is bytes the dialer wants prepended to
  * the very first record the orchestrator emits next.
  */
-export interface DialResult {
-  readable: ReadableStream<Uint8Array>;
-  writable: WritableStream<Uint8Array>;
+export interface DialResult extends DialedSocket {
   prefix?: Uint8Array;
 }
 

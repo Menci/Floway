@@ -53,7 +53,7 @@ import { base64UrlDecodeBytes, utf8Bytes, hexDecode } from '../encoding.ts';
 import type { RealityProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialTarget, DialedSocket } from '../types.ts';
 import { vlessFrameOverStream } from './vless-core.ts';
-import { signalAbortReason } from '@floway-dev/http';
+import { HttpTransportError, isCausedBy } from '@floway-dev/http';
 
 let cryptoInstalled = false;
 const ensureCrypto = (): void => {
@@ -98,7 +98,7 @@ export const dialReality = async (
 
   try {
     const post = await runRealityHandshake(socket, config, serverPub, shortId, options.signal);
-    return await vlessFrameOverStream(post, config.uuid, target);
+    return { ...await vlessFrameOverStream(post, config.uuid, target), close: () => socket.close() };
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;
@@ -135,8 +135,8 @@ const runRealityHandshake = async (
   // which fires synchronously the moment the constructor runs.
   let plainController!: ReadableStreamDefaultController<Uint8Array>;
   let plainClosed = false;
-  let detachAbortListener: (() => void) | null = null;
   let handshakeOk = false;
+  let transportFailure: { cause: unknown } | undefined;
 
   const writer = socket.writable.getWriter();
   const reader = socket.readable.getReader();
@@ -160,8 +160,6 @@ const runRealityHandshake = async (
   const closePlain = (error?: unknown): void => {
     if (plainClosed) return;
     plainClosed = true;
-    detachAbortListener?.();
-    detachAbortListener = null;
     try {
       if (error) plainController.error(error);
       else plainController.close();
@@ -179,6 +177,7 @@ const runRealityHandshake = async (
       out.set(header, 0);
       out.set(content, header.byteLength);
       writer.write(out).catch(e => {
+        transportFailure ??= { cause: e };
         if (!handshakeOk) handshakeReject(e);
         else closePlain(e);
       });
@@ -282,8 +281,6 @@ const runRealityHandshake = async (
     start(c) { plainController = c; },
     cancel(reason) {
       plainClosed = true;
-      detachAbortListener?.();
-      detachAbortListener = null;
       void tlsClient.end().catch(() => {});
       void reader.cancel(reason).catch(() => {});
       // A non-Error reason is a clean consumer cancel — emit a polite
@@ -318,8 +315,15 @@ const runRealityHandshake = async (
   void (async () => {
     try {
       while (true) {
-        const { value, done } = await reader.read();
+        const { value, done } = await reader.read().catch((cause: unknown) => {
+          transportFailure ??= { cause };
+          throw cause;
+        });
         if (done) {
+          if (!handshakeOk) {
+            handshakeReject(new ProxyDialError('REALITY peer closed before the TLS handshake finished', 'outer-tls'));
+            return;
+          }
           await tlsClient.end().catch(() => {});
           // Reclaim's onTlsEnd usually fires for a clean close-notify, but a
           // raw transport EOF without an alert wouldn't trigger it. Drive
@@ -338,22 +342,6 @@ const runRealityHandshake = async (
     }
   })();
 
-  if (signal) {
-    const captured = signal;
-    const onAbort = (): void => {
-      const reason = signalAbortReason(captured);
-      if (!handshakeOk) handshakeReject(reason);
-      else closePlain(reason);
-      void reader.cancel(reason).catch(() => {});
-    };
-    captured.addEventListener('abort', onAbort, { once: true });
-    detachAbortListener = (): void => captured.removeEventListener('abort', onAbort);
-    // addEventListener('abort') on an already-aborted signal does not fire;
-    // drive onAbort synchronously so an abort that lands between dial()'s
-    // upstream pre-check and this listener install isn't lost.
-    if (captured.aborted) onAbort();
-  }
-
   // Trigger the handshake with our pre-built sessionId and random.
   // onClientHelloPack runs inside startHandshake and may throw a typed
   // ProxyDialError (config-stage) for an off-curve / mistyped pbk;
@@ -365,19 +353,17 @@ const runRealityHandshake = async (
   // anything else we can't tell whether the server rejected the seal or the
   // TLS handshake itself failed, so we tag the whole leg as outer-tls.
   try {
-    await tlsClient.startHandshake(({ sessionId: sessionIdPlain, random: clientRandom }) as Parameters<typeof tlsClient['startHandshake']>[0]);
-    await handshakeDone;
+    await Promise.all([
+      tlsClient.startHandshake(({ sessionId: sessionIdPlain, random: clientRandom }) as Parameters<typeof tlsClient['startHandshake']>[0]),
+      handshakeDone,
+    ]);
   } catch (cause) {
-    detachAbortListener?.();
-    detachAbortListener = null;
     void reader.cancel(cause).catch(() => {});
     try { writer.releaseLock(); } catch { /* lock already released */ }
-    if (cause instanceof ProxyDialError) throw cause;
+    if (cause instanceof ProxyDialError || isCausedBy(cause, signal?.reason)) throw cause;
+    if (transportFailure?.cause === cause && !(cause instanceof HttpTransportError)) throw cause;
     throw new ProxyDialError('REALITY outer tls handshake failed', 'outer-tls', { cause });
   }
-  // Leave the abort listener live for the streaming session so a caller-
-  // driven abort still tears down the established stream; closePlain detaches
-  // it on the next teardown event.
 
   return { readable: plainReadable, writable: plainWritable };
 };

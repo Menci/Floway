@@ -1,7 +1,8 @@
 import net from 'node:net';
 import tls from 'node:tls';
 
-import { socketToReadable, socketToWritable } from './node-socket-streams.ts';
+import { isNodeConnectFailure } from './network-failure.ts';
+import { bindSocketAbort, socketFailure, socketToReadable, socketToWritable } from './node-socket-streams.ts';
 import { startNodeTls } from './tls-upgrade.ts';
 import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
 
@@ -10,29 +11,16 @@ import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } fro
 // few minutes of going silent without us restating the platform's tuning.
 const KEEPALIVE_INITIAL_DELAY_MS = 60_000;
 
-// `signal` is honoured at three layers: (1) pre-connect short-circuit, (2)
-// node:net / node:tls native abort during the connect handshake, (3) post-
-// connect socket.destroy() so subsequent reads/writes reject.
 export const nodeSocketDial: SocketDial = {
   async connect(host, port, opts): Promise<DialedSocket> {
     if (opts?.signal?.aborted) throwAbort(opts.signal);
     const dialHost = normalizeDialHost(host);
-    // node:net / node:tls accept `signal` natively; passing it lets the
-    // runtime tear down a connect that has not yet fired 'connect' /
-    // 'secureConnect' without us having to race anything ourselves.
     // We don't request `allowHalfOpen` on TLS — close-notify makes
     // half-close fragile across TLS 1.3 implementations.
-    //
-    // tls.connect honours `signal` at runtime but @types/node hasn't yet
-    // surfaced it on tls.ConnectionOptions; @ts-expect-error makes the
-    // type lag visible (the line will start failing the day the type is
-    // added) so we can drop the suppression instead of letting an `as`
-    // cast silently absorb future shape changes.
     const signal = opts?.signal;
     const socket = opts?.tls
-      // @ts-expect-error – see block comment above
-      ? tls.connect({ host: dialHost, port, servername: dialHost, signal })
-      : net.connect({ host: dialHost, port, allowHalfOpen: true, signal });
+      ? tls.connect({ host: dialHost, port, servername: dialHost })
+      : net.connect({ host: dialHost, port, allowHalfOpen: true });
     const readyEvent = opts?.tls ? 'secureConnect' : 'connect';
     await new Promise<void>((resolve, reject) => {
       const onReady = (): void => {
@@ -41,10 +29,11 @@ export const nodeSocketDial: SocketDial = {
       };
       const onError = (err: Error): void => {
         socket.off(readyEvent, onReady);
-        reject(err);
+        reject(socketFailure(err, signal, isNodeConnectFailure));
       };
       socket.once(readyEvent, onReady);
       socket.once('error', onError);
+      bindSocketAbort(socket, signal);
     });
 
     // A dialed socket is otherwise torn down only by the response body's own
@@ -57,8 +46,9 @@ export const nodeSocketDial: SocketDial = {
     // first token) answers them and is never disturbed.
     socket.setKeepAlive(true, KEEPALIVE_INITIAL_DELAY_MS);
 
-    const readable = socketToReadable(socket);
-    const writable = socketToWritable(socket);
+    const identify = (cause: unknown) => socketFailure(cause, signal, isNodeConnectFailure);
+    const readable = socketToReadable(socket, identify);
+    const writable = socketToWritable(socket, identify);
 
     // Listen on 'close' rather than the toWeb readable's own close signal:
     // the latter fires on read-side EOF and would resolve early whenever the
@@ -79,26 +69,6 @@ export const nodeSocketDial: SocketDial = {
         console.debug('[socket-dial] post-connect error:', err);
       }
     });
-
-    if (opts?.signal) {
-      const captured = opts.signal;
-      const onAbort = (): void => { socket.destroy(); };
-      captured.addEventListener('abort', onAbort, { once: true });
-      // Drop the listener on natural socket close so a long-lived caller
-      // signal (e.g. a request controller shared across dials) doesn't
-      // accumulate one closure per dial pinning the destroyed socket.
-      socket.once('close', () => {
-        captured.removeEventListener('abort', onAbort);
-      });
-      // Node's native `signal` for net.connect / tls.connect only honours
-      // aborts during the connect phase; once 'connect' / 'secureConnect'
-      // has fired, post-connect aborts are entirely up to the listener
-      // installed above. addEventListener('abort') on an already-aborted
-      // signal does not fire, so an abort that landed between the
-      // entry-point pre-check and this listener install would otherwise
-      // be lost. Drive onAbort synchronously to close that TOCTOU window.
-      if (captured.aborted) onAbort();
-    }
 
     return {
       readable,

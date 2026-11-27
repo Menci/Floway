@@ -20,7 +20,7 @@ export const dialVlessTcpTls = async (
   const socket = await connectOrDialError(options.socketDial, config.host, config.port, { tls: true, signal: options.signal });
 
   try {
-    return await vlessFrameOverStream(socket, config.uuid, target);
+    return { ...await vlessFrameOverStream(socket, config.uuid, target), close: () => socket.close() };
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;
@@ -40,9 +40,8 @@ export const dialVlessWsTls = async (
     const wsStream = await wsUpgradeAndFrame(socket, {
       host: config.wsHost ?? config.host,
       path: config.path,
-      signal: options.signal,
     });
-    return await vlessFrameOverStream(wsStream, config.uuid, target);
+    return { ...await vlessFrameOverStream(wsStream, config.uuid, target), close: () => socket.close() };
   } catch (err) {
     void socket.close().catch(() => {});
     throw err;

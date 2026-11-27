@@ -91,7 +91,7 @@ describe('startNodeTls — handshake', () => {
         await expect(startNodeTls(await dialRaw(server.port), {
           host: 'localhost',
           verifyHost: 'other.example.test',
-        })).rejects.toMatchObject({ code: 'ERR_TLS_CERT_ALTNAME_INVALID' });
+        })).rejects.toMatchObject({ name: 'HttpTransportError', cause: { code: 'ERR_TLS_CERT_ALTNAME_INVALID' } });
       } finally {
         await server.close();
       }
@@ -119,7 +119,12 @@ describe('startNodeTls — prefix and lifecycle', () => {
           host: 'localhost',
           signal: controller.signal,
         });
-        controller.abort();
+        const reader = secure.readable.getReader();
+        const reason = new Error('caller cancelled the TLS leg');
+        const rejected = expect(reader.read()).rejects.toBe(reason);
+        controller.abort(reason);
+        await rejected;
+        reader.releaseLock();
         await expect(Promise.race([
           peerClosed,
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error('peer was not torn down')), 1_000)),

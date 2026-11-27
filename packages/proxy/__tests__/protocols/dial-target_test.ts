@@ -19,6 +19,7 @@ import type {
 } from '../../src/proxy-config.ts';
 import type { DialTarget, SocketDial } from '../../src/types.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
+import { HttpTransportError } from '@floway-dev/http';
 
 // Every dialer reaches the target through the same two guards in
 // `src/dial-target.ts`, so each guard needs one witness per dialer and not one
@@ -62,13 +63,21 @@ describe('pre-dial target validation reaches every dialer', () => {
   // than as whatever the socket threw.
   it.each(dialers.filter(({ name }) => ['http-connect', 'ss', 'socks5'].includes(name)))('$name classifies tcp-connect failures with the underlying cause', async ({ dial }) => {
     const fake = makeFakeSocketDial();
-    const cause = new Error('ECONNREFUSED');
+    const cause = new HttpTransportError(new Error('ECONNREFUSED'));
     fake.failNextConnect(cause);
     await expect(dial({ host: 'api.openai.com', port: 443 }, fake.socketDial)).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'tcp-connect',
       cause,
     });
+  });
+
+  it('does not turn a programmer error in the socket adapter into a dial failure', async () => {
+    const fake = makeFakeSocketDial();
+    const bug = new TypeError('invalid implementation state');
+    fake.failNextConnect(bug);
+    await expect(dialSocks5(socks5Config(), { host: 'api.openai.com', port: 443 }, { socketDial: fake.socketDial }))
+      .rejects.toBe(bug);
   });
 
   // Only the SOCKS-style dialers pass `maxBytes: 255`, because only they frame

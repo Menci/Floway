@@ -102,9 +102,6 @@ const dialSocks5Inner = async (
   } else throw new ProxyDialError(`SOCKS5 reply unknown ATYP: ${atyp}`, 'proxy-handshake');
   await expect(bndLen + 2);
 
-  // 5. Forward any leftover bytes from the handshake reader to the post-handshake stream
-  if (pending.byteLength) await fwdWriter.write(copy(pending));
-
   writer.releaseLock();
 
   // Pump remaining transport bytes into the forward stream. The dial's
@@ -113,6 +110,7 @@ const dialSocks5Inner = async (
   // and has no way to reach the raw fd otherwise.
   void (async () => {
     try {
+      if (pending.byteLength) await fwdWriter.write(copy(pending));
       while (true) {
         const r = await reader.read();
         if (r.done) {
@@ -129,7 +127,7 @@ const dialSocks5Inner = async (
     }
   })();
 
-  return { readable: postHandshake, writable: socket.writable };
+  return { readable: postHandshake, writable: socket.writable, close: () => socket.close() };
 };
 
 /** Build a SOCKS5 CONNECT request frame (VER|CMD|RSV|ATYP+addr|port[BE]). Exported for tests. */

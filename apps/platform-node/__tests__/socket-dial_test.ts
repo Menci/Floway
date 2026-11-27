@@ -3,6 +3,7 @@ import net from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { nodeSocketDial } from '../src/socket-dial.ts';
+import { HttpTransportError } from '@floway-dev/http';
 
 // Loopback echo server lets us verify that DialedSocket teardown actually
 // reaches the underlying net.Socket — Writable.toWeb / Readable.toWeb
@@ -91,6 +92,56 @@ describe('nodeSocketDial', () => {
       await withDeadline(remoteClosed, 'peer close after readable cancellation');
     } finally {
       await dialed.close();
+    }
+  });
+
+  it('carries the caller abort reason through an established socket read and closes the peer', async () => {
+    const controller = new AbortController();
+    const socket = await nodeSocketDial.connect('127.0.0.1', server.port, { signal: controller.signal });
+    const reader = socket.readable.getReader();
+    const writer = socket.writable.getWriter();
+    try {
+      await writer.write(new Uint8Array([1]));
+      expect(await reader.read()).toEqual({ done: false, value: new Uint8Array([1]) });
+      const peer = server.lastSocket();
+      if (peer === null) throw new Error('echo server did not accept the socket');
+      const peerClosed = new Promise<void>(resolve => peer.once('close', () => resolve()));
+      const reason = new Error('caller cancelled');
+      const pending = expect(reader.read()).rejects.toBe(reason);
+      controller.abort(reason);
+      await pending;
+      await expect(writer.closed).rejects.toBe(reason);
+      await withDeadline(peerClosed, 'peer closing after abort');
+    } finally {
+      reader.releaseLock();
+      writer.releaseLock();
+      await socket.close();
+    }
+  });
+
+  it('classifies a peer TCP reset independently of a later caller abort', async () => {
+    const controller = new AbortController();
+    const socket = await nodeSocketDial.connect('127.0.0.1', server.port, { signal: controller.signal });
+    const reader = socket.readable.getReader();
+    const writer = socket.writable.getWriter();
+    try {
+      await writer.write(new Uint8Array([1]));
+      expect((await reader.read()).done).toBe(false);
+      const peer = server.lastSocket();
+      if (peer === null) throw new Error('echo server did not accept the socket');
+      const observed = reader.closed.catch((cause: unknown) => cause);
+      // The Web Streams projection is demand-driven.
+      const pending = reader.read().catch((cause: unknown) => cause);
+      peer.resetAndDestroy();
+      const failure = await observed;
+      controller.abort(new Error('late cancellation'));
+      expect(failure).toBeInstanceOf(HttpTransportError);
+      expect((failure as HttpTransportError).cause).toMatchObject({ code: 'ECONNRESET' });
+      expect(await pending).toBe(failure);
+    } finally {
+      reader.releaseLock();
+      writer.releaseLock();
+      await socket.close();
     }
   });
 

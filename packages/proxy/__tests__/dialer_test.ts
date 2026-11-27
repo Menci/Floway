@@ -1,14 +1,19 @@
+import { once } from 'node:events';
+import net from 'node:net';
+import { Duplex } from 'node:stream';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { dial, runDirectConnectRequest, runProxiedRequest } from '../src/dialer.ts';
 import { dialSocks5 } from '../src/protocols/socks5.ts';
 import type { ProxyConfig } from '../src/proxy-config.ts';
 import type { DialOptions, DialResult, ProxyRequestTarget, SocketDial } from '../src/types.ts';
+import { HttpTransportError } from '@floway-dev/http';
 
 const noopStream = (): DialResult => {
   const readable = new ReadableStream<Uint8Array>({ start(c) { c.close(); } });
   const writable = new WritableStream<Uint8Array>();
-  return { readable, writable };
+  return { readable, writable, close: async () => {} };
 };
 
 vi.mock('../src/protocols/socks5.ts', () => ({
@@ -92,7 +97,7 @@ describe('runProxiedRequest — post-dial teardown', () => {
         },
       });
       const writable = new WritableStream<Uint8Array>();
-      return { readable, writable };
+      return { readable, writable, close: async () => {} };
     });
     const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
     await expect(
@@ -104,11 +109,15 @@ describe('runProxiedRequest — post-dial teardown', () => {
 });
 
 describe('runDirectConnectRequest', () => {
-  const makeSocketDial = (responseHead: string, connect: () => void = () => {}, startTls = vi.fn(async () => noopStream())): {
+  const makeSocketDial = (responseHead: string, {
+    connect = () => {},
+    startTls = vi.fn(async () => noopStream()),
+    close = async () => {},
+  }: { connect?: () => void; startTls?: SocketDial['startTls']; close?: () => Promise<void> } = {}): {
     socketDial: SocketDial;
     written: () => string;
     closeCalls: () => number;
-    startTls: ReturnType<typeof vi.fn>;
+    startTls: SocketDial['startTls'];
   } => {
     let writeBuf = new Uint8Array(0);
     let closes = 0;
@@ -135,7 +144,7 @@ describe('runDirectConnectRequest', () => {
                 controller.close();
               },
             }),
-            close: async () => { closes++; },
+            close: async () => { closes++; await close(); },
           };
         },
       },
@@ -143,7 +152,7 @@ describe('runDirectConnectRequest', () => {
   };
 
   it('sends HTTP directly to the target and closes its socket after the body ends', async () => {
-    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\nX-Upstream: one\r\nX-Upstream: two\r\n\r\nok');
     const response = await runDirectConnectRequest(
       { host: 'api.example.com', port: 80, tls: false },
       { method: 'POST', path: '/responses?stream=1', headers: [], body: new TextEncoder().encode('body') },
@@ -151,6 +160,9 @@ describe('runDirectConnectRequest', () => {
     );
 
     expect(await response.text()).toBe('ok');
+    expect(response.headerLines?.filter(([name]) => name.toLowerCase() === 'x-upstream')).toEqual([
+      ['X-Upstream', 'one'], ['X-Upstream', 'two'],
+    ]);
     expect(direct.written()).toContain('POST /responses?stream=1 HTTP/1.1\r\n');
     expect(direct.written()).toContain('Host: api.example.com\r\n');
     expect(direct.written()).toContain('Content-Length: 4\r\n');
@@ -158,26 +170,62 @@ describe('runDirectConnectRequest', () => {
     expect(direct.closeCalls()).toBe(1);
   });
 
-  // addEventListener on an already-aborted signal never fires, so the abort
-  // that lands while the request is in flight has to be picked up synchronously.
-  it('closes its socket when the caller aborted while the request was in flight', async () => {
+  it('propagates the original socket close failure before reporting body completion', async () => {
+    const bug = new TypeError('socket close invariant failed');
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\nx', { close: async () => { throw bug; } });
+    const response = await runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: [] },
+      { socketDial: direct.socketDial },
+    );
+    const reader = response.body!.getReader();
+    await expect(reader.read()).resolves.toEqual({ done: false, value: new Uint8Array([120]) });
+    await expect(reader.read()).rejects.toBe(bug);
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  it('propagates a close failure before delivering a bodyless response', async () => {
+    const bug = new TypeError('socket close invariant failed');
+    const direct = makeSocketDial('HTTP/1.1 204 No Content\r\n\r\n', { close: async () => { throw bug; } });
+    await expect(runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: [] },
+      { socketDial: direct.socketDial },
+    )).rejects.toBe(bug);
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  it('preserves a body framing failure when socket cleanup also rejects', async () => {
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nx', {
+      close: async () => { throw new TypeError('socket close invariant failed'); },
+    });
+    const response = await runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: [] },
+      { socketDial: direct.socketDial },
+    );
+    await expect(response.text()).rejects.toMatchObject({ code: 'EOF' });
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  it('closes an acquired socket if the caller aborted during handoff', async () => {
     const controller = new AbortController();
-    // Abort once the socket exists but before the response is handed back, so
-    // the dial itself still succeeds and the abort lands in the window the
-    // listener install would otherwise miss.
-    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok', () => controller.abort('client gone'));
-    await runDirectConnectRequest(
+    const reason = new Error('client gone');
+    const direct = makeSocketDial('', { connect: () => controller.abort(reason) });
+    const response = runDirectConnectRequest(
       { host: 'api.example.com', port: 80, tls: false },
       { method: 'GET', path: '/', headers: [] },
       { socketDial: direct.socketDial, signal: controller.signal },
     );
 
+    await expect(response).rejects.toBe(reason);
+    expect(direct.written()).toBe('');
     expect(direct.closeCalls()).toBe(1);
   });
 
   it('passes an IPv4 literal through as both the TLS host and verification identity', async () => {
-    const cause = new Error('certificate rejected');
-    const direct = makeSocketDial('', () => {}, vi.fn(async () => { throw cause; }));
+    const cause = new HttpTransportError(new Error('certificate rejected'));
+    const direct = makeSocketDial('', { startTls: vi.fn(async () => { throw cause; }) });
 
     const failure = runDirectConnectRequest(
       { host: '192.0.2.10', port: 443, tls: true },
@@ -198,6 +246,69 @@ describe('runDirectConnectRequest', () => {
       }),
     );
     expect(direct.closeCalls()).toBe(1);
+  });
+
+  it.each(['headers', 'body'] as const)('interrupts a live TCP exchange while awaiting %s', async phase => {
+    const received = Promise.withResolvers<void>();
+    const peerClosed = Promise.withResolvers<void>();
+    let peer: net.Socket | undefined;
+    const server = net.createServer({ allowHalfOpen: false }, socket => {
+      peer = socket;
+      socket.on('error', () => {});
+      socket.once('close', () => peerClosed.resolve());
+      socket.once('data', () => {
+        if (phase === 'body') socket.write('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nx');
+        received.resolve();
+      });
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    if (address === null || typeof address === 'string') throw new Error('expected a loopback TCP address');
+
+    const socketDial: SocketDial = {
+      ...stubSocketDial,
+      async connect(host, port, opts) {
+        const socket = net.connect({ host, port });
+        const abort = (): void => { socket.destroy(opts?.signal?.reason as Error); };
+        opts?.signal?.addEventListener('abort', abort, { once: true });
+        const closed = new Promise<void>(resolve => socket.once('close', () => {
+          opts?.signal?.removeEventListener('abort', abort);
+          resolve();
+        }));
+        await once(socket, 'connect');
+        const { readable, writable } = Duplex.toWeb(socket);
+        return {
+          readable: readable as ReadableStream<Uint8Array>, writable,
+          close: async () => { socket.destroy(); await closed; },
+        };
+      },
+    };
+    try {
+      const caller = new AbortController();
+      const reason = new Error(`cancel while awaiting ${phase}`);
+      const dialTimeoutMs = 100;
+      const response = runDirectConnectRequest(
+        { host: address.address, port: address.port, tls: false },
+        { method: 'GET', path: '/', headers: [] },
+        { socketDial, signal: caller.signal, dialTimeoutMs },
+      );
+      let blocked: Promise<unknown> = response;
+      if (phase === 'body') {
+        const reader = (await response).body!.getReader();
+        expect(await reader.read()).toEqual({ done: false, value: new Uint8Array([120]) });
+        blocked = reader.read();
+      }
+      const rejected = expect(blocked).rejects.toBe(reason);
+      await received.promise;
+      if (phase === 'headers') await new Promise(resolve => setTimeout(resolve, dialTimeoutMs + 20));
+      caller.abort(reason);
+      await rejected;
+      await peerClosed.promise;
+    } finally {
+      peer?.destroy();
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
   });
 });
 
@@ -234,7 +345,7 @@ describe('runProxiedRequest — Host header synthesis', () => {
               c.close();
             },
           });
-          return { readable, writable };
+          return { readable, writable, close: async () => {} };
         });
       },
     };

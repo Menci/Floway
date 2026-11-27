@@ -9,6 +9,8 @@
 import { gcm } from '@noble/ciphers/aes.js';
 import { chacha20poly1305 } from '@noble/ciphers/chacha.js';
 
+import { ProxyDialError } from '../dial-error.ts';
+
 const NONCE_LEN = 12;
 
 export interface Aead {
@@ -35,14 +37,21 @@ export const leNonce = (counter: bigint): Uint8Array<ArrayBuffer> => {
  * exposes a one-shot API only.
  */
 export const makeAead = (kind: 'chacha' | 'gcm', key: Uint8Array): Aead => {
-  if (kind === 'chacha') {
-    return {
-      encrypt: (nonce, pt) => chacha20poly1305(key, nonce).encrypt(pt),
-      decrypt: (nonce, ct) => chacha20poly1305(key, nonce).decrypt(ct),
-    };
-  }
+  const cipher = kind === 'chacha' ? chacha20poly1305 : gcm;
   return {
-    encrypt: (nonce, pt) => gcm(key, nonce).encrypt(pt),
-    decrypt: (nonce, ct) => gcm(key, nonce).decrypt(ct),
+    encrypt: (nonce, pt) => cipher(key, nonce).encrypt(pt),
+    decrypt(nonce, ciphertext) {
+      try {
+        return cipher(key, nonce).decrypt(ciphertext);
+      } catch (cause) {
+        // Noble uses plain Error for authentication failures in both AEADs.
+        // https://github.com/paulmillr/noble-ciphers/blob/b097e6838326491fb084fc838e29decdc050706a/src/aes.ts
+        // https://github.com/paulmillr/noble-ciphers/blob/b097e6838326491fb084fc838e29decdc050706a/src/chacha.ts
+        if (cause instanceof Error && (cause.message === 'invalid tag' || cause.message === 'aes/gcm: invalid ghash tag')) {
+          throw new ProxyDialError('Shadowsocks record authentication failed', 'proxy-handshake', { cause });
+        }
+        throw cause;
+      }
+    },
   };
 };

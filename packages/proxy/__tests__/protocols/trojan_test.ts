@@ -4,6 +4,7 @@ import { buildTrojanRequestHeader, dialTrojan } from '../../src/protocols/trojan
 import type { TrojanProxyConfig } from '../../src/proxy-config.ts';
 import type { DialTarget } from '../../src/types.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
+import { HttpTransportError } from '@floway-dev/http';
 
 const target443: DialTarget = { host: 'api.openai.com', port: 443 };
 
@@ -57,7 +58,7 @@ describe('dialTrojan — outer TLS', () => {
   });
 
   it('tags a failed outer handshake as stage=outer-tls', async () => {
-    const cause = new Error('certificate rejected');
+    const cause = new HttpTransportError(new Error('certificate rejected'));
     const fake = makeFakeSocketDial();
     fake.failNextUpgrade(cause);
 

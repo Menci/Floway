@@ -1,6 +1,14 @@
 // Buffered "read exactly N bytes" helper over a Web Streams reader.
 // `label` only flavours the EOF error message.
 
+import { HttpTransportError } from '@floway-dev/http';
+
+export class ExactReadEof extends HttpTransportError {
+  constructor(label: string, requested: number, readonly received: number) {
+    super(new Error(`${label}: EOF, want ${requested} got ${received}`));
+  }
+}
+
 export const makeExactReader = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   label: string,
@@ -17,7 +25,7 @@ export const makeExactReader = (
     }
     while (got < n) {
       const r = await reader.read();
-      if (r.done) throw new Error(`${label}: EOF, want ${n} got ${got}`);
+      if (r.done) throw new ExactReadEof(label, n, got);
       const need = n - got;
       if (r.value.byteLength <= need) {
         out.set(r.value, got);

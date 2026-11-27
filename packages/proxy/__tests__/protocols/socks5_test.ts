@@ -44,14 +44,12 @@ describe('dialSocks5 — RFC 1928 no-auth happy path', () => {
     const port = await srv.read(2);
     expectEqualBytes(port, [0x01, 0xbb]);
 
-    // 3) Reply: success with IPv4 BND.ADDR.
-    srv.respond(arr(0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00));
+    // Reply and the first upstream bytes can arrive in the same read.
+    srv.respond(arr(0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef));
 
     const result = await promise;
     expect(result.readable).toBeInstanceOf(ReadableStream);
 
-    // 4) Post-handshake bytes flow through transparently.
-    srv.respond(arr(0xde, 0xad, 0xbe, 0xef));
     const reader = result.readable.getReader();
     const { value } = await reader.read();
     expectEqualBytes(value!, [0xde, 0xad, 0xbe, 0xef]);

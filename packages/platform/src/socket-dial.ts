@@ -12,10 +12,10 @@ interface SocketDialOptions {
   /**
    * Caller-supplied cancellation. When the signal aborts:
    *   - mid-connect dials are torn down immediately;
-   *   - established sockets are closed by the runtime impl, which then
-   *     surfaces as read/write rejections on the returned streams.
+   *   - established sockets surface the cancellation cause through their
+   *     active streams and remove the binding when the socket closes.
    * The signal is also honoured pre-connect: a signal that is already
-   * aborted at call time throws synchronously without opening a socket —
+   * aborted at call time rejects before opening a socket —
    * its Error reason is rethrown as-is, and a primitive or absent reason
    * becomes a DOMException('AbortError').
    */

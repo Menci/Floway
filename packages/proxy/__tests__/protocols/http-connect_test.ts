@@ -70,13 +70,7 @@ describe('dialHttpConnect — failure modes', () => {
     while (!new TextDecoder().decode(srv.peekWritten()).includes('\r\n\r\n')) await srv.read(1);
 
     srv.respond('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic\r\n\r\n');
-    const result = await promise;
-    // The CONNECT error rides through the post-CONNECT readable as an error
-    // — assert on the readable rather than the dial promise (the dial
-    // resolves once the CONNECT request is sent; the error surfaces when
-    // the orchestrator's next consumer pulls).
-    const reader = result.readable.getReader();
-    await expect(reader.read()).rejects.toMatchObject({
+    await expect(promise).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
     });
@@ -92,8 +86,7 @@ describe('dialHttpConnect — failure modes', () => {
     const garbage = new Uint8Array(70 * 1024);
     garbage.fill(0x41);
     srv.respond(garbage);
-    const result = await promise;
-    await expect(result.readable.getReader().read()).rejects.toMatchObject({
+    await expect(promise).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
     });
@@ -130,8 +123,7 @@ describe('dialHttpConnect — response status code matrix', () => {
     const srv = await fake.awaitConnect();
     await drainCONNECTRequest(srv);
     srv.respond(`${statusLine}\r\n\r\n`);
-    const result = await promise;
-    await expect(result.readable.getReader().read()).rejects.toMatchObject({
+    await expect(promise).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
     });

@@ -24,7 +24,7 @@ import { assertValidTargetHost, assertValidTargetPort, connectOrDialError } from
 import { utf8Bytes } from '../encoding.ts';
 import type { TrojanProxyConfig } from '../proxy-config.ts';
 import type { DialOptions, DialResult, DialedSocket, DialTarget } from '../types.ts';
-import type { DuplexStream } from '@floway-dev/http';
+import { HttpTransportError, isCausedBy, type DuplexStream } from '@floway-dev/http';
 
 export const dialTrojan = async (
   config: TrojanProxyConfig,
@@ -60,12 +60,16 @@ const dialTrojanInner = async (
       signal: options.signal,
     });
   } catch (cause) {
-    throw new ProxyDialError('outer tls handshake to trojan server failed', 'outer-tls', { cause });
+    if (cause instanceof HttpTransportError && !isCausedBy(cause, options.signal?.reason)) {
+      throw new ProxyDialError('outer tls handshake to trojan server failed', 'outer-tls', { cause });
+    }
+    throw cause;
   }
 
   return {
     readable: outerTls.readable,
     writable: outerTls.writable,
+    close: () => socket.close(),
     prefix: buildTrojanRequestHeader(config.password, target),
   };
 };

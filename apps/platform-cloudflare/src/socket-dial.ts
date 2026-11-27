@@ -1,6 +1,8 @@
 import { connect } from 'cloudflare:sockets';
 
-import { userspaceTls } from '@floway-dev/http';
+import { isCloudflareNetworkFailure } from './network-failure.ts';
+import { cloudflareSocketReadable, cloudflareSocketWritable } from './socket-streams.ts';
+import { HttpTransportError, isCausedBy, signalAbortReason, userspaceTls } from '@floway-dev/http';
 import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } from '@floway-dev/platform';
 
 // workerd reports every non-2xx outbound CONNECT proxy status with this same
@@ -9,7 +11,12 @@ import { normalizeDialHost, throwAbort, type DialedSocket, type SocketDial } fro
 // https://github.com/cloudflare/workerd/blob/c889d1dd2322420cb5c58740dc28ab20b6a7f681/src/workerd/api/sockets.c%2B%2B#L969-L1017
 const PROXY_CONNECT_REJECTION = 'proxy request failed, cannot connect to the specified address';
 
-class ProxyConnectRejection extends Error {}
+class ProxyConnectRejection extends HttpTransportError {
+  constructor(host: string, port: number, cause: Error) {
+    super(cause);
+    this.message = `dial ${host}:${port} failed: ${cause.message}`;
+  }
+}
 
 // AbortSignal handling: cloudflare:sockets doesn't accept a signal on connect
 // itself, so we honour it ourselves. A pre-aborted signal short-circuits
@@ -43,49 +50,50 @@ export const cloudflareSocketDial: SocketDial = {
     const safeClose = async (): Promise<void> => {
       try { await socket.close(); } catch { /* already closed/errored */ }
     };
-    let abortListener: (() => void) | null = null;
-    const removeAbortListener = (): void => {
-      if (abortListener && opts?.signal) {
-        opts.signal.removeEventListener('abort', abortListener);
-        abortListener = null;
-      }
+    const signal = opts?.signal;
+    const opening = Promise.withResolvers<void>();
+    void socket.opened.then(() => opening.resolve(), opening.reject);
+    const read = cloudflareSocketReadable(socket.readable);
+    const write = cloudflareSocketWritable(socket.writable);
+    let closePromise: Promise<void> | undefined;
+    let abortRead: Promise<void> | undefined;
+    const close = (): Promise<void> => closePromise ??= Promise.all([safeClose(), abortRead])
+      .then(() => undefined).finally(removeAbortListener);
+    const removeAbortListener = (): void => signal?.removeEventListener('abort', abortListener);
+    const abortListener = (): void => {
+      const reason = signalAbortReason(signal!);
+      // Native results already settled in this turn keep their original cause.
+      queueMicrotask(() => {
+        opening.reject(reason);
+        abortRead = read.abort(reason).catch(() => { /* the socket may already have closed */ });
+        write.abort(reason);
+        void close();
+      });
     };
-    if (opts?.signal) {
-      const signal = opts.signal;
-      abortListener = (): void => { void safeClose(); };
-      signal.addEventListener('abort', abortListener, { once: true });
-    }
+    signal?.addEventListener('abort', abortListener, { once: true });
     // Explicit catch so an unhandled-rejection observer doesn't see
     // socket.closed rejecting on connect failure.
     void socket.closed.catch(() => { /* errors observed via opened/streams */ }).finally(removeAbortListener);
 
     try {
-      await socket.opened;
+      await opening.promise;
     } catch (cause) {
-      removeAbortListener();
-      await safeClose();
-      // If the failure was caused by the caller's abort, surface as
-      // AbortError (preserving the original reason if it was an Error)
-      // instead of an opaque connect failure.
-      if (opts?.signal?.aborted) throwAbort(opts.signal);
-      const ConnectError = cause instanceof Error && cause.message.startsWith(PROXY_CONNECT_REJECTION)
-        ? ProxyConnectRejection
-        : Error;
-      throw new ConnectError(`dial ${host}:${port} failed`, { cause });
+      await close();
+      if (isCausedBy(cause, signal?.reason)) throw cause;
+      if (cause instanceof Error && cause.message.startsWith(PROXY_CONNECT_REJECTION)) throw new ProxyConnectRejection(host, port, cause);
+      if (isCloudflareNetworkFailure(cause)) throw new HttpTransportError(cause);
+      throw cause;
     }
 
-    if (opts?.signal?.aborted) {
-      await safeClose();
-      throwAbort(opts.signal);
+    if (signal?.aborted) {
+      await close();
+      throwAbort(signal);
     }
 
     return {
-      readable: socket.readable,
-      writable: socket.writable,
-      close: async () => {
-        removeAbortListener();
-        await safeClose();
-      },
+      readable: read.readable,
+      writable: write.writable,
+      close,
     };
   },
 
