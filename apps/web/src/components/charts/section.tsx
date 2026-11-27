@@ -29,7 +29,6 @@ export function ChartSection({
   title,
   weights,
 }: {
-  /** Further toolbar controls for this chart, after the selection ones. */
   actions?: React.ReactNode;
   children: React.ReactNode;
   controlsLabel: string;
