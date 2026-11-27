@@ -33,9 +33,7 @@ const nativeFrames = (mode: 'legacy' | 'modern' | 'mixed', name: string, argumen
  *
  * A result answers the shape its assistant turn stated: a call the turn named by
  * id gets a `tool` message, and a legacy `function_call` — which states no id —
- * gets the `function` message this wire pairs with it by name. That pairing is
- * read off the restored turn, not off the source protocol, so every source
- * reaches it the same way.
+ * gets the `function` message this wire pairs with it by name.
  */
 const assertNativeHistory = (
   target: OpenAIChatCompletionsPayloadEx,
@@ -108,7 +106,7 @@ test('Gemini keeps modern IDs separate when a vendor stream includes both call f
   expect(results[0]).toMatchObject({ role: 'tool', tool_call_id: 'native-modern' });
   expect(results[1]).toMatchObject({ role: 'function', name: 'lookup' });
 });
-test('Anthropic Messages answers a restored legacy call via sidecar synthesizedCallIds', async () => {
+test('Anthropic Messages answers a restored legacy call via authenticated source call IDs', async () => {
   const context = { sidecarCodec: createTestSidecarCodec() };
   const payload: AnthropicMessagesPayload = {
     model: 'public-model', max_tokens: 64, stream: true,
@@ -130,7 +128,58 @@ test('Anthropic Messages answers a restored legacy call via sidecar synthesizedC
   expect(replay.target.messages.at(-1)).toEqual({ role: 'function', name: 'lookup', content: 'late' });
 });
 
-test('OpenAI Responses answers a restored legacy call via sidecar synthesizedCallIds', async () => {
+test('Anthropic Messages separates modern and legacy results on a mixed restored turn and works on v1/v2 sidecars', async () => {
+  const codec = createTestSidecarCodec();
+  const context = { sidecarCodec: codec };
+  const payload: AnthropicMessagesPayload = {
+    model: 'public-model', max_tokens: 64, stream: true,
+    messages: [{ role: 'user', content: 'Call lookup' }],
+    tools: [{ name: 'lookup', input_schema: { type: 'object', properties: { x: { type: 'integer' } } } }],
+  };
+  const trip = expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context));
+  const result = await collectAnthropicMessagesProtocolEventsToResult(trip.events(iterate(nativeFrames('mixed', 'lookup'))));
+  const calls = result.content.filter(block => block.type === 'tool_use');
+  expect(calls).toHaveLength(2);
+  const legacyCall = calls.find(call => call.id !== 'native-modern');
+  if (legacyCall === undefined) throw new Error('Expected a synthesized legacy call ID');
+  const replay = expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions({
+    ...payload,
+    messages: [
+      ...payload.messages,
+      { role: 'assistant', content: result.content },
+      {
+        role: 'user', content: [
+          { type: 'tool_result', tool_use_id: 'native-modern', content: 'modern-out' },
+          { type: 'tool_result', tool_use_id: legacyCall.id, content: 'legacy-out' },
+        ],
+      },
+    ],
+  }, context));
+  expect(replay.target.messages.slice(-2)).toEqual([
+    { role: 'tool', tool_call_id: 'native-modern', content: 'modern-out' },
+    { role: 'function', name: 'lookup', content: 'legacy-out' },
+  ]);
+
+  const v1Assistant = [{ role: 'assistant' as const, content: [{ type: 'tool_use' as const, id: 'legacy-v1-id', name: 'lookup', input: { x: 1 } }] }];
+  const v1Sidecar = await encodeRoundTripSidecar(codec, {
+    v: 1,
+    source: 'anthropicMessages',
+    target: 'openaiChatCompletions',
+    targetTurn: { role: 'assistant', function_call: { name: 'lookup', arguments: '{"x":1}' } },
+    sourceTurnDigest: await computeAnthropicMessagesTurnDigest(v1Assistant),
+  });
+  const v1Replay = expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions({
+    ...payload,
+    messages: [
+      ...payload.messages,
+      { role: 'assistant', content: [...v1Assistant[0].content, createAnthropicMessagesSidecarBlock(v1Sidecar)] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'legacy-v1-id', content: 'from-v1' }] },
+    ],
+  }, context));
+  expect(v1Replay.target.messages.at(-1)).toEqual({ role: 'function', name: 'lookup', content: 'from-v1' });
+});
+
+test('OpenAI Responses answers a restored legacy call via authenticated source call IDs', async () => {
   const context = { sidecarCodec: createTestSidecarCodec() };
   const payload: OpenAIResponsesRequestPayloadEx = {
     model: 'public-model', stream: true,
@@ -151,27 +200,4 @@ test('OpenAI Responses answers a restored legacy call via sidecar synthesizedCal
   }, context));
   expect(replay.target.messages.find(message => message.role === 'assistant')?.function_call).toEqual({ name: 'lookup', arguments: '{"x":1}' });
   expect(replay.target.messages.at(-1)).toEqual({ role: 'function', name: 'lookup', content: 'done' });
-});
-
-test('a legacy v2 sidecar without synthesizedCallIds rejects a source-ID-only result for a restored legacy call', async () => {
-  const codec = createTestSidecarCodec();
-  const context = { sidecarCodec: codec };
-  const assistantTurn = [{ role: 'assistant' as const, content: [{ type: 'tool_use' as const, id: 'toolu_legacy', name: 'lookup', input: { x: 1 } }] }];
-  const carrier = await encodeRoundTripSidecar(codec, {
-    v: 2,
-    source: 'anthropicMessages',
-    target: 'openaiChatCompletions',
-    targetTurn: { role: 'assistant', content: null, function_call: { name: 'lookup', arguments: '{"x":1}' } },
-    sourceTurnDigest: await computeAnthropicMessagesTurnDigest(assistantTurn),
-  });
-  const payload: AnthropicMessagesPayload = {
-    model: 'public-model', max_tokens: 64, stream: true,
-    messages: [
-      { role: 'user', content: 'Call lookup' },
-      { role: 'assistant', content: [...assistantTurn[0].content, createAnthropicMessagesSidecarBlock(carrier)] },
-      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_legacy', content: 'late' }] },
-    ],
-    tools: [{ name: 'lookup', input_schema: { type: 'object', properties: { x: { type: 'integer' } } } }],
-  };
-  await expect(routeAnthropicMessagesViaOpenAIChatCompletions(payload, context)).resolves.toMatchObject({ type: 'input-error' });
 });

@@ -25,8 +25,8 @@ const statedCallIdsOf = (
   const claimed = new Set<string>();
   for (const piece of turns) {
     if (piece.kind === 'restored') {
-      for (const id of piece.synthesizedCallIds ?? []) {
-        if (id !== null) claimed.add(id);
+      for (const id of piece.sourceCallIds) {
+        if (id !== undefined) claimed.add(id);
       }
       for (const entry of piece.turn) {
         for (const part of entry.parts ?? []) {
@@ -37,11 +37,9 @@ const statedCallIdsOf = (
       }
       continue;
     }
-    if (piece.kind === 'assistant') {
-      for (const item of piece.items) {
-        if ((item.type === 'function_call' || item.type === 'custom_tool_call') && item.call_id !== undefined) {
-          claimed.add(item.call_id);
-        }
+    for (const item of piece.items) {
+      if ((item.type === 'function_call' || item.type === 'custom_tool_call' || item.type === 'tool_result') && item.call_id !== undefined) {
+        claimed.add(item.call_id);
       }
     }
   }
@@ -58,18 +56,24 @@ const collectRestoredCalls = (
   for (const piece of turns) {
     if (piece.kind !== 'restored') continue;
     const pending: RestoredGeminiCall[] = [];
-    let idlessIndex = 0;
+    let callIndex = 0;
     for (const entry of piece.turn) {
       for (const part of entry.parts ?? []) {
         const call = part.functionCall;
         if (call === undefined) continue;
+        if (callIndex >= piece.sourceCallIds.length) {
+          throw new Error('Authenticated round-trip call IDs do not match restored Gemini GenerateContent function calls');
+        }
+        const sourceCallId = piece.sourceCallIds[callIndex++];
         if (call.id !== undefined && call.id !== '') {
+          if (sourceCallId !== call.id) {
+            throw new Error('Authenticated round-trip call ID does not match restored Gemini GenerateContent wire call ID');
+          }
           pending.push({ callId: call.id, name: call.name, wireId: call.id });
           continue;
         }
-        const synthesizedId = piece.synthesizedCallIds?.[idlessIndex++] ?? undefined;
-        if (synthesizedId !== undefined) {
-          pending.push({ callId: synthesizedId, name: call.name });
+        if (sourceCallId !== undefined) {
+          pending.push({ callId: sourceCallId, name: call.name });
           continue;
         }
         let fallbackId: string;
@@ -80,6 +84,9 @@ const collectRestoredCalls = (
         claimed.add(fallbackId);
         pending.push({ callId: fallbackId, name: call.name });
       }
+    }
+    if (callIndex !== piece.sourceCallIds.length) {
+      throw new Error('Authenticated round-trip call IDs do not match restored Gemini GenerateContent function calls');
     }
     callsByTurn.set(piece.turn, pending);
   }

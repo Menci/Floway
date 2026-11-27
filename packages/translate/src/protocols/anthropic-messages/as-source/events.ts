@@ -85,7 +85,6 @@ export const writeAnthropicMessagesEvents = async function* (
   const ordinals = createIRUnitIndexAllocator();
   const nativeAccumulator = createAnthropicMessagesEventAccumulator();
   const contentState: NonNullable<AnthropicMessagesInputAssistantTurnState<EmittedFieldStates>['content']> = [];
-  const synthesizedCallIds = new Map<number, string>();
   let nextBlockIndex = 0;
   // Keep only the frontier block wire-open so the finish-time sidecar can close
   // before it. Clients that require serial blocks reorder this in the gateway.
@@ -168,11 +167,7 @@ export const writeAnthropicMessagesEvents = async function* (
         if (item.name === '') throw new TypeError('Completed tool calls require a name');
         const callId = collector.valueOrAbsent<string>([...unit.path, 'call_id']);
         if (callId === undefined) wait = true;
-        else {
-          const resolvedId = callId === IRAbsent ? `${metadata.id}_${itemIndex}` : callId;
-          if (callId === IRAbsent) synthesizedCallIds.set(itemIndex, resolvedId);
-          block = { type: 'tool_use', id: resolvedId, name: item.name, input: {} };
-        }
+        else block = { type: 'tool_use', id: callId === IRAbsent ? `${metadata.id}_${itemIndex}` : callId, name: item.name, input: {} };
       }
       if (wait) break;
       pending.dropHead();
@@ -344,14 +339,7 @@ export const writeAnthropicMessagesEvents = async function* (
       };
       const assistantState: AnthropicMessagesInputAssistantTurnState<EmittedFieldStates> = { content: contentState };
       const sourceTurnDigest = await computeAnthropicMessagesTurnDigest([targetTurn]);
-      const data = await options.roundTrip.encodeSidecar(
-        0,
-        sourceTurnDigest,
-        targetTurn,
-        assistantState,
-        collectAnthropicMessagesTextPlacements([targetTurn]),
-        synthesizedCallIds,
-      );
+      const data = await options.roundTrip.encodeSidecar(0, sourceTurnDigest, targetTurn, assistantState, collectAnthropicMessagesTextPlacements([targetTurn]));
       const carrier = createAnthropicMessagesSidecarBlock(data);
       yield emit({ type: 'content_block_start', index: nextBlockIndex, content_block: carrier });
       yield emit({ type: 'content_block_stop', index: nextBlockIndex });

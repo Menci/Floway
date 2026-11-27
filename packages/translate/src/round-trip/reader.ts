@@ -9,6 +9,5 @@ export interface RoundTripReader<Protocol extends keyof InputAssistantTurnByProt
     choice: number,
     turn: InputAssistantTurnFor<Protocol>,
     fieldState: InputAssistantTurnStateFor<Protocol, ReadFieldStates>,
-    idlessCallItemIndices?: readonly number[],
   ) => void;
 }

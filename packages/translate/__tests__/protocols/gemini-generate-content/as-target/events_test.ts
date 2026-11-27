@@ -25,13 +25,11 @@ const runReader = async (
   state: IROutput;
   turns: Map<number, GeminiGenerateContentInputAssistantTurn>;
   fieldStates: Map<number, unknown>;
-  idlessCallItemIndices: Map<number, readonly number[] | undefined>;
   builder: ReturnType<typeof createReferenceBuilder>;
 }> => {
   const builder = createReferenceBuilder();
   const turns = new Map<number, GeminiGenerateContentInputAssistantTurn>();
   const fieldStates = new Map<number, unknown>();
-  const idlessCallItemIndices = new Map<number, readonly number[] | undefined>();
   const records: IRRecord[] = [];
   let finalState: IROutput | undefined;
 
@@ -40,10 +38,9 @@ const runReader = async (
       ...options,
       roundTrip: {
         builder,
-        onAssistantTurn: (choice, turn, fieldState, idlessIndices) => {
+        onAssistantTurn: (choice, turn, fieldState) => {
           turns.set(choice, turn);
           fieldStates.set(choice, fieldState);
-          idlessCallItemIndices.set(choice, idlessIndices);
         },
       },
     }),
@@ -53,7 +50,7 @@ const runReader = async (
   }
 
   if (finalState === undefined) throw new Error('Expected at least one output IR record');
-  return { records, state: finalState, turns, fieldStates, idlessCallItemIndices, builder };
+  return { records, state: finalState, turns, fieldStates, builder };
 };
 
 test('streams merged plain text deltas (including empty mergeable chunks), Unicode, grounding citations after trailing signature carriers, logprobs, and usage', async () => {
@@ -185,7 +182,7 @@ test('drops late grounding citations safely with a warning when a prior message 
 });
 
 test('preserves thought parts, thoughtSignature, IRAbsent id-less calls, and thin-reference safety when functionCall.args is omitted', async () => {
-  const { records, state, turns, fieldStates, idlessCallItemIndices, builder } = await runReader(iterate([
+  const { records, state, turns, fieldStates, builder } = await runReader(iterate([
     eventFrame({
       modelVersion: 'gemini-2.5-pro',
       candidates: [{
@@ -233,7 +230,6 @@ test('preserves thought parts, thoughtSignature, IRAbsent id-less calls, and thi
   expect(weatherCall.call_id).toBe(IRAbsent);
   expect(pingCall.call_id).toBe(IRAbsent);
   expect(pingCall.arguments).toBe('{}');
-  expect(idlessCallItemIndices.get(0)).toEqual([1, 2]);
   expect(state.choices[0]?.items).toEqual([
     { type: 'reasoning', summary: ['First step. Second step.'] },
     weatherCall,
@@ -264,7 +260,7 @@ test('preserves thought parts, thoughtSignature, IRAbsent id-less calls, and thi
 });
 
 test('restores grouped tool namespaces and unwraps customToolNames calls', async () => {
-  const { state, idlessCallItemIndices } = await runReader(
+  const { state } = await runReader(
     iterate([
       eventFrame({
         modelVersion: 'gemini-2.5-flash',
@@ -291,7 +287,6 @@ test('restores grouped tool namespaces and unwraps customToolNames calls', async
     { type: 'function_call', call_id: 'call_explicit_1', namespace: 'web', name: 'search', arguments: '{"query":"floway"}' },
     { type: 'custom_tool_call', call_id: 'call_custom_1', name: 'apply_patch', input: '*** Begin Patch' },
   ]);
-  expect(idlessCallItemIndices.get(0)).toBeUndefined();
 });
 
 test('maps MAX_TOKENS, safety refusal_details, promptFeedback.blockReason, inlineData media, and failed output reasons', async () => {

@@ -23,21 +23,14 @@ export const createRoundTripCoordinator = <
   const turns = new Map<number, {
     turn: InputAssistantTurnFor<Target>;
     fieldState: InputAssistantTurnStateFor<Target, ReadFieldStates>;
-    idlessCallItemIndices?: readonly number[];
   }>();
   const reader: RoundTripReader<Target> = {
     builder,
-    onAssistantTurn: (choice, turn, fieldState, idlessCallItemIndices) => {
-      turns.set(choice, {
-        turn,
-        fieldState,
-        ...(idlessCallItemIndices === undefined ? {} : { idlessCallItemIndices }),
-      });
-    },
+    onAssistantTurn: (choice, turn, fieldState) => { turns.set(choice, { turn, fieldState }); },
   };
   const writer: RoundTripWriter<Source> = {
     builder,
-    encodeSidecar: async (choice, sourceTurnDigest, turn, contentState, textPlacements, synthesizedCallIds) => {
+    encodeSidecar: async (choice, sourceTurnDigest, turn, contentState, textPlacements) => {
       const pending = turns.get(choice);
       if (pending === undefined) throw new Error(`Missing native assistant turn for choice ${choice}`);
       const finalized = await referenceAssistantTurn(
@@ -46,16 +39,7 @@ export const createRoundTripCoordinator = <
         builder,
         collectEmittedFieldPlacements(turn, contentState, textPlacements),
       );
-      const callIds = pending.idlessCallItemIndices?.map(itemIndex => synthesizedCallIds?.get(itemIndex) ?? null);
-      const hasSynthesizedCallIds = callIds?.some(id => id !== null) === true;
-      return await encodeRoundTripSidecar(codec, {
-        v: ROUND_TRIP_SIDECAR_VERSION,
-        source,
-        target,
-        ...finalized,
-        ...(hasSynthesizedCallIds ? { synthesizedCallIds: callIds } : {}),
-        sourceTurnDigest,
-      } satisfies RoundTripSidecar<Target>);
+      return await encodeRoundTripSidecar(codec, { v: ROUND_TRIP_SIDECAR_VERSION, source, target, ...finalized, sourceTurnDigest } satisfies RoundTripSidecar<Target>);
     },
   };
   return { reader, writer };

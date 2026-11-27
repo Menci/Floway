@@ -153,7 +153,6 @@ interface GeminiChoiceState {
   activeTextPart?: TextPartRecord | undefined;
   reasoning?: IRItemHandle | undefined;
   readonly partsFieldState: PartsFieldState;
-  readonly idlessCallItemIndices: number[];
   readonly textSegmentsByNativeIndex: Map<number, NativeTextSegment>;
   nativePartCount: number;
   lastPartMergeableText: boolean;
@@ -185,7 +184,6 @@ export const readGeminiGenerateContentEvents = async function* (
       state = {
         irIndex: nextIRChoiceIndex++,
         partsFieldState: [],
-        idlessCallItemIndices: [],
         textSegmentsByNativeIndex: new Map(),
         nativePartCount: 0,
         lastPartMergeableText: false,
@@ -384,13 +382,11 @@ export const readGeminiGenerateContentEvents = async function* (
 
       if (isCustom) {
         const item = ir.item(choiceIndex, { type: 'custom_tool_call', call_id: callId, ...naming, input: '' });
-        if (!hasWireId) choice.idlessCallItemIndices.push(item.index);
         const unwrapped = unwrapCustomToolInput(argsJson);
         if (unwrapped !== '') item.append('input', unwrapped);
         item.end('completed');
       } else {
         const item = ir.item(choiceIndex, { type: 'function_call', call_id: callId, ...naming, arguments: '' });
-        if (!hasWireId) choice.idlessCallItemIndices.push(item.index);
         if (isPlainJSONObject(call.args)) {
           const jsonField = createReadFieldState('json');
           const pieceId = appendReadField(options.roundTrip.builder, jsonField, argsJson);
@@ -473,7 +469,6 @@ export const readGeminiGenerateContentEvents = async function* (
       choice.irIndex,
       [{ role: 'model', parts: nativeParts }],
       [{ parts: choice.partsFieldState }],
-      choice.idlessCallItemIndices.length > 0 ? choice.idlessCallItemIndices : undefined,
     );
     ir.choice(choice.irIndex).end(finishReason);
     choice.finishReason = finishReason;

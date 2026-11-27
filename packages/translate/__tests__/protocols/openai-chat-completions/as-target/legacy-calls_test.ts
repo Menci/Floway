@@ -9,14 +9,20 @@ import { TranslateInputException } from '../../../../src/shared/input-error.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 type LegacyTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
-const legacy = (name: string): RestoredAssistantTurn<LegacyTurn> => ({ kind: 'restored', turn: { role: 'assistant', function_call: { name, arguments: '{}' } } });
-const mixed = (): RestoredAssistantTurn<LegacyTurn> => ({
+const legacy = (
+  name: string,
+  sourceCallIds: readonly (string | undefined)[] = [undefined],
+): RestoredAssistantTurn<LegacyTurn> => ({ kind: 'restored', turn: { role: 'assistant', function_call: { name, arguments: '{}' } }, sourceCallIds });
+const mixed = (
+  sourceCallIds: readonly (string | undefined)[] = [undefined, 'modern-id'],
+): RestoredAssistantTurn<LegacyTurn> => ({
   kind: 'restored',
   turn: {
     role: 'assistant',
     function_call: { name: 'legacy', arguments: '{}' },
     tool_calls: [{ id: 'modern-id', type: 'function', function: { name: 'modern', arguments: '{}' } }],
   },
+  sourceCallIds,
 });
 const message = (text: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text }] }] });
 
@@ -59,4 +65,58 @@ test('a different legacy function does not end the result search', () => {
   };
   const legacyCalls = chatLegacyCallsOf([first, message('between'), second, answers]);
   assertEquals([...legacyCalls.names.values()], ['first', 'second']);
+});
+
+test('mixed restored turn extracts the legacy source call ID regardless of stream order', () => {
+  for (const order of [['modern-id', 'synth-1'], ['synth-1', 'modern-id']] as const) {
+    const native = mixed(order);
+    const results: IRInputTurn = {
+      kind: 'client',
+      items: [
+        { type: 'tool_result', call_id: 'modern-id', output: 'MODERN' },
+        { type: 'tool_result', call_id: 'synth-1', output: 'LEGACY' },
+      ],
+    };
+    const legacyCalls = chatLegacyCallsOf([native, results]);
+    const legacyId = legacyCalls.callIds.get(native.turn);
+    assertEquals(legacyCalls.names.get(legacyId!), 'legacy');
+    assertEquals(legacyCalls.results.get(results.items[1] as Extract<IRInputTurn['items'][number], { type: 'tool_result' }>), legacyId);
+  }
+});
+
+test('unanswered explicit-ID legacy call registers no dangling call ID', () => {
+  const native = legacy('lookup', ['synth-1']);
+  const idlessAnswer: IRInputTurn = { kind: 'client', items: [{ type: 'tool_result', name: 'lookup', output: 'UNRELATED' }] };
+  const legacyCalls = chatLegacyCallsOf([native, idlessAnswer]);
+  assertEquals(legacyCalls.callIds.size, 0);
+  assertThrows(() => assignCallIds([native, idlessAnswer], () => [], { resultCallIds: legacyCalls.results }), TranslateInputException);
+});
+
+test('explicit-ID legacy matching consumes FIFO and leaves duplicate results unmapped', () => {
+  const first = legacy('first', ['dup-id']);
+  const second = legacy('second', ['dup-id']);
+  const twoAnswers: IRInputTurn = {
+    kind: 'client',
+    items: [
+      { type: 'tool_result', call_id: 'dup-id', output: 'ONE' },
+      { type: 'tool_result', call_id: 'dup-id', output: 'TWO' },
+    ],
+  };
+  const legacyCalls = chatLegacyCallsOf([first, second, twoAnswers]);
+  const firstId = legacyCalls.callIds.get(first.turn)!;
+  const secondId = legacyCalls.callIds.get(second.turn)!;
+  assertEquals(legacyCalls.results.get(twoAnswers.items[0] as Extract<IRInputTurn['items'][number], { type: 'tool_result' }>), firstId);
+  assertEquals(legacyCalls.results.get(twoAnswers.items[1] as Extract<IRInputTurn['items'][number], { type: 'tool_result' }>), secondId);
+
+  const single = legacy('only', ['dup-id']);
+  const duplicateCalls = chatLegacyCallsOf([single, twoAnswers]);
+  assertThrows(() => assignCallIds([single, twoAnswers], turn => {
+    const id = duplicateCalls.callIds.get(turn);
+    return id === undefined ? [] : [{ callId: id, name: 'only' }];
+  }, { resultCallIds: duplicateCalls.results }), TranslateInputException);
+});
+
+test('mismatched authenticated sourceCallIds fails fast', () => {
+  assertThrows(() => chatLegacyCallsOf([mixed(['modern-id'])]), Error);
+  assertThrows(() => chatLegacyCallsOf([mixed(['other-id', 'synth-1'])]), Error);
 });
