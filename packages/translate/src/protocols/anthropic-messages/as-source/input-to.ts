@@ -394,8 +394,7 @@ const serviceTierToIR = (payload: AnthropicMessagesPayload): string | undefined 
 };
 
 // Only an explicit effort or disabled thinking states a level on the IR;
-// `thinking: { type: 'adaptive' }` travels independently on `reasoning_budget_dynamic`
-// so targets choose between native dynamic thinking and effort fallback.
+// `thinking: { type: 'adaptive' }` travels independently on `reasoning_budget_dynamic`.
 const reasoningEffortToIR = (payload: AnthropicMessagesPayload): string | undefined => {
   if (payload.output_config?.effort != null) return payload.output_config.effort;
   if (payload.thinking?.type === 'disabled') return 'none';
