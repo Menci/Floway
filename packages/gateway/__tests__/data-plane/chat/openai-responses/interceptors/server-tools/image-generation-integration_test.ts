@@ -9,8 +9,8 @@ import { createInMemoryImageProcessor, initExternalResourceFetcher, initImagePro
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest } from '@floway-dev/provider';
 import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
+import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest } from '@floway-dev/upstream';
 
 // Dirty integration harness: mock the model registry so the image backend is a
 // pair of in-test stubs, then drive the whole shim (function-tool rewrite,
@@ -39,7 +39,7 @@ const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsRequest
 let repo: InMemoryRepo;
 
 const defaultCandidates = vi.hoisted(() => () => [{
-  provider: {
+  upstream: {
     upstreamId: 'u',
     kind: 'custom',
     name: 'mock-image',
@@ -72,7 +72,7 @@ const defaultCandidates = vi.hoisted(() => () => [{
   fetcher: (request: Request) => fetch(request),
 }]);
 
-vi.mock('../../../../../../src/data-plane/providers/resolution.ts', () => ({
+vi.mock('../../../../../../src/data-plane/upstreams/resolution.ts', () => ({
   enumerateModelCandidates: vi.fn(async () => {
     const override = stub.nextResolutionOverride;
     if (override !== null) {

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { isPlural, leafKeys, pluralBase } from './keys';
 import en from '../../src/i18n/locales/en';
 import { BILLING_METRICS, MODEL_KINDS } from '@floway-dev/protocols/browser';
-import { OPTIONAL_FLAG_IDS, ALL_PROVIDER_KINDS } from '@floway-dev/provider/browser';
+import { OPTIONAL_FLAG_IDS, ALL_UPSTREAM_KINDS } from '@floway-dev/upstream/browser';
 
 const SOURCE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src');
 const LOCALES_DIR = join(SOURCE_ROOT, 'i18n', 'locales');
@@ -128,7 +128,7 @@ describe('translation key usage', () => {
     ['models.aliases.kind', MODEL_KINDS],
     ['models.editor.pricingMetrics', BILLING_METRICS],
     ['upstreams.editor.flags.entries', OPTIONAL_FLAG_IDS.flatMap(id => [`${id}.label`, `${id}.description`])],
-    ['upstreams.kinds', ALL_PROVIDER_KINDS.flatMap(kind => [`${kind}.label`, `${kind}.description`])],
+    ['upstreams.kinds', ALL_UPSTREAM_KINDS.flatMap(kind => [`${kind}.label`, `${kind}.description`])],
     // The badge's own union. Reached only as `i18nKey={`…badges.${badge.limit}`}`,
     // so no literal spells these and neither direction of the scan above can see
     // them -- deleting all three once passed every check and shipped three raw

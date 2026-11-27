@@ -1,5 +1,5 @@
 import type { UpstreamRepo } from '../../src/repo/types.ts';
-import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/upstream';
 
 export const saveUpstreamForTest = async (
   repo: UpstreamRepo,

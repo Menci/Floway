@@ -3,7 +3,7 @@ import { getRepo } from '../../../repo/index.ts';
 import type { PerformanceDimensions } from '../../../repo/types.ts';
 import { attemptTtftMs } from '../attempt-timing.ts';
 import type { GatewayCtx } from '../gateway-ctx.ts';
-import type { PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { PerformanceTelemetryContext } from '@floway-dev/upstream';
 
 export type { PerformanceTelemetryContext };
 

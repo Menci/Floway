@@ -2,7 +2,7 @@ import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { Interceptor, InterceptorRun } from '@floway-dev/interceptor';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ApiErrorResult, ExecuteResult, AnthropicMessagesInvocation, PlainResult } from '@floway-dev/provider';
+import type { ApiErrorResult, ExecuteResult, AnthropicMessagesInvocation, PlainResult } from '@floway-dev/upstream';
 
 export type { AnthropicMessagesInvocation };
 

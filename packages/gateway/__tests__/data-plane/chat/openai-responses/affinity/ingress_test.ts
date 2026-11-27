@@ -4,8 +4,8 @@ import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/ch
 import { AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, compatibilityIdentityForCandidate, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
+import type { ModelCandidate } from '@floway-dev/upstream';
 
 const codec = new AffinityCodec('22'.repeat(32));
 const canonicalItemType = (itemType: string): string => itemType === 'compaction' || itemType === 'compaction_summary' || itemType === 'context_compaction' ? 'compaction' : itemType;
@@ -18,7 +18,7 @@ const candidate = (
 ): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
-    provider: { ...base.provider, upstreamId: upstream },
+    upstream: { ...base.upstream, upstreamId: upstream },
     model: {
       id: model,
       upstreamModelId: model,
@@ -28,7 +28,7 @@ const candidate = (
 };
 
 const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
+  upstreamId: value.upstream.upstreamId,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
   opaqueBlobCompatibilityIdentity: compatibilityIdentityForCandidate(value),

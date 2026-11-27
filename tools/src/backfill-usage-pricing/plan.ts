@@ -12,7 +12,7 @@ import {
   type BillingMetric,
   type DecimalString,
 } from '@floway-dev/protocols/common';
-import { modelsField, type UpstreamModelConfig } from '@floway-dev/provider';
+import { modelsField, type UpstreamModelConfig } from '@floway-dev/upstream';
 
 export const PLAN_SCHEMA_VERSION = 1;
 
@@ -100,7 +100,7 @@ export interface BuiltPlan {
 
 interface UpstreamRow {
   id: string;
-  provider: string;
+  kind: string;
   enabled: number;
   config_json: string;
   version: number;
@@ -194,7 +194,7 @@ export const validateUsageSchema = async (database: ToolDatabase): Promise<void>
 const loadUpstream = async (database: ToolDatabase, intent: BackfillIntent): Promise<LoadedUpstream> => {
   const [upstreamResult, manualResult, cachedResult] = await Promise.all([
     database.query<UpstreamRow>({
-      sql: `SELECT id, provider, enabled, config_json, version,
+      sql: `SELECT id, kind, enabled, config_json, version,
                    models_cache_revision, models_cache_fetched_at
             FROM upstreams WHERE id = ?`,
       params: [intent.upstream],
@@ -213,7 +213,7 @@ const loadUpstream = async (database: ToolDatabase, intent: BackfillIntent): Pro
   if (upstreamResult.rows.length !== 1) throw inputError('upstream-not-found', `No upstream has id ${intent.upstream}`);
   const row = upstreamResult.rows[0]!;
   if (
-    typeof row.provider !== 'string'
+    typeof row.kind !== 'string'
     || typeof row.config_json !== 'string'
     || typeof row.version !== 'number'
     || (row.models_cache_revision !== null && typeof row.models_cache_revision !== 'number')
@@ -231,13 +231,13 @@ const loadUpstream = async (database: ToolDatabase, intent: BackfillIntent): Pro
             throw new ToolError('stored-json', `Upstream ${intent.upstream} upstream_manual_models.config_json is malformed`, 1, { cause });
           }
         }),
-        `${row.provider} upstream ${row.id}`,
+        `${row.kind} upstream ${row.id}`,
       );
   const matchingManualRow = manualResult.rows.find(entry => entry.upstream_model_id === intent.modelKey);
   return {
     upstream: {
       id: row.id,
-      provider: row.provider,
+      kind: row.kind,
       configJson: row.config_json,
       manualModels,
       modelsCacheRevision: row.models_cache_revision,
@@ -666,7 +666,7 @@ export interface InspectionResult {
   schemaVersion: 1;
   kind: 'usage-pricing-inspection';
   database: DatabaseIdentity;
-  enabledUpstreams: Array<{ id: string; provider: string; name: string }>;
+  enabledUpstreams: Array<{ id: string; kind: string; name: string }>;
   nullPriceSlices: Array<{
     upstream: string | null;
     model: string;
@@ -682,8 +682,8 @@ export interface InspectionResult {
 export const inspectDatabase = async (database: ToolDatabase): Promise<InspectionResult> => {
   await validateUsageSchema(database);
   const [upstreams, slices] = await Promise.all([
-    database.query<{ id: string; provider: string; name: string }>({
-      sql: 'SELECT id, provider, name FROM upstreams WHERE enabled != 0 ORDER BY sort_order, created_at',
+    database.query<{ id: string; kind: string; name: string }>({
+      sql: 'SELECT id, kind, name FROM upstreams WHERE enabled != 0 ORDER BY sort_order, created_at',
     }),
     database.query<{
       upstream: string | null;

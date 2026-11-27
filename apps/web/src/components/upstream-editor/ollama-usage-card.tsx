@@ -14,9 +14,9 @@ import { SectionHeader } from '../ui/section-header';
 import { StatusBadge } from '../ui/status-badge';
 import { useRefresh } from '../ui/use-refresh';
 import { activityCostHint, activityCostText, activityRangeDays, type OllamaRecord, readWindows } from '../upstreams/ollama-usage';
-import { ProviderIcon } from '../upstreams/provider-badge';
 import { QuotaProgressRow } from '../upstreams/quota-progress-row';
-import { readOllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
+import { UpstreamKindIcon } from '../upstreams/upstream-kind-badge';
+import { readOllamaAccountUsage } from '@floway-dev/upstream-ollama/browser';
 
 const { InfoLabel, Text } = fluentComponents;
 
@@ -52,7 +52,7 @@ export function OllamaUsageCard({ probeRecord, readOnly = false, record }: { pro
 
   return <section className={SECTION_STACK_CLASS}>
     {accountName !== null && <div className="flex items-center gap-3 min-w-0">
-      <ProviderIcon kind="ollama" className="h-8 w-8 shrink-0" />
+      <UpstreamKindIcon kind="ollama" className="h-8 w-8 shrink-0" />
       <div className="grid gap-0.5 min-w-0 flex-1">
         <Text block weight="semibold" truncate wrap={false}>{accountName}</Text>
         {account?.email && account.name && <Text block size={200} className="text-fui-fg2" truncate wrap={false}>{account.email}</Text>}

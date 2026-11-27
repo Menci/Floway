@@ -6,9 +6,9 @@ import { afterEach, test } from 'vitest';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { initSocketDial, type DialedSocket } from '@floway-dev/platform';
-import type { ProxyFallbackEntry } from '@floway-dev/provider';
-import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
+import type { ProxyFallbackEntry } from '@floway-dev/upstream';
+import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
 
 // Both Node egress paths end in a byte serializer of their own — undici for
 // `direct_fetch`, our own writer in `@floway-dev/http` for `direct_connect` —

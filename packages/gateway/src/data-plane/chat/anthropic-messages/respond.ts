@@ -12,7 +12,7 @@ import { eventResultMetadata, jsonResponseInit, observeChatFrames, settleChatSse
 import { anthropicMessagesProtocolFrameToSSEFrame, ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
-import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/upstream';
 
 // Renders an upstream Anthropic Messages result into the client HTTP/SSE response. An
 // error-typed result is a pre-stream failure and always answers as HTTP; an

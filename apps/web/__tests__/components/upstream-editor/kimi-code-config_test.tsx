@@ -4,7 +4,7 @@ import { beforeEach, expect, test, vi } from 'vitest';
 
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
-import { ProviderConfigSection } from '../../../src/components/upstream-editor/provider-config';
+import { UpstreamKindConfigSection } from '../../../src/components/upstream-editor/upstream-kind-config';
 import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 import { primeDefaultSession } from '../../test-session';
@@ -22,7 +22,7 @@ const Harness = ({ readOnly = false }: { readOnly?: boolean }) => {
   const record = kimiCodeRecord();
   if (readOnly) record.config = { region: 'china', apiKeySet: true };
   const form = useForm<UpstreamEditorValues>({ defaultValues: valuesFromRecord(record) });
-  return <FormProvider {...form}><ProviderConfigSection readOnly={readOnly} record={record} onPatch={() => {}} /></FormProvider>;
+  return <FormProvider {...form}><UpstreamKindConfigSection readOnly={readOnly} record={record} onPatch={() => {}} /></FormProvider>;
 };
 
 test('quota refresh uses the edited region and API key', async () => {

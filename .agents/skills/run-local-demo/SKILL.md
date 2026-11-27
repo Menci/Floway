@@ -20,7 +20,7 @@ inside that worktree; the lifecycle implementation lives in `tools`.
 
    Use `--runtime workerd` only when the task specifically exercises behavior
    that exists on Cloudflare Workers and cannot be observed through Node. Do not
-   choose workerd for ordinary dashboard, control-plane, API, provider, or
+   choose workerd for ordinary dashboard, control-plane, API, upstream, or
    translation work.
 
 3. Read the launcher's result. It prints the dashboard URL, the API origin,

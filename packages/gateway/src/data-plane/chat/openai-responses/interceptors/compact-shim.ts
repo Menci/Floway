@@ -66,7 +66,7 @@ import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import { syntheticEventsFromCompaction, syntheticEventsFromResult } from '../items/output.ts';
 import { sumBillableUsage, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, createRandomOpenAIResponsesItemId, isOpenAIResponsesCompactionItem, type CanonicalOpenAIResponsesPayload, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
+import { type EventResultMetadata, type ExecuteResult } from '@floway-dev/upstream';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
 // are the compactor system prompt and the handoff prefix openai/codex ships

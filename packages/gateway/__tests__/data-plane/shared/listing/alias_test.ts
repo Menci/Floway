@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import type { AddressableIdEntry } from '../../../../src/data-plane/shared/listing/addressable.ts';
 import { synthesizeListedAliases } from '../../../../src/data-plane/shared/listing/alias.ts';
 import type { ModelAliasRecord } from '../../../../src/repo/types.ts';
-import type { InternalModel } from '@floway-dev/provider';
+import type { InternalModel } from '@floway-dev/upstream';
 
 const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasRecord => ({
   id: `alias_${overrides.name ?? 'gpt-fast'}`,

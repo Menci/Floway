@@ -36,8 +36,8 @@ import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts'
 import { parseUpstreamHue, parseUpstreamKind } from './upstream-parse.ts';
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
-import type { AddressableForm, ModelPrefixConfig, ProviderModel, UpstreamModelConfig, UpstreamModelSource, UpstreamRecord } from '@floway-dev/provider';
-import { MODEL_PREFIX_MAX_LENGTH, normalizeModelPrefix, publicModelId, UpstreamGoneError } from '@floway-dev/provider';
+import type { AddressableForm, ModelPrefixConfig, UpstreamModel, UpstreamModelConfig, UpstreamModelSource, UpstreamRecord } from '@floway-dev/upstream';
+import { MODEL_PREFIX_MAX_LENGTH, normalizeModelPrefix, publicModelId, UpstreamGoneError } from '@floway-dev/upstream';
 
 // Losing once is ordinary on a row this contended, losing four times in a row
 // is not — and the attempts run back-to-back with no delay, so they observe
@@ -141,7 +141,7 @@ const parseModelsCacheState = (row: {
 
 interface UpstreamMetaRow {
   id: string;
-  provider: string;
+  kind: string;
   name: string;
   enabled: number;
   sort_order: number;
@@ -168,10 +168,10 @@ interface UpstreamRow extends UpstreamMetaRow {
   models_cache_failure_count: number;
 }
 
-const UPSTREAM_META_COLUMNS = 'id, provider, name, enabled, sort_order, hue';
+const UPSTREAM_META_COLUMNS = 'id, kind, name, enabled, sort_order, hue';
 const UPSTREAM_COLUMNS = [
   'id',
-  'provider',
+  'kind',
   'name',
   'enabled',
   'usage_refresh_interval_minutes',
@@ -202,7 +202,7 @@ const UPSTREAM_COLUMNS_ALIASED = UPSTREAM_COLUMNS
 
 const toUpstreamMeta = (row: UpstreamMetaRow): StoredUpstreamMeta => ({
   id: row.id,
-  kind: parseUpstreamKind(row.id, row.provider),
+  kind: parseUpstreamKind(row.id, row.kind),
   name: row.name,
   enabled: row.enabled !== 0,
   sortOrder: row.sort_order,
@@ -218,7 +218,7 @@ const toUpstreamRecord = (row: UpstreamRow): StoredUpstreamRecord => {
 
   return {
     id: row.id,
-    kind: parseUpstreamKind(row.id, row.provider),
+    kind: parseUpstreamKind(row.id, row.kind),
     name: row.name,
     enabled: row.enabled !== 0,
     usageRefreshIntervalMinutes: row.usage_refresh_interval_minutes,
@@ -515,8 +515,8 @@ export class SqlUpstreamRepo implements UpstreamRepo {
            version,
            proxy_fallback_list_json,
            CASE
-             WHEN provider = 'azure' THEN 0
-             WHEN provider = 'custom' AND coalesce(json_extract(config_json, '$.modelsFetch.enabled'), 1) = 0 THEN 0
+             WHEN kind = 'azure' THEN 0
+             WHEN kind = 'custom' AND coalesce(json_extract(config_json, '$.modelsFetch.enabled'), 1) = 0 THEN 0
              ELSE 1
            END AS requires_network
          FROM upstreams
@@ -525,8 +525,8 @@ export class SqlUpstreamRepo implements UpstreamRepo {
              models_cache_revision IS NOT ?
              OR models_cache_fetched_at IS NULL
              OR (
-               provider != 'azure'
-               AND NOT (provider = 'custom' AND coalesce(json_extract(config_json, '$.modelsFetch.enabled'), 1) = 0)
+               kind != 'azure'
+               AND NOT (kind = 'custom' AND coalesce(json_extract(config_json, '$.modelsFetch.enabled'), 1) = 0)
                AND models_cache_fetched_at <= ?
              )
            )
@@ -620,7 +620,7 @@ export class SqlUpstreamRepo implements UpstreamRepo {
     const insertStmt = this.db
       .prepare(
         `INSERT INTO upstreams (
-           id, provider, name, enabled, usage_refresh_interval_minutes, sort_order,
+           id, kind, name, enabled, usage_refresh_interval_minutes, sort_order,
            created_at, updated_at, version,
            config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json,
            model_prefix, model_prefix_addressable, model_prefix_listed,
@@ -675,7 +675,7 @@ export class SqlUpstreamRepo implements UpstreamRepo {
     const updateStmt = this.db
       .prepare(
         `UPDATE upstreams SET
-           provider = ?,
+           kind = ?,
            name = ?,
            enabled = ?,
            usage_refresh_interval_minutes = ?,
@@ -930,7 +930,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
 
   async listCatalog(filter: UpstreamCatalogFilter | null): Promise<{
     readonly upstreams: CatalogUpstreamRow[];
-    readonly modelsByUpstream: Map<string, ProviderModel[]>;
+    readonly modelsByUpstream: Map<string, UpstreamModel[]>;
   }> {
     const include = filter?.include;
     const exclude = filter?.exclude;
@@ -953,7 +953,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
       this.db
         .prepare(
           `SELECT
-             u.id, u.provider, u.name, u.hue,
+             u.id, u.kind, u.name, u.hue,
              u.model_prefix, u.model_prefix_addressable, u.model_prefix_listed
            FROM upstreams u
            WHERE u.enabled = 1${filterSql}
@@ -962,7 +962,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
         .bind(...filterBinds)
         .all<{
         id: string;
-        provider: string;
+        kind: string;
         name: string;
         hue: number;
         model_prefix: string | null;
@@ -983,7 +983,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
 
     const upstreams: CatalogUpstreamRow[] = upstreamsRes.results.map(row => ({
       id: row.id,
-      kind: parseUpstreamKind(row.id, row.provider),
+      kind: parseUpstreamKind(row.id, row.kind),
       name: row.name,
       hue: parseUpstreamHue(row.id, row.hue),
       modelPrefix: parseModelPrefixColumns(row.id, row.model_prefix, row.model_prefix_addressable, row.model_prefix_listed),
@@ -996,7 +996,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
 
     // Keep the SQL query free of an ORDER BY temp B-tree; only sort an
     // upstream's slice by `kind` in the rare case it has duplicate `model.id`s.
-    const modelsByUpstream = new Map<string, ProviderModel[]>();
+    const modelsByUpstream = new Map<string, UpstreamModel[]>();
     const seenIdsByUpstream = new Map<string, Set<string>>();
     const upstreamsToSort = new Set<string>();
     for (const row of modelsRes.results) {
@@ -1126,7 +1126,7 @@ export class SqlUpstreamModelsRepo implements UpstreamModelsRepo {
     }));
   }
 
-  async getByKey(upstreamId: string, modelId: string, kind: ModelKind): Promise<ProviderModel | null> {
+  async getByKey(upstreamId: string, modelId: string, kind: ModelKind): Promise<UpstreamModel | null> {
     const row = await this.db
       .prepare('SELECT model_json FROM upstream_models WHERE upstream_id = ? AND model_id = ? AND kind = ?')
       .bind(upstreamId, modelId, kind)

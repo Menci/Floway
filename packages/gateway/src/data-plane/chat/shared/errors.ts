@@ -1,4 +1,4 @@
-import type { ApiErrorResult, PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { ApiErrorResult, PerformanceTelemetryContext } from '@floway-dev/upstream';
 
 // Failures a chat protocol can render before reaching an upstream; unexpected
 // throws bubble as-is.

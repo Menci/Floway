@@ -13,7 +13,7 @@ import {
   withAnthropicMessagesWebSearchShim,
 } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/web-search-shim.ts';
 import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../../../src/data-plane/tools/web-search/config.ts';
-import type { WebSearchProvider } from '../../../../../src/data-plane/tools/web-search/types.ts';
+import type { WebSearchBackend } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
@@ -30,8 +30,8 @@ import type {
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
-import { decodeResponseBody, plainResult } from '@floway-dev/provider';
 import { assertEquals, assertExists, stubModelCandidate } from '@floway-dev/test-utils';
+import { decodeResponseBody, plainResult } from '@floway-dev/upstream';
 
 const testTelemetryModelIdentity = {
   model: 'test-model',
@@ -127,15 +127,15 @@ const activeAnthropicMessagesWebSearchShimState = (overrides: Partial<Extract<An
   ...overrides,
 });
 
-const unusedFetchPage: WebSearchProvider['fetchPage'] = () =>
+const unusedFetchPage: WebSearchBackend['fetchPage'] = () =>
   Promise.reject(new Error('fetchPage should not be called from messages shim test'));
 
-const searchOnlyProvider = (search: WebSearchProvider['search']): WebSearchProvider => ({
+const searchOnlyProvider = (search: WebSearchBackend['search']): WebSearchBackend => ({
   search,
   fetchPage: unusedFetchPage,
 });
 
-const fakeProviderOk: WebSearchProvider = searchOnlyProvider(() =>
+const fakeProviderOk: WebSearchBackend = searchOnlyProvider(() =>
   Promise.resolve({
     type: 'ok',
     results: [
@@ -148,8 +148,8 @@ const fakeProviderOk: WebSearchProvider = searchOnlyProvider(() =>
     ],
   }));
 
-const activeProvider = (impl: WebSearchProvider, apiKeyId: string = 'test-key') => ({
-  providerName: 'tavily' as const,
+const activeProvider = (impl: WebSearchBackend, apiKeyId: string = 'test-key') => ({
+  backendName: 'tavily' as const,
   impl,
   apiKeyId,
 });
@@ -372,7 +372,7 @@ const initEnabledSearchRepo = async (): Promise<void> => {
   initRepo(repo);
   await repo.webSearchConfig.save({
     ...DEFAULT_WEB_SEARCH_CONFIG,
-    provider: 'tavily',
+    backend: 'tavily',
     tavily: { apiKey: 'test-key' },
   });
 };

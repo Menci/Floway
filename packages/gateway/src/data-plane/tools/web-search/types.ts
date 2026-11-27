@@ -1,7 +1,7 @@
-import type { WebSearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
+import type { WebSearchConfig, WebSearchBackendName } from '../../../shared/web-search-backends.ts';
 import type { AnthropicMessagesWebSearchErrorCode } from '@floway-dev/protocols/anthropic-messages';
 
-export type { WebSearchConfig, WebSearchProviderName } from '../../../shared/web-search-providers.ts';
+export type { WebSearchConfig, WebSearchBackendName } from '../../../shared/web-search-backends.ts';
 
 export const DEFAULT_WEB_SEARCH_RESULT_COUNT = 10;
 
@@ -11,9 +11,9 @@ export const DEFAULT_WEB_SEARCH_RESULT_COUNT = 10;
 // for every provider so the shim's truncation handling is provider-agnostic.
 export const MAX_FETCH_PAGE_BYTES = 10_240;
 
-export type WebSearchProviderErrorCode = Exclude<AnthropicMessagesWebSearchErrorCode, 'max_uses_exceeded'>;
+export type WebSearchBackendErrorCode = Exclude<AnthropicMessagesWebSearchErrorCode, 'max_uses_exceeded'>;
 
-export interface WebSearchProviderRequest {
+export interface WebSearchBackendRequest {
   query: string;
   allowedDomains?: string[] | undefined;
   blockedDomains?: string[] | undefined;
@@ -37,7 +37,7 @@ export interface WebSearchProviderRequest {
   signal?: AbortSignal | undefined;
 }
 
-export type WebSearchProviderResult =
+export type WebSearchBackendResult =
   | {
     type: 'ok';
     results: Array<{
@@ -49,7 +49,7 @@ export type WebSearchProviderResult =
   }
   | {
     type: 'error';
-    errorCode: WebSearchProviderErrorCode;
+    errorCode: WebSearchBackendErrorCode;
     message?: string;
   };
 
@@ -62,7 +62,7 @@ export interface WebSearchPreviewResult {
 
 export interface WebSearchFetchPageRequest {
   urls: string[];
-  // See WebSearchProviderRequest.signal — same semantics: providers
+  // See WebSearchBackendRequest.signal — same semantics: providers
   // must thread this into their underlying fetch / sleep so a
   // disconnected client cancels in-flight upstream work.
   signal?: AbortSignal | undefined;
@@ -80,40 +80,40 @@ export type WebSearchFetchPageResult =
     }>;
     failures: Array<{
       url: string;
-      errorCode: WebSearchProviderErrorCode;
+      errorCode: WebSearchBackendErrorCode;
       message?: string;
     }>;
   }
   | {
     type: 'error';
-    errorCode: WebSearchProviderErrorCode;
+    errorCode: WebSearchBackendErrorCode;
     message?: string;
   };
 
-export interface WebSearchProvider {
-  search(request: WebSearchProviderRequest): Promise<WebSearchProviderResult>;
+export interface WebSearchBackend {
+  search(request: WebSearchBackendRequest): Promise<WebSearchBackendResult>;
   fetchPage(request: WebSearchFetchPageRequest): Promise<WebSearchFetchPageResult>;
 }
 
-export type ConfiguredWebSearchProvider =
+export type ConfiguredWebSearchBackend =
   | { type: 'disabled' }
-  | { type: 'missing-credential'; provider: WebSearchProviderName }
+  | { type: 'missing-credential'; backend: WebSearchBackendName }
   | {
     type: 'enabled';
-    provider: WebSearchProviderName;
-    impl: WebSearchProvider;
+    backend: WebSearchBackendName;
+    impl: WebSearchBackend;
   };
 
 export type WebSearchConfigConnectionTestResult =
   | {
     ok: true;
-    provider: WebSearchConfig['provider'];
+    backend: WebSearchConfig['backend'];
     query: string;
     results: WebSearchPreviewResult[];
   }
   | {
     ok: false;
-    provider: WebSearchConfig['provider'];
+    backend: WebSearchConfig['backend'];
     query: string;
     error: { code: string; message: string };
   };

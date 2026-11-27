@@ -4,7 +4,7 @@
 import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types';
 import type { TFunction } from '../../i18n/translation';
 import { formatUsdNumber } from '../../lib/decimal-display';
-import { copilotCreditsToUsd, isCopilotCreditQuota } from '@floway-dev/provider-copilot/browser';
+import { copilotCreditsToUsd, isCopilotCreditQuota } from '@floway-dev/upstream-copilot/browser';
 
 export type CopilotRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
 

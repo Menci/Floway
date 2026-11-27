@@ -22,7 +22,7 @@ import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
 import { isTelemetryBucketGranularity, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, QUOTA_DISPLAYS, RERANK_PROTOCOLS, SUPPORTED_LANGUAGES, tokenUsageUnattributedUserId, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
-import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/provider';
+import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/upstream';
 
 // --- shared atoms ---
 
@@ -148,7 +148,7 @@ const opaqueBlobCompatibilityScopeSchema = z.object({
   key: z.string().min(1).exactOptional(),
 }).strict();
 
-// Mirrors the runtime UpstreamModelConfig in @floway-dev/provider.
+// Mirrors the runtime UpstreamModelConfig in @floway-dev/upstream.
 // Azure, custom, and ollama upstreams share this per-model entry; the
 // canonical per-model endpoint validation lives in the runtime validator.
 const upstreamModelSchema = z.object({
@@ -650,7 +650,7 @@ export const upstreamOptionsQuery = z.object({ view: z.enum(['key', 'audit', 'al
 // --- search config ---
 
 export const webSearchConfigSchema = z.object({
-  provider: z.enum(['disabled', 'tavily', 'microsoft-web-iq', 'jina']),
+  backend: z.enum(['disabled', 'tavily', 'microsoft-web-iq', 'jina']),
   tavily: z.object({ apiKey: z.string() }),
   microsoftWebIq: z.object({ apiKey: z.string() }),
   jina: z.object({ apiKey: z.string() }),
@@ -804,7 +804,7 @@ export const siteSettingsBody = z.object({
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(26, { error: 'version must be 26 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(27, { error: 'version must be 27 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().exactOptional(),
 });
@@ -850,7 +850,7 @@ export const modelsQuery = z.object({
 
 export const webSearchUsageQuery = z.object({
   ...usageBaseQuery,
-  provider: z.string().exactOptional(),
+  backend: z.string().exactOptional(),
 });
 
 // A multi-select filter travels as a repeated query parameter. Hono hands one

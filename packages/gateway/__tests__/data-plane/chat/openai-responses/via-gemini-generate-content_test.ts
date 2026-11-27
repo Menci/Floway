@@ -16,13 +16,13 @@ import {
   collectOpenAIResponsesProtocolEventsToResult,
   type CanonicalOpenAIResponsesPayload,
 } from '@floway-dev/protocols/openai-responses';
+import { stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
 import {
   directFetcher,
   type ModelCandidate,
-  type ProviderStreamResult,
   type UpstreamCallOptions,
-} from '@floway-dev/provider';
-import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+  type UpstreamStreamResult,
+} from '@floway-dev/upstream';
 
 const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): AsyncGenerator<ProtocolFrame<TEvent>> {
   for (const event of events) yield eventFrame(event);
@@ -36,21 +36,21 @@ const makeCandidate = (overrides: {
     body: GeminiGenerateContentPayload,
     signal?: AbortSignal,
     opts?: UpstreamCallOptions,
-  ) => Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
+  ) => Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>>;
 }): ModelCandidate => {
   const upstream = 'up_gemini_resp';
-  const instance = stubProvider({
+  const instance = stubUpstream({
     callGeminiGenerateContent: overrides.callGeminiGenerateContent,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream,
       kind: 'custom',
       name: 'Gemini Upstream',
       inboundHeaderAllowlist: [],
       instance,
     },
-    model: stubProviderModel({
+    model: stubUpstreamModel({
       id: 'gemini-2.5-pro',
       upstreamModelId: 'gemini-2.5-pro',
       endpoints: overrides.endpoints,
@@ -69,7 +69,7 @@ test('routes OpenAI Responses to a Gemini-only candidate, strips model from wire
   expect(openaiResponsesTarget.pick({ geminiGenerateContent: {} })).toBe('geminiGenerateContent');
 
   let capturedBody: GeminiGenerateContentPayload | undefined;
-  const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => {
+  const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => {
     capturedBody = body;
     return {
       ok: true,
@@ -145,7 +145,7 @@ test('routes OpenAI Responses to a Gemini-only candidate, strips model from wire
 test('keeps raw JSON numbers from tool calls and outputs on the Gemini wire and pivots compact via the shim', async () => {
   initRepo(new InMemoryRepo());
   let wireBody = '';
-  const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => {
+  const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => {
     wireBody = JSON.stringify(body);
     return {
       ok: true,

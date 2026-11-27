@@ -1,11 +1,11 @@
 import type { UpstreamMetricsMetadata } from './data';
 import type { TFunction } from '../../i18n/translation';
-import { resolveUpstreamMetricDisplaySeries, type UpstreamMetricDisplay, type UpstreamMetricDisplayOptions, type UpstreamMetricDisplaySeries, type UpstreamMetricLabelKey, type UpstreamMetricSample } from '@floway-dev/provider/browser';
-import { resolveUpstreamMetricDisplays as chatgptDisplays } from '@floway-dev/provider-chatgpt/browser';
-import { resolveUpstreamMetricDisplays as claudeCodeDisplays } from '@floway-dev/provider-claude-code/browser';
-import { resolveUpstreamMetricDisplays as copilotDisplays } from '@floway-dev/provider-copilot/browser';
-import { resolveUpstreamMetricDisplays as kimiCodeDisplays } from '@floway-dev/provider-kimi-code/browser';
-import { resolveUpstreamMetricDisplays as ollamaDisplays } from '@floway-dev/provider-ollama/browser';
+import { resolveUpstreamMetricDisplaySeries, type UpstreamMetricDisplay, type UpstreamMetricDisplayOptions, type UpstreamMetricDisplaySeries, type UpstreamMetricLabelKey, type UpstreamMetricSample } from '@floway-dev/upstream/browser';
+import { resolveUpstreamMetricDisplays as chatgptDisplays } from '@floway-dev/upstream-chatgpt/browser';
+import { resolveUpstreamMetricDisplays as claudeCodeDisplays } from '@floway-dev/upstream-claude-code/browser';
+import { resolveUpstreamMetricDisplays as copilotDisplays } from '@floway-dev/upstream-copilot/browser';
+import { resolveUpstreamMetricDisplays as kimiCodeDisplays } from '@floway-dev/upstream-kimi-code/browser';
+import { resolveUpstreamMetricDisplays as ollamaDisplays } from '@floway-dev/upstream-ollama/browser';
 
 export type ResolvedUpstreamMetricDisplay = UpstreamMetricDisplay;
 
@@ -16,7 +16,7 @@ export interface ResolvedUpstreamMetricDisplaySeries extends Omit<UpstreamMetric
 // Every key a provider may name. Listing them here is what makes the orphan-key
 // suite see them, and the annotation is what proves each one exists in the
 // English catalogue.
-const providerLabelKeys: ReadonlyArray<UpstreamMetricLabelKey> = [
+const upstreamLabelKeys: ReadonlyArray<UpstreamMetricLabelKey> = [
   'monitoring.upstreams.series.copilot.chat.allowance',
   'monitoring.upstreams.series.copilot.chat.remaining',
   'monitoring.upstreams.series.copilot.chat.usage',
@@ -51,11 +51,11 @@ const providerLabelKeys: ReadonlyArray<UpstreamMetricLabelKey> = [
 // the dashboard's catalogue, so an unknown key fails loudly instead of render-
 // ing as itself.
 const translatedKey = (key: UpstreamMetricLabelKey): string => {
-  if (!providerLabelKeys.includes(key)) throw new TypeError(`Unknown upstream metric label key: ${key}`);
+  if (!upstreamLabelKeys.includes(key)) throw new TypeError(`Unknown upstream metric label key: ${key}`);
   return key;
 };
 
-const decodeProviderMetrics = (
+const decodeUpstreamMetrics = (
   kind: UpstreamMetricsMetadata['kind'],
   samples: readonly UpstreamMetricSample[],
   options: UpstreamMetricDisplayOptions,
@@ -94,7 +94,7 @@ export const resolveUpstreamMetricDisplays = (
   samples: readonly UpstreamMetricSample[],
   t: TFunction,
   options: UpstreamMetricDisplayOptions,
-): ResolvedUpstreamMetricDisplaySeries[] => decodeProviderMetrics(upstream.kind, samples, options).map(series => ({
+): ResolvedUpstreamMetricDisplaySeries[] => decodeUpstreamMetrics(upstream.kind, samples, options).map(series => ({
   ...series,
   display: localizeDisplay(series.display, t),
 }));

@@ -8,7 +8,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { GeminiCountTokensPayload, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
+import { internalErrorResult, toInternalDebugError } from '@floway-dev/upstream';
 
 interface GeminiGenerateContentModelAction {
   readonly model: string;

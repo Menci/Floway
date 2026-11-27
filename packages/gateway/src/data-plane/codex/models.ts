@@ -21,7 +21,7 @@ import type { User } from '../../repo/types.ts';
 import { loadModelListingCatalog } from '../models/load.ts';
 import type { AddressableIdEntry } from '../shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
-import { chatgptCodexModelMetadata } from '@floway-dev/provider-chatgpt';
+import { chatgptCodexModelMetadata } from '@floway-dev/upstream-chatgpt';
 
 // Pure transformation: client catalog + addressable entries →
 // codex-shaped catalog (drops unlisted alternates and non-chat kinds).
@@ -77,26 +77,26 @@ export const assembleCodexCatalog = (
       chatContributions.push(contribution);
       if (contribution.upstream.kind === 'chatgpt') hasChatGPT = true;
     }
-    const chatProviderModels = chatContributions.map(contribution => contribution.model);
+    const chatUpstreamModels = chatContributions.map(contribution => contribution.model);
     let metadata: ReturnType<typeof chatgptCodexModelMetadata> | undefined;
     let serviceTiers: CodexServiceTier[] | undefined;
     if (hasChatGPT) {
-      const candidates = chatContributions.map(({ upstream, model: providerModel }) => ({
-        providerModel,
-        metadata: upstream.kind === 'chatgpt' ? chatgptCodexModelMetadata(providerModel) : undefined,
+      const candidates = chatContributions.map(({ upstream, model: upstreamModel }) => ({
+        upstreamModel,
+        metadata: upstream.kind === 'chatgpt' ? chatgptCodexModelMetadata(upstreamModel) : undefined,
       }));
       // A ChatGPT rate is not an entitlement. Only advertise tiers usable on every fallback.
       const chatgpt = candidates.find(candidate => candidate.metadata !== undefined)?.metadata;
       metadata = candidates[0]!.metadata;
-      serviceTiers = chatgpt === undefined ? undefined : (chatgpt.service_tiers ?? []).filter(tier => candidates.every(({ providerModel, metadata: candidateMeta }) => {
+      serviceTiers = chatgpt === undefined ? undefined : (chatgpt.service_tiers ?? []).filter(tier => candidates.every(({ upstreamModel, metadata: candidateMeta }) => {
         if (candidateMeta !== undefined) return candidateMeta.service_tiers?.some(other => other.id === tier.id);
-        return providerModel.endpoints.openaiResponses !== undefined && providerModel.pricing?.entries.some(rate => rate.selector?.serviceTier === tier.id);
+        return upstreamModel.endpoints.openaiResponses !== undefined && upstreamModel.pricing?.entries.some(rate => rate.selector?.serviceTier === tier.id);
       }));
     }
     const model = synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogTierById, {
       metadata,
       serviceTiers,
-      chatProviderModels,
+      chatUpstreamModels,
     });
     if (model.input_modalities?.length === 0) continue;
     models.push(model);

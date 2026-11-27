@@ -5,7 +5,7 @@ import type { ModelAliasesRepo, User } from '../../repo/types.ts';
 import { gatewayErrorStatus } from '../chat/gemini-generate-content/errors.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
-import type { InternalModel } from '@floway-dev/provider';
+import type { InternalModel } from '@floway-dev/upstream';
 
 type GeminiGenerationMethod = 'generateContent' | 'streamGenerateContent' | 'countTokens';
 

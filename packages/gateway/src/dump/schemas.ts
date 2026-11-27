@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { ALL_PROVIDER_KINDS } from '@floway-dev/provider';
+import { ALL_UPSTREAM_KINDS } from '@floway-dev/upstream';
 
 export const dumpErrorSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.enum(['upstream', 'gateway']) }).strict(),
@@ -10,7 +10,7 @@ export const dumpErrorSchema = z.discriminatedUnion('kind', [
 export const dumpUpstreamRefSchema = z.object({
   id: z.string(),
   name: z.string(),
-  kind: z.enum(ALL_PROVIDER_KINDS),
+  kind: z.enum(ALL_UPSTREAM_KINDS),
   hue: z.number(),
 }).strict();
 

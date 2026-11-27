@@ -8,7 +8,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
-import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
+import { internalErrorResult, toInternalDebugError } from '@floway-dev/upstream';
 
 // Reject `anthropic_beta` / `betas` in the body; the Anthropic Messages protocol carries
 // them via the `anthropic-beta` HTTP header.

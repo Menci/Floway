@@ -13,7 +13,7 @@ import { eventResultMetadata, jsonResponseInit, observeChatFrames, settleChatSse
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { geminiGenerateContentProtocolFrameToSSEFrame, GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent, collectGeminiGenerateContentProtocolEventsToResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import { type ExecuteResult, type PlainResult, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, toInternalDebugError } from '@floway-dev/upstream';
 
 // Renders an upstream Gemini generateContent result into the client HTTP/SSE response, in the
 // Google-RPC error envelope. An error-typed result is a pre-stream failure and

@@ -8,7 +8,7 @@ import type {
   ClaudeCodeQuotaWindow,
   UpstreamRecord,
 } from '../../api/types';
-import { claudeCodeRateLimitedUntil } from '@floway-dev/provider-claude-code/browser';
+import { claudeCodeRateLimitedUntil } from '@floway-dev/upstream-claude-code/browser';
 
 export type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
 

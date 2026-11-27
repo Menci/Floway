@@ -1,5 +1,5 @@
 import type { GatewayCtx } from '../gateway-ctx.ts';
-import { type ModelCandidate, type PerformanceOperation, type PerformanceTelemetryContext, type TelemetryModelIdentity } from '@floway-dev/provider';
+import { type ModelCandidate, type PerformanceOperation, type PerformanceTelemetryContext, type TelemetryModelIdentity } from '@floway-dev/upstream';
 
 export const upstreamPerformanceContext = (
   ctx: GatewayCtx,
@@ -8,7 +8,7 @@ export const upstreamPerformanceContext = (
 ): PerformanceTelemetryContext => ({
   keyId: ctx.apiKeyId,
   model: candidate.model.id,
-  upstream: candidate.provider.upstreamId,
+  upstream: candidate.upstream.upstreamId,
   operation,
   runtimeLocation: ctx.runtimeLocation,
 });
@@ -21,7 +21,7 @@ export const upstreamPerformanceContext = (
 // prefixed and the bare surface of the same model under one row.
 export const telemetryModelIdentity = (candidate: ModelCandidate, modelKey: string): TelemetryModelIdentity => ({
   model: candidate.model.id,
-  upstream: candidate.provider.upstreamId,
+  upstream: candidate.upstream.upstreamId,
   modelKey,
   pricing: candidate.model.pricing ?? null,
 });

@@ -12,22 +12,22 @@ import type { ApiKey, Group, SiteSettings, UpstreamMetricRecord, PerformanceMetr
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { RETENTION_MAX_SECONDS } from '../../shared/retention.ts';
 import { parseServerSecret } from '../../shared/server-secret.ts';
-import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
+import { isWebSearchBackendName } from '../../shared/web-search-backends.ts';
 import { supportsManualModels } from '../../upstreams/models-refresh.ts';
 import { USERNAME_PATTERN } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { validateManualModels } from '../shared/manual-models.ts';
 import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, parseUserPreferences, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
-import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamHue, normalizeUpstreamMetricIdentity, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamModelConfig, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
-import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
-import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/provider-chatgpt';
-import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
-import { parseCopilotUpstreamConfig } from '@floway-dev/provider-copilot';
-import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
-import { assertKimiCodeUpstreamRecord } from '@floway-dev/provider-kimi-code';
-import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 import { parseProxyUri } from '@floway-dev/proxy';
+import { ALL_UPSTREAM_KINDS, normalizeModelPrefix, normalizeUpstreamHue, normalizeUpstreamMetricIdentity, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamModelConfig, type UpstreamKind, type UpstreamRecord } from '@floway-dev/upstream';
+import { assertAzureUpstreamRecord } from '@floway-dev/upstream-azure';
+import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/upstream-chatgpt';
+import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/upstream-claude-code';
+import { parseCopilotUpstreamConfig } from '@floway-dev/upstream-copilot';
+import { assertCustomUpstreamRecord } from '@floway-dev/upstream-custom';
+import { assertKimiCodeUpstreamRecord } from '@floway-dev/upstream-kimi-code';
+import { assertOllamaUpstreamRecord } from '@floway-dev/upstream-ollama';
 
 export interface SerializedProxy {
   id: string;
@@ -137,7 +137,7 @@ const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
 // ChatGPT and Claude Code state contains refresh credentials and health that
 // cannot be re-derived, so it round-trips through their strict runtime
 // assertions. Every other provider owns no durable state or can re-mint it.
-const normalizeUpstreamState = (kind: UpstreamProviderKind, value: unknown): unknown => {
+const normalizeUpstreamState = (kind: UpstreamKind, value: unknown): unknown => {
   if (kind !== 'chatgpt' && kind !== 'claude-code') return null;
   if (value === null || value === undefined) throw new Error(`${kind} upstream is missing state — re-export with current code`);
   if (kind === 'chatgpt') assertChatGPTUpstreamState(value);
@@ -145,7 +145,7 @@ const normalizeUpstreamState = (kind: UpstreamProviderKind, value: unknown): unk
   return value;
 };
 
-const upstreamKindSchema = z.enum(ALL_PROVIDER_KINDS, { error: `kind must be one of ${ALL_PROVIDER_KINDS.join(', ')}` });
+const upstreamKindSchema = z.enum(ALL_UPSTREAM_KINDS, { error: `kind must be one of ${ALL_UPSTREAM_KINDS.join(', ')}` });
 const finiteSortOrderSchema = z.number({ error: 'sort_order must be a finite number' })
   .finite({ error: 'sort_order must be a finite number' });
 
@@ -372,13 +372,13 @@ const usageSchema = parsedBy((value): UsageRecord => {
 
 const searchUsageSchema = parsedBy((value): WebSearchUsageRecord => {
   const wire = parseValue(objectIncludingArraySchema('record must be an object'), value);
-  if (!isWebSearchProviderName(wire.provider)) throw new Error('invalid provider');
+  if (!isWebSearchBackendName(wire.backend)) throw new Error('invalid backend');
   const keyId = parseValue(nonEmptyStringWithError('keyId must be a non-empty string'), wire.keyId);
   const action = parseValue(z.enum(['search', 'fetch_page'], { error: 'action must be "search" or "fetch_page"' }), wire.action);
   const hour = parseValue(z.string({ error: 'hour must match the SEARCH_USAGE_HOUR_PATTERN' })
     .regex(SEARCH_USAGE_HOUR_PATTERN, { error: 'hour must match the SEARCH_USAGE_HOUR_PATTERN' }), wire.hour);
   const requests = parseValue(nonNegativeSafeIntegerSchema('requests must be a non-negative safe integer'), wire.requests);
-  return { provider: wire.provider, keyId, action, hour, requests };
+  return { backend: wire.backend, keyId, action, hour, requests };
 });
 
 const malformedPerformance = 'record fields are missing or malformed';

@@ -8,9 +8,9 @@ import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthr
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
-import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import type { FlagId } from '@floway-dev/provider/flags';
-import { assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type UpstreamOpenAIResponsesResult, type UpstreamStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/upstream';
+import type { FlagId } from '@floway-dev/upstream/flags';
 
 const API_KEY_ID = 'key_chat_completions_attempt_test';
 
@@ -62,24 +62,24 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
-  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
-  callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
+  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>>;
+  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>>;
+  callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamOpenAIResponsesResult>;
   enabledFlags?: ReadonlySet<FlagId>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const endpoints = overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
-  const provider = stubProvider({
+  const instance = stubUpstream({
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessages: overrides.callAnthropicMessages,
     callOpenAIResponses: overrides.callOpenAIResponses,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      instance: provider,
+      instance,
     },
-    model: stubProviderModel({ endpoints, enabledFlags: new Set<FlagId>(overrides.enabledFlags ?? []) }),
+    model: stubUpstreamModel({ endpoints, enabledFlags: new Set<FlagId>(overrides.enabledFlags ?? []) }),
     fetcher: directFetcher,
   };
 };
@@ -101,7 +101,7 @@ const installRepo = (): InMemoryRepo => {
 test('generate native target applies role compatibility flags in target-chain order', async () => {
   installRepo();
   let observedBody: Omit<OpenAIChatCompletionsPayloadEx, 'model'> | undefined;
-  const callOpenAIChatCompletions = vi.fn(async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+  const callOpenAIChatCompletions = vi.fn(async (_model, body): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     observedBody = body as Omit<OpenAIChatCompletionsPayloadEx, 'model'>;
     return {
       ok: true,
@@ -144,7 +144,7 @@ test('generate native target applies role compatibility flags in target-chain or
 test('generate translates through the Anthropic Messages target when only that endpoint is exposed', async () => {
   installRepo();
   let anthropicBeta: readonly string[] | undefined;
-  const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
+  const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => {
     anthropicBeta = opts?.anthropicBeta;
     return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   });
@@ -164,7 +164,7 @@ test('generate translates through the Anthropic Messages target when only that e
 test('generate preserves translated instructions before rewriting inline system messages', async () => {
   installRepo();
   const observedBodies: Omit<OpenAIResponsesPayloadEx, 'model'>[] = [];
-  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+  const callOpenAIResponses = vi.fn(async (_model, body): Promise<UpstreamOpenAIResponsesResult> => {
     observedBodies.push(body as Omit<OpenAIResponsesPayloadEx, 'model'>);
     return {
       action: 'generate',

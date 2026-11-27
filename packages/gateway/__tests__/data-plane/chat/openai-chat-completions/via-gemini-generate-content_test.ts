@@ -16,13 +16,13 @@ import {
   collectOpenAIChatCompletionsProtocolEventsToResult,
   type OpenAIChatCompletionsPayload,
 } from '@floway-dev/protocols/openai-chat-completions';
+import { stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
 import {
   directFetcher,
   type ModelCandidate,
-  type ProviderStreamResult,
   type UpstreamCallOptions,
-} from '@floway-dev/provider';
-import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+  type UpstreamStreamResult,
+} from '@floway-dev/upstream';
 
 const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): AsyncGenerator<ProtocolFrame<TEvent>> {
   for (const event of events) yield eventFrame(event);
@@ -36,21 +36,21 @@ const makeCandidate = (overrides: {
     body: GeminiGenerateContentPayload,
     signal?: AbortSignal,
     opts?: UpstreamCallOptions,
-  ) => Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
+  ) => Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>>;
 }): ModelCandidate => {
   const upstream = 'up_gemini_chat';
-  const instance = stubProvider({
+  const instance = stubUpstream({
     callGeminiGenerateContent: overrides.callGeminiGenerateContent,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream,
       kind: 'custom',
       name: 'Gemini Upstream',
       inboundHeaderAllowlist: [],
       instance,
     },
-    model: stubProviderModel({
+    model: stubUpstreamModel({
       id: 'gemini-2.5-pro',
       upstreamModelId: 'gemini-2.5-pro',
       endpoints: overrides.endpoints,
@@ -69,7 +69,7 @@ test('routes OpenAI Chat Completions to a Gemini-only candidate, strips model fr
   expect(openaiChatCompletionsTarget.pick({ geminiGenerateContent: {} })).toBe('geminiGenerateContent');
 
   let capturedBody: GeminiGenerateContentPayload | undefined;
-  const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => {
+  const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => {
     capturedBody = body;
     return {
       ok: true,

@@ -1,9 +1,9 @@
 import type { OverviewBucket, OverviewBucketId } from './telemetry-bucket-sql.ts';
 import type { AccessPrincipal, AccessRecord, AccessRecordInput } from '../access-control/types.ts';
-import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
+import type { WebSearchConfig, WebSearchBackendName } from '../shared/web-search-backends.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector, UserPreferences } from '@floway-dev/protocols/common';
-import type { PerformanceTelemetryContext, ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamMetricIdentity, UpstreamModelConfig, UpstreamModelSource, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceTelemetryContext, UpstreamModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamMetricIdentity, UpstreamModelConfig, UpstreamModelSource, UpstreamKind, UpstreamRecord } from '@floway-dev/upstream';
 
 export interface UpstreamModelsCacheError {
   message: string;
@@ -19,7 +19,7 @@ export interface UpstreamModelsCacheState {
 
 export interface StoredUpstreamMeta {
   id: string;
-  kind: UpstreamProviderKind;
+  kind: UpstreamKind;
   name: string;
   enabled: boolean;
   sortOrder: number;
@@ -166,7 +166,7 @@ export interface TokenUsage {
 export type WebSearchUsageAction = 'search' | 'fetch_page';
 
 export interface WebSearchUsageRecord {
-  provider: WebSearchProviderName;
+  backend: WebSearchBackendName;
   keyId: string;
   action: WebSearchUsageAction;
   hour: string;
@@ -422,8 +422,8 @@ export interface UsageRepo {
 }
 
 export interface WebSearchUsageRepo {
-  record(args: { provider: WebSearchProviderName; keyId: string; action: WebSearchUsageAction; hour: string; requests: number }): Promise<void>;
-  query(opts: { provider?: WebSearchProviderName | undefined; keyId?: string | undefined; action?: WebSearchUsageAction; start: string; end: string }): Promise<WebSearchUsageRecord[]>;
+  record(args: { backend: WebSearchBackendName; keyId: string; action: WebSearchUsageAction; hour: string; requests: number }): Promise<void>;
+  query(opts: { backend?: WebSearchBackendName | undefined; keyId?: string | undefined; action?: WebSearchUsageAction; start: string; end: string }): Promise<WebSearchUsageRecord[]>;
   listAll(): Promise<WebSearchUsageRecord[]>;
   set(record: WebSearchUsageRecord): Promise<void>;
   deleteAll(): Promise<void>;
@@ -472,7 +472,7 @@ export interface WebSearchConfigRepo {
 
 export interface UpstreamModelEntry {
   readonly source: UpstreamModelSource;
-  readonly model: ProviderModel;
+  readonly model: UpstreamModel;
 }
 
 export type UpstreamModelsCacheAction =
@@ -526,7 +526,7 @@ export interface UpstreamRepo {
   // gateway's own token-rotation work and by the operator-triggered OAuth
   // refresh / probe routes. The repo reads, applies `mutate`, and writes under
   // a CAS, retrying against the winner when it loses; exhausting the retries
-  // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
+  // throws. See UpstreamsRepoSlim in @floway-dev/upstream for why the change
   // is a function.
   saveState(id: string, mutate: (current: unknown, version: number) => unknown): Promise<void>;
   publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<number | null>;
@@ -551,12 +551,12 @@ export interface ResolvedUpstreamModelMatch {
   readonly matchedInputId: string;
   readonly matchedForm: 'unprefixed' | 'prefixed';
   readonly upstream: StoredUpstreamRecord;
-  readonly model: ProviderModel;
+  readonly model: UpstreamModel;
 }
 
 export interface CatalogUpstreamRow {
   readonly id: string;
-  readonly kind: UpstreamProviderKind;
+  readonly kind: UpstreamKind;
   readonly name: string;
   readonly hue: number;
   readonly modelPrefix: ModelPrefixConfig | null;
@@ -575,7 +575,7 @@ export interface UpstreamModelsRepo {
   }): Promise<ResolvedUpstreamModelMatch[]>;
   listCatalog(filter: UpstreamCatalogFilter | null): Promise<{
     readonly upstreams: CatalogUpstreamRow[];
-    readonly modelsByUpstream: Map<string, ProviderModel[]>;
+    readonly modelsByUpstream: Map<string, UpstreamModel[]>;
   }>;
   listAddressableIdsForUpstreams(upstreamIds: readonly string[]): Promise<{
     readonly upstreamId: string;
@@ -583,7 +583,7 @@ export interface UpstreamModelsRepo {
   }[]>;
   countListedByUpstream(upstreamIds?: readonly string[]): Promise<Map<string, number | null>>;
   listByUpstream(upstreamId: string, options?: { readonly source?: UpstreamModelSource }): Promise<UpstreamModelEntry[]>;
-  getByKey(upstreamId: string, modelId: string, kind: ModelKind): Promise<ProviderModel | null>;
+  getByKey(upstreamId: string, modelId: string, kind: ModelKind): Promise<UpstreamModel | null>;
   listManualModels(upstreamId: string): Promise<UpstreamModelConfig[]>;
   listManualModelsByUpstreams(upstreamIds: readonly string[]): Promise<Map<string, UpstreamModelConfig[]>>;
 }

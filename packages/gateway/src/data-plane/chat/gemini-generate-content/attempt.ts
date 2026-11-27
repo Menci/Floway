@@ -10,15 +10,15 @@ import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import { applyRulesToUpstreamGeminiGenerateContent } from '../shared/alias-rules.ts';
 import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
+import { upstreamStreamResultToExecuteResult } from '../shared/upstream-stream-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { billableUsageFromGeminiGenerateContentEvent, type GeminiGenerateContentPayload, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import { type ModelCandidate, decodeResponseBody, plainResult, toInternalDebugError, type ApiErrorResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
 import { routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
+import { type ModelCandidate, decodeResponseBody, plainResult, toInternalDebugError, type ApiErrorResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/upstream';
 
 // A candidate that speaks Gemini's native wire receives the client's payload
 // as shaped, so the source must be tried first. Everything else translates:
@@ -65,13 +65,13 @@ export const geminiGenerateContentAttempt = {
     const invocation: GeminiGenerateContentInvocation = { payload, candidate, targetApi, headers };
     return await runInterceptors(invocation, ctx, geminiGenerateContentCountTokensInterceptors, async () => {
       if (targetApi === 'geminiGenerateContent') {
-        const { http: response } = await candidate.provider.instance.callGeminiGenerateContentCountTokens(
+        const { http: response } = await candidate.upstream.instance.callGeminiGenerateContentCountTokens(
           candidate.model,
           invocation.payload,
           ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, invocation.headers),
         );
-        return await plainResultFromResponse(response, candidate.provider.upstreamId);
+        return await plainResultFromResponse(response, candidate.upstream.upstreamId);
       }
       // Without a native target the count is synthesized from Anthropic
       // Messages: the payload the shared interceptor chain already cleaned is
@@ -152,13 +152,13 @@ const dispatchGeminiGenerateContent = async (
     if (candidate.rules !== undefined) applyRulesToUpstreamGeminiGenerateContent(invocation.payload, candidate.rules);
     // The upstream reads the model from the URL, so the payload crosses the
     // provider boundary exactly as the client shaped it.
-    const providerResult = await candidate.provider.instance.callGeminiGenerateContent(
+    const upstreamResult = await candidate.upstream.instance.callGeminiGenerateContent(
       candidate.model,
       invocation.payload,
       ctx.abortSignal,
       buildUpstreamCallOptions(candidate, ctx, invocation.headers),
     );
-    return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, billableUsageFromGeminiGenerateContentEvent);
+    return await upstreamStreamResultToExecuteResult(upstreamResult, candidate, targetApi, ctx, billableUsageFromGeminiGenerateContentEvent);
   }
   // The model comes from the URL and is folded into the translation request.
   const request = { ...invocation.payload, model: candidate.model.id };

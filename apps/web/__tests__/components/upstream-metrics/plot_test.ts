@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import type { ResolvedUpstreamMetricDisplay, ResolvedUpstreamMetricDisplaySeries } from '../../../src/components/upstream-metrics/display-name';
 import { buildUpstreamMetricsChart } from '../../../src/components/upstream-metrics/plot';
 import type { UpstreamMetricRecord } from '@floway-dev/gateway/browser';
-import { upstreamMetricIdentityKey, type UpstreamMetricIdentity } from '@floway-dev/provider/browser';
+import { upstreamMetricIdentityKey, type UpstreamMetricIdentity } from '@floway-dev/upstream/browser';
 
 const upstream = { id: 'seat', kind: 'ollama' as const, name: 'Seat', hue: 210 };
 const records: UpstreamMetricRecord[] = [

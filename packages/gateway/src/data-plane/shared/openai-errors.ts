@@ -1,7 +1,7 @@
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { serializeSseFrame } from './sse.ts';
 import { eventFrame, isJsonObject, sseFrame } from '@floway-dev/protocols/common';
-import { type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
+import { type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/upstream';
 
 export const openaiInternalErrorPayload = (error: InternalDebugError) => ({
   error: {

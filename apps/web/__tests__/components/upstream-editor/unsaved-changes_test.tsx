@@ -6,7 +6,7 @@ import type { UpstreamRecord } from '../../../src/api/types';
 import { UpstreamConfigSidebar } from '../../../src/components/upstream-editor/config-sidebar';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
-import { ProviderConfigSection } from '../../../src/components/upstream-editor/provider-config';
+import { UpstreamKindConfigSection } from '../../../src/components/upstream-editor/upstream-kind-config';
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
@@ -36,7 +36,7 @@ const ConfigProbe = ({ record }: { record: UpstreamRecord }) => {
   return (
     <FormProvider {...form}>
       <output data-testid="dirty">{String(form.formState.isDirty)}</output>
-      <ProviderConfigSection record={record} onPatch={vi.fn()} />
+      <UpstreamKindConfigSection record={record} onPatch={vi.fn()} />
     </FormProvider>
   );
 };

@@ -3,16 +3,16 @@ import type { InferRequestType } from 'hono/client';
 import { PATH_OVERRIDE_OPTIONS } from './endpoints';
 import { api, callApi } from '../../api/client';
 import type {
-  ProviderModelsFailureResponse,
+  UpstreamModelsFailureResponse,
   UpstreamRecord,
   UpstreamRecordEnvelope,
 } from '../../api/types';
 import {
-  type UpstreamProviderKind,
+  type UpstreamKind,
   type UpstreamModelConfig,
   MODEL_PREFIX_MAX_LENGTH,
   MODEL_PREFIX_REGEX,
-} from '@floway-dev/provider/browser';
+} from '@floway-dev/upstream/browser';
 
 type CreateUpstreamBody = InferRequestType<typeof api.api.upstreams.$post>['json'];
 type UpdateUpstreamBody = InferRequestType<typeof api.api.upstreams[':id']['$patch']>['json'];
@@ -79,7 +79,7 @@ export interface UpstreamEditorValues {
   manualModels: UpstreamModelConfig[];
 }
 
-export const providerDefaultName: Record<UpstreamProviderKind, string> = {
+export const upstreamDefaultName: Record<UpstreamKind, string> = {
   custom: 'Custom upstream',
   azure: 'Azure AI',
   copilot: 'GitHub Copilot',
@@ -148,12 +148,12 @@ export interface ModelCatalogFetch {
 
 export interface ModelListingFailure {
   message: string;
-  upstreamResponse: ProviderModelsFailureResponse | null;
+  upstreamResponse: UpstreamModelsFailureResponse | null;
 }
 
 const listingFailure = (error: { message: string; raw?: unknown }): ModelCatalogFetch => {
   const body = error.raw as {
-    error?: { upstreamResponse?: ProviderModelsFailureResponse | null };
+    error?: { upstreamResponse?: UpstreamModelsFailureResponse | null };
     modelsCache?: UpstreamRecord['modelsCache'];
   } | undefined;
   const modelsCache = body?.modelsCache ?? null;

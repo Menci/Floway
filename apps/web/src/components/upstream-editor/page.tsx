@@ -205,7 +205,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     else void refreshModels();
   };
 
-  const applyProviderPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
+  const applyUpstreamPatch = (patch: { config?: unknown; state?: unknown }, persisted = false) => {
     if (patch.config !== undefined) setValue('config', patch.config as UpstreamEditorValues['config'], { shouldDirty: !persisted });
     if (patch.state !== undefined) setValue('state', patch.state as UpstreamEditorValues['state'], { shouldDirty: !persisted });
     const changes = { ...(patch.config !== undefined ? { config: patch.config } : {}), ...(patch.state !== undefined ? { state: patch.state } : {}) };
@@ -283,7 +283,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const configSidebar = <UpstreamConfigSidebar
     catalogAvailable={catalogAvailable}
     discovered={discovered ?? []}
-    onPatch={applyProviderPatch}
+    onPatch={applyUpstreamPatch}
     editLevel={editLevel}
     proxies={data.proxies}
     record={record}

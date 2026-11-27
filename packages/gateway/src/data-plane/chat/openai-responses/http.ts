@@ -13,7 +13,7 @@ import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gat
 import { jsonResponseInit } from '../shared/respond.ts';
 import type { OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
+import { internalErrorResult, toInternalDebugError } from '@floway-dev/upstream';
 
 // OpenAI's verbatim previous_response_not_found envelope. Codex compares this
 // body byte-for-byte against upstream — see the cross-references on

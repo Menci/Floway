@@ -1,12 +1,12 @@
 import { test } from 'vitest';
 
 import { runWebSearchAndRecordUsage } from '../../../../src/data-plane/tools/web-search/search.ts';
-import type { WebSearchProvider } from '../../../../src/data-plane/tools/web-search/types.ts';
+import type { WebSearchBackend } from '../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-const stubProvider = (search: WebSearchProvider['search']): WebSearchProvider => ({
+const stubUpstream = (search: WebSearchBackend['search']): WebSearchBackend => ({
   search,
   fetchPage: () => Promise.reject(new Error('fetchPage should not be called from search test')),
 });
@@ -22,10 +22,10 @@ test('runWebSearchAndRecordUsage returns provider result when recording fails', 
   let result: Awaited<ReturnType<typeof runWebSearchAndRecordUsage>> | undefined;
   try {
     result = await runWebSearchAndRecordUsage({
-      providerName: 'tavily',
+      backendName: 'tavily',
       keyId: 'key_d',
       request: { query: 'React' },
-      provider: stubProvider(() => Promise.resolve({ type: 'ok', results: [] })),
+      backend: stubUpstream(() => Promise.resolve({ type: 'ok', results: [] })),
     });
   } finally {
     console.error = originalConsoleError;

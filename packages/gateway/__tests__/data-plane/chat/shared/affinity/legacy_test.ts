@@ -6,8 +6,8 @@ import { MODEL_CATALOG_REVISION } from '../../../../../src/repo/models-cache-con
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { seedModelsCache } from '../../../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../../../repo/upstreams.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
-import { stubProviderModel } from '@floway-dev/test-utils';
+import { stubUpstreamModel } from '@floway-dev/test-utils';
+import type { UpstreamRecord } from '@floway-dev/upstream';
 
 const repo = new InMemoryRepo();
 
@@ -49,12 +49,12 @@ test('resolves v1 affinity from the current provider-model cache for bound and u
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: Date.now(),
     models: [
-      stubProviderModel({
+      stubUpstreamModel({
         id: 'gpt-main',
         upstreamModelId: 'gpt-main-wire',
         opaqueBlobCompatibilityScope: { bindToUpstream: true, key: 'openai' },
       }),
-      stubProviderModel({
+      stubUpstreamModel({
         id: 'claude-public',
         upstreamModelId: 'claude-wire',
         opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'claude-opus' },

@@ -4,7 +4,7 @@ import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCopilotUpstreamRecord, copilotModels, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { flushBackground } from '../../test-utils/background-tracker.ts';
-import { assertEquals, assertStringIncludes, jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertStringIncludes, jsonResponse, stubUpstreamModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const githubUser = {
   id: 777,
@@ -175,7 +175,7 @@ test('/api/upstreams/copilot/oauth/device-login/poll clears the previous identit
     version: storedBefore.version,
     revision: 1,
     fetchedAt: 1_700_000_000_000,
-    models: [stubProviderModel({ id: 'old-tenant-model' })],
+    models: [stubUpstreamModel({ id: 'old-tenant-model' })],
   });
 
   await withMockedFetch(

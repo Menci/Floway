@@ -1,6 +1,6 @@
 import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
 import type { UpstreamRepo } from '../../src/repo/types.ts';
-import type { ProviderModel } from '@floway-dev/provider';
+import type { UpstreamModel } from '@floway-dev/upstream';
 
 export const seedModelsCache = async (
   repo: UpstreamRepo,
@@ -9,7 +9,7 @@ export const seedModelsCache = async (
     readonly version: number;
     readonly revision?: number;
     readonly fetchedAt: number;
-    readonly models: readonly ProviderModel[];
+    readonly models: readonly UpstreamModel[];
   },
 ): Promise<boolean> => {
   const committedVersion = await repo.publishModelsRefresh({

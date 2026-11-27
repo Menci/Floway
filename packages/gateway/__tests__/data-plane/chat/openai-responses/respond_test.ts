@@ -9,8 +9,8 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, parseSSEStream } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, parseOpenAIResponsesStream, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { eventResult, internalErrorResult, toInternalDebugError, type EventResultMetadata } from '@floway-dev/provider';
 import { mockPerfTelemetryContext, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { eventResult, internalErrorResult, toInternalDebugError, type EventResultMetadata } from '@floway-dev/upstream';
 
 beforeEach(() => { initRepo(new InMemoryRepo()); });
 

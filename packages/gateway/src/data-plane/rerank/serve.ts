@@ -4,17 +4,17 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { rerankAttempt, type RerankAttemptResult } from './attempt.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { iterateCandidates } from '../shared/iterate-candidates.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
+import { enumerateModelCandidates } from '../upstreams/resolution.ts';
 import { parseDecimalString, type RerankSourceProtocol } from '@floway-dev/protocols/common';
 import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
-import { toInternalDebugError } from '@floway-dev/provider';
-import type { TelemetryModelIdentity } from '@floway-dev/provider';
+import { toInternalDebugError } from '@floway-dev/upstream';
+import type { TelemetryModelIdentity } from '@floway-dev/upstream';
 
 const apiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
   c.json({ error: { message, type: 'api_error' } }, status);

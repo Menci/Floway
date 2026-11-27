@@ -1,16 +1,16 @@
 import { HTTPException } from 'hono/http-exception';
 
-import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
+import { flagDefaultsForKind } from '../../data-plane/upstreams/registry.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isModelsCacheDue, MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
 import type { StoredUpstreamRecord, UpstreamModelEntry, UpstreamModelsWritePayload } from '../../repo/types.ts';
 import { serializeStoredConfig, serializeStoredState } from '../../repo/upstream-json.ts';
 import { scheduleUpstreamModelsRefresh, supportsManualModels, upstreamRequiresNetworkForModels } from '../../upstreams/models-refresh.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { resolveEffectiveFlags, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
-import { projectAzureModels } from '@floway-dev/provider-azure';
-import { assertCustomUpstreamRecord, projectCustomManualModels } from '@floway-dev/provider-custom';
-import { assertOllamaUpstreamRecord, projectOllamaManualModels } from '@floway-dev/provider-ollama';
+import { resolveEffectiveFlags, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/upstream';
+import { projectAzureModels } from '@floway-dev/upstream-azure';
+import { assertCustomUpstreamRecord, projectCustomManualModels } from '@floway-dev/upstream-custom';
+import { assertOllamaUpstreamRecord, projectOllamaManualModels } from '@floway-dev/upstream-ollama';
 
 export interface SaveRefreshContext {
   readonly runtimeLocation: string | null;

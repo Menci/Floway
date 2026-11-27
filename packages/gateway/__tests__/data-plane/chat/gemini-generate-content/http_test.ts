@@ -9,12 +9,12 @@ import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthr
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type UpstreamCallResult, type UpstreamStreamResult, type UpstreamCallOptions } from '@floway-dev/upstream';
 
 const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean }[] = [];
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
+vi.mock('../../../../src/data-plane/upstreams/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../../src/data-plane/upstreams/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async () => {
@@ -97,11 +97,11 @@ const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: 'openaiChatCompletions' | 'anthropicMessages' | 'openaiResponses';
   endpoints?: ModelEndpoints;
-  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
-  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
-  callGeminiGenerateContent?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
-  callGeminiGenerateContentCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>>;
+  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>>;
+  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamCallResult>;
+  callGeminiGenerateContent?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>>;
+  callGeminiGenerateContentCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'openaiChatCompletions';
@@ -115,7 +115,7 @@ const makeCandidate = (overrides: {
     : targetApi === 'anthropicMessages'
       ? { anthropicMessages: {} }
       : { openaiResponses: {} });
-  const provider = stubProvider({
+  const instance = stubUpstream({
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessages: overrides.callAnthropicMessages,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
@@ -123,11 +123,11 @@ const makeCandidate = (overrides: {
     callGeminiGenerateContentCountTokens: overrides.callGeminiGenerateContentCountTokens,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      instance: provider,
+      instance,
     },
-    model: stubProviderModel({ endpoints }),
+    model: stubUpstreamModel({ endpoints }),
     fetcher: directFetcher,
   };
 };
@@ -135,7 +135,7 @@ const makeCandidate = (overrides: {
 test.each(['generateContent', 'streamGenerateContent'])('POST %s maps a native Google RPC error before responding', async action => {
   installRepo();
   const body = { error: { code: 412, status: 'FAILED_PRECONDITION', message: 'account is not ready' } };
-  const callGeminiGenerateContent = vi.fn(async (): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
+  const callGeminiGenerateContent = vi.fn(async (): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => ({
     ok: false,
     http: Response.json(body, { status: 400, headers: { 'request-id': 'req-google-rpc' } }),
     modelKey: 'k',
@@ -155,7 +155,7 @@ test.each(['generateContent', 'streamGenerateContent'])('POST %s maps a native G
 
 test('POST /v1beta/models/:model:countTokens preserves an upstream 204 without a body', async () => {
   installRepo();
-  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
+  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<UpstreamCallResult> => ({
     http: new Response(null, { status: 204, headers: { 'request-id': 'req-no-count' } }),
     modelKey: 'k',
   }));
@@ -174,7 +174,7 @@ test('POST /v1beta/models/:model:countTokens preserves an upstream 204 without a
 
 test('POST /v1beta/models/:model:countTokens accepts the generateContentRequest envelope shape', async () => {
   installRepo();
-  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
+  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<UpstreamCallResult> => ({
     http: new Response(JSON.stringify({ total_tokens: 7 }), {
       status: 200, headers: new Headers({ 'content-type': 'application/json' }),
     }),
@@ -198,7 +198,7 @@ test('countTokens records the final translation input failure once', async () =>
   const upstreams = ['up_count_first', 'up_count_last'];
   const repo = installRepo();
   const recordFailure = vi.spyOn(repo.performance, 'recordZeroOutputError');
-  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => {
+  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<UpstreamCallResult> => {
     throw new Error('Unsupported input must fail before the upstream call');
   });
   const candidates = upstreams.map(upstream => makeCandidate({ upstream, targetApi: 'anthropicMessages', callAnthropicMessagesCountTokens }));
@@ -224,10 +224,10 @@ test('countTokens records the final translation input failure once', async () =>
 test('generateContent retries a translation input failure and records the successful candidate', async () => {
   const repo = installRepo();
   const recordSuccess = vi.spyOn(repo.performance, 'recordNeutral');
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
+  const callAnthropicMessages = vi.fn(async (): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => {
     throw new Error('Unsupported input must fail before the upstream call');
   });
-  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([
@@ -256,7 +256,7 @@ test('generateContent retries a translation input failure and records the succes
 test('POST /v1beta/models/models/:model:generateContent accepts the models/ prefix in the path id', async () => {
   installRepo();
   let resolvedModel: string | undefined;
-  const callOpenAIChatCompletions = vi.fn(async (model): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+  const callOpenAIChatCompletions = vi.fn(async (model): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     resolvedModel = (model as { id: string }).id;
     return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   });
@@ -270,7 +270,7 @@ test('POST /v1beta/models/models/:model:generateContent accepts the models/ pref
 
   assertEquals(response.status, 200);
   // The `models/` prefix is normalised away before reaching candidate enumeration.
-  assertEquals(resolvedModel, stubProviderModel().id);
+  assertEquals(resolvedModel, stubUpstreamModel().id);
 });
 
 const makeNativeGeminiEvents = (): readonly GeminiGenerateContentStreamEvent[] => [
@@ -284,7 +284,7 @@ const makeNativeGeminiEvents = (): readonly GeminiGenerateContentStreamEvent[] =
 
 test('a native Gemini upstream is reached without translation and streams its own frames', async () => {
   installRepo();
-  const callGeminiGenerateContent = vi.fn(async (): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
+  const callGeminiGenerateContent = vi.fn(async (): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeNativeGeminiEvents()), modelKey: 'gemini-3-flash', http: { status: 200, headers: new Headers({ 'x-goog-request-id': 'r1' }) },
   }));
   queueCandidates([makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent })]);

@@ -8,7 +8,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { chatgptImportExchangeBody, chatgptImportPreviewBody, chatgptOAuthAuthorizeUrlBody, chatgptOAuthRefreshBody, chatgptRateLimitResetConsumeBody, chatgptRateLimitResetCreditsBody } from '../schemas.ts';
 import { saveUpstream } from '../shared/save-upstreams.ts';
-import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher, UpstreamRecord } from '@floway-dev/upstream';
 import {
   buildChatGPTAuthorizeUrl,
   ChatGPTRateLimitResetRequestError,
@@ -30,7 +30,7 @@ import {
   persistChatGPTRefreshFailure,
   persistChatGPTRefreshTokenRotation,
   previewChatGPTJson,
-} from '@floway-dev/provider-chatgpt';
+} from '@floway-dev/upstream-chatgpt';
 
 class ChatGPTActionError extends Error {
   constructor(readonly status: 400 | 404 | 502, message: string, options?: ErrorOptions) {

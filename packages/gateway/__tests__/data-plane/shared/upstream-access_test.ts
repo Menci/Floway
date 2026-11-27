@@ -4,9 +4,9 @@ import { MODEL_CATALOG_REVISION } from '../../../src/repo/models-cache-contract.
 import { seedModelsCache } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest, sseOpenAIChatCompletionsResponse } from '../../test-utils/app.ts';
-import type { UpstreamModelConfig } from '@floway-dev/provider';
-import { projectCustomModels } from '@floway-dev/provider-custom';
 import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
+import type { UpstreamModelConfig } from '@floway-dev/upstream';
+import { projectCustomModels } from '@floway-dev/upstream-custom';
 
 const cases: Array<{ name: string; access: 'all' | 'none' | 'up_a' | 'up_b'; keyCap: string[] | null; models: string[] }> = [
   { name: 'all Model.Use grants and an inheriting key', access: 'all', keyCap: null, models: ['model_a', 'model_b'] },

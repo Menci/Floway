@@ -15,7 +15,7 @@ import { isCodexUserAgent } from '../codex/catalog.ts';
 import { loadCodexCatalog } from '../codex/models.ts';
 import { agentSetupProviderSchema, InvalidAgentSetupEndpointError, normalizeAgentSetupEndpoint } from '@floway-dev/agent-setup';
 import type { PublicModelsResponse } from '@floway-dev/protocols/common';
-import { toInternalDebugError } from '@floway-dev/provider';
+import { toInternalDebugError } from '@floway-dev/upstream';
 
 // Anthropic's official /v1/models shape — `{data, first_id, has_more,
 // last_id}` with `ModelInfo` rows — served to Claude Code CLI's `/model`

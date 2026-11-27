@@ -12,8 +12,8 @@ import { refreshModelsExplicit, upstreamRequiresNetworkForModels } from '../../s
 import { requestApp, setupAppTest } from '../test-utils/app.ts';
 import { trackBackground } from '../test-utils/background-tracker.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
-import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
-import { stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+import { stubUpstreamModel, withMockedFetch } from '@floway-dev/test-utils';
+import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/upstream';
 
 const baseUpstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id' | 'kind'>): UpstreamRecord => ({
   name: overrides.id,
@@ -55,8 +55,8 @@ test('migration 0102 splits catalogs, manual models, prefixes, and preserves pro
           INSERT INTO proxies (id, name, url, created_at, updated_at, dial_timeout_seconds)
           VALUES ('p_1', 'Proxy 1', 'socks5://198.51.100.1:1080', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z', NULL)
         `);
-        const customModel = stubProviderModel({ id: 'gpt-manual', upstreamModelId: 'gpt-manual-wire', kind: 'chat' });
-        const customAuto = stubProviderModel({ id: 'gpt-auto', upstreamModelId: 'gpt-auto-wire', kind: 'chat' });
+        const customModel = stubUpstreamModel({ id: 'gpt-manual', upstreamModelId: 'gpt-manual-wire', kind: 'chat' });
+        const customAuto = stubUpstreamModel({ id: 'gpt-auto', upstreamModelId: 'gpt-auto-wire', kind: 'chat' });
         const customDiscovered = [
           { upstreamModelId: 'gpt-manual-wire', publicModelId: 'gpt-manual-wire', kind: 'chat', endpoints: { openaiChatCompletions: {} } },
           { upstreamModelId: 'gpt-auto-wire', publicModelId: 'gpt-auto-wire', kind: 'chat', endpoints: { openaiChatCompletions: {} } },
@@ -175,9 +175,9 @@ describe.each(factories)('%s upstream models repository', (_name, createRepo) =>
       revision: MODEL_CATALOG_REVISION,
       fetchedAt: 1000,
       models: [
-        { source: 'auto', model: stubProviderModel({ id: 'shared-id', kind: 'embedding', endpoints: { openaiEmbeddings: {} } }) },
-        { source: 'auto', model: stubProviderModel({ id: 'shared-id', kind: 'chat', endpoints: { openaiChatCompletions: {} } }) },
-        { source: 'auto', model: stubProviderModel({ id: 'blocked', kind: 'chat', endpoints: { openaiChatCompletions: {} } }) },
+        { source: 'auto', model: stubUpstreamModel({ id: 'shared-id', kind: 'embedding', endpoints: { openaiEmbeddings: {} } }) },
+        { source: 'auto', model: stubUpstreamModel({ id: 'shared-id', kind: 'chat', endpoints: { openaiChatCompletions: {} } }) },
+        { source: 'auto', model: stubUpstreamModel({ id: 'blocked', kind: 'chat', endpoints: { openaiChatCompletions: {} } }) },
       ],
     });
 
@@ -283,10 +283,10 @@ test('SQLite publishModelsRefresh writes zero upstream_models changes when uncha
   await saveUpstreamForTest(repo.upstreams, baseUpstream({ id: 'up_diff', kind: 'custom' }));
   const initial = (await repo.upstreams.getById('up_diff'))!;
 
-  const m1 = stubProviderModel({ id: 'm1', display_name: 'Model 1', enabledFlags: new Set(['vendor-kimi', 'vendor-deepseek'] as const) });
-  const m2 = stubProviderModel({ id: 'm2', display_name: 'Model 2', limits: { max_output_tokens: 4096, max_context_window_tokens: 64000 } });
-  const m3 = stubProviderModel({ id: 'm3', display_name: 'Model 3' });
-  const m4 = stubProviderModel({ id: 'm4', display_name: 'Model 4' });
+  const m1 = stubUpstreamModel({ id: 'm1', display_name: 'Model 1', enabledFlags: new Set(['vendor-kimi', 'vendor-deepseek'] as const) });
+  const m2 = stubUpstreamModel({ id: 'm2', display_name: 'Model 2', limits: { max_output_tokens: 4096, max_context_window_tokens: 64000 } });
+  const m3 = stubUpstreamModel({ id: 'm3', display_name: 'Model 3' });
+  const m4 = stubUpstreamModel({ id: 'm4', display_name: 'Model 4' });
 
   batchChanges.length = 0;
   const v1 = await repo.upstreams.publishModelsRefresh({
@@ -299,8 +299,8 @@ test('SQLite publishModelsRefresh writes zero upstream_models changes when uncha
   expect(v1).not.toBeNull();
   expect(batchChanges).toEqual([[1, 0, 4]]);
 
-  const m1Reordered = stubProviderModel({ id: 'm1', display_name: 'Model 1', enabledFlags: new Set(['vendor-deepseek', 'vendor-kimi'] as const) });
-  const m2Reordered = stubProviderModel({ id: 'm2', display_name: 'Model 2', limits: { max_context_window_tokens: 64000, max_output_tokens: 4096 } });
+  const m1Reordered = stubUpstreamModel({ id: 'm1', display_name: 'Model 1', enabledFlags: new Set(['vendor-deepseek', 'vendor-kimi'] as const) });
+  const m2Reordered = stubUpstreamModel({ id: 'm2', display_name: 'Model 2', limits: { max_context_window_tokens: 64000, max_output_tokens: 4096 } });
   batchChanges.length = 0;
   const v2 = await repo.upstreams.publishModelsRefresh({
     id: 'up_diff',
@@ -312,8 +312,8 @@ test('SQLite publishModelsRefresh writes zero upstream_models changes when uncha
   expect(v2).not.toBeNull();
   expect(batchChanges).toEqual([[1, 0, 0]]);
 
-  const m3Updated = stubProviderModel({ id: 'm3', display_name: 'Model 3 v2' });
-  const m5 = stubProviderModel({ id: 'm5', display_name: 'Model 5' });
+  const m3Updated = stubUpstreamModel({ id: 'm3', display_name: 'Model 3 v2' });
+  const m5 = stubUpstreamModel({ id: 'm5', display_name: 'Model 5' });
   batchChanges.length = 0;
   const v3 = await repo.upstreams.publishModelsRefresh({
     id: 'up_diff',
@@ -351,16 +351,16 @@ test('scoped non-admin /v1/models pre-prunes upstreams, honors model rules, pres
 
   for (const [id, sortOrder, models] of [
     ['up_a', 0, [
-      stubProviderModel({ id: 'gpt-5', limits: { max_context_window_tokens: 128_000, max_output_tokens: 16_000 }, endpoints: { openaiChatCompletions: {} } }),
-      stubProviderModel({ id: 'claude-sonnet', limits: { max_context_window_tokens: 200_000 }, endpoints: { openaiChatCompletions: {} } }),
+      stubUpstreamModel({ id: 'gpt-5', limits: { max_context_window_tokens: 128_000, max_output_tokens: 16_000 }, endpoints: { openaiChatCompletions: {} } }),
+      stubUpstreamModel({ id: 'claude-sonnet', limits: { max_context_window_tokens: 200_000 }, endpoints: { openaiChatCompletions: {} } }),
     ]],
     ['up_b', 1, [
-      stubProviderModel({ id: 'gpt-5', limits: { max_context_window_tokens: 64_000, max_output_tokens: 8_000 }, endpoints: { openaiChatCompletions: {}, openaiResponses: {} } }),
-      stubProviderModel({ id: 'gemini-pro', limits: { max_context_window_tokens: 1_000_000 }, endpoints: { openaiChatCompletions: {} } }),
+      stubUpstreamModel({ id: 'gpt-5', limits: { max_context_window_tokens: 64_000, max_output_tokens: 8_000 }, endpoints: { openaiChatCompletions: {}, openaiResponses: {} } }),
+      stubUpstreamModel({ id: 'gemini-pro', limits: { max_context_window_tokens: 1_000_000 }, endpoints: { openaiChatCompletions: {} } }),
     ]],
     ['up_c', 2, [
-      stubProviderModel({ id: 'secret-alpha', limits: { max_context_window_tokens: 32_000 }, endpoints: { openaiChatCompletions: {} } }),
-      stubProviderModel({ id: 'other-model', limits: { max_context_window_tokens: 32_000 }, endpoints: { openaiChatCompletions: {} } }),
+      stubUpstreamModel({ id: 'secret-alpha', limits: { max_context_window_tokens: 32_000 }, endpoints: { openaiChatCompletions: {} } }),
+      stubUpstreamModel({ id: 'other-model', limits: { max_context_window_tokens: 32_000 }, endpoints: { openaiChatCompletions: {} } }),
     ]],
   ] as const) {
     await saveUpstreamForTest(repo.upstreams, baseUpstream({ id, kind: 'custom', sortOrder }));

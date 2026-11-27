@@ -17,16 +17,16 @@ import type {
   GeminiGenerateContentPayload,
   GeminiGenerateContentStreamEvent,
 } from '@floway-dev/protocols/gemini-generate-content';
+import { stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
 import {
   decodeResponseBody,
   directFetcher,
+  type FlagId,
   type ModelCandidate,
-  type ProviderCallResult,
-  type ProviderStreamResult,
   type UpstreamCallOptions,
-} from '@floway-dev/provider';
-import type { FlagId } from '@floway-dev/provider/flags';
-import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+  type UpstreamCallResult,
+  type UpstreamStreamResult,
+} from '@floway-dev/upstream';
 
 const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): AsyncGenerator<ProtocolFrame<TEvent>> {
   for (const event of events) yield eventFrame(event);
@@ -42,28 +42,28 @@ const makeCandidate = (overrides: {
     body: GeminiGenerateContentPayload,
     signal?: AbortSignal,
     opts?: UpstreamCallOptions,
-  ) => Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
+  ) => Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>>;
   callGeminiGenerateContentCountTokens?: (
     model: unknown,
     body: GeminiGenerateContentPayload,
     signal?: AbortSignal,
     opts?: UpstreamCallOptions,
-  ) => Promise<ProviderCallResult>;
+  ) => Promise<UpstreamCallResult>;
 }): ModelCandidate => {
   const upstream = 'up_gemini_msg';
-  const instance = stubProvider({
+  const instance = stubUpstream({
     callGeminiGenerateContent: overrides.callGeminiGenerateContent,
     callGeminiGenerateContentCountTokens: overrides.callGeminiGenerateContentCountTokens,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream,
       kind: 'custom',
       name: 'Gemini Upstream',
       inboundHeaderAllowlist: [...(overrides.inboundHeaderAllowlist ?? [])],
       instance,
     },
-    model: stubProviderModel({
+    model: stubUpstreamModel({
       id: 'gemini-2.5-pro',
       upstreamModelId: 'gemini-2.5-pro',
       endpoints: overrides.endpoints,
@@ -85,7 +85,7 @@ test('routes Anthropic Messages generate and count_tokens to a Gemini-only candi
   expect(anthropicMessagesCountTokensTarget.pick({ geminiGenerateContent: {} })).toBe('geminiGenerateContent');
 
   let capturedBody: GeminiGenerateContentPayload | undefined;
-  const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => {
+  const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => {
     capturedBody = body;
     return {
       ok: true,
@@ -157,7 +157,7 @@ test('retains Gemini thought parts and thoughtSignature on translated turns even
   const ctx = mockChatGatewayCtx({ apiKeyId: 'key_msg_gem_sig', wantsStream: true });
   const callBodies: GeminiGenerateContentPayload[] = [];
 
-  const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => {
+  const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => {
     callBodies.push(body);
     if (callBodies.length === 1) {
       return {
@@ -241,7 +241,7 @@ test('translates Anthropic Messages count_tokens to Gemini countTokens, preserve
   initRepo(new InMemoryRepo());
   let capturedBody: GeminiGenerateContentPayload | undefined;
   let capturedHeaders: Headers | undefined;
-  const callGeminiGenerateContentCountTokens = vi.fn(async (_model, body: GeminiGenerateContentPayload, _signal, opts?: UpstreamCallOptions): Promise<ProviderCallResult> => {
+  const callGeminiGenerateContentCountTokens = vi.fn(async (_model, body: GeminiGenerateContentPayload, _signal, opts?: UpstreamCallOptions): Promise<UpstreamCallResult> => {
     capturedBody = body;
     capturedHeaders = opts?.headers;
     return {

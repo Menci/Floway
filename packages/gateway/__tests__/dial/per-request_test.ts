@@ -5,7 +5,7 @@ import { initRepo } from '../../src/repo/index.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
-import type { ProxyFallbackEntry } from '@floway-dev/provider';
+import type { ProxyFallbackEntry } from '@floway-dev/upstream';
 
 const stubSocketDial: SocketDial = {
   connect: async () => {
