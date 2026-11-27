@@ -8,7 +8,6 @@ import type { RestoredAssistantTurn } from '../../composition/reading.ts';
 import { assignCallIds, type IRInputToolResultItemWithCallId, type IRInputTurnWithCallIds, type PendingCall } from '../../composition/request/call-ids.ts';
 import { allocateToolNames, type ToolNameContext } from '../../composition/request/tool-names.ts';
 import type { IRInputRequestHeader, IRInputTurn } from '../../ir/input/types.ts';
-import { TranslateInputException } from '../../shared/input-error.ts';
 import type { GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 
 interface GeminiTargetContext extends ToolNameContext {
@@ -19,79 +18,36 @@ interface RestoredGeminiCall extends PendingCall {
   readonly wireId?: string;
 }
 
-const statedCallIdsOf = (
-  turns: readonly (IRInputTurn | RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>)[],
-): Set<string> => {
-  const claimed = new Set<string>();
-  for (const piece of turns) {
-    if (piece.kind === 'restored') {
-      for (const id of piece.sourceCallIds) {
-        if (id !== undefined) claimed.add(id);
+const restoredCallsOf = (
+  piece: RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>,
+): readonly RestoredGeminiCall[] => {
+  const pending: RestoredGeminiCall[] = [];
+  let callIndex = 0;
+  for (const entry of piece.turn) {
+    for (const part of entry.parts ?? []) {
+      const call = part.functionCall;
+      if (call === undefined) continue;
+      if (callIndex >= piece.sourceCallIds.length) {
+        throw new Error('Authenticated round-trip call IDs do not match restored Gemini GenerateContent function calls');
       }
-      for (const entry of piece.turn) {
-        for (const part of entry.parts ?? []) {
-          if (part.functionCall?.id !== undefined && part.functionCall.id !== '') {
-            claimed.add(part.functionCall.id);
-          }
+      const sourceCallId = piece.sourceCallIds[callIndex++];
+      if (call.id !== undefined && call.id !== '') {
+        if (sourceCallId !== call.id) {
+          throw new Error('Authenticated round-trip call ID does not match restored Gemini GenerateContent wire call ID');
         }
+        pending.push({ callId: call.id, name: call.name, wireId: call.id });
+        continue;
       }
-      continue;
-    }
-    for (const item of piece.items) {
-      if ((item.type === 'function_call' || item.type === 'custom_tool_call' || item.type === 'tool_result') && item.call_id !== undefined) {
-        claimed.add(item.call_id);
-      }
+      pending.push({
+        ...(sourceCallId === undefined ? {} : { callId: sourceCallId }),
+        name: call.name,
+      });
     }
   }
-  return claimed;
-};
-
-const collectRestoredCalls = (
-  turns: readonly (IRInputTurn | RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>)[],
-): ReadonlyMap<GeminiGenerateContentInputAssistantTurn, readonly RestoredGeminiCall[]> => {
-  const claimed = statedCallIdsOf(turns);
-  const callsByTurn = new Map<GeminiGenerateContentInputAssistantTurn, readonly RestoredGeminiCall[]>();
-  let allocated = 0;
-
-  for (const piece of turns) {
-    if (piece.kind !== 'restored') continue;
-    const pending: RestoredGeminiCall[] = [];
-    let callIndex = 0;
-    for (const entry of piece.turn) {
-      for (const part of entry.parts ?? []) {
-        const call = part.functionCall;
-        if (call === undefined) continue;
-        if (callIndex >= piece.sourceCallIds.length) {
-          throw new Error('Authenticated round-trip call IDs do not match restored Gemini GenerateContent function calls');
-        }
-        const sourceCallId = piece.sourceCallIds[callIndex++];
-        if (call.id !== undefined && call.id !== '') {
-          if (sourceCallId !== call.id) {
-            throw new Error('Authenticated round-trip call ID does not match restored Gemini GenerateContent wire call ID');
-          }
-          pending.push({ callId: call.id, name: call.name, wireId: call.id });
-          continue;
-        }
-        if (sourceCallId !== undefined) {
-          pending.push({ callId: sourceCallId, name: call.name });
-          continue;
-        }
-        let fallbackId: string;
-        do {
-          allocated += 1;
-          fallbackId = `gemini_idless_call_${allocated}`;
-        } while (claimed.has(fallbackId));
-        claimed.add(fallbackId);
-        pending.push({ callId: fallbackId, name: call.name });
-      }
-    }
-    if (callIndex !== piece.sourceCallIds.length) {
-      throw new Error('Authenticated round-trip call IDs do not match restored Gemini GenerateContent function calls');
-    }
-    callsByTurn.set(piece.turn, pending);
+  if (callIndex !== piece.sourceCallIds.length) {
+    throw new Error('Authenticated round-trip call IDs do not match restored Gemini GenerateContent function calls');
   }
-
-  return callsByTurn;
+  return pending;
 };
 
 // Pair every `tool_result` with its exact pending call in conversation order so
@@ -99,49 +55,50 @@ const collectRestoredCalls = (
 // parallel `functionResponse` runs can be ordered to match their original calls.
 const resolveToolResults = (
   turns: readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>)[],
-  restoredCallsByTurn: ReadonlyMap<GeminiGenerateContentInputAssistantTurn, readonly RestoredGeminiCall[]>,
+  restoredCallsByPiece: ReadonlyMap<RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>, readonly RestoredGeminiCall[]>,
+  restoredMatches: ReadonlyMap<IRInputToolResultItemWithCallId, RestoredGeminiCall>,
 ): GeminiGenerateContentToolResultLookup => {
-  const pending: (GeminiGenerateContentMatchedCall & { readonly callId: string })[] = [];
+  const restoredOrder = new Map<RestoredGeminiCall, number>();
+  const pendingOrdinary: { readonly callId: string; readonly name: string; readonly order: number }[] = [];
   const matched = new Map<IRInputToolResultItemWithCallId, GeminiGenerateContentMatchedCall>();
   let nextOrder = 0;
 
   for (const piece of turns) {
     if (piece.kind === 'restored') {
-      for (const call of restoredCallsByTurn.get(piece.turn) ?? []) {
-        pending.push({
-          callId: call.callId,
-          name: call.name,
-          ...(call.wireId === undefined ? {} : { wireId: call.wireId }),
-          order: nextOrder++,
-        });
+      for (const call of restoredCallsByPiece.get(piece) ?? []) {
+        restoredOrder.set(call, nextOrder++);
       }
       continue;
     }
     if (piece.kind === 'assistant') {
       for (const item of piece.items) {
         if (item.type === 'function_call' || item.type === 'custom_tool_call') {
-          pending.push({
-            callId: item.call_id,
-            name: item.name,
-            wireId: item.call_id,
-            order: nextOrder++,
-          });
+          pendingOrdinary.push({ callId: item.call_id, name: item.name, order: nextOrder++ });
         }
       }
       continue;
     }
     for (const item of piece.items) {
       if (item.type !== 'tool_result') continue;
-      const index = pending.findIndex(call => call.callId === item.call_id);
-      if (index < 0) {
-        throw new TranslateInputException(`Cannot translate tool result for unknown call_id '${item.call_id}' to Gemini GenerateContent.`);
+      const restoredCall = restoredMatches.get(item);
+      if (restoredCall !== undefined) {
+        const order = restoredOrder.get(restoredCall);
+        if (order === undefined) {
+          throw new Error(`Matched restored Gemini GenerateContent call '${restoredCall.name}' has no conversation order.`);
+        }
+        matched.set(item, {
+          name: restoredCall.name,
+          ...(restoredCall.wireId === undefined ? {} : { wireId: restoredCall.wireId }),
+          order,
+        });
+        continue;
       }
-      const [entry] = pending.splice(index, 1);
-      matched.set(item, {
-        name: entry.name,
-        ...(entry.wireId === undefined ? {} : { wireId: entry.wireId }),
-        order: entry.order,
-      });
+      const index = pendingOrdinary.findIndex(call => call.callId === item.call_id);
+      if (index < 0) {
+        throw new Error(`Matched ordinary Gemini GenerateContent tool result for unknown call_id '${item.call_id}'.`);
+      }
+      const [entry] = pendingOrdinary.splice(index, 1);
+      matched.set(item, { name: entry.name, wireId: entry.callId, order: entry.order });
     }
   }
 
@@ -159,10 +116,19 @@ export const geminiGenerateContentTargetProtocol: TargetProtocol<
     request: IRInputRequestHeader,
     turns: readonly (IRInputTurn | RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>)[],
   ) => {
-    const restoredCallsByTurn = collectRestoredCalls(turns);
-    const assigned = assignCallIds(turns, turn => restoredCallsByTurn.get(turn) ?? []);
+    const restoredCallsByPiece = new Map<RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>, readonly RestoredGeminiCall[]>();
+    const restoredMatches = new Map<IRInputToolResultItemWithCallId, RestoredGeminiCall>();
+    const assigned = assignCallIds(turns, piece => {
+      const calls = restoredCallsOf(piece);
+      restoredCallsByPiece.set(piece, calls);
+      return calls;
+    }, {
+      onMatch: (result, call) => {
+        restoredMatches.set(result, call);
+      },
+    });
     const flattened = allocateToolNames(request, assigned);
-    const matchedToolResults = resolveToolResults(flattened.turns, restoredCallsByTurn);
+    const matchedToolResults = resolveToolResults(flattened.turns, restoredCallsByPiece, restoredMatches);
     const payload = geminiGenerateContentPayloadFromSegments(
       flattened.request,
       flattened.turns,
