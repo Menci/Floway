@@ -1258,7 +1258,6 @@ test('snapshot pass-through: upstream tools/tool_choice/temperature/parallel_too
   assertEquals((completed.response as unknown as Record<string, unknown>).completed_at, 1735689700);
 });
 
-
 test('include: ["web_search_call.action.sources"] populates action.sources with search-result URLs', async () => {
   // Native OpenAI Responses gates `action.sources` on this exact include
   // token. Clients reading `web_search_call.action.sources` against
@@ -1526,7 +1525,6 @@ test('upstream response.incomplete after a server tool call keeps synthesized to
   assertEquals(Object.hasOwn(terminal.response, 'output_text'), false);
   assertEquals(terminal.response.incomplete_details, { reason: 'max_output_tokens' });
 });
-
 
 test('helper allocation reserves names across callable scopes, history and search-loaded tools without moving declarations', () => {
   const tools: OpenAIResponsesTool[] = [
