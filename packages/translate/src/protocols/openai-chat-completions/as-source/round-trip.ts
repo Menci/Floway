@@ -114,6 +114,7 @@ export const collectOpenAIChatCompletionsReplayContents = (turn: OpenAIChatCompl
 export const verifyOpenAIChatCompletionsTurnDigest = createTurnDigestVerifier({
   1: chatTurnDigestMaterialV1,
   2: chatTurnDigestMaterialV2,
+  3: chatTurnDigestMaterialV2,
 });
 
 // Our carrier uses indexed OpenRouter reasoning_details.

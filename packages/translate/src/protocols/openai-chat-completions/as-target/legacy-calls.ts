@@ -25,6 +25,7 @@ const statedCallIds = <Restored extends ChatRestoredAssistantTurn>(
   for (const piece of turns) {
     if (piece.kind === 'restored') {
       for (const call of piece.turn.tool_calls ?? []) ids.add(call.id);
+      for (const id of piece.synthesizedCallIds ?? []) if (id !== null) ids.add(id);
       continue;
     }
     for (const item of piece.items) {
@@ -53,6 +54,24 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
     if (piece.kind !== 'restored') continue;
     const name = piece.turn.function_call?.name;
     if (name === undefined) continue;
+    const synthesizedId = piece.synthesizedCallIds?.[0] ?? undefined;
+    if (synthesizedId !== undefined) {
+      const nextSameIdOffset = turns.slice(index + 1).findIndex(turn =>
+        turn.kind === 'restored' && (turn.synthesizedCallIds?.[0] ?? undefined) === synthesizedId);
+      const end = nextSameIdOffset < 0 ? turns.length : index + 1 + nextSameIdOffset;
+      const answer = turns.slice(index + 1, end).flatMap(turn => turn.kind !== 'client' ? [] : turn.items.flatMap(item =>
+        item.type === 'tool_result' && item.call_id === synthesizedId ? [item] : []))[0];
+      let callId: string;
+      do {
+        allocated += 1;
+        callId = `legacy_call_${allocated}`;
+      } while (claimed.has(callId));
+      claimed.add(callId);
+      callIds.set(piece.turn, callId);
+      names.set(callId, name);
+      if (answer !== undefined) results.set(answer, callId);
+      continue;
+    }
     const nextLegacyOffset = turns.slice(index + 1).findIndex(turn => turn.kind === 'restored' && turn.turn.function_call?.name === name);
     const end = nextLegacyOffset < 0 ? turns.length : index + 1 + nextLegacyOffset;
     const candidates = turns.slice(index + 1, end).flatMap(turn => turn.kind !== 'client' ? [] : turn.items.flatMap(item =>
