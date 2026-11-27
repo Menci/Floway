@@ -59,3 +59,19 @@ test('candidate reads use wire indices and the same projection as the complete r
   });
   assertEquals(accumulator.result().candidates, [accumulator.candidate(2), accumulator.candidate(8)]);
 });
+
+test('reassembleGeminiGenerateContentEvents keeps repeated turnToken scalar across chunks', async () => {
+  const result = await reassembleGeminiGenerateContentEvents(eventsFrom([
+    {
+      turnToken: 'v1_turn_token',
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'hello ' }] } }],
+    },
+    {
+      turnToken: 'v1_turn_token',
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'world' }] }, finishReason: 'STOP' }],
+    },
+  ]));
+
+  assertEquals(result.turnToken, 'v1_turn_token');
+  assertEquals(result.candidates?.[0]?.content?.parts, [{ text: 'hello world' }]);
+});
