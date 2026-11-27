@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import type { InMemoryRepo } from '../../repo/memory.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
@@ -175,42 +175,64 @@ test('/v1/audio/transcriptions completes and cancels an upstream kept open after
   assertEquals(upstreamCancelled, true);
 });
 
-test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/audio/transcriptions sends a data-only failure after partial output on %s', async mode => {
+test.each(['read error', 'premature EOF', 'native error', 'unexpected panic'] as const)('/v1/audio/transcriptions sends a data-only failure after partial output on %s', async mode => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);
   const partial = 'data: {"type":"transcript.text.delta","delta":"partial"}\n\n';
+  const message = 'upstream transcription read failed';
+  const cause = new TypeError('original transcription reader cause');
+  const panic = new Error(message, { cause });
+  const log = mode === 'unexpected panic' ? vi.spyOn(console, 'error').mockImplementation(() => {}) : undefined;
   let upstream!: ReadableStreamDefaultController<Uint8Array>;
-  await withMockedFetch(
-    () => new Response(new ReadableStream<Uint8Array>({
-      start(controller) {
-        upstream = controller;
-        controller.enqueue(new TextEncoder().encode(partial));
+  try {
+    await withMockedFetch(
+      () => new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          upstream = controller;
+          controller.enqueue(new TextEncoder().encode(partial));
+        },
+      }), { headers: { 'content-type': 'text/event-stream' } }),
+      async () => {
+        const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
+          method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
+        });
+        assertEquals(response.status, 200);
+        const reader = response.body!.getReader();
+        const decode = new TextDecoder();
+        assertEquals(decode.decode((await reader.read()).value), partial);
+        const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
+        if (mode === 'read error') upstream.error(new HttpTransportError(new Error(message)));
+        else if (mode === 'premature EOF') upstream.close();
+        else if (mode === 'unexpected panic') upstream.error(panic);
+        else upstream.enqueue(new TextEncoder().encode(native));
+        const failure = decode.decode((await reader.read()).value);
+        assertEquals(failure.startsWith('data: {"error":'), true);
+        const payload = JSON.parse(failure.slice('data: '.length));
+        if (mode !== 'premature EOF') assertEquals(payload.error.message, message);
+        if (mode === 'native error') assertEquals(failure, native);
+        if (mode === 'unexpected panic') {
+          expect(payload).toMatchObject({
+            error: {
+              type: 'internal_error', message,
+              provider_specific_fields: { stack: panic.stack, cause: { message: cause.message, stack: cause.stack } },
+            },
+          });
+        }
+        assertEquals((await reader.read()).done, true);
       },
-    }), { headers: { 'content-type': 'text/event-stream' } }),
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
-        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
-      });
-      assertEquals(response.status, 200);
-      const reader = response.body!.getReader();
-      const decode = new TextDecoder();
-      assertEquals(decode.decode((await reader.read()).value), partial);
-      const message = 'upstream transcription read failed';
-      const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
-      if (mode === 'read error') upstream.error(new HttpTransportError(new Error(message)));
-      else if (mode === 'premature EOF') upstream.close();
-      else upstream.enqueue(new TextEncoder().encode(native));
-      const failure = decode.decode((await reader.read()).value);
-      assertEquals(failure.startsWith('data: {"error":'), true);
-      if (mode !== 'premature EOF') assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
-      if (mode === 'native error') assertEquals(failure, native);
-      assertEquals((await reader.read()).done, true);
-    },
-  );
-  await flushAsyncWork();
-  assertEquals(await repo.usage.listAll(), []);
-  const [performance] = await repo.performance.listAll();
-  assertEquals(performance.errorsNoOutput, 1);
+    );
+    await flushAsyncWork();
+    assertEquals(await repo.usage.listAll(), []);
+    const performance = await repo.performance.listAll();
+    if (mode === 'unexpected panic') {
+      expect(log?.mock.calls.find(([tag]) => tag === '[pipeline-response]')?.[1]).toBe(panic);
+      assertEquals(performance, []);
+    } else {
+      assertEquals(performance[0]?.errorsNoOutput, 1);
+    }
+  } finally {
+    log?.mockRestore();
+  }
 });
 
 test('/v1/audio/transcriptions counts a bodyless SSE response as a failed request', async () => {

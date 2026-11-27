@@ -1,15 +1,19 @@
-import type { StreamFrame } from './encode.ts';
-import type { HttpPanicPresentation } from '../../shared/pipeline-http.ts';
-import { serializeSseFrame } from '../../shared/sse.ts';
+import type { HttpPanicPresentation } from './pipeline-http.ts';
+import { serializeSseFrame } from './sse.ts';
 import { getHeader } from '@floway-dev/http';
-import { isEventStreamMediaType } from '@floway-dev/protocols/common';
+import { isEventStreamMediaType, type ProtocolFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
+
+interface SsePanicFrame {
+  readonly frame: ProtocolFrame<unknown>;
+  readonly wire: SseWritableFrame;
+}
 
 const encoder = new TextEncoder();
 
-export const chatHttpPanicPresentation = (
+export const sseHttpPanicPresentation = (
   status: number,
   render: (error: unknown) => unknown,
-  frame: (error: unknown) => StreamFrame,
+  frame: (error: unknown) => SsePanicFrame,
 ): HttpPanicPresentation => ({
   response: error => Response.json(render(error), { status }),
   stream(headers, dump) {
@@ -18,7 +22,7 @@ export const chatHttpPanicPresentation = (
     return {
       panic(error) {
         const rendered = frame(error);
-        if (rendered.frame !== undefined) dump?.frame(rendered.frame);
+        dump?.frame(rendered.frame);
         return encoder.encode(serializeSseFrame(rendered.wire));
       },
     };

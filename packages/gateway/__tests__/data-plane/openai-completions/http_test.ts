@@ -1,10 +1,11 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { HttpTransportError } from '@floway-dev/http';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
 
@@ -79,49 +80,97 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
   );
 });
 
-// Dual-path coverage: usage + performance + dump telemetry must land
-// equivalently on both the non-streaming JSON and the streaming SSE
-// branches. The handler does not force `stream: true` upstream the way
-// openai-chat-completions does (no interceptor framework to feed), so the two
-// paths really do exercise different scaffold branches and the assertions
-// here keep them honest.
-test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/completions sends a data-only failure after partial output on %s', async mode => {
+test.each(['/v1/completions', '/completions'])('%s renders a pre-head panic as the legacy 502 debug envelope', async path => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerOpenAICompletionsUpstream(repo);
+  const cause = new TypeError('original completion cause');
+  const panic = new RangeError('completion request panic', { cause });
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await withMockedFetch(
+      async () => { throw panic; },
+      async () => {
+        const response = await requestAppWithWarmModels(path, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+          body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
+        });
+        expect(response.status).toBe(502);
+        expect(await response.json()).toEqual({
+          error: {
+            type: 'internal_error', name: panic.name, message: panic.message, stack: panic.stack,
+            cause: { name: cause.name, message: cause.message, stack: cause.stack },
+          },
+        });
+      },
+    );
+    await flushAsyncWork();
+    expect(log.mock.calls.find(([tag]) => tag === '[pipeline-response]')?.[1]).toBe(panic);
+    expect(await repo.performance.listAll()).toEqual([]);
+  } finally {
+    log.mockRestore();
+  }
+});
+
+test.each(['read error', 'premature EOF', 'native error', 'unexpected panic'] as const)('/v1/completions sends a data-only failure after partial output on %s', async mode => {
   const { apiKey, repo } = await setupAppTest();
   await registerOpenAICompletionsUpstream(repo);
   const partial = 'data: {"choices":[{"index":0,"text":"partial"}]}\n\n';
+  const message = 'upstream completion read failed';
+  const cause = new TypeError('original completion reader cause');
+  const panic = new Error(message, { cause });
+  const log = mode === 'unexpected panic' ? vi.spyOn(console, 'error').mockImplementation(() => {}) : undefined;
   let upstream!: ReadableStreamDefaultController<Uint8Array>;
-  await withMockedFetch(
-    () => new Response(new ReadableStream<Uint8Array>({
-      start(controller) {
-        upstream = controller;
-        controller.enqueue(new TextEncoder().encode(partial));
+  try {
+    await withMockedFetch(
+      () => new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          upstream = controller;
+          controller.enqueue(new TextEncoder().encode(partial));
+        },
+      }), { headers: { 'content-type': 'text/event-stream' } }),
+      async () => {
+        const response = await requestAppWithWarmModels('/v1/completions', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+          body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+        });
+        assertEquals(response.status, 200);
+        const reader = response.body!.getReader();
+        const decode = new TextDecoder();
+        assertEquals(decode.decode((await reader.read()).value), partial);
+        const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
+        if (mode === 'read error') upstream.error(new HttpTransportError(new Error(message)));
+        else if (mode === 'premature EOF') upstream.close();
+        else if (mode === 'unexpected panic') upstream.error(panic);
+        else upstream.enqueue(new TextEncoder().encode(native));
+        const failure = decode.decode((await reader.read()).value);
+        assertEquals(failure.startsWith('data: {"error":'), true);
+        const payload = JSON.parse(failure.slice('data: '.length));
+        if (mode !== 'premature EOF') assertEquals(payload.error.message, message);
+        if (mode === 'native error') assertEquals(failure, native);
+        if (mode === 'unexpected panic') {
+          expect(payload).toMatchObject({
+            error: {
+              type: 'internal_error', message,
+              provider_specific_fields: { stack: panic.stack, cause: { message: cause.message, stack: cause.stack } },
+            },
+          });
+        }
+        assertEquals((await reader.read()).done, true);
       },
-    }), { headers: { 'content-type': 'text/event-stream' } }),
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/completions', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
-      });
-      assertEquals(response.status, 200);
-      const reader = response.body!.getReader();
-      const decode = new TextDecoder();
-      assertEquals(decode.decode((await reader.read()).value), partial);
-      const message = 'upstream completion read failed';
-      const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
-      if (mode === 'read error') upstream.error(new Error(message));
-      else if (mode === 'premature EOF') upstream.close();
-      else upstream.enqueue(new TextEncoder().encode(native));
-      const failure = decode.decode((await reader.read()).value);
-      assertEquals(failure.startsWith('data: {"error":'), true);
-      if (mode !== 'premature EOF') assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
-      if (mode === 'native error') assertEquals(failure, native);
-      assertEquals((await reader.read()).done, true);
-    },
-  );
-  await flushAsyncWork();
-  const [performance] = await repo.performance.listAll();
-  assertEquals(performance.errorsNoOutput, 1);
+    );
+    await flushAsyncWork();
+    const performance = await repo.performance.listAll();
+    if (mode === 'unexpected panic') {
+      expect(log?.mock.calls.find(([tag]) => tag === '[pipeline-response]')?.[1]).toBe(panic);
+      assertEquals(performance, []);
+    } else {
+      assertEquals(performance[0]?.errorsNoOutput, 1);
+    }
+  } finally {
+    log?.mockRestore();
+  }
 });
 
 test('/v1/completions non-streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a bytes-body dump record', async () => {
