@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -48,19 +48,30 @@ const refA2 = { id: 'key-a2', name: 'Key A', suffix: 'ccc3' };
 
 const renderPanel = (selectedKeyId: string | null, {
   apiKeys = [keyA, keyB],
+  failures = false,
+  onFilterChange = vi.fn(),
   onKeyChange = vi.fn(),
   records = [record('first', refA), record('second', refB)],
-}: { apiKeys?: ApiKey[]; onKeyChange?: (keyId: string | null) => void; records?: DumpMetadata[] } = {}) => renderInApp(
+}: {
+  apiKeys?: ApiKey[];
+  failures?: boolean;
+  onFilterChange?: (q: string, failures: boolean) => void;
+  onKeyChange?: (keyId: string | null) => void;
+  records?: DumpMetadata[];
+} = {}) => renderInApp(
   <MemoryRouter>
     <RequestListPanel
       addressOfRecord={id => `?record=${id}`}
       apiKeys={apiKeys}
       error={null}
+      failures={failures}
       hasOlder={false}
       onDismissError={vi.fn()}
+      onFilterChange={onFilterChange}
       onKeyChange={onKeyChange}
       onLoadOlder={vi.fn()}
       onRecordChange={vi.fn()}
+      q=""
       records={records}
       selectedKeyId={selectedKeyId}
       selectedRecordId={null}
@@ -72,10 +83,19 @@ describe('all-keys request log', () => {
   it('is the default view and labels each request with its source key', () => {
     renderPanel(null);
 
-    expect(screen.getByRole('combobox', { name: i18n.t('requests.apiKey') }).textContent).toContain(i18n.t('requests.allKeys'));
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.queryByRole('button', { name: i18n.t('requests.showEveryKey') })).toBeNull();
     const log = within(screen.getByRole('listbox'));
     expect(log.getByText('Key A')).toBeTruthy();
     expect(log.getByText('Key B')).toBeTruthy();
+  });
+
+  it('names a known endpoint by its protocol and an unknown one by its path', () => {
+    renderPanel(null, { records: [{ ...record('chat', refA), path: '/v1/chat/completions' }, record('first', refB)] });
+
+    const log = within(screen.getByRole('listbox'));
+    expect(log.getByText(i18n.t('apiDocs.endpointNames.openAiChat'))).toBeTruthy();
+    expect(log.queryByText('/v1/chat/completions')).toBeNull();
     expect(log.getByText('/v1/first')).toBeTruthy();
   });
 
@@ -107,24 +127,34 @@ describe('all-keys request log', () => {
     expect(log.queryByText('Key B')).toBeNull();
   });
 
-  it('switches from the merged log to one key and back', () => {
+  it('names the key a link opened and widens back to every key', () => {
     const onKeyChange = vi.fn();
-    renderPanel(null, { onKeyChange });
+    renderPanel(keyB.id, { onKeyChange });
 
-    fireEvent.click(screen.getByRole('combobox', { name: i18n.t('requests.apiKey') }));
-    fireEvent.click(screen.getByRole('option', { name: 'Key B (bbb2)' }));
-    expect(onKeyChange).toHaveBeenLastCalledWith(keyB.id);
-
-    fireEvent.click(screen.getByRole('combobox', { name: i18n.t('requests.apiKey') }));
-    fireEvent.click(screen.getByRole('option', { name: i18n.t('requests.allKeys') }));
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('requests.showEveryKey') }));
     expect(onKeyChange).toHaveBeenLastCalledWith(null);
+    expect(screen.getByText('Key B (bbb2)')).toBeTruthy();
+  });
+
+  it('toggles the failure filter and keeps the search', () => {
+    const onFilterChange = vi.fn();
+    renderPanel(null, { onFilterChange });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('requests.failuresOnly') }));
+    expect(onFilterChange).toHaveBeenLastCalledWith('', true);
+    cleanup();
+
+    renderPanel(null, { failures: true, onFilterChange });
+    const toggle = screen.getByRole('button', { name: i18n.t('requests.failuresOnly') });
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(toggle);
+    expect(onFilterChange).toHaveBeenLastCalledWith('', false);
   });
 });
 
 describe('all-keys request log at a phone width', () => {
   stubMatchMedia(query => query === '(max-width: 680px)');
 
-  it('puts the source key where the path was', () => {
+  it('puts the source key where the endpoint was', () => {
     renderPanel(null);
 
     const log = within(screen.getByRole('listbox'));
@@ -132,7 +162,7 @@ describe('all-keys request log at a phone width', () => {
     expect(log.queryByText('/v1/first')).toBeNull();
   });
 
-  it('keeps the path on a single key\'s log', () => {
+  it('keeps the endpoint on a single key\'s log', () => {
     renderPanel(keyA.id);
 
     const log = within(screen.getByRole('listbox'));

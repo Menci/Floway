@@ -12,6 +12,6 @@ it('keeps export actions in a menu and preserves selections outside the loaded f
   expect(screen.getByRole('menuitem', { name: 'Combined JSON' })).toBeTruthy();
   expect(screen.getByRole('menuitem', { name: 'Separate files (.tar)' })).toBeTruthy();
   fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Select loaded records' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'All' }));
   expect(onChange).toHaveBeenLastCalledWith(new Set(['outside']));
 });

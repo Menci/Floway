@@ -145,14 +145,14 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
     return next;
   };
 
+  // The key is one more filter over the log, so moving between keys keeps the
+  // search and the failure filter the counts beside each key were read under.
   const updateSelection = useCallback((keyId: string | null, recordId?: string | null) => {
     const next = selectionSearch(keyId, recordId);
-    if (keyId === selectedKeyId) {
-      if (q) next.set('q', q);
-      if (failures) next.set('failures', 'true');
-    }
+    if (q) next.set('q', q);
+    if (failures) next.set('failures', 'true');
     setSearchParams(next, rewrite);
-  }, [failures, q, rewrite, selectedKeyId, setSearchParams]);
+  }, [failures, q, rewrite, setSearchParams]);
 
   const reloadKeys = useCallback((signal: AbortSignal) => refreshRequestKeys({
     allKeys,
