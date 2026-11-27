@@ -37,9 +37,9 @@ export interface TargetProtocol<Name extends AssistantTurnProtocol, Payload, Eve
   /**
    * Writes the input IR as this protocol's request.
    *
-   * A resolved turn arrives as the structure this protocol states natively, so
-   * whatever the writer needs to know about it — which calls it answers, say —
-   * it reads from there rather than being told separately.
+   * A resolved turn arrives as the structure this protocol states natively,
+   * paired with the authenticated source-side call IDs needed when this target
+   * emits id-less calls whose results later arrive addressed by a source ID.
    */
   readonly write: (
     request: IRInputRequestHeader,
