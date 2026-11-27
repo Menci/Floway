@@ -18,11 +18,14 @@ import type {
   GeminiGenerateContentStreamEvent,
 } from '@floway-dev/protocols/gemini-generate-content';
 import {
+  decodeResponseBody,
   directFetcher,
   type ModelCandidate,
+  type ProviderCallResult,
   type ProviderStreamResult,
   type UpstreamCallOptions,
 } from '@floway-dev/provider';
+import type { FlagId } from '@floway-dev/provider/flags';
 import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): AsyncGenerator<ProtocolFrame<TEvent>> {
@@ -32,36 +35,46 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   endpoints: ModelEndpoints;
   maxOutputTokens?: number;
+  enabledFlags?: ReadonlySet<FlagId>;
+  inboundHeaderAllowlist?: readonly string[];
   callGeminiGenerateContent?: (
     model: unknown,
     body: GeminiGenerateContentPayload,
     signal?: AbortSignal,
     opts?: UpstreamCallOptions,
   ) => Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
+  callGeminiGenerateContentCountTokens?: (
+    model: unknown,
+    body: GeminiGenerateContentPayload,
+    signal?: AbortSignal,
+    opts?: UpstreamCallOptions,
+  ) => Promise<ProviderCallResult>;
 }): ModelCandidate => {
   const upstream = 'up_gemini_msg';
   const instance = stubProvider({
     callGeminiGenerateContent: overrides.callGeminiGenerateContent,
+    callGeminiGenerateContentCountTokens: overrides.callGeminiGenerateContentCountTokens,
   });
   return {
     provider: {
       upstreamId: upstream,
       kind: 'custom',
       name: 'Gemini Upstream',
-      inboundHeaderAllowlist: [],
+      inboundHeaderAllowlist: [...(overrides.inboundHeaderAllowlist ?? [])],
       instance,
     },
     model: stubProviderModel({
       id: 'gemini-2.5-pro',
       upstreamModelId: 'gemini-2.5-pro',
       endpoints: overrides.endpoints,
+      ...(overrides.enabledFlags === undefined ? {} : { enabledFlags: new Set(overrides.enabledFlags) }),
       ...(overrides.maxOutputTokens === undefined ? {} : { limits: { max_output_tokens: overrides.maxOutputTokens } }),
     }),
     fetcher: directFetcher,
   };
 };
 
-test('routes Anthropic Messages generate to a Gemini-only candidate, keeps geminiGenerateContent last, and leaves count_tokens native-only', async () => {
+test('routes Anthropic Messages generate and count_tokens to a Gemini-only candidate while keeping native targets first', async () => {
   initRepo(new InMemoryRepo());
 
   expect(anthropicMessagesGenerateTarget.canServe({ geminiGenerateContent: {} })).toBe(true);
@@ -69,7 +82,9 @@ test('routes Anthropic Messages generate to a Gemini-only candidate, keeps gemin
   expect(anthropicMessagesGenerateTarget.pick({ openaiResponses: {}, geminiGenerateContent: {} })).toBe('openaiResponses');
   expect(anthropicMessagesGenerateTarget.pick({ anthropicMessages: {}, geminiGenerateContent: {} })).toBe('anthropicMessages');
   expect(anthropicMessagesGenerateTarget.pick({ geminiGenerateContent: {} })).toBe('geminiGenerateContent');
-  expect(anthropicMessagesCountTokensTarget.canServe({ geminiGenerateContent: {} })).toBe(false);
+  expect(anthropicMessagesCountTokensTarget.canServe({ geminiGenerateContent: {} })).toBe(true);
+  expect(anthropicMessagesCountTokensTarget.pick({ anthropicMessages: {}, geminiGenerateContent: {} })).toBe('anthropicMessages');
+  expect(anthropicMessagesCountTokensTarget.pick({ geminiGenerateContent: {} })).toBe('geminiGenerateContent');
 
   let capturedBody: GeminiGenerateContentPayload | undefined;
   const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => {
@@ -222,5 +237,134 @@ test('retains Gemini thought parts and thoughtSignature on translated turns even
       { thought: true, text: 'Default model thought.', thoughtSignature: 'sig_default_thought' },
       { functionCall: { name: 'lookup', args: { q: 'docs' } }, thoughtSignature: 'sig_default_call' },
     ],
+  });
+});
+
+test('translates Anthropic Messages count_tokens to Gemini countTokens, preserves request interceptors, and reshapes responses and errors', async () => {
+  initRepo(new InMemoryRepo());
+  let capturedBody: GeminiGenerateContentPayload | undefined;
+  let capturedHeaders: Headers | undefined;
+  const callGeminiGenerateContentCountTokens = vi.fn(async (_model, body: GeminiGenerateContentPayload, _signal, opts?: UpstreamCallOptions): Promise<ProviderCallResult> => {
+    capturedBody = body;
+    capturedHeaders = opts?.headers;
+    return {
+      http: new Response(JSON.stringify({ totalTokens: 73 }), {
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json', 'x-trace-id': 'gem-count-1' }),
+      }),
+      modelKey: 'gemini-2.5-pro',
+    };
+  });
+
+  const ctx = mockChatGatewayCtx({ apiKeyId: 'key_msg_gem_count', wantsStream: false });
+  const ok = await anthropicMessagesAttempt.countTokens({
+    payload: {
+      model: 'gemini-2.5-pro',
+      system: 'x-anthropic-billing-header: token\ncch=deadbeef1234;\nCount rules.',
+      tools: [{ name: 'lookup', input_schema: { type: 'object', properties: { q: { type: 'string' } } } }],
+      messages: [{ role: 'user', content: 'How many tokens?' }],
+    } as AnthropicMessagesPayload,
+    ctx,
+    candidate: makeCandidate({
+      endpoints: { geminiGenerateContent: {} },
+      enabledFlags: new Set<FlagId>(['strip-billing-attribution']),
+      inboundHeaderAllowlist: ['anthropic-beta', 'x-client-tag'],
+      callGeminiGenerateContentCountTokens,
+    }),
+    headers: new Headers({ 'anthropic-beta': 'claude-code-20250219', 'x-client-tag': 'keep' }),
+    anthropicBeta: ['claude-code-20250219'],
+  });
+
+  expect(ok.type).toBe('plain');
+  expect(ok.http.status).toBe(200);
+  expect(ok.http.headers.get('x-trace-id')).toBe('gem-count-1');
+  expect(JSON.parse(decodeResponseBody(ok.body))).toEqual({ input_tokens: 73 });
+  expect(capturedHeaders?.has('anthropic-beta')).toBe(false);
+  expect(capturedHeaders?.get('x-client-tag')).toBe('keep');
+  expect(capturedBody).toEqual({
+    systemInstruction: { parts: [{ text: 'Count rules.' }] },
+    tools: [{ functionDeclarations: [{ name: 'lookup', parametersJsonSchema: { type: 'object', properties: { q: { type: 'string' } } } }] }],
+    contents: [{ role: 'user', parts: [{ text: 'How many tokens?' }] }],
+  });
+
+  const rateLimited = await anthropicMessagesAttempt.countTokens({
+    payload: { model: 'gemini-2.5-pro', messages: [{ role: 'user', content: 'hi' }] } as AnthropicMessagesPayload,
+    ctx,
+    candidate: makeCandidate({
+      endpoints: { geminiGenerateContent: {} },
+      callGeminiGenerateContentCountTokens: async () => ({
+        http: new Response(JSON.stringify({ error: { code: 429, message: 'Quota exceeded', status: 'RESOURCE_EXHAUSTED' } }), {
+          status: 429,
+          headers: new Headers({ 'content-type': 'application/json', 'retry-after': '12' }),
+        }),
+        modelKey: 'gemini-2.5-pro',
+      }),
+    }),
+    headers: new Headers(),
+    anthropicBeta: [],
+  });
+  expect(rateLimited.type).toBe('plain');
+  expect(rateLimited.http.status).toBe(429);
+  expect(rateLimited.http.headers.get('retry-after')).toBe('12');
+  expect(JSON.parse(decodeResponseBody(rateLimited.body))).toMatchObject({
+    type: 'error',
+    error: { type: 'rate_limit_error', message: 'Quota exceeded' },
+  });
+
+  const malformed = await anthropicMessagesAttempt.countTokens({
+    payload: { model: 'gemini-2.5-pro', messages: [{ role: 'user', content: 'hi' }] } as AnthropicMessagesPayload,
+    ctx,
+    candidate: makeCandidate({
+      endpoints: { geminiGenerateContent: {} },
+      callGeminiGenerateContentCountTokens: async () => ({
+        http: new Response(JSON.stringify({ unexpected: true }), {
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+        }),
+        modelKey: 'gemini-2.5-pro',
+      }),
+    }),
+    headers: new Headers(),
+    anthropicBeta: [],
+  });
+  expect(malformed.type).toBe('api-error');
+  expect(malformed.http.status).toBe(502);
+  expect(JSON.parse(decodeResponseBody(malformed.body))).toMatchObject({
+    type: 'error',
+    error: { type: 'api_error', message: 'Invalid upstream token counting response.' },
+  });
+
+  const empty204 = await anthropicMessagesAttempt.countTokens({
+    payload: { model: 'gemini-2.5-pro', messages: [{ role: 'user', content: 'hi' }] } as AnthropicMessagesPayload,
+    ctx,
+    candidate: makeCandidate({
+      endpoints: { geminiGenerateContent: {} },
+      callGeminiGenerateContentCountTokens: async () => ({
+        http: new Response(null, { status: 204 }),
+        modelKey: 'gemini-2.5-pro',
+      }),
+    }),
+    headers: new Headers(),
+    anthropicBeta: [],
+  });
+  expect(empty204.type).toBe('plain');
+  expect(empty204.http.status).toBe(204);
+  expect(empty204.body).toBeNull();
+
+  const inputError = await anthropicMessagesAttempt.countTokens({
+    payload: {
+      model: 'gemini-2.5-pro',
+      messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'file', file_id: 'file_123' } }] }],
+    } as AnthropicMessagesPayload,
+    ctx,
+    candidate: makeCandidate({ endpoints: { geminiGenerateContent: {} } }),
+    headers: new Headers(),
+    anthropicBeta: [],
+  });
+  expect(inputError.type).toBe('api-error');
+  expect(inputError.http.status).toBe(400);
+  expect(JSON.parse(decodeResponseBody(inputError.body))).toMatchObject({
+    type: 'error',
+    error: { type: 'invalid_request_error', message: expect.stringContaining('file id reference') },
   });
 });

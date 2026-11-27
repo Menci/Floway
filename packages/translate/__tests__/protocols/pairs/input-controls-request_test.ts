@@ -108,3 +108,18 @@ test.each([''] as const)('Messages explicit effort %j remains independent of its
   if (responses.type !== 'trip') throw new Error(responses.message);
   expect(responses.target.reasoning).toEqual({ effort });
 });
+
+test('Anthropic adaptive thinking without explicit effort falls back to medium on OpenAI targets and preserves effort-free IR', async () => {
+  const source = { model: 'm', stream: true, max_tokens: 1024, thinking: { type: 'adaptive' as const }, messages: [] };
+  const settings = readAnthropicMessagesRequest(source).request.settings;
+  expect(settings.reasoning_budget_dynamic).toBe(true);
+  expect(settings.reasoning_effort).toBeUndefined();
+
+  const chat = await routeAnthropicMessagesViaOpenAIChatCompletions(source, options);
+  if (chat.type !== 'trip') throw new Error(chat.message);
+  expect(chat.target.reasoning_effort).toBe('medium');
+
+  const responses = await routeAnthropicMessagesViaOpenAIResponses(source, options);
+  if (responses.type !== 'trip') throw new Error(responses.message);
+  expect(responses.target.reasoning).toEqual({ effort: 'medium' });
+});

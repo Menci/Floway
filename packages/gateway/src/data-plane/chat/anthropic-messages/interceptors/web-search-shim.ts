@@ -881,9 +881,6 @@ const buildSyntheticInvalidRequestUpstreamError = (message: string) => ({
   body: new TextEncoder().encode(JSON.stringify(anthropicMessagesWebSearchInvalidRequestBody(message))),
 });
 
-const buildInvalidRequestResponse = (message: string): Response =>
-  Response.json(anthropicMessagesWebSearchInvalidRequestBody(message), { status: 400 });
-
 const resolveActiveAnthropicMessagesWebSearchProvider = async (apiKeyId: string): Promise<{ type: 'ok'; provider: ActiveAnthropicMessagesWebSearchProvider } | ReturnType<typeof internalErrorResult>> => {
   const webSearchConfig = await loadWebSearchConfig();
   const configuredProvider = resolveConfiguredWebSearchProvider(webSearchConfig);
@@ -965,6 +962,6 @@ export const withAnthropicMessagesWebSearchShim: AnthropicMessagesInterceptor = 
 // tool and replay-history request shape that generation sends upstream.
 export const withAnthropicMessagesWebSearchRequestPrepared: AnthropicMessagesCountTokensInterceptor = async (ctx, _gatewayCtx, run) => {
   const prepared = prepareAnthropicMessagesWebSearchInvocation(ctx);
-  if (prepared.type === 'invalid-request') return buildInvalidRequestResponse(prepared.message);
+  if (prepared.type === 'invalid-request') return buildSyntheticInvalidRequestUpstreamError(prepared.message);
   return await run();
 };

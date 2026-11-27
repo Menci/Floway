@@ -9,7 +9,29 @@ import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from 
 // Byte-shape matches Anthropic-direct: `{type:'error', error:{type, message},
 // request_id}` with `request_id` at the top level (alongside `error`, not
 // nested inside it) and key order load-bearing for byte-faithfulness.
-const anthropicErrorResult = (
+export const anthropicErrorTypeForStatus = (status: number): string => {
+  switch (status) {
+  case 400: return 'invalid_request_error';
+  case 401: return 'authentication_error';
+  case 403: return 'permission_error';
+  case 404: return 'not_found_error';
+  case 429: return 'rate_limit_error';
+  case 529: return 'overloaded_error';
+  default: return 'api_error';
+  }
+};
+
+export const anthropicErrorEnvelopeBody = (
+  type: string,
+  message: string,
+  extension?: Record<string, unknown>,
+): Uint8Array => new TextEncoder().encode(JSON.stringify({
+  type: 'error',
+  error: { type, message, ...(extension === undefined ? {} : { provider_specific_fields: extension }) },
+  request_id: generateAnthropicId('req'),
+}));
+
+export const anthropicErrorResult = (
   status: number,
   type: string,
   message: string,
@@ -19,11 +41,7 @@ const anthropicErrorResult = (
   type: 'api-error',
   source: 'gateway',
   http: { status, headers: new Headers({ 'content-type': 'application/json' }) },
-  body: new TextEncoder().encode(JSON.stringify({
-    type: 'error',
-    error: { type, message, ...(extension === undefined ? {} : { provider_specific_fields: extension }) },
-    request_id: generateAnthropicId('req'),
-  })),
+  body: anthropicErrorEnvelopeBody(type, message, extension),
   ...(performance ? { performance } : {}),
 });
 

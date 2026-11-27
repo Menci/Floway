@@ -5,8 +5,7 @@ import type { InputAssistantTurnStateFor } from './reference/assistant-turn-type
 import type { ReadFieldStates, ReferenceBuilder } from './reference/reference-builder.ts';
 import { collectEmittedFieldPlacements, createReferenceBuilder } from './reference/reference-builder.ts';
 import { referenceAssistantTurn } from './reference/reference-selection.ts';
-import type { RoundTripSidecar } from './sidecar.ts';
-import { encodeRoundTripSidecar } from './sidecar.ts';
+import { ROUND_TRIP_SIDECAR_VERSION, encodeRoundTripSidecar, type RoundTripSidecar } from './sidecar.ts';
 import type { RoundTripWriter } from './writer.ts';
 
 /**
@@ -40,7 +39,7 @@ export const createRoundTripCoordinator = <
         builder,
         collectEmittedFieldPlacements(turn, contentState, textPlacements),
       );
-      return await encodeRoundTripSidecar(codec, { v: 1, source, target, ...finalized, sourceTurnDigest } satisfies RoundTripSidecar<Target>);
+      return await encodeRoundTripSidecar(codec, { v: ROUND_TRIP_SIDECAR_VERSION, source, target, ...finalized, sourceTurnDigest } satisfies RoundTripSidecar<Target>);
     },
   };
   return { reader, writer };

@@ -68,7 +68,7 @@ const verifyChatTurn = (
   turn: Parameters<typeof findOpenAIChatCompletionsSidecarOccurrences>[0],
   sourceTurnDigest: Parameters<typeof verifyOpenAIChatCompletionsTurnDigest>[1],
   data = 'opaque-sidecar',
-  version = 1,
+  version = 2,
 ) => verifyOpenAIChatCompletionsTurnDigest(fixtureSidecar(findOpenAIChatCompletionsSidecarOccurrences(turn), data).turn, sourceTurnDigest, version);
 
 const verifyResponsesTurn = (
@@ -132,6 +132,28 @@ describe('assistant-turn sidecar protocols', () => {
     expect(createOpenAIChatCompletionsSidecarDetails('opaque')).toEqual([
       { type: 'reasoning.encrypted', data: 'opaque', format: 'unknown', index: 1 },
     ]);
+
+    // v2 normalizes nullable absent-equivalent Chat Completions fields (`refusal: null`,
+    // `content: null`, `function_call: null`) when replayed by clients that omit null properties,
+    // while keeping explicit empty string content distinct.
+    const emittedNullFields: OpenAIChatCompletionsAssistantMessageEx = {
+      role: 'assistant',
+      content: null,
+      refusal: null,
+      function_call: null,
+      tool_calls: turn.tool_calls!,
+      reasoning_details: turn.reasoning_details,
+    };
+    const replayedWithoutNulls: OpenAIChatCompletionsAssistantMessageEx = {
+      role: 'assistant',
+      tool_calls: turn.tool_calls!,
+      reasoning_details: turn.reasoning_details,
+    };
+    const v2NullCheck = await computeOpenAIChatCompletionsTurnDigest(
+      fixtureSidecar(findOpenAIChatCompletionsSidecarOccurrences(emittedNullFields)).turn,
+    );
+    expect(await verifyChatTurn(replayedWithoutNulls, v2NullCheck)).toBe(true);
+    expect(await verifyChatTurn({ ...replayedWithoutNulls, content: '' }, v2NullCheck)).toBe(false);
   });
 
   it('partitions Responses input on native assistant/user/tool-output boundaries without using the sidecar as a delimiter', () => {

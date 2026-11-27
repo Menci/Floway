@@ -100,22 +100,23 @@ export const geminiGenerateContentAttempt = {
 // either is accepted. A missing or non-numeric figure is surfaced as a
 // 502 Google-RPC error so the caller sees a typed Gemini generateContent failure rather
 // than a passthrough of the upstream shape.
-const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (anthropicMessagesResult: PlainResult): PlainResult => {
+const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (
+  anthropicMessagesResult: ApiErrorResult | PlainResult,
+): ApiErrorResult | PlainResult => {
   const { status, headers } = anthropicMessagesResult.http;
-  if (anthropicMessagesResult.body === null && (status === 204 || status === 205 || status === 304)) {
+  if (anthropicMessagesResult.type === 'plain' && anthropicMessagesResult.body === null && (status === 204 || status === 205 || status === 304)) {
     return anthropicMessagesResult;
   }
   const text = decodeResponseBody(anthropicMessagesResult.body);
   const http = { status, headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, headers) };
-  if (status !== 200) {
+  if (anthropicMessagesResult.type === 'api-error' || status !== 200) {
     // Empty upstream bodies fall back to a fixed message so the Google-RPC envelope is never empty.
-    return plainResult(
-      http,
-      new TextEncoder().encode(JSON.stringify({
-        error: { code: status, message: text || 'Upstream token counting request failed.', status: gatewayErrorStatus(status) },
-      })),
-      anthropicMessagesResult.upstreamId,
-    );
+    const body = new TextEncoder().encode(JSON.stringify({
+      error: { code: status, message: text || 'Upstream token counting request failed.', status: gatewayErrorStatus(status) },
+    }));
+    return anthropicMessagesResult.type === 'api-error'
+      ? { ...anthropicMessagesResult, http, body }
+      : plainResult(http, body, anthropicMessagesResult.upstreamId);
   }
   let decoded: unknown;
   try { decoded = JSON.parse(text); } catch {}

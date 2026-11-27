@@ -393,12 +393,12 @@ const serviceTierToIR = (payload: AnthropicMessagesPayload): string | undefined 
   return payload.service_tier ?? undefined;
 };
 
-// A level stated outright wins over the one a thinking mode implies, because the
-// caller wrote it explicitly while the mode only bounds it.
+// Only an explicit effort or disabled thinking states a level on the IR;
+// `thinking: { type: 'adaptive' }` travels independently on `reasoning_budget_dynamic`
+// so targets choose between native dynamic thinking and effort fallback.
 const reasoningEffortToIR = (payload: AnthropicMessagesPayload): string | undefined => {
   if (payload.output_config?.effort != null) return payload.output_config.effort;
   if (payload.thinking?.type === 'disabled') return 'none';
-  if (payload.thinking?.type === 'adaptive') return 'medium';
   return undefined;
 };
 

@@ -6,7 +6,7 @@ import { expectTrip } from '../../../trip.ts';
 import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, FAST_SERVICE_TIER, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsAssistantMessageEx, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { collectOpenAIResponsesProtocolEventsToResult, toOpenAIResponsesInputItems, type OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import {
   routeAnthropicMessagesViaGeminiGenerateContent,
@@ -523,4 +523,79 @@ test('serializes non-sidecar parallel tool calls with default empty args and tho
     },
     { role: 'user', parts: [{ functionResponse: { name: 'ping', response: { output: 'pong' } } }] },
   ]);
+});
+
+test('maps Anthropic adaptive thinking with and without explicit effort, and restores Chat tool sidecar when client omits refusal null', async () => {
+  const adaptiveOnly = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    max_tokens: 1024,
+    stream: true,
+    thinking: { type: 'adaptive' },
+    messages: [{ role: 'user', content: 'Hi' }],
+  }, options()));
+  expect(adaptiveOnly.target.generationConfig?.thinkingConfig).toEqual({
+    thinkingBudget: -1,
+    includeThoughts: true,
+  });
+
+  const adaptiveWithEffort = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    max_tokens: 1024,
+    stream: true,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'low' },
+    messages: [{ role: 'user', content: 'Hi' }],
+  }, options()));
+  expect(adaptiveWithEffort.target.generationConfig?.thinkingConfig).toEqual({
+    thinkingLevel: 'LOW',
+    includeThoughts: true,
+  });
+
+  // OpenAI Chat client omitting `refusal: null` and `content: null` when replaying a tool call turn.
+  const codec = createTestSidecarCodec('chat-omit-refusal-null');
+  const chatTurn1: OpenAIChatCompletionsPayload = {
+    model: 'gemini-2.5-pro',
+    stream: true,
+    tools: [{ type: 'function', function: { name: 'bash', parameters: { type: 'object', properties: { cmd: { type: 'string' } } } } }],
+    messages: [{ role: 'user', content: 'Run pwd' }],
+  };
+  const chatTrip1 = expectTrip(await routeOpenAIChatCompletionsViaGeminiGenerateContent(chatTurn1, { sidecarCodec: codec }));
+  const chatResult1 = await collectOpenAIChatCompletionsProtocolEventsToResult(
+    chatTrip1.events(iterate([
+      eventFrame({
+        responseId: 'gem_rt_omit_null',
+        modelVersion: 'gemini-2.5-pro',
+        candidates: [{
+          index: 0,
+          content: {
+            role: 'model',
+            parts: [{ functionCall: { name: 'bash', args: { cmd: 'pwd' } }, thoughtSignature: 'sig_no_refusal_null' }],
+          },
+          finishReason: 'STOP',
+        }],
+      }),
+      doneFrame(),
+    ])),
+  );
+  const msg1 = chatResult1.choices[0]!.message;
+  const toolCalls = msg1.tool_calls;
+  if (toolCalls === undefined || toolCalls.length === 0) throw new Error('Expected tool_calls');
+  const replayedAssistant: OpenAIChatCompletionsAssistantMessageEx = {
+    role: 'assistant',
+    tool_calls: toolCalls,
+    reasoning_details: msg1.reasoning_details,
+  };
+  const chatTurn2: OpenAIChatCompletionsPayloadEx = {
+    ...chatTurn1,
+    messages: [
+      ...chatTurn1.messages,
+      replayedAssistant,
+      { role: 'tool', tool_call_id: toolCalls[0]!.id, content: '/workspace' },
+    ],
+  };
+  const chatTrip2 = expectTrip(await routeOpenAIChatCompletionsViaGeminiGenerateContent(chatTurn2, { sidecarCodec: codec }));
+  expect(chatTrip2.target.contents[1]).toEqual({
+    role: 'model',
+    parts: [{ functionCall: { name: 'bash', args: { cmd: 'pwd' } }, thoughtSignature: 'sig_no_refusal_null' }],
+  });
 });

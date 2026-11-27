@@ -409,13 +409,12 @@ const thinkingLevelFromEffort = (effort: string): string => {
 };
 
 // Gemini rejects setting `thinkingBudget` and `thinkingLevel` simultaneously.
-// Dynamic or numeric token budgets take `thinkingBudget`; effort-only requests use `thinkingLevel`.
+// Explicit numeric budgets take `thinkingBudget`, explicit effort uses
+// `thinkingLevel` (including `thinking: { type: 'adaptive' }` with explicit
+// `output_config.effort`), and bare dynamic thinking falls back to `-1`.
 // https://ai.google.dev/api/generate-content#ThinkingConfig
 const thinkingConfigFromSettings = (settings: IRInputSettings): GeminiGenerateContentThinkingConfig | undefined => {
   const thoughtFlag = settings.reasoning_summary === 'omitted' ? {} : { includeThoughts: true };
-  if (settings.reasoning_budget_dynamic === true) {
-    return { thinkingBudget: -1, ...thoughtFlag };
-  }
   if (settings.reasoning_budget !== undefined) {
     return settings.reasoning_budget === 0
       ? { thinkingBudget: 0 }
@@ -428,6 +427,9 @@ const thinkingConfigFromSettings = (settings: IRInputSettings): GeminiGenerateCo
       thinkingLevel: thinkingLevelFromEffort(effort),
       ...thoughtFlag,
     };
+  }
+  if (settings.reasoning_budget_dynamic === true) {
+    return { thinkingBudget: -1, ...thoughtFlag };
   }
   if (settings.reasoning_summary !== undefined) {
     return { includeThoughts: settings.reasoning_summary !== 'omitted' };

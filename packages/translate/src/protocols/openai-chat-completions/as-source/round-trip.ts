@@ -71,6 +71,17 @@ const chatTurnDigestMaterialV1 = (turn: OpenAIChatCompletionsSourceAssistantTurn
   reasoningDetails: reasoningDetailsMaterial(turn),
 });
 
+const chatTurnDigestMaterialV2 = (turn: OpenAIChatCompletionsSourceAssistantTurn): IRJSONObject => ({
+  ...(turn.content != null ? { content: messageContentMaterial(turn.content) } : {}),
+  ...(turn.refusal != null ? { refusal: turn.refusal } : {}),
+  ...(turn.function_call != null
+    ? { function_call: { name: turn.function_call.name, arguments: turn.function_call.arguments } }
+    : {}),
+  ...((turn.tool_calls?.length ?? 0) > 0 ? { tool_calls: turn.tool_calls!.map(toolCallMaterial) } : {}),
+  reasoningText: reasoningTextMaterial(turn),
+  reasoningDetails: reasoningDetailsMaterial(turn),
+});
+
 export const findOpenAIChatCompletionsSidecarOccurrences = (turn: OpenAIChatCompletionsSourceAssistantTurn): SidecarOccurrence<OpenAIChatCompletionsSourceAssistantTurn>[] => {
   const details = reasoningDetails(turn);
   return details.flatMap((detail, detailIndex) => !isRecord(detail) || detail.type !== 'reasoning.encrypted' || typeof detail.data !== 'string' ? [] : [{
@@ -79,7 +90,7 @@ export const findOpenAIChatCompletionsSidecarOccurrences = (turn: OpenAIChatComp
   }]);
 };
 
-export const computeOpenAIChatCompletionsTurnDigest = createTurnDigestComputer(chatTurnDigestMaterialV1);
+export const computeOpenAIChatCompletionsTurnDigest = createTurnDigestComputer(chatTurnDigestMaterialV2);
 
 export const collectOpenAIChatCompletionsReplayContents = (turn: OpenAIChatCompletionsSourceAssistantTurn): ReplayContent[] => {
   const candidates: ReplayContent[] = [];
@@ -100,7 +111,10 @@ export const collectOpenAIChatCompletionsReplayContents = (turn: OpenAIChatCompl
   return candidates;
 };
 
-export const verifyOpenAIChatCompletionsTurnDigest = createTurnDigestVerifier(chatTurnDigestMaterialV1);
+export const verifyOpenAIChatCompletionsTurnDigest = createTurnDigestVerifier({
+  1: chatTurnDigestMaterialV1,
+  2: chatTurnDigestMaterialV2,
+});
 
 // Our carrier uses indexed OpenRouter reasoning_details.
 // https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#reasoning-details-api-shape
