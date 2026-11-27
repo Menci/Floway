@@ -49,14 +49,19 @@ describe('Gemini generateContent affinity egress', () => {
   test('moves an immediate signature-only trailer onto the buffered content event', async () => {
     const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
     for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames([
-      eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'visible' }] } }] }),
       eventFrame({
+        turnToken: 'v1_turn_token',
+        candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'visible' }] } }],
+      }),
+      eventFrame({
+        turnToken: 'v1_turn_token',
         candidates: [{ index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'natural' }] }, finishReason: 'STOP' }],
         usageMetadata: { totalTokenCount: 2 },
       }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 
     expect(output[0]).toEqual(eventFrame({
+      turnToken: 'v1_turn_token',
       candidates: [{
         index: 0,
         content: { role: 'model', parts: [{ text: 'visible', thoughtSignature: 'wrapped:natural' }] },
