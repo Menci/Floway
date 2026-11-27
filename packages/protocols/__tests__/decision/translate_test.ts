@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { parseJSONWithRawNumbers } from '../../src/common/json.ts';
-import { parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, serializeDecisionRequest } from '../../src/decision/translate.ts';
+import { DecisionResponseValidationError, decodeDecisionResponse, parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, serializeDecisionRequest } from '../../src/decision/index.ts';
 
 const choiceRequest = {
   model: 'microsoft-decision-1',
@@ -179,4 +179,35 @@ describe('number token fidelity', () => {
     expect(JSON.stringify(renderDecisionResponse('openai-decisions', response))).toContain('"probability":1.0');
   });
 
+});
+
+describe('decision response decoding', () => {
+  test('returns a validation failure for a malformed probability during cross-dialect decoding', () => {
+    const body = { answers: { q: { type: 'choice', choice: 'yes', confidence: 1, probabilities: { yes: '1' } } } };
+    const decoded = decodeDecisionResponse('typesafe-systemone', body);
+    const message = 'answers.q.probabilities.yes must be a finite number';
+    expect(decoded).toEqual({ ok: false, error: new DecisionResponseValidationError(message) });
+    expect(() => parseDecisionResponse('typesafe-systemone', body)).toThrow(message);
+  });
+
+  test('renders nested System One probabilities into OpenAI Decisions with their original tokens', () => {
+    const body = parseJSONWithRawNumbers('{"answers":{"q":{"type":"choice","choice":"yes","confidence":1e0,"probabilities":{"yes":1.00}}}}');
+    const decoded = decodeDecisionResponse('typesafe-systemone', body);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) throw decoded.error;
+    const rendered = JSON.stringify(renderDecisionResponse('openai-decisions', decoded.value));
+    expect(rendered).toContain('"confidence":1e0');
+    expect(rendered).toContain('"probability":1.00');
+  });
+
+  test('propagates unexpected response access failures', () => {
+    const failure = new Error('injected access failure');
+    let thrown: unknown;
+    try {
+      decodeDecisionResponse('openai-decisions', { get answers() { throw failure; } });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBe(failure);
+  });
 });

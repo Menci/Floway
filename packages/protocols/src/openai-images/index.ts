@@ -1,3 +1,7 @@
+import type { OpenAISseWireEvent } from '../common/decode-sse-events.ts';
+import type { JsonObject } from '../common/json.ts';
+import type { MultipartFile } from '../common/multipart.ts';
+
 // JSON payload accepted by POST /v1/images/generations. Field set follows
 // OpenAI's reference for gpt-image-* and legacy dall-e-* (dall-e is
 // retired but the union shape is harmless). Declared as an interface with
@@ -29,3 +33,23 @@ export interface OpenAIImagesGenerationsPayload {
 export type OpenAIImageEditReference =
   | { image_url: string; file_id?: never; [key: string]: unknown }
   | { file_id: string; image_url?: never; [key: string]: unknown };
+export type OpenAIImagesEditsInput =
+  | { type: 'upload'; file: MultipartFile }
+  | { type: 'inline'; reference: OpenAIImageEditReference & { image_url: string } }
+  | { type: 'reference'; reference: OpenAIImageEditReference };
+
+export interface OpenAIImagesEditsPayload {
+  readonly images: readonly OpenAIImagesEditsInput[];
+  readonly mask?: OpenAIImagesEditsInput;
+  readonly parameters: JsonObject;
+}
+
+// https://developers.openai.com/api/reference/resources/images
+export interface OpenAIImagesStreamEvent {
+  type?: string;
+  [key: string]: unknown;
+}
+
+export type OpenAIImagesStreamItem = OpenAISseWireEvent<OpenAIImagesStreamEvent>;
+
+export { decodeOpenAIImagesEditsStream, decodeOpenAIImagesGenerationsStream } from './stream.ts';

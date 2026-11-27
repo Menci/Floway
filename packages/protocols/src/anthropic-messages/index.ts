@@ -35,6 +35,9 @@ export interface AnthropicMessagesPayload extends Omit<Native.MessageCreateParam
   speed?: OpenWire<Beta.MessageCreateParamsBase['speed']>;
 }
 
+export type AnthropicMessagesCountTokensPayload = Omit<AnthropicMessagesPayload, 'max_tokens' | 'stream'>;
+export { decodeAnthropicMessagesCountTokensResult, type AnthropicMessagesCountTokensResult } from './count-tokens.ts';
+
 // Request citation parameters and output citations differ in nullable file metadata.
 export type AnthropicMessagesSearchResultLocationCitation = OpenWire<Native.CitationsSearchResultLocation>;
 export type AnthropicMessagesWebSearchResultLocation = OpenWire<Native.CitationsWebSearchResultLocation>;
@@ -242,7 +245,7 @@ export interface AnthropicMessagesErrorEventEx {
   };
 }
 
-export { parseAnthropicMessagesStream, type ParseAnthropicMessagesStreamOptions } from './stream.ts';
+export { decodeAnthropicMessagesStream, parseAnthropicMessagesStream, type ParseAnthropicMessagesStreamOptions } from './stream.ts';
 
 // Parse an inbound `anthropic-beta` header into the comma-separated beta
 // slice that variant selection and policy filters consume. Returns an empty

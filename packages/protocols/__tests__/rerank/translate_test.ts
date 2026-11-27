@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, serializeRerankRequest } from '../../src/rerank/translate.ts';
+import { parseJSONWithRawNumbers } from '../../src/common/json.ts';
+import { decodeRerankResponse, parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, RerankResponseValidationError, serializeRerankRequest } from '../../src/rerank/index.ts';
 
 describe('rerank request ingress', () => {
 
@@ -110,6 +111,35 @@ describe('rerank request egress', () => {
 });
 
 describe('rerank response translation', () => {
+
+  test('returns a validation failure when a Cohere results envelope arrives from a Voyage target', () => {
+    const body = { object: 'list', model: 'voyage', results: [{ index: 0, relevance_score: 0.7 }] };
+    const decoded = decodeRerankResponse('voyage-v1', body);
+    expect(decoded).toEqual({ ok: false, error: new RerankResponseValidationError('data must be an array') });
+    expect(() => parseRerankResponse('voyage-v1', body)).toThrow('data must be an array');
+  });
+
+  test('uses preserved number tokens to decode a rerank response', () => {
+    const text = '{"object":"list","model":"voyage","data":[{"index":0.0,"relevance_score":0.70,"embedding":[1e0]}],"usage":{"total_tokens":1e1}}';
+    const body = parseJSONWithRawNumbers(text);
+    const decoded = decodeRerankResponse('voyage-v1', body);
+    expect(decoded).toEqual({
+      ok: true,
+      value: { raw: body, model: 'voyage', results: [{ index: 0, relevanceScore: 0.7, embedding: [1] }], totalTokens: 10 },
+    });
+    if (decoded.ok) expect(JSON.stringify(decoded.value.raw)).toBe(text);
+  });
+
+  test('propagates unexpected response access failures', () => {
+    const failure = new Error('injected access failure');
+    let thrown: unknown;
+    try {
+      decodeRerankResponse('cohere-v2', { get results() { throw failure; } });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBe(failure);
+  });
 
   test('Cohere usage accepts omitted and null optional objects but rejects malformed present objects', () => {
     for (const response of [

@@ -21,6 +21,7 @@ export const PUBLIC_DATA_PLANE_ROUTES = {
   openaiImagesGenerations: { method: 'POST', paths: ['/v1/images/generations', '/images/generations'] },
   openaiImagesEdits: { method: 'POST', paths: ['/v1/images/edits', '/images/edits'] },
   openaiAudioTranscriptions: { method: 'POST', paths: ['/v1/audio/transcriptions'] },
+  openaiAudioSpeech: { method: 'POST', paths: ['/v1/audio/speech', '/audio/speech'] },
   cohereV1Rerank: { method: 'POST', paths: ['/v1/rerank'] },
   cohereV2Rerank: { method: 'POST', paths: ['/v2/rerank'] },
   jinaV1Rerank: { method: 'POST', paths: ['/jina/v1/rerank'] },

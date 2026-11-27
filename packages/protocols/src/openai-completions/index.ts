@@ -73,4 +73,6 @@ export interface OpenAICompletionsResult {
 }
 
 export { reassembleOpenAICompletionsEvents } from './reassemble.ts';
+export { decodeOpenAICompletionsResult } from './result.ts';
+export { decodeOpenAICompletionsStream } from './stream.ts';
 export { openaiCompletionsProtocolFrameToSSEFrame } from './to-sse.ts';

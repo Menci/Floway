@@ -15,10 +15,12 @@ export interface GeminiGenerateContentPayload {
   store?: boolean;
 }
 export interface GeminiGenerateContentRequest extends GeminiGenerateContentPayload { model: string }
-export interface GeminiCountTokensPayload {
+export interface GeminiGenerateContentCountTokensPayload {
   contents?: GeminiGenerateContentContent[];
   generateContentRequest?: GeminiGenerateContentRequest;
 }
+export type GeminiCountTokensPayload = GeminiGenerateContentCountTokensPayload;
+
 export interface GeminiGenerateContentContent { role?: 'user' | 'model' | (string & {}); parts?: GeminiGenerateContentPart[] }
 export interface GeminiGenerateContentPartMetadata {
   thought?: boolean;
@@ -139,7 +141,8 @@ export { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_
 export { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent, collectGeminiGenerateContentProtocolEventsToResult } from './to-result.ts';
 export { createGeminiGenerateContentEventAccumulator, reassembleGeminiGenerateContentEvents, type GeminiGenerateContentEventAccumulator } from './reassemble.ts';
 export { geminiGenerateContentProtocolFrameToSSEFrame } from './to-sse.ts';
-export { parseGeminiGenerateContentStream, type ParseGeminiGenerateContentStreamOptions } from './stream.ts';
+export { decodeGeminiGenerateContentStream, parseGeminiGenerateContentStream, type ParseGeminiGenerateContentStreamOptions } from './stream.ts';
+export { decodeGeminiGenerateContentCountTokensResult, type GeminiGenerateContentCountTokensResult } from './count-tokens.ts';
 
 export { geminiGenerateContentPartKind, type GeminiGenerateContentPartKind } from './part.ts';
 export { geminiGenerateContentStatusForHttpStatus } from './error-status.ts';

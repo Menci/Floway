@@ -8,6 +8,8 @@ import type {
   OpenAIResponsesPromptCacheRetention,
   OpenAIResponsesResultEx,
 } from './index.ts';
+import { finiteJsonNumberValue, isJsonObject, nonNegativeJsonInteger } from '../common/json.ts';
+import type { Result } from '@floway-dev/pipeline';
 
 export interface OpenAIResponsesCompactPayloadEx {
   model: string;
@@ -28,14 +30,12 @@ export type CanonicalOpenAIResponsesCompactPayload = Omit<OpenAIResponsesCompact
   input: CanonicalOpenAIResponsesInputItem[];
 };
 
-// Project a (possibly-wider) ResponsesPayload-shaped object into the strict
-// compact wire shape. Every native-compact provider terminal calls this
-// before dispatching to its upstream's `/responses/compact` endpoint, so a
-// post-chain action pivot that arrived carrying generate-only fields
-// (tools/temperature/reasoning/...) cannot leak them onto the compact wire.
-// `model` and `store` are caller-supplied at the dispatch site (model is
-// the resolved upstream id; store is gateway-only).
-export const toCompactPayloadShape = (payload: Omit<CanonicalOpenAIResponsesPayload, 'model'>): Omit<CanonicalOpenAIResponsesCompactPayload, 'model' | 'store'> => ({
+// A generation request can pivot to compact while still carrying generation
+// options. Send only compact wire fields. The upstream selects `model` at
+// dispatch and the gateway handles `store`.
+export const toCompactPayloadShape = (
+  payload: Omit<CanonicalOpenAIResponsesPayload, 'model'> | Omit<CanonicalOpenAIResponsesCompactPayload, 'model'>,
+): Omit<CanonicalOpenAIResponsesCompactPayload, 'model' | 'store'> => ({
   input: payload.input,
   ...(payload.instructions !== undefined && { instructions: payload.instructions }),
   ...(payload.previous_response_id !== undefined && { previous_response_id: payload.previous_response_id }),
@@ -65,3 +65,54 @@ export interface OpenAIResponsesCompactionResultEx {
 
 export const isOpenAIResponsesCompactionItem = (item: { type: string }): item is OpenAIResponsesCompactionItem =>
   item.type === 'compaction' || item.type === 'compaction_summary' || item.type === 'context_compaction';
+
+const normalizeCompactionUsage = (usage: unknown): NonNullable<OpenAIResponsesCompactionResultEx['usage']> | undefined => {
+  if (!isJsonObject(usage)) return undefined;
+  const inputTokens = nonNegativeJsonInteger(usage.input_tokens);
+  const outputTokens = nonNegativeJsonInteger(usage.output_tokens);
+  const totalTokens = nonNegativeJsonInteger(usage.total_tokens);
+  if (inputTokens === undefined || outputTokens === undefined || totalTokens === undefined) return undefined;
+  const normalized: NonNullable<OpenAIResponsesCompactionResultEx['usage']> = {
+    ...usage, input_tokens: inputTokens, output_tokens: outputTokens, total_tokens: totalTokens,
+  };
+  const input = usage.input_tokens_details;
+  if (input !== undefined) {
+    if (!isJsonObject(input)) return undefined;
+    const cachedTokens = nonNegativeJsonInteger(input.cached_tokens);
+    const cacheWriteTokens = nonNegativeJsonInteger(input.cache_write_tokens);
+    if (cachedTokens === undefined || (input.cache_write_tokens !== undefined && cacheWriteTokens === undefined)) return undefined;
+    normalized.input_tokens_details = {
+      ...input, cached_tokens: cachedTokens,
+      ...(cacheWriteTokens !== undefined && { cache_write_tokens: cacheWriteTokens }),
+    };
+  }
+  const output = usage.output_tokens_details;
+  if (output !== undefined) {
+    if (!isJsonObject(output)) return undefined;
+    const reasoningTokens = nonNegativeJsonInteger(output.reasoning_tokens);
+    if (reasoningTokens === undefined) return undefined;
+    normalized.output_tokens_details = { ...output, reasoning_tokens: reasoningTokens };
+  }
+  return normalized;
+};
+
+const normalizeCompactionResult = (body: unknown): OpenAIResponsesCompactionResultEx | undefined => {
+  if (!isJsonObject(body) || typeof body.id !== 'string' || typeof body.object !== 'string'
+    || !Array.isArray(body.output) || !body.output.every(item => isJsonObject(item) && typeof item.type === 'string')) return undefined;
+  const createdAt = finiteJsonNumberValue(body.created_at);
+  if (body.created_at !== undefined && createdAt === undefined) return undefined;
+  const usage = body.usage == null ? body.usage : normalizeCompactionUsage(body.usage);
+  if (body.usage !== undefined && usage === undefined) return undefined;
+  return {
+    ...body, id: body.id, object: body.object, output: body.output,
+    ...(createdAt !== undefined && { created_at: createdAt }),
+    ...(usage !== undefined && { usage }),
+  };
+};
+
+export const decodeOpenAIResponsesCompactionResult = (body: unknown): Result<OpenAIResponsesCompactionResultEx, Error> => {
+  const value = normalizeCompactionResult(body);
+  return value === undefined
+    ? { ok: false, error: new Error('Invalid OpenAI Responses compaction result envelope, output items or usage') }
+    : { ok: true, value };
+};

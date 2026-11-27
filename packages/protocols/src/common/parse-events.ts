@@ -1,9 +1,35 @@
+import type { JsonObject } from './json.ts';
 import type { SseFrame, SseRawFrame } from './sse.ts';
+import type { Result } from '@floway-dev/pipeline';
 
 export interface ParseTargetStreamFramesOptions {
   protocol: string;
   malformedJsonEventName?: string;
+  // Gemini accepts an upstream error written as a bare JSON line.
+  onRawFrame?: boolean;
 }
+
+export interface ProtocolDecodeError {
+  kind: 'protocol';
+  cause: unknown;
+  event?: JsonObject;
+  eventName?: string;
+}
+
+export const protocolDecodeError = (
+  message: string,
+  cause?: unknown,
+  event?: JsonObject,
+  eventName?: string,
+): Result<never, ProtocolDecodeError> => ({
+  ok: false,
+  error: {
+    kind: 'protocol',
+    cause: new Error(message, { cause }),
+    ...(event === undefined ? {} : { event }),
+    ...(eventName === undefined ? {} : { eventName }),
+  },
+});
 
 export type ParsedTargetStreamFrame<TEvent> =
   | { type: 'done' }
@@ -13,36 +39,39 @@ export type ParsedTargetStreamFrame<TEvent> =
   // dropped such lines.
   | { type: 'sse-raw'; data: TEvent; frame: SseRawFrame };
 
-// The unknown JSON payload becomes the target protocol's event type at this
-// boundary; each protocol's stream parser names its event type when calling
-// in. Runtime narrowing happens upstream (parse error -> Error with cause)
-// and downstream in each protocol-specific stream parser.
-export const parseTargetStreamFrames = async function* <TEvent>(frames: AsyncIterable<SseFrame | SseRawFrame>, options: ParseTargetStreamFramesOptions & {
-  // Set by a protocol that treats an unframed payload as part of its stream.
-  // Otherwise it is ignored, matching the previous behaviour where the SSE
-  // grammar dropped such lines.
-  onRawFrame?: boolean;
-}): AsyncGenerator<ParsedTargetStreamFrame<TEvent>> {
+export const parseTargetStreamFrame = (
+  frame: SseFrame | SseRawFrame,
+  options: ParseTargetStreamFramesOptions,
+): Result<ParsedTargetStreamFrame<unknown> | null, ProtocolDecodeError> => {
+  if (frame.type === 'sse-raw' && options.onRawFrame !== true) return { ok: true, value: null };
+  const data = frame.data.trim();
+  if (!data) return { ok: true, value: null };
+  if (data === '[DONE]') return { ok: true, value: { type: 'done' } };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    const eventName = frame.type === 'sse' ? frame.event : undefined;
+    const name = eventName ?? options.malformedJsonEventName;
+    const eventContext = name ? ` for event "${name}"` : '';
+    return protocolDecodeError(`Malformed upstream ${options.protocol} SSE JSON${eventContext}: ${data}`, error, undefined, eventName);
+  }
+
+  return {
+    ok: true,
+    value: frame.type === 'sse-raw' ? { type: 'sse-raw', data: parsed, frame } : { type: 'sse-json', data: parsed, frame },
+  };
+};
+
+export const parseTargetStreamFrames = async function* <TEvent>(
+  frames: AsyncIterable<SseFrame | SseRawFrame>,
+  options: ParseTargetStreamFramesOptions,
+): AsyncGenerator<ParsedTargetStreamFrame<TEvent>> {
   for await (const frame of frames) {
-    if (frame.type === 'sse-raw' && options.onRawFrame !== true) continue;
-    const data = frame.data.trim();
-    if (!data) continue;
-    if (data === '[DONE]') {
-      yield { type: 'done' };
-      continue;
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(data) as unknown;
-    } catch (error) {
-      const eventName = (frame.type === 'sse' ? frame.event : undefined) ?? options.malformedJsonEventName;
-      const eventContext = eventName ? ` for event "${eventName}"` : '';
-      throw new Error(`Malformed upstream ${options.protocol} SSE JSON${eventContext}: ${data}`, { cause: error });
-    }
-
-    yield frame.type === 'sse-raw'
-      ? { type: 'sse-raw', data: parsed as TEvent, frame }
-      : { type: 'sse-json', data: parsed as TEvent, frame };
+    const result = parseTargetStreamFrame(frame, options);
+    if (!result.ok) throw result.error.cause;
+    if (result.value !== null) yield result.value as ParsedTargetStreamFrame<TEvent>;
   }
 };

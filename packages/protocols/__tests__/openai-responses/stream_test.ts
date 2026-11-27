@@ -1,9 +1,9 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { type SseFrame } from '../../src/common/sse.ts';
 import type { OpenAIResponsesResultEx } from '../../src/openai-responses/index.ts';
-import { parseOpenAIResponsesStream } from '../../src/openai-responses/stream.ts';
-import { sseFrame, sseFrameBody } from '../common/test-utils.ts';
+import { decodeOpenAIResponsesStream, parseOpenAIResponsesStream } from '../../src/openai-responses/stream.ts';
+import { sseByteStream, sseFrame, sseFrameBody } from '../common/test-utils.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
@@ -36,6 +36,49 @@ const makeResponse = (status: OpenAIResponsesResultEx['status'], overrides: Part
     total_tokens: 5,
   },
   ...overrides,
+});
+
+test('OpenAI Responses decodes a failed resource with its previous error notification', async () => {
+  const notification = { type: 'error', message: 'request failed', request_id: 'req_failed' };
+  const failed = { response: makeResponse('failed', { error: { code: 'rate_limit_exceeded', message: 'Limit reached' } }) };
+  const body = sseByteStream(sseFrame(JSON.stringify(notification), 'error'), sseFrame(JSON.stringify(failed), 'response.failed'));
+  expect(await Array.fromAsync(decodeOpenAIResponsesStream(body))).toMatchObject([
+    {
+      ok: false,
+      error: {
+        kind: 'protocol',
+        event: { notification, failed: { ...failed, type: 'response.failed' } },
+        eventName: 'response.failed',
+        cause: { message: expect.stringContaining('Limit reached') },
+      },
+    },
+  ]);
+});
+
+test('OpenAI Responses preserves transport failure after a notification', async () => {
+  const failure = { kind: 'transport', cause: new Error('socket closed') };
+  const body = async function* () {
+    yield* sseByteStream(sseFrame('{"type":"error","message":"request failed"}', 'error'));
+    yield { ok: false, error: failure } as const;
+  };
+  const result = await Array.fromAsync(decodeOpenAIResponsesStream(body()));
+  expect(result).toHaveLength(1);
+  expect(result[0]?.ok === false && result[0].error).toBe(failure);
+});
+
+test.each([
+  ['response.created', 'response'],
+  ['response.output_item.added', 'item'],
+  ['response.content_part.added', 'part'],
+])('OpenAI Responses rejects a malformed %s object before emitting a typed event', async (name, field) => {
+  const event = { [field]: null };
+  const body = sseByteStream(sseFrame(JSON.stringify(event), name));
+  expect(await Array.fromAsync(decodeOpenAIResponsesStream(body))).toMatchObject([
+    {
+      ok: false,
+      error: { kind: 'protocol', event, eventName: name, cause: { cause: null, message: expect.stringContaining(`${name}.${field}`) } },
+    },
+  ]);
 });
 
 test('parseOpenAIResponsesStream passes structured upstream events through unchanged when upstream already streams them', async () => {

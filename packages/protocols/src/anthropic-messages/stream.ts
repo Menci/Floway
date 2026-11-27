@@ -1,5 +1,8 @@
 import type { AnthropicMessagesStreamEventEx } from './index.ts';
-import { parseTargetStreamFrames } from '../common/parse-events.ts';
+import { ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE } from './to-result.ts';
+import { decodeSseEvents, protocolSseError, type ProtocolByteStream, type ProtocolEventStream } from '../common/decode-sse-events.ts';
+import { isJsonObject } from '../common/json.ts';
+import { parseTargetStreamFrames, protocolDecodeError } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '../common/sse.ts';
 
@@ -7,6 +10,42 @@ export interface ParseAnthropicMessagesStreamOptions {
   signal?: AbortSignal | undefined;
   onSseFrame?: (frame: SseFrame) => void;
 }
+
+const requiredObjects = new Map([
+  ['message_start', 'message'],
+  ['content_block_start', 'content_block'],
+  ['content_block_delta', 'delta'],
+  ['message_delta', 'delta'],
+]);
+
+export const decodeAnthropicMessagesStream = async function* <Failure>(
+  body: ProtocolByteStream<Failure>,
+): ProtocolEventStream<AnthropicMessagesStreamEventEx, Failure> {
+  let ended = false;
+  for await (const item of decodeSseEvents<AnthropicMessagesStreamEventEx, Failure>(body, {
+    protocol: 'Anthropic Messages',
+    malformedJsonEventName: 'message',
+    ignoreEvents: () => ended,
+  })) {
+    if (!item.ok) {
+      yield item;
+      return;
+    }
+    const { data: event, eventName } = item.value;
+    if (event.type === 'error' || eventName === 'error') {
+      yield protocolSseError('Anthropic Messages', event, eventName);
+      return;
+    }
+    const field = requiredObjects.get(event.type);
+    if (field !== undefined && !isJsonObject(event[field])) {
+      yield protocolDecodeError(`Expected Anthropic Messages SSE ${event.type}.${field} to be an object`, event[field], event, eventName);
+      return;
+    }
+    ended = event.type === 'message_stop';
+    yield { ok: true, value: event };
+  }
+  if (!ended) yield protocolDecodeError(ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE);
+};
 
 export const parseAnthropicMessagesStream = (
   body: ReadableStream<Uint8Array>,

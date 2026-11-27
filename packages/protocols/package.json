@@ -21,6 +21,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@floway-dev/pipeline": "workspace:*",
     "@scure/base": "^2.2.0",
     "big.js": "^7.0.1",
     "content-type": "^2.0.0",

@@ -41,10 +41,12 @@ export interface ParsedRerankRequest {
 
 export { DEFAULT_RERANK_PATHS } from './default-paths.ts';
 export {
+  decodeRerankResponse,
   parseRerankRequest,
   parseRerankResponse,
   parseRerankUsage,
   rerankRequestIncompatibility,
+  RerankResponseValidationError,
   renderRerankResponse,
   serializeRerankRequest,
 } from './translate.ts';

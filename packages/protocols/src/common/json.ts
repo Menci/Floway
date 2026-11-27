@@ -14,16 +14,25 @@ const jsonWithRawCheck = JSON as typeof JSON & { isRawJSON?: (value: unknown) =>
 
 export const isRawNumber = (value: unknown): boolean => jsonWithRawCheck.isRawJSON?.(value) === true;
 
+export const isFiniteJsonNumber = (value: unknown): value is JsonNumber =>
+  typeof value === 'number'
+    ? Number.isFinite(value)
+    : isRawNumber(value) && Number.isFinite(Number((value as { rawJSON: string }).rawJSON));
+
+export const finiteJsonNumberValue = (value: unknown): number | undefined =>
+  isFiniteJsonNumber(value) ? (typeof value === 'number' ? value : Number(value.rawJSON)) : undefined;
+
+export const nonNegativeJsonInteger = (value: unknown): number | undefined => {
+  const number = finiteJsonNumberValue(value);
+  return number !== undefined && Number.isSafeInteger(number) && number >= 0 ? number : undefined;
+};
+
 // Read a numeric answer field, keeping an exact source token when the parser
 // preserved one and rejecting anything that is not a finite number.
 // The token is returned as-is: a rebuilt `{ rawJSON }` object loses the
 // intrinsic `JSON.rawJSON` identity and serializes as a plain object.
 export const parseJsonNumber = (value: unknown, field: string): JsonNumber => {
-  if (isRawNumber(value)) {
-    if (!Number.isFinite(Number((value as { rawJSON: string }).rawJSON))) throw new Error(`${field} must be a finite number`);
-    return value as JsonNumber;
-  }
-  if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${field} must be a finite number`);
+  if (!isFiniteJsonNumber(value)) throw new Error(`${field} must be a finite number`);
   return value;
 };
 

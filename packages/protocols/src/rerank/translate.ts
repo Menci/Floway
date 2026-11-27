@@ -1,11 +1,13 @@
 import type { ParsedRerankRequest, CanonicalRerankRequest, CanonicalRerankResponse, CanonicalRerankResult, RerankInput } from './index.ts';
+import { isFiniteJsonNumber } from '../common/json.ts';
 import type { RerankProtocol, RerankSourceProtocol } from '../common/models.ts';
+import type { Result } from '@floway-dev/pipeline';
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const requiredString = (value: unknown, field: string): string => {
-  if (typeof value !== 'string' || value.length === 0) throw new Error(`${field} must be a non-empty string`);
+const requiredString = (value: unknown, field: string, Invalid: new (message: string) => Error = Error): string => {
+  if (typeof value !== 'string' || value.length === 0) throw new Invalid(`${field} must be a non-empty string`);
   return value;
 };
 
@@ -23,9 +25,6 @@ const optionalFiniteNumber = (value: unknown, field: string): number | undefined
   if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`${field} must be a finite number`);
   return value;
 };
-
-const optionalNullableFiniteNumber = (value: unknown, field: string): number | undefined =>
-  value === null ? undefined : optionalFiniteNumber(value, field);
 
 const optionalPositiveInteger = (value: unknown, field: string): number | undefined => {
   const number = optionalFiniteNumber(value, field);
@@ -274,43 +273,54 @@ export const serializeRerankRequest = (
   }
 };
 
+export class RerankResponseValidationError extends Error {
+  override readonly name = 'RerankResponseValidationError';
+}
+
+const asFiniteNumber = (value: unknown): number | undefined => {
+  if (!isFiniteJsonNumber(value)) return undefined;
+  return typeof value === 'number' ? value : Number(value.rawJSON);
+};
+
 const optionalEmbedding = (value: unknown, field: string): number[] | undefined => {
   if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value) || value.some(item => typeof item !== 'number' || !Number.isFinite(item))) {
-    throw new Error(`${field} must be an array of finite numbers`);
+  if (!Array.isArray(value)) throw new RerankResponseValidationError(`${field} must be an array of finite numbers`);
+  const embedding = value.map(asFiniteNumber);
+  if (!embedding.every((item): item is number => item !== undefined)) {
+    throw new RerankResponseValidationError(`${field} must be an array of finite numbers`);
   }
-  return value as number[];
+  return embedding;
 };
 
 const resultDocument = (value: unknown, field: string): RerankInput => {
   if (typeof value === 'string' || isRecord(value)) return value;
-  throw new Error(`${field} must be a string or an object`);
+  throw new RerankResponseValidationError(`${field} must be a string or an object`);
 };
 
 const resultItem = (value: unknown, field: string): CanonicalRerankResult => {
-  if (!isRecord(value)) throw new Error(`${field} must be an object`);
-  if (typeof value.index !== 'number' || !Number.isInteger(value.index) || value.index < 0) throw new Error(`${field}.index must be a non-negative integer`);
-  if (typeof value.relevance_score !== 'number' || !Number.isFinite(value.relevance_score)) throw new Error(`${field}.relevance_score must be a finite number`);
+  if (!isRecord(value)) throw new RerankResponseValidationError(`${field} must be an object`);
+  const index = asFiniteNumber(value.index);
+  if (index === undefined || !Number.isInteger(index) || index < 0) throw new RerankResponseValidationError(`${field}.index must be a non-negative integer`);
+  const relevanceScore = asFiniteNumber(value.relevance_score);
+  if (relevanceScore === undefined) throw new RerankResponseValidationError(`${field}.relevance_score must be a finite number`);
   const embedding = optionalEmbedding(value.embedding, `${field}.embedding`);
   return {
-    index: value.index,
-    relevanceScore: value.relevance_score,
+    index,
+    relevanceScore,
     ...(value.document === undefined || value.document === null ? {} : { document: resultDocument(value.document, `${field}.document`) }),
     ...(embedding === undefined ? {} : { embedding }),
   };
 };
 
 const resultsArray = (value: unknown, field: string): CanonicalRerankResult[] => {
-  if (!Array.isArray(value)) throw new Error(`${field} must be an array`);
+  if (!Array.isArray(value)) throw new RerankResponseValidationError(`${field} must be an array`);
   return value.map((item, index) => resultItem(item, `${field}[${index}]`));
 };
 
 const requiredTotalTokensFrom = (value: unknown): number => {
-  if (!isRecord(value) || typeof value.total_tokens !== 'number' || !Number.isFinite(value.total_tokens)) {
-    throw new Error('usage.total_tokens must be a finite number');
-  }
-  const totalTokens = value.total_tokens;
-  if (totalTokens < 0) throw new Error('usage.total_tokens must not be negative');
+  const totalTokens = isRecord(value) ? asFiniteNumber(value.total_tokens) : undefined;
+  if (totalTokens === undefined) throw new RerankResponseValidationError('usage.total_tokens must be a finite number');
+  if (totalTokens < 0) throw new RerankResponseValidationError('usage.total_tokens must not be negative');
   return totalTokens;
 };
 
@@ -321,14 +331,21 @@ const optionalUsage = (
   value.usage === undefined ? {} : { totalTokens: parser(value.usage) };
 
 const listEnvelopeModel = (value: Record<string, unknown>): string => {
-  if (value.object !== 'list') throw new Error('object must be "list"');
-  return requiredString(value.model, 'model');
+  if (value.object !== 'list') throw new RerankResponseValidationError('object must be "list"');
+  return requiredString(value.model, 'model', RerankResponseValidationError);
 };
 
 const optionalRecord = (value: unknown, field: string): Record<string, unknown> | undefined => {
   if (value === undefined || value === null) return undefined;
-  if (!isRecord(value)) throw new Error(`${field} must be an object or null`);
+  if (!isRecord(value)) throw new RerankResponseValidationError(`${field} must be an object or null`);
   return value;
+};
+
+const optionalNullableResponseNumber = (value: unknown, field: string): number | undefined => {
+  if (value === undefined || value === null) return undefined;
+  const number = asFiniteNumber(value);
+  if (number === undefined) throw new RerankResponseValidationError(`${field} must be a finite number`);
+  return number;
 };
 
 const cohereUsage = (meta: unknown): Pick<CanonicalRerankResponse, 'totalTokens' | 'searchUnits'> => {
@@ -336,10 +353,10 @@ const cohereUsage = (meta: unknown): Pick<CanonicalRerankResponse, 'totalTokens'
   if (metadata === undefined) return {};
   const billedUnits = optionalRecord(metadata.billed_units, 'meta.billed_units');
   const tokens = optionalRecord(metadata.tokens, 'meta.tokens');
-  const searchUnits = optionalNullableFiniteNumber(billedUnits?.search_units, 'meta.billed_units.search_units');
-  const inputTokens = optionalNullableFiniteNumber(tokens?.input_tokens, 'meta.tokens.input_tokens');
-  if (searchUnits !== undefined && searchUnits < 0) throw new Error('meta.billed_units.search_units must not be negative');
-  if (inputTokens !== undefined && inputTokens < 0) throw new Error('meta.tokens.input_tokens must not be negative');
+  const searchUnits = optionalNullableResponseNumber(billedUnits?.search_units, 'meta.billed_units.search_units');
+  const inputTokens = optionalNullableResponseNumber(tokens?.input_tokens, 'meta.tokens.input_tokens');
+  if (searchUnits !== undefined && searchUnits < 0) throw new RerankResponseValidationError('meta.billed_units.search_units must not be negative');
+  if (inputTokens !== undefined && inputTokens < 0) throw new RerankResponseValidationError('meta.tokens.input_tokens must not be negative');
   return {
     ...(inputTokens === undefined ? {} : { totalTokens: inputTokens }),
     ...(searchUnits === undefined ? {} : { searchUnits }),
@@ -364,7 +381,7 @@ export const parseRerankUsage = (
 };
 
 export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): CanonicalRerankResponse => {
-  if (!isRecord(value)) throw new Error('Rerank response body must be an object');
+  if (!isRecord(value)) throw new RerankResponseValidationError('Rerank response body must be an object');
   const usage = parseRerankUsage(protocol, value);
   switch (protocol) {
   case 'cohere-v1':
@@ -397,21 +414,31 @@ export const parseRerankResponse = (protocol: RerankProtocol, value: unknown): C
     const model = listEnvelopeModel(value);
     return {
       raw: value,
-      id: requiredString(value.id, 'id'),
+      id: requiredString(value.id, 'id', RerankResponseValidationError),
       model,
       results: resultsArray(value.results, 'results'),
       ...usage,
     };
   }
   case 'dashscope-native': {
-    if (!isRecord(value.output)) throw new Error('output must be an object');
+    if (!isRecord(value.output)) throw new RerankResponseValidationError('output must be an object');
     return {
       raw: value,
-      id: requiredString(value.request_id, 'request_id'),
+      id: requiredString(value.request_id, 'request_id', RerankResponseValidationError),
       results: resultsArray(value.output.results, 'output.results'),
       ...usage,
     };
   }
+  default: protocol satisfies never; throw new Error(`Unhandled rerank protocol: ${protocol as string}`);
+  }
+};
+
+export const decodeRerankResponse = (protocol: RerankProtocol, body: unknown): Result<CanonicalRerankResponse, RerankResponseValidationError> => {
+  try {
+    return { ok: true, value: parseRerankResponse(protocol, body) };
+  } catch (error) {
+    if (!(error instanceof RerankResponseValidationError)) throw error;
+    return { ok: false, error };
   }
 };
 

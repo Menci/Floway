@@ -981,11 +981,11 @@ export { isOpenAIResponsesTerminalEvent, isOpenAIResponsesErrorEvent, openaiResp
 export { isOpenAIResponsesAssistantInputItem } from './assistant-items.ts';
 export { WEB_SEARCH_HOSTED_TYPE_NAMES, collectOpenAIResponsesToolEntries, collectOpenAIResponsesTools, mapOpenAIResponsesTools } from './tools.ts';
 
-export { type CanonicalOpenAIResponsesCompactPayload, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesStoredItem, type OpenAIResponsesCompactPayloadEx, toCompactPayloadShape, isOpenAIResponsesCompactionItem } from './compact.ts';
+export { type CanonicalOpenAIResponsesCompactPayload, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesStoredItem, type OpenAIResponsesCompactPayloadEx, decodeOpenAIResponsesCompactionResult, toCompactPayloadShape, isOpenAIResponsesCompactionItem } from './compact.ts';
 export { openaiResponsesResultToEvents } from './from-result.ts';
 export { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
 export { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
-export { parseOpenAIResponsesStream, type ParseOpenAIResponsesStreamOptions } from './stream.ts';
+export { decodeOpenAIResponsesStream, parseOpenAIResponsesStream, type OpenAIResponsesSseFailureEvent, type ParseOpenAIResponsesStreamOptions } from './stream.ts';
 
 export type {
   ClientResponseResource,
