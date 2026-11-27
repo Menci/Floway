@@ -128,7 +128,7 @@ export interface GeminiGenerateContentUsageMetadata {
   serviceTier?: string;
 }
 export interface GeminiGenerateContentResult {
-  candidates?: GeminiGenerateContentCandidate[]; usageMetadata?: GeminiGenerateContentUsageMetadata; modelVersion?: string; responseId?: string;
+  candidates?: GeminiGenerateContentCandidate[]; usageMetadata?: GeminiGenerateContentUsageMetadata; modelVersion?: string; responseId?: string; turnToken?: string;
   promptFeedback?: { blockReason?: string; blockReasonMessage?: string; safetyRatings?: GeminiGenerateContentSafetyRating[] };
   modelStatus?: { retirementTime?: string; message?: string; modelStage?: string };
 }
