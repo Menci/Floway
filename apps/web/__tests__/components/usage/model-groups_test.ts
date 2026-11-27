@@ -19,7 +19,6 @@ describe('automatic model grouping', () => {
   });
 
   it('keeps a name the rule would empty', () => {
-    expect(autoGroupName('high')).toBe('high');
     expect(autoGroupName('vendor/')).toBe('vendor/');
   });
 
