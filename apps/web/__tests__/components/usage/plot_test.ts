@@ -105,7 +105,7 @@ describe('search chart', () => {
 describe('legend weights', () => {
   const options = [{ value: 'small', label: 'Small' }, { value: 'large', label: 'Large' }];
 
-  it('weighs a rate by the requests behind it rather than by summed percentages', () => {
+  it('weighs a rate by the requests behind it', () => {
     const model = buildTokenChart({
       records: [
         record({ input_tokens: '0', input_cache_read_tokens: '10' }, 'small'),
