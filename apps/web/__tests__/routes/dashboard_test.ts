@@ -14,10 +14,10 @@ afterEach(() => {
 test('dashboard navigation refreshes capability fields from auth/me', async () => {
   useAuthStore.getState().primeFromLogin({
     token: 'session',
-    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false } },
+    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const } },
   });
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({
-    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false } },
+    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const } },
     viaApiKey: false,
     apiKey: null,
   })));

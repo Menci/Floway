@@ -26,7 +26,7 @@ const records: Props['records'] = ['gpt-5', 'gpt-6'].map((value, index) => ({
   id: index + 1, principal: { kind: 'user', id: 2 }, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value } }, sortOrder: index,
   values: { 'Model.Use': true }, createdAt: '', updatedAt: '',
 }));
-const data: Props['data'] = { users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false }, groupIds: [] }], groups: [], models: [], upstreams: [{ id: 'up_a', name: 'Copilot', kind: 'copilot', hue: 210, enabled: true, cachedModelCount: 0 }] };
+const data: Props['data'] = { users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const }, groupIds: [] }], groups: [], models: [], upstreams: [{ id: 'up_a', name: 'Copilot', kind: 'copilot', hue: 210, enabled: true, cachedModelCount: 0 }] };
 const administratorData: Props['data'] = { ...data, users: [{ ...data.users[0]!, id: 1, username: 'admin', isAdmin: true }] };
 const administratorRecords: Props['records'] = records.map(record => ({ ...record, principal: { kind: 'user', id: 1 } }));
 const renderTable = (

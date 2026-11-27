@@ -18,7 +18,7 @@ const user = {
   isAdmin: true,
   canViewPermissions: true,
   canViewUpstreams: true,
-  preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false },
+  preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const },
 };
 
 const renderPage = () => renderInApp(<RouterProvider router={createMemoryRouter([
@@ -41,7 +41,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('preference form', () => {
   it('saves the draft only after the operator submits it', async () => {
-    const fetch = vi.fn(async () => Response.json({ preferences: { quotaDisplay: 'used', language: null, uiTextEditor: false } }));
+    const fetch = vi.fn(async () => Response.json({ preferences: { quotaDisplay: 'used', language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const } }));
     vi.stubGlobal('fetch', fetch);
     renderPage();
 
@@ -56,7 +56,7 @@ describe('preference form', () => {
     expect(fetch).not.toHaveBeenCalled();
 
     fireEvent.click(save);
-    await waitFor(() => expect(useAuthStore.getState().session!.user.preferences).toEqual({ quotaDisplay: 'used', language: null, uiTextEditor: false }));
+    await waitFor(() => expect(useAuthStore.getState().session!.user.preferences).toEqual({ quotaDisplay: 'used', language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 }));
 
     const request = fetch.mock.calls[0] as unknown as [string, RequestInit];
     const url = new URL(request[0], 'http://localhost');

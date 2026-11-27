@@ -11,14 +11,14 @@ export const LEGEND_FOLD_ATTRIBUTE = 'data-legend-fold';
 
 // Ranking reorders only the legend: hues and the plot's stacking order follow
 // the entries as given, so switching metric moves a tag without recolouring it.
-export const rankedLegend = <T extends { id: string }>(entries: readonly T[], weights: ReadonlyMap<string, number> | undefined): T[] => {
-  if (weights === undefined) return [...entries];
+export const rankedLegend = <T extends { id: string; pinnedLast?: boolean | undefined }>(entries: readonly T[], weights: ReadonlyMap<string, number> | undefined): T[] => {
+  if (weights === undefined) return entries.toSorted((left, right) => Number(left.pinnedLast === true) - Number(right.pinnedLast === true));
   const weightOf = (id: string) => {
     const weight = weights.get(id);
     if (weight === undefined) throw new RangeError(`Legend series has no weight: ${id}`);
     return weight;
   };
-  return entries.toSorted((left, right) => weightOf(right.id) - weightOf(left.id));
+  return entries.toSorted((left, right) => Number(left.pinnedLast === true) - Number(right.pinnedLast === true) || weightOf(right.id) - weightOf(left.id));
 };
 
 // How many tags fit is a property of the rendered wrap, so it is measured

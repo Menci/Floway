@@ -76,6 +76,7 @@ function UpstreamTelemetryPanel({ data, record, busy, currentUserId, onQueryChan
   const preferences = useUserPreferences();
   const [metric, setMetric] = useState<UsageMetric>('total');
   const [hidden, setHidden] = useState(new Set<string>());
+  const [ungrouped, setUngrouped] = useState(false);
   const [groupWas, setGroupWas] = useState(query.groupBy);
   if (groupWas !== query.groupBy) { setGroupWas(query.groupBy); setHidden(new Set()); }
   const upstreams = useMemo(() => [record], [record]);
@@ -99,7 +100,8 @@ function UpstreamTelemetryPanel({ data, record, busy, currentUserId, onQueryChan
         onChange={range => onQueryChange({ ...query, range })} onEditingChange={onRangeEditingChange} range={query.range} /></div>
     </div>
     <TokenUsageCharts usage={data.usage} dimensions={dimensions} upstreams={upstreams} groupBy={query.groupBy} range={query.range} loadedAt={loadedAt}
-      metric={metric} onMetricChange={setMetric} hidden={hidden} onHiddenChange={setHidden} title={t('monitoring.upstreams.tabs.usage')} />
+      metric={metric} onMetricChange={setMetric} hidden={hidden} onHiddenChange={setHidden}
+      ungrouped={ungrouped} onUngroupedChange={setUngrouped} title={t('monitoring.upstreams.tabs.usage')} />
     <UpstreamMetricsChartSection key={record.id} chart={chart} start={data.metrics.start} end={Math.min(data.metrics.end, loadedAt)} />
   </div></LinkedChartHoverProvider>;
 }

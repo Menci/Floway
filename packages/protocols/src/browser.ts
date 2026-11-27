@@ -20,10 +20,12 @@ export {
   DEFAULT_LANGUAGE,
   QUOTA_DISPLAYS,
   SUPPORTED_LANGUAGES,
+  USAGE_MODEL_GROUP_LIMITS,
+  USAGE_OTHER_SHARES,
   defaultUserPreferences,
 } from './common/preferences.ts';
 
-export type { QuotaDisplay, SupportedLanguage, UserPreferences } from './common/preferences.ts';
+export type { QuotaDisplay, SupportedLanguage, UsageModelGroup, UsageOtherShare, UserPreferences } from './common/preferences.ts';
 
 export { parseAnthropicBetaHeader } from './anthropic-messages/beta-header.ts';
 

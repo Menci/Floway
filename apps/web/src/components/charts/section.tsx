@@ -12,9 +12,14 @@ import { useTranslation } from '../../i18n/translation';
 import { EmptyStateLine } from '../ui/empty-state';
 import { SectionHeader } from '../ui/section-header';
 
-const { InteractionTag, InteractionTagPrimary, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
+const { InteractionTag, InteractionTagPrimary, Text, Toolbar, ToolbarButton, ToolbarDivider, Tooltip } = fluentComponents;
+
+// A folded entry can stand for dozens of series; its tooltip names this many
+// and counts the rest, so it stays a tooltip rather than a page.
+const LISTED_MEMBERS = 12;
 
 export function ChartSection({
+  actions,
   children,
   controlsLabel,
   emptyText,
@@ -24,6 +29,8 @@ export function ChartSection({
   title,
   weights,
 }: {
+  /** Further toolbar controls for this chart, after the selection ones. */
+  actions?: React.ReactNode;
   children: React.ReactNode;
   controlsLabel: string;
   emptyText: string;
@@ -54,6 +61,7 @@ export function ChartSection({
           <Tooltip content={t('monitoring.charts.series.invert')} relationship="label">
             <ToolbarButton aria-label={t('monitoring.charts.series.invert')} icon={<SquareMultipleRegular />} onClick={() => onHiddenChange(invertedSeries(ids, hidden))} />
           </Tooltip>
+          {actions !== undefined && <><ToolbarDivider />{actions}</>}
         </Toolbar>
       } />
 
@@ -61,7 +69,12 @@ export function ChartSection({
         ? <div className="flex flex-wrap gap-1.5 min-w-0" ref={setLegendElement}>
             {legend.shown.map(entry => (
               <InteractionTag appearance="outline" key={entry.id} shape="circular" size="small" {...{ [LEGEND_TAG_ATTRIBUTE]: '' }}>
-                <Tooltip content={t('monitoring.charts.series.toggleHint')} relationship="description">
+                <Tooltip content={entry.members === undefined ? t('monitoring.charts.series.toggleHint') : <span className="grid gap-1">
+                  <Text size={200}>{entry.members.length > LISTED_MEMBERS
+                    ? t('monitoring.charts.series.membersTruncated', { members: entry.members.slice(0, LISTED_MEMBERS).join(', '), count: entry.members.length - LISTED_MEMBERS })
+                    : entry.members.join(', ')}</Text>
+                  <Text size={200}>{t('monitoring.charts.series.toggleHint')}</Text>
+                </span>} relationship="description">
                   <InteractionTagPrimary
                     className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''}
                     icon={<SeriesMarker className="mx-[4px]" color={colorForHue(entry.hue)} />}

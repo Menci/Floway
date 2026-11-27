@@ -75,6 +75,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [metric, setMetric] = useState<UsageMetric>(initialState.metric);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [hiddenSearch, setHiddenSearch] = useState<Set<string>>(() => new Set(initialState.hiddenSearch));
+  const [ungrouped, setUngrouped] = useState(initialState.ungrouped);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const auditableUserIdsRef = useRef(loaderData.usage?.auditableUserIds ?? [Number(loaderData.currentUserId)]);
   const locale = useLocale();
@@ -114,8 +115,8 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   useTelemetryPolling(poll, loadedQuery.range, !editingRange && !refreshing);
 
   const urlState = useMemo<UsageUrlState>(
-    () => ({ ...loadedQuery, metric, hidden: [...hiddenSeries], hiddenSearch: [...hiddenSearch] }),
-    [hiddenSearch, hiddenSeries, loadedQuery, metric],
+    () => ({ ...loadedQuery, metric, hidden: [...hiddenSeries], hiddenSearch: [...hiddenSearch], ungrouped }),
+    [hiddenSearch, hiddenSeries, loadedQuery, metric, ungrouped],
   );
   useEffect(() => {
     setSearchParams(serializeUsageUrlState(urlState), rewrite);
@@ -188,7 +189,8 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       </div>}
 
       <TokenUsageCharts usage={usage} dimensions={availableDimensions} upstreams={upstreams} groupBy={loadedQuery.groupBy} range={loadedQuery.range}
-        loadedAt={loadedAt} metric={metric} onMetricChange={setMetric} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={null} />
+        loadedAt={loadedAt} metric={metric} onMetricChange={setMetric} hidden={hiddenSeries} onHiddenChange={setHiddenSeries}
+        ungrouped={ungrouped} onUngroupedChange={setUngrouped} title={null} />
     </Panel>
 
     {showSearch && <Panel className="min-w-0">

@@ -11,6 +11,7 @@ export interface UsageUrlState {
   metric: UsageMetric;
   hidden: string[];
   hiddenSearch: string[];
+  ungrouped: boolean;
 }
 
 const usageMetricValues: UsageMetric[] = ['requests', 'cost', 'total', 'input', 'output', 'prefill', 'cached', 'cachedRate', 'cacheCreation'];
@@ -31,6 +32,7 @@ export const parseUsageUrlState = (search: URLSearchParams): UsageUrlState => {
     metric: oneOf(search.get('m'), usageMetricValues, 'total'),
     hidden: parseHiddenSeries(search, 'hide'),
     hiddenSearch: parseHiddenSeries(search, 'hideSearch'),
+    ungrouped: search.get('ungrouped') === '1',
   };
 };
 
@@ -48,5 +50,6 @@ export const serializeUsageUrlState = (state: UsageUrlState): URLSearchParams =>
   for (const [key, values] of filters) for (const value of values) search.append(key, value);
   serializeHiddenSeries(search, 'hide', state.hidden);
   serializeHiddenSeries(search, 'hideSearch', state.hiddenSearch);
+  if (state.ungrouped) search.set('ungrouped', '1');
   return search;
 };

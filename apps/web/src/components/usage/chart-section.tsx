@@ -4,6 +4,7 @@ import { useTranslation } from '../../i18n/translation';
 import { ChartSection } from '../charts/section';
 
 export function UsageChartSection({
+  actions,
   chart,
   detailsLabel,
   hidden,
@@ -11,6 +12,7 @@ export function UsageChartSection({
   title,
   valueFormatter,
 }: {
+  actions?: React.ReactNode;
   chart: UsageChartModel;
   detailsLabel: string;
   hidden: Set<string>;
@@ -22,6 +24,7 @@ export function UsageChartSection({
 
   return (
     <ChartSection
+      actions={actions}
       controlsLabel={detailsLabel}
       emptyText={t('monitoring.usage.empty')}
       entries={chart.entries}

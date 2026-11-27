@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
 import { createUsageOverviewLoader } from '../../src/components/usage/data';
@@ -9,8 +9,11 @@ import DashboardMonitorUsage, { clientLoader } from '../../src/routes/dashboard-
 import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
+import { primeDefaultSession } from '../test-session';
 
 stubLocalStorage();
+
+beforeEach(primeDefaultSession);
 
 afterEach(() => {
   useAuthStore.getState().clear();
@@ -31,6 +34,7 @@ const loaderData = {
     groupBy: 'model' as const,
     hidden: [],
     hiddenSearch: [],
+    ungrouped: false,
     metric: 'total' as const,
     range: 'today' as const,
   },
@@ -53,7 +57,7 @@ const loaderData = {
 };
 
 const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderData']) => {
-  const user = { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } };
+  const user = { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const } };
   const router = createMemoryRouter([{
     path: '/',
     Component: () => <Outlet context={{ user }} />,
@@ -94,7 +98,7 @@ describe('usage dimension controls', () => {
   it('keeps self-only Search usage grouped by API key', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'operator-session',
-      user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } },
+      user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const } },
     });
     let requestedView: string | null = null;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {

@@ -6,7 +6,7 @@ import { Sidebar } from '../../../src/components/sidebar/nav';
 import { renderInApp } from '../../render';
 
 const renderSidebar = (canViewUpstreams: boolean, canViewPermissions: boolean) => renderInApp(<RouterProvider router={createMemoryRouter([{
-  path: '/', Component: () => <Sidebar user={{ id: 2, username: 'operator', isAdmin: false, canViewPermissions, canViewUpstreams, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false } }} />,
+  path: '/', Component: () => <Sidebar user={{ id: 2, username: 'operator', isAdmin: false, canViewPermissions, canViewUpstreams, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const } }} />,
 }], { initialEntries: ['/'] })} />);
 
 test('shows capability-gated management pages independently', () => {

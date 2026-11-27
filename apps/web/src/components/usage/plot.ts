@@ -68,6 +68,11 @@ export const buildTokenChart = ({
   };
 };
 
+// What one record contributes to a series' share of the window: the plotted
+// metric where it adds up, the traffic behind it where the metric is a rate.
+export const usageRecordWeight = (record: DisplayUsageRecord, metric: UsageMetric): number =>
+  metricConfig[metric].kind === 'percent' ? record.requests : plottableMetricValue(countersForRecord(record), metric) ?? 0;
+
 // A rate has no total to rank by, so a percent metric ranks by the traffic
 // behind each series instead.
 const tokenSeriesWeights = (
