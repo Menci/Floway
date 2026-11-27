@@ -13,9 +13,8 @@ export const formatCompactDecimalCount = (value: DecimalString): string =>
 export const formatRatePercent = (rate: number | null): string =>
   rate === null ? NO_READING : `${rate.toFixed(1)}%`;
 
-// A tile shows a token total the way the axis and callout spell it; the exact
-// figure, which runs to a dozen digits and wrapped mid-number, moves to the
-// tile's tooltip. `exact` is null where the shown text already is exact.
+// A tile spells a token total the way the axis and callout do and keeps the
+// exact figure for its tooltip; `exact` is null where the text already is exact.
 export const formatSummaryMetric = (
   summary: TokenSummary,
   metric: UsageMetric,
