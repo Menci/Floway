@@ -1,8 +1,8 @@
-import { parseDataURL, type ParsedDataURL } from './data-url.ts';
 import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
 import { requireStreaming } from '../../../ir/input/streaming.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputDocument, IRInputMedia, IRInputTextPart, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
+import { parseDataURL, type ParsedDataURL } from '../../../shared/data-url.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { type TranslateOptions } from '../../../types.ts';
 import type {

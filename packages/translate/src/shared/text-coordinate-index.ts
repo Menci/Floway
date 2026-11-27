@@ -1,6 +1,6 @@
 import type { TextRange } from './text-range.ts';
 
-type TextCoordinateMode = 'code-point-to-utf16' | 'utf16-to-code-point' | 'utf16-to-utf8';
+type TextCoordinateMode = 'code-point-to-utf16' | 'utf16-to-code-point' | 'utf16-to-utf8' | 'utf8-to-utf16';
 
 const INVALID_BOUNDARY = 0xffff_ffff;
 
@@ -69,8 +69,17 @@ export class TextCoordinateIndex {
     return new TextCoordinateIndex('utf16-to-utf8', text);
   }
 
+  static utf8ToUTF16(text: string): TextCoordinateIndex {
+    return new TextCoordinateIndex('utf8-to-utf16', text);
+  }
+
   get codePointLength(): number {
     if (this.#mode !== 'code-point-to-utf16') throw new TypeError('Text coordinate index does not map code points to UTF-16');
+    return this.#boundaries.length - 1;
+  }
+
+  get utf8Length(): number {
+    if (this.#mode !== 'utf8-to-utf16') throw new TypeError('Text coordinate index does not map UTF-8 to UTF-16');
     return this.#boundaries.length - 1;
   }
 
@@ -85,6 +94,12 @@ export class TextCoordinateIndex {
       if (this.#mode === 'code-point-to-utf16') {
         this.#boundaries.truncate(this.#boundaries.length - 1);
         this.#utf16Length++;
+        this.#boundaries.push(this.#utf16Length);
+      } else if (this.#mode === 'utf8-to-utf16') {
+        this.#boundaries.truncate(this.#boundaries.length - 1);
+        this.#utf16Length++;
+        this.#unpairedSurrogates--;
+        this.#boundaries.push(INVALID_BOUNDARY);
         this.#boundaries.push(this.#utf16Length);
       } else {
         this.#boundaries.set(this.#utf16Length, INVALID_BOUNDARY);
@@ -101,6 +116,14 @@ export class TextCoordinateIndex {
     for (const scalar of remainder) {
       const point = scalar.codePointAt(0)!;
       if (this.#mode === 'code-point-to-utf16') {
+        this.#utf16Length += scalar.length;
+        this.#boundaries.push(this.#utf16Length);
+        continue;
+      }
+      if (this.#mode === 'utf8-to-utf16') {
+        const width = utf8Width(point);
+        if (scalar.length === 1 && isSurrogate(point)) this.#unpairedSurrogates++;
+        for (let byte = 1; byte < width; byte++) this.#boundaries.push(INVALID_BOUNDARY);
         this.#utf16Length += scalar.length;
         this.#boundaries.push(this.#utf16Length);
         continue;
@@ -123,6 +146,17 @@ export class TextCoordinateIndex {
     if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) throw new RangeError('Invalid code-point range');
     if (end >= this.#boundaries.length) throw new RangeError('Code-point range exceeds text');
     return { start: this.#boundaries.get(start), end_exclusive: this.#boundaries.get(end) };
+  }
+
+  utf8RangeToUTF16(start: number, end: number): TextRange {
+    if (this.#mode !== 'utf8-to-utf16') throw new TypeError('Text coordinate index does not map UTF-8 to UTF-16');
+    if (this.#unpairedSurrogates !== 0) throw new TypeError('UTF-8 byte coordinates require well-formed Unicode');
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) throw new RangeError('Invalid UTF-8 byte range');
+    if (end >= this.#boundaries.length) throw new RangeError('UTF-8 byte range exceeds text');
+    const utf16Start = this.#boundaries.get(start);
+    const utf16End = this.#boundaries.get(end);
+    if (utf16Start === INVALID_BOUNDARY || utf16End === INVALID_BOUNDARY) throw new RangeError('UTF-8 byte range splits a character');
+    return { start: utf16Start, end_exclusive: utf16End };
   }
 
   utf16RangeToCodePoints(range: TextRange): { start: number; end: number } {

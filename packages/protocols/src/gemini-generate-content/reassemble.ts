@@ -2,10 +2,11 @@ import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_
 import type { GeminiGenerateContentCandidate, GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
-const isMergeableTextPart = (part: GeminiGenerateContentPart): boolean => part.text !== undefined && Object.keys(part).every(key => key === 'text' || key === 'thought' && part.thought === false);
+export const isMergeableGeminiGenerateContentTextPart = (part: GeminiGenerateContentPart): boolean =>
+  part.text !== undefined && Object.keys(part).every(key => key === 'text' || key === 'thought' && part.thought === false);
 const appendPart = (parts: GeminiGenerateContentPart[], part: GeminiGenerateContentPart): void => {
   const previous = parts.at(-1);
-  if (previous && isMergeableTextPart(previous) && isMergeableTextPart(part)) previous.text = `${previous.text}${part.text}`;
+  if (previous && isMergeableGeminiGenerateContentTextPart(previous) && isMergeableGeminiGenerateContentTextPart(part)) previous.text = `${previous.text}${part.text}`;
   else parts.push({ ...part });
 };
 interface CandidateAccumulator {

@@ -3,6 +3,7 @@ import { anthropicMessagesInterceptors, anthropicMessagesCountTokensInterceptors
 import type { AnthropicMessagesInvocation } from './interceptors/types.ts';
 import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
+import { geminiGenerateContentAttempt } from '../gemini-generate-content/attempt.ts';
 import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt.ts';
 import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import { applyRulesToUpstreamAnthropicMessages } from '../shared/alias-rules.ts';
@@ -16,11 +17,16 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ModelCandidate, ExecuteResult, AnthropicMessagesUpstreamCallOptions, PlainResult } from '@floway-dev/provider';
-import { routeAnthropicMessagesViaOpenAIChatCompletions, routeAnthropicMessagesViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
+import {
+  routeAnthropicMessagesViaGeminiGenerateContent,
+  routeAnthropicMessagesViaOpenAIChatCompletions,
+  routeAnthropicMessagesViaOpenAIResponses,
+  type TranslateInputError,
+} from '@floway-dev/translate';
 
 // `/v1/messages` generate prefers a native Anthropic Messages target, then the
-// translated OpenAI Responses path, then the translated OpenAI Chat Completions path.
-export const anthropicMessagesGenerateTarget = chatTargetPicker(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions']);
+// translated OpenAI Responses path, then OpenAI Chat Completions, then Gemini GenerateContent.
+export const anthropicMessagesGenerateTarget = chatTargetPicker(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions', 'geminiGenerateContent']);
 
 // `count_tokens` has no translation path — only a native Anthropic Messages target
 // satisfies the operation.
@@ -127,6 +133,19 @@ const dispatchAnthropicMessages = async (
       p => routeAnthropicMessagesViaOpenAIChatCompletions(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
+      }),
+      captureFromDump(ctx.dump, targetApi),
+    );
+  }
+  if (targetApi === 'geminiGenerateContent') {
+    return await executeTranslation(
+      invocation.payload,
+      p => routeAnthropicMessagesViaGeminiGenerateContent(p, {
+        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
+        fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
+      }),
+      ({ model: _model, ...body }) => geminiGenerateContentAttempt.generate({
+        payload: body, ctx, candidate, headers: invocation.headers,
       }),
       captureFromDump(ctx.dump, targetApi),
     );

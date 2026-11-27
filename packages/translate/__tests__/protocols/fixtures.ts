@@ -41,6 +41,33 @@ export const fixtureFrames = (protocol: IRTestProtocol, fixture: Fixture): Proto
     ];
     return openaiResponsesResultToEvents({ id: 'resp_test', object: 'response', created_at: 100, model: 'served-model', output, status: stop === 'length' || stop === 'content_filter' ? 'incomplete' : 'completed', error: null, incomplete_details: stop === 'length' ? { reason: 'max_output_tokens' } : stop === 'content_filter' ? { reason: 'content_filter' } : null, ...(usage === undefined ? {} : { usage }), ...(fixture.tier === undefined ? {} : { service_tier: fixture.tier }) } as any);
   }
+  if (protocol === 'gemini-generate-content') {
+    const parts: Wire[] = [
+      ...thinking.map(text => ({ thought: true, text })),
+      ...text.map(text => ({ text })),
+      ...(fixture.refusal === undefined ? [] : [{ text: fixture.refusal }]),
+      ...tools.map(tool => ({ functionCall: { id: tool.id, name: tool.name, args: tool.args } })),
+      ...(fixture.signature === undefined ? [] : [{ thoughtSignature: fixture.signature }]),
+    ];
+    const finishReason = stop === 'length' ? 'MAX_TOKENS' : stop === 'content_filter' ? 'SAFETY' : 'STOP';
+    const usageMetadata = usage === undefined && fixture.tier === undefined
+      ? undefined
+      : { ...(usage ?? {}), ...(fixture.tier === undefined ? {} : { serviceTier: fixture.tier }) };
+    return [
+      eventFrame({
+        responseId: 'gem_test',
+        modelVersion: 'served-model',
+        candidates: [{ index: 0, content: { role: 'model', parts } }],
+      }),
+      eventFrame({
+        responseId: 'gem_test',
+        modelVersion: 'served-model',
+        candidates: [{ index: 0, finishReason }],
+        ...(usageMetadata === undefined ? {} : { usageMetadata }),
+      }),
+      doneFrame(),
+    ];
+  }
   const blocks: Wire[] = [
     ...thinking.map(thinking => ({ type: 'thinking', thinking, signature: fixture.signature ?? '' })),
     ...(thinking.length === 0 && fixture.signature !== undefined ? [{ type: 'redacted_thinking', data: fixture.signature }] : []),
@@ -144,11 +171,18 @@ export const testOutputTranslation = (target: IRTestProtocol, source: IRTestProt
     expect(finish).toBe(expected);
   });
   test('preserves measured usage, cache counts, and reasoning counts', async () => {
-    const usage = source === 'openai-chat-completions' ? { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14, prompt_tokens_details: { cached_tokens: 3, cache_write_tokens: 2 }, completion_tokens_details: { reasoning_tokens: 1 } } : source === 'openai-responses' ? { input_tokens: 10, output_tokens: 4, total_tokens: 14, input_tokens_details: { cached_tokens: 3, cache_write_tokens: 2 }, output_tokens_details: { reasoning_tokens: 1 } } : { input_tokens: 5, output_tokens: 4, cache_read_input_tokens: 3, cache_creation_input_tokens: 2, output_tokens_details: { thinking_tokens: 1 } };
+    const usage = source === 'openai-chat-completions'
+      ? { prompt_tokens: 10, completion_tokens: 4, total_tokens: 14, prompt_tokens_details: { cached_tokens: 3, cache_write_tokens: 2 }, completion_tokens_details: { reasoning_tokens: 1 } }
+      : source === 'openai-responses'
+        ? { input_tokens: 10, output_tokens: 4, total_tokens: 14, input_tokens_details: { cached_tokens: 3, cache_write_tokens: 2 }, output_tokens_details: { reasoning_tokens: 1 } }
+        : source === 'gemini-generate-content'
+          ? { promptTokenCount: 10, candidatesTokenCount: 3, totalTokenCount: 14, cachedContentTokenCount: 3, thoughtsTokenCount: 1 }
+          : { input_tokens: 5, output_tokens: 4, cache_read_input_tokens: 3, cache_creation_input_tokens: 2, output_tokens_details: { thinking_tokens: 1 } };
     const result = await run({ text: ['answer'], usage });
-    if (target === 'openai-chat-completions') expect(result.usage).toMatchObject({ prompt_tokens: 10, completion_tokens: 4, total_tokens: 14, prompt_tokens_details: { cached_tokens: 3, cache_creation_input_tokens: 2 }, completion_tokens_details: { reasoning_tokens: 1 } });
-    if (target === 'openai-responses') expect(result.usage).toMatchObject({ input_tokens: 10, output_tokens: 4, total_tokens: 14, input_tokens_details: { cached_tokens: 3, cache_write_tokens: 2 }, output_tokens_details: { reasoning_tokens: 1 } });
-    if (target === 'anthropic-messages') expect(result.usage).toMatchObject({ input_tokens: 5, output_tokens: 4, cache_read_input_tokens: 3, cache_creation_input_tokens: 2, output_tokens_details: { thinking_tokens: 1 } });
+    const hasCacheWrite = source !== 'gemini-generate-content';
+    if (target === 'openai-chat-completions') expect(result.usage).toMatchObject({ prompt_tokens: 10, completion_tokens: 4, total_tokens: 14, prompt_tokens_details: { cached_tokens: 3, ...(hasCacheWrite ? { cache_creation_input_tokens: 2 } : {}) }, completion_tokens_details: { reasoning_tokens: 1 } });
+    if (target === 'openai-responses') expect(result.usage).toMatchObject({ input_tokens: 10, output_tokens: 4, total_tokens: 14, input_tokens_details: { cached_tokens: 3, ...(hasCacheWrite ? { cache_write_tokens: 2 } : {}) }, output_tokens_details: { reasoning_tokens: 1 } });
+    if (target === 'anthropic-messages') expect(result.usage).toMatchObject({ input_tokens: hasCacheWrite ? 5 : 7, output_tokens: 4, cache_read_input_tokens: 3, ...(hasCacheWrite ? { cache_creation_input_tokens: 2 } : {}), output_tokens_details: { thinking_tokens: 1 } });
     if (target === 'gemini-generate-content') expect(result.usageMetadata).toMatchObject({ promptTokenCount: 10, candidatesTokenCount: 3, totalTokenCount: 14, cachedContentTokenCount: 3, thoughtsTokenCount: 1 });
   });
   test('stops pulling the upstream after its native terminal', async () => {
@@ -158,7 +192,11 @@ export const testOutputTranslation = (target: IRTestProtocol, source: IRTestProt
   });
   test('rejects a truncated upstream lifecycle', async () => {
     const input = fixtureFrames(source, { text: ['partial'] });
-    const truncated = source === 'openai-chat-completions' ? input.slice(0, -2) : source === 'openai-responses' ? input.filter(frame => frame.type === 'event' && !['response.completed', 'response.incomplete'].includes(frame.event.type)) : input.slice(0, -1);
+    const truncated = source === 'openai-chat-completions' || source === 'gemini-generate-content'
+      ? input.slice(0, -2)
+      : source === 'openai-responses'
+        ? input.filter(frame => frame.type === 'event' && !['response.completed', 'response.incomplete'].includes(frame.event.type))
+        : input.slice(0, -1);
     await expect(collect(translate(iterate(truncated), createTestSidecarCodec()))).rejects.toThrow();
   });
 };

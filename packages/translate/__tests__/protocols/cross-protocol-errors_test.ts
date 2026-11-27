@@ -11,12 +11,15 @@ import { collect, iterate } from '../shared/iterables.ts';
 import { PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
+  routeAnthropicMessagesViaGeminiGenerateContent,
   routeAnthropicMessagesViaOpenAIChatCompletions,
   routeAnthropicMessagesViaOpenAIResponses,
   routeGeminiGenerateContentViaAnthropicMessages,
   routeGeminiGenerateContentViaOpenAIResponses,
+  routeOpenAIChatCompletionsViaGeminiGenerateContent,
   routeOpenAIChatCompletionsViaOpenAIResponses,
   routeOpenAIResponsesViaAnthropicMessages,
+  routeOpenAIResponsesViaGeminiGenerateContent,
   routeOpenAIResponsesViaOpenAIChatCompletions,
   type TranslateInputError,
   type TranslateTrip,
@@ -148,6 +151,64 @@ test('native target errors retain canonical object identity', async () => {
     const record = records.find(value => value.type === 'error');
     expect(record?.error).toBe(failure);
   }
+});
+
+test('maps Google RPC status errors across HTTP and stream phases onto client protocol error shapes', async () => {
+  const googleError = {
+    error: {
+      code: 429,
+      message: 'Quota exceeded.',
+      status: 'RESOURCE_EXHAUSTED',
+      details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '5s' }],
+    },
+  };
+  const encoded = new TextEncoder().encode(JSON.stringify(googleError));
+
+  const messagesTrip = await requireTrip(routeAnthropicMessagesViaGeminiGenerateContent(messages, options()));
+  const messagesHttp = messagesTrip.error(429, new Headers(), encoded);
+  expect(messagesHttp?.status).toBe(429);
+  expect(messagesHttp?.body).toEqual({
+    type: 'error',
+    error: {
+      type: 'rate_limit_error',
+      message: 'Quota exceeded.',
+      provider_specific_fields: {
+        code: 429,
+        code_1: 'RESOURCE_EXHAUSTED',
+        details: googleError.error.details,
+      },
+    },
+  });
+  const messagesStream = await collect(messagesTrip.events(iterate([eventFrame(googleError)])));
+  expect(messagesStream).toEqual([eventFrame(messagesHttp?.body)]);
+
+  const chatTrip = await requireTrip(routeOpenAIChatCompletionsViaGeminiGenerateContent(chat, options()));
+  const chatHttp = chatTrip.error(429, new Headers(), encoded);
+  expect(chatHttp?.body).toEqual({
+    error: {
+      type: 'rate_limit_error',
+      code: 'RESOURCE_EXHAUSTED',
+      message: 'Quota exceeded.',
+      provider_specific_fields: {
+        code: 429,
+        details: googleError.error.details,
+      },
+    },
+  });
+
+  const responsesTrip = await requireTrip(routeOpenAIResponsesViaGeminiGenerateContent(responses, options()));
+  const responsesStream = await collect(responsesTrip.events(iterate([eventFrame(googleError)])));
+  expect(responsesStream).toEqual([eventFrame({
+    type: 'error',
+    sequence_number: 0,
+    code: 'RESOURCE_EXHAUSTED',
+    message: 'Quota exceeded.',
+    provider_specific_fields: {
+      type: 'rate_limit_error',
+      code: 429,
+      details: googleError.error.details,
+    },
+  })]);
 });
 
 test.each([

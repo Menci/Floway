@@ -10,6 +10,7 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../../shared
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
+import { geminiGenerateContentAttempt } from '../gemini-generate-content/attempt.ts';
 import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt.ts';
 import { applyRulesToUpstreamOpenAIResponses } from '../shared/alias-rules.ts';
 import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
@@ -21,14 +22,18 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type ModelCandidate, eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction } from '@floway-dev/provider';
-import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions, type TranslateInputError } from '@floway-dev/translate';
+import {
+  routeOpenAIResponsesViaAnthropicMessages,
+  routeOpenAIResponsesViaGeminiGenerateContent,
+  routeOpenAIResponsesViaOpenAIChatCompletions,
+  type TranslateInputError,
+} from '@floway-dev/translate';
 
-// `/v1/responses` generate prefers the native OpenAI Responses target, then the
-// translated Anthropic Messages path, then the translated OpenAI Chat Completions path. The
-// same picker covers compact: every OpenAI Responses target is reachable via the
-// shim, which pivots compact→generate inside the chain on non-openai-responses
-// targets.
-export const openaiResponsesTarget = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions']);
+// `/v1/responses` generate prefers the native OpenAI Responses target, then
+// Anthropic Messages, then OpenAI Chat Completions, then Gemini GenerateContent.
+// The same picker covers compact: every non-Responses target is reachable via
+// the shim, which pivots compact→generate inside the chain.
+export const openaiResponsesTarget = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions', 'geminiGenerateContent']);
 
 interface OpenAIResponsesAttemptBaseArgs {
   readonly action: OpenAIResponsesAction;
@@ -169,10 +174,20 @@ const dispatchOpenAIResponses = async (
       captureFromDump(ctx.dump, targetApi),
     );
   case 'geminiGenerateContent':
-    // The picker above never selects Gemini, because no translate pair emits
-    // its wire. Refuse rather than translating into a protocol the trip has no
-    // route for.
-    throw new Error('openaiResponsesAttempt: Gemini generateContent is not a translation target');
+    if (invocation.action === 'compact') {
+      throw new Error(`openaiResponsesAttempt: action='compact' reached dispatch on targetApi='geminiGenerateContent' — the openai-responses-compact-shim must engage and pivot the action`);
+    }
+    return await executeTranslation(
+      invocation.payload,
+      p => routeOpenAIResponsesViaGeminiGenerateContent(p, {
+        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
+        fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
+      }),
+      ({ model: _model, ...body }) => geminiGenerateContentAttempt.generate({
+        payload: body, ctx, candidate, headers: invocation.headers,
+      }),
+      captureFromDump(ctx.dump, targetApi),
+    );
   default: {
     const exhaustive: never = targetApi;
     throw new Error(`unexpected targetApi '${exhaustive as string}'`);

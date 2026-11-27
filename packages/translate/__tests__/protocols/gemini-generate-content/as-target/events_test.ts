@@ -1,0 +1,401 @@
+import { expect, test, vi } from 'vitest';
+
+import type { ToolNameContext } from '../../../../src/composition/request/tool-names.ts';
+import type { IRRecord } from '../../../../src/ir/output/records.ts';
+import { consumeIRRecords } from '../../../../src/ir/output/stream.ts';
+import type { IROutput } from '../../../../src/ir/output/types.ts';
+import type { GeminiGenerateContentInputAssistantTurn } from '../../../../src/protocols/gemini-generate-content/as-target/assistant-turn.ts';
+import { readGeminiGenerateContentEvents } from '../../../../src/protocols/gemini-generate-content/as-target/events.ts';
+import { usageToIR } from '../../../../src/protocols/gemini-generate-content/as-target/usage.ts';
+import { createReferenceBuilder, type ReadFieldStates } from '../../../../src/round-trip/reference/reference-builder.ts';
+import { referenceAssistantTurn } from '../../../../src/round-trip/reference/reference-selection.ts';
+import { iterate } from '../../../shared/iterables.ts';
+import { doneFrame, eventFrame, FAST_SERVICE_TIER, type ProtocolFrame } from '@floway-dev/protocols/common';
+import {
+  GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE,
+  type GeminiGenerateContentStreamEvent,
+} from '@floway-dev/protocols/gemini-generate-content';
+
+const runReader = async (
+  frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>,
+  options: Partial<ToolNameContext> & { fallbackModel?: string } = {},
+): Promise<{
+  records: IRRecord[];
+  state: IROutput;
+  turns: Map<number, GeminiGenerateContentInputAssistantTurn>;
+  fieldStates: Map<number, unknown>;
+  builder: ReturnType<typeof createReferenceBuilder>;
+}> => {
+  const builder = createReferenceBuilder();
+  const turns = new Map<number, GeminiGenerateContentInputAssistantTurn>();
+  const fieldStates = new Map<number, unknown>();
+  const records: IRRecord[] = [];
+  let finalState: IROutput | undefined;
+
+  for await (const { record, collector } of consumeIRRecords(
+    readGeminiGenerateContentEvents(frames, {
+      ...options,
+      roundTrip: {
+        builder,
+        onAssistantTurn: (choice, turn, fieldState) => {
+          turns.set(choice, turn);
+          fieldStates.set(choice, fieldState);
+        },
+      },
+    }),
+  )) {
+    records.push(record);
+    finalState = collector.state;
+  }
+
+  if (finalState === undefined) throw new Error('Expected at least one output IR record');
+  return { records, state: finalState, turns, fieldStates, builder };
+};
+
+test('streams merged plain text deltas (including empty mergeable chunks), Unicode, grounding citations after trailing signature carriers, logprobs, and usage', async () => {
+  const { records, state, turns } = await runReader(iterate([
+    eventFrame({
+      responseId: 'resp_text',
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'Hello ' }] } }],
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 1, totalTokenCount: 11 },
+    }),
+    eventFrame({
+      responseId: 'resp_text',
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: '' }] } }],
+    }),
+    eventFrame({
+      responseId: 'resp_text',
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{
+        index: 0,
+        content: {
+          role: 'model',
+          parts: [
+            { text: '🌍!' },
+            { text: '', thoughtSignature: 'sig_after_text' },
+          ],
+        },
+        groundingMetadata: {
+          groundingChunks: [{ web: { uri: 'https://example.com/earth', title: 'Earth' } }],
+          // "Hello " is 6 UTF-8 bytes; "🌍" is 4 UTF-8 bytes (2 UTF-16 code units).
+          groundingSupports: [{ segment: { partIndex: 0, startIndex: 6, endIndex: 10 }, groundingChunkIndices: [0] }],
+        },
+        logprobsResult: {
+          chosenCandidates: [{ token: 'Hello', logProbability: -0.1 }],
+          topCandidates: [{ candidates: [{ token: 'Hello', logProbability: -0.1 }, { token: 'Hi', logProbability: -2.3 }] }],
+        },
+        finishReason: 'STOP',
+      }],
+      usageMetadata: {
+        promptTokenCount: 10,
+        cachedContentTokenCount: 4,
+        candidatesTokenCount: 3,
+        totalTokenCount: 13,
+        serviceTier: FAST_SERVICE_TIER,
+        promptTokensDetails: [{ modality: 'TEXT', tokenCount: 10 }],
+        candidatesTokensDetails: [{ modality: 'TEXT', tokenCount: 3 }],
+      },
+    }),
+  ]));
+
+  expect(state.model).toBe('gemini-2.5-pro');
+  expect(state.service_tier).toBe('fast');
+  expect(state.choices[0]?.items).toEqual([
+    {
+      type: 'message',
+      content: [{
+        type: 'text',
+        text: 'Hello 🌍!',
+        annotations: [{
+          type: 'source_citation',
+          source_kind: 'url',
+          source: 'https://example.com/earth',
+          source_label: 'Earth',
+          output_text_range: { start: 6, end_exclusive: 8 },
+        }],
+      }],
+    },
+  ]);
+  expect(state.choices[0]?.logprobs).toEqual([{
+    scope: 'choice',
+    tokens: [{
+      token: 'Hello',
+      logprob: -0.1,
+      top_logprobs: [{ token: 'Hello', logprob: -0.1 }, { token: 'Hi', logprob: -2.3 }],
+    }],
+  }]);
+  expect(state.usage).toEqual({
+    input_tokens_inclusive: 10,
+    cached_input_tokens: 4,
+    output_tokens_inclusive: 3,
+    total_tokens: 13,
+    input_text_tokens: 10,
+    output_text_tokens: 3,
+  });
+  expect(records).toContainEqual({ type: 'choice_end', choice: 0, finish_reason: 'stop' });
+  expect(records.at(-1)).toEqual({ type: 'finish', status: 'completed' });
+  expect(turns.get(0)).toEqual([
+    {
+      role: 'model',
+      parts: [
+        { text: 'Hello 🌍!' },
+        { text: '', thoughtSignature: 'sig_after_text' },
+      ],
+    },
+  ]);
+});
+
+test('drops late grounding citations safely with a warning when a prior message part was closed by a tool call', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    const { state } = await runReader(iterate([
+      eventFrame({
+        modelVersion: 'gemini-2.5-pro',
+        candidates: [{
+          index: 0,
+          content: {
+            role: 'model',
+            parts: [
+              { text: 'Checking docs.' },
+              { functionCall: { id: 'call_1', name: 'lookup', args: { q: 'x' } } },
+            ],
+          },
+          groundingMetadata: {
+            groundingChunks: [{ web: { uri: 'https://example.com/doc', title: 'Doc' } }],
+            groundingSupports: [{ segment: { partIndex: 0, startIndex: 0, endIndex: 8 }, groundingChunkIndices: [0] }],
+          },
+          finishReason: 'STOP',
+        }],
+      }),
+    ]));
+
+    expect(state.choices[0]?.items[0]).toEqual({
+      type: 'message',
+      content: [{ type: 'text', text: 'Checking docs.' }],
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+  } finally {
+    warn.mockRestore();
+  }
+});
+
+test('preserves thought parts, thoughtSignature, short syntheticCallIds, and thin-reference safety when functionCall.args is omitted', async () => {
+  const { records, state, turns, fieldStates, builder } = await runReader(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{
+        index: 0,
+        content: {
+          role: 'model',
+          parts: [
+            { thought: true, text: 'First step. ' },
+            { thought: true, text: 'Second step.', thoughtSignature: 'sig_on_thought' },
+          ],
+        },
+      }],
+    }),
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{
+        index: 0,
+        content: {
+          role: 'model',
+          parts: [
+            { functionCall: { name: 'get_weather', args: { city: 'Tokyo' } }, thoughtSignature: 'sig_on_call' },
+            { functionCall: { name: 'ping' } },
+            { text: 'Checking...' },
+            { text: '', thoughtSignature: 'sig_on_empty_text' },
+            { thoughtSignature: 'sig_standalone' },
+          ],
+        },
+        finishReason: 'STOP',
+      }],
+      usageMetadata: {
+        promptTokenCount: 20,
+        toolUsePromptTokenCount: 5,
+        candidatesTokenCount: 8,
+        thoughtsTokenCount: 15,
+        totalTokenCount: 48,
+      },
+    }),
+  ]));
+
+  const weatherCall = state.choices[0]?.items[1];
+  const pingCall = state.choices[0]?.items[2];
+  if (weatherCall?.type !== 'function_call' || pingCall?.type !== 'function_call') {
+    throw new Error('Expected function_call items');
+  }
+  if (typeof weatherCall.call_id !== 'string') throw new Error('Expected string call_id');
+  expect(weatherCall.call_id).toMatch(/^gc_[0-9a-f]{16}_0_2$/);
+  expect(weatherCall.call_id.length).toBeLessThanOrEqual(40);
+  expect(pingCall.call_id).toMatch(/^gc_[0-9a-f]{16}_0_3$/);
+  expect(pingCall.arguments).toBe('{}');
+  expect(state.choices[0]?.items).toEqual([
+    { type: 'reasoning', summary: ['First step. Second step.'] },
+    weatherCall,
+    pingCall,
+    { type: 'message', content: [{ type: 'text', text: 'Checking...' }] },
+  ]);
+  expect(state.usage).toEqual({
+    input_tokens_inclusive: 25,
+    output_tokens_inclusive: 23,
+    reasoning_tokens: 15,
+    total_tokens: 48,
+  });
+  expect(records).toContainEqual({ type: 'choice_end', choice: 0, finish_reason: 'tool_calls' });
+
+  const nativeTurn = turns.get(0);
+  if (nativeTurn === undefined) throw new Error('Expected native turn');
+  expect('id' in (nativeTurn[0].parts![2].functionCall!)).toBe(false);
+  expect('args' in (nativeTurn[0].parts![3].functionCall!)).toBe(false);
+  expect(nativeTurn[0].syntheticCallIds).toEqual({
+    2: weatherCall.call_id,
+    3: pingCall.call_id,
+  });
+
+  const fieldState = fieldStates.get(0) as [{ parts: ReadFieldStates[] }];
+  await expect(referenceAssistantTurn<'geminiGenerateContent'>(
+    nativeTurn,
+    fieldState as never,
+    builder,
+    new Map(),
+  )).resolves.toEqual({ targetTurn: nativeTurn });
+});
+
+test('restores grouped tool namespaces and unwraps customToolNames calls', async () => {
+  const { state, turns } = await runReader(
+    iterate([
+      eventFrame({
+        modelVersion: 'gemini-2.5-flash',
+        candidates: [{
+          index: 0,
+          content: {
+            role: 'model',
+            parts: [
+              { functionCall: { id: 'call_explicit_1', name: 'web__search', args: { query: 'floway' } } },
+              { functionCall: { id: 'call_custom_1', name: 'apply_patch', args: { input: '*** Begin Patch' } } },
+            ],
+          },
+          finishReason: 'STOP',
+        }],
+      }),
+    ]),
+    {
+      customToolNames: new Set(['apply_patch']),
+      originalToolNames: new Map([['web__search', { namespace: 'web', name: 'search' }]]),
+    },
+  );
+
+  expect(state.choices[0]?.items).toEqual([
+    { type: 'function_call', call_id: 'call_explicit_1', namespace: 'web', name: 'search', arguments: '{"query":"floway"}' },
+    { type: 'custom_tool_call', call_id: 'call_custom_1', name: 'apply_patch', input: '*** Begin Patch' },
+  ]);
+  expect(turns.get(0)?.[0]?.syntheticCallIds).toBeUndefined();
+});
+
+test('maps MAX_TOKENS, safety refusal_details, promptFeedback.blockReason, inlineData media, and failed output reasons', async () => {
+  const maxTokens = await runReader(iterate([
+    eventFrame({
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'truncated' }] }, finishReason: 'MAX_TOKENS' }],
+    }),
+    eventFrame({
+      usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 9, totalTokenCount: 14, serviceTier: 'standard' },
+    }),
+    doneFrame(),
+  ]), { fallbackModel: 'gemini-2.5-flash' });
+
+  expect(maxTokens.state.model).toBe('gemini-2.5-flash');
+  expect(maxTokens.state.service_tier).toBe('default');
+  expect(maxTokens.records).toContainEqual({ type: 'choice_end', choice: 0, finish_reason: 'length' });
+  expect(maxTokens.records.at(-1)).toEqual({ type: 'finish', status: 'incomplete' });
+
+  const safety = await runReader(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{ index: 0, finishReason: 'SAFETY', finishMessage: 'Blocked by safety policy.' }],
+    }),
+  ]));
+  expect(safety.state.choices[0]?.refusal_details).toEqual({
+    category: 'SAFETY',
+    explanation: 'Blocked by safety policy.',
+  });
+
+  const blocked = await runReader(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      promptFeedback: { blockReason: 'PROHIBITED_CONTENT' },
+    }),
+  ]));
+  expect(blocked.state.choices[0]?.refusal_details).toEqual({
+    category: 'PROHIBITED_CONTENT',
+    explanation: null,
+  });
+  expect(blocked.records).toContainEqual({ type: 'choice_end', choice: 0, finish_reason: 'content_filter' });
+
+  const media = await runReader(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-flash',
+      candidates: [{
+        index: 0,
+        content: {
+          role: 'model',
+          parts: [
+            { inlineData: { mimeType: 'image/png', data: 'aW1n' } },
+            { inlineData: { mimeType: 'audio/wav', data: 'YXVk' }, audioTranscription: { text: 'spoken' } },
+          ],
+        },
+        finishReason: 'STOP',
+      }],
+    }),
+  ]));
+  expect(media.state.choices[0]?.items).toEqual([{
+    type: 'message',
+    content: [
+      { type: 'image', image: { media_type: 'image/png', data: 'aW1n' } },
+      { type: 'audio', audio: { media_type: 'audio/wav', data: 'YXVk', transcript: 'spoken' } },
+    ],
+  }]);
+
+  expect(usageToIR({
+    promptTokenCount: 12,
+    toolUsePromptTokenCount: 3,
+    cachedContentTokenCount: 5,
+    candidatesTokenCount: 7,
+    thoughtsTokenCount: 3,
+    totalTokenCount: 25,
+    promptTokensDetails: [{ modality: 'AUDIO', tokenCount: 4 }, { modality: 'IMAGE', tokenCount: 6 }, { modality: 'TEXT', tokenCount: 2 }],
+    toolUsePromptTokensDetails: [{ modality: 'TEXT', tokenCount: 3 }],
+    candidatesTokensDetails: [{ modality: 'AUDIO', tokenCount: 2 }, { modality: 'TEXT', tokenCount: 5 }],
+  })).toEqual({
+    input_tokens_inclusive: 15,
+    cached_input_tokens: 5,
+    output_tokens_inclusive: 10,
+    reasoning_tokens: 3,
+    total_tokens: 25,
+    input_audio_tokens: 4,
+    input_image_tokens: 6,
+    input_text_tokens: 5,
+    output_audio_tokens: 2,
+    output_text_tokens: 5,
+  });
+
+  const malformed: IRRecord[] = [];
+  for await (const record of readGeminiGenerateContentEvents(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{ index: 0, content: { role: 'model', parts: [] }, finishReason: 'MALFORMED_FUNCTION_CALL', finishMessage: 'bad args' }],
+    }),
+  ]), { roundTrip: { builder: createReferenceBuilder(), onAssistantTurn: () => {} } })) {
+    malformed.push(record);
+  }
+  expect(malformed.at(-1)).toEqual({
+    type: 'error',
+    error: { type: 'server_error', code: 'MALFORMED_FUNCTION_CALL', message: 'Gemini ended the response with MALFORMED_FUNCTION_CALL: bad args' },
+  });
+
+  await expect(runReader(iterate([
+    eventFrame({ modelVersion: 'gemini-2.5-pro', candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'unfinished' }] } }] }),
+  ]))).rejects.toThrow(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
+});

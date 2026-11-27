@@ -4,6 +4,7 @@ import type { OpenAIChatCompletionsInvocation } from './interceptors/types.ts';
 import { billableUsageFromOpenAIChatCompletionsEvent } from './usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
+import { geminiGenerateContentAttempt } from '../gemini-generate-content/attempt.ts';
 import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules.ts';
 import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
@@ -15,11 +16,16 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, type ExecuteResult } from '@floway-dev/provider';
-import { routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
+import {
+  routeOpenAIChatCompletionsViaAnthropicMessages,
+  routeOpenAIChatCompletionsViaGeminiGenerateContent,
+  routeOpenAIChatCompletionsViaOpenAIResponses,
+  type TranslateInputError,
+} from '@floway-dev/translate';
 
 // `/v1/chat/completions` generate prefers a native OpenAI Chat Completions target,
-// then the translated Anthropic Messages path, then the translated OpenAI Responses path.
-export const openaiChatCompletionsTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
+// then Anthropic Messages, then OpenAI Responses, then Gemini GenerateContent.
+export const openaiChatCompletionsTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses', 'geminiGenerateContent']);
 
 export interface OpenAIChatCompletionsAttemptArgs {
   readonly payload: OpenAIChatCompletionsPayloadEx;
@@ -82,6 +88,19 @@ const dispatchOpenAIChatCompletions = async (
       p => routeOpenAIChatCompletionsViaOpenAIResponses(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
       translated => openaiResponsesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
+      }),
+      captureFromDump(ctx.dump, targetApi),
+    );
+  }
+  if (targetApi === 'geminiGenerateContent') {
+    return await executeTranslation(
+      invocation.payload,
+      p => routeOpenAIChatCompletionsViaGeminiGenerateContent(p, {
+        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
+        fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
+      }),
+      ({ model: _model, ...body }) => geminiGenerateContentAttempt.generate({
+        payload: body, ctx, candidate, headers: invocation.headers,
       }),
       captureFromDump(ctx.dump, targetApi),
     );

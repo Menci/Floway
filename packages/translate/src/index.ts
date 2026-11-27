@@ -3,13 +3,16 @@ export type { TranslateTrip, TranslateInputError, TranslateOptions, Translator }
 export { SidecarTaggedValue } from './round-trip/codec.ts';
 
 export {
+  routeAnthropicMessagesViaGeminiGenerateContent,
   routeAnthropicMessagesViaOpenAIChatCompletions,
   routeAnthropicMessagesViaOpenAIResponses,
   routeGeminiGenerateContentViaAnthropicMessages,
   routeGeminiGenerateContentViaOpenAIChatCompletions,
   routeGeminiGenerateContentViaOpenAIResponses,
   routeOpenAIChatCompletionsViaAnthropicMessages,
+  routeOpenAIChatCompletionsViaGeminiGenerateContent,
   routeOpenAIChatCompletionsViaOpenAIResponses,
   routeOpenAIResponsesViaAnthropicMessages,
+  routeOpenAIResponsesViaGeminiGenerateContent,
   routeOpenAIResponsesViaOpenAIChatCompletions,
 } from './protocols/routes.ts';

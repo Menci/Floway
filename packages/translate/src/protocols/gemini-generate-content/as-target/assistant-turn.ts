@@ -8,6 +8,11 @@ type GeminiPartRule = {
   functionCall: { args: JSONRule };
 };
 
-export type GeminiGenerateContentInputAssistantTurn = Array<Omit<GeminiGenerateContentContent, 'role'> & { role: 'model' }>;
+export type GeminiGenerateContentInputAssistantTurn = Array<
+  Omit<GeminiGenerateContentContent, 'role'> & {
+    role: 'model';
+    syntheticCallIds?: Readonly<Record<number, string>>;
+  }
+>;
 export type GeminiGenerateContentReferenceableInputAssistantTurn<Reference> = ReferenceableValue<GeminiGenerateContentInputAssistantTurn, [{ parts: [GeminiPartRule] }], Reference>;
 export type GeminiGenerateContentInputAssistantTurnState<States extends ReferenceStateLeaves> = ReferenceState<GeminiGenerateContentInputAssistantTurn, [{ parts: [GeminiPartRule] }], States>;

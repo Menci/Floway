@@ -32,6 +32,33 @@ export const irErrorPayloadFromBody = (body: Uint8Array): IRErrorPayload | undef
   return errorPayloadOf(source, details);
 };
 
+// Google RPC `google.rpc.Status` uses numeric HTTP `code` and canonical `status` enum names without a `type` string.
+// https://github.com/googleapis/googleapis/blob/bc7e3baa28fbb223fa93782e13782e130260fab8205bfc/google/rpc/code.proto
+const googleRpcErrorType = (status: string): string | undefined => {
+  switch (status) {
+  case 'INVALID_ARGUMENT':
+  case 'FAILED_PRECONDITION':
+  case 'OUT_OF_RANGE':
+    return 'invalid_request_error';
+  case 'UNAUTHENTICATED':
+    return 'authentication_error';
+  case 'PERMISSION_DENIED':
+    return 'permission_error';
+  case 'NOT_FOUND':
+    return 'not_found_error';
+  case 'RESOURCE_EXHAUSTED':
+    return 'rate_limit_error';
+  case 'UNAVAILABLE':
+    return 'overloaded_error';
+  case 'INTERNAL':
+  case 'DEADLINE_EXCEEDED':
+  case 'UNKNOWN':
+    return 'api_error';
+  default:
+    return undefined;
+  }
+};
+
 /** Restatement requires a message; preserve every unrepresented field in diagnostic details. */
 export const errorPayloadOf = (
   error: Readonly<Record<string, unknown>>,
@@ -39,12 +66,13 @@ export const errorPayloadOf = (
 ): IRErrorPayload | undefined => {
   const message = stringOf(error.message) ?? stringOf(error.msg);
   if (message === undefined) return undefined;
-  const type = stringOf(error.type);
+  const googleStatus = typeof error.code === 'number' ? stringOf(error.status) : undefined;
+  const type = stringOf(error.type) ?? (googleStatus === undefined ? undefined : googleRpcErrorType(googleStatus));
   const code = error.code === null ? null : stringOf(error.code) ?? stringOf(error.status);
   const param = error.param === null ? null : stringOf(error.param);
   const represented = new Set([
     typeof error.message === 'string' ? 'message' : 'msg',
-    ...(type === undefined ? [] : ['type']),
+    ...(stringOf(error.type) === undefined ? [] : ['type']),
     ...(code === undefined ? [] : [error.code === null || typeof error.code === 'string' ? 'code' : 'status']),
     ...(param === undefined ? [] : ['param']),
   ]);
@@ -93,6 +121,10 @@ export const errorPayloadFromEvent = (event: Readonly<Record<string, unknown>>):
 // Canonical wire payloads retain identity when their envelope adds no metadata.
 export const errorPayloadFromWire = (wire: unknown): IRErrorPayload => {
   const { source, details } = errorEnvelopeOf(recordOf(wire) ?? {});
+  if (typeof source.code === 'number') {
+    const payload = errorPayloadOf(source, details);
+    if (payload !== undefined) return payload;
+  }
   if (hasErrorMessage(source)) return withEnvelopeDetails(source, details);
   const aliasMessage = stringOf(source.msg);
   if (aliasMessage !== undefined) {

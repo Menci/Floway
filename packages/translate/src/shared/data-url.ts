@@ -1,4 +1,4 @@
-import { TranslateInputException } from '../../../shared/input-error.ts';
+import { TranslateInputException } from './input-error.ts';
 
 const DATA_URL = /^data:([^,]*),([\s\S]*)$/;
 const BASE64_MARKER = ';base64';

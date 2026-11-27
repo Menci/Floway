@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import { inputErrorResult, geminiGenerateContentInternalErrorPayload, gatewayErrorStatus, normalizeGeminiGenerateContentFailure } from './errors.ts';
 import { geminiGenerateContentCountTokensInterceptors, geminiGenerateContentInterceptors } from './interceptors/index.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
@@ -43,7 +45,8 @@ export interface GeminiGenerateContentAttemptCountTokensArgs {
 export const geminiGenerateContentAttempt = {
   generate: async (args: GeminiGenerateContentAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>>> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = structuredClone(sourcePayload);
+    // Translated payloads carry `JSON.rawJSON` tokens (such as `1.0` in tool arguments) that `structuredClone` rejects.
+    const payload = klona(sourcePayload);
     const headers = new Headers(sourceHeaders);
     const targetApi = geminiGenerateContentGenerateTarget.pick(candidate.model.endpoints);
     const invocation: GeminiGenerateContentInvocation = { payload, candidate, targetApi, headers };
