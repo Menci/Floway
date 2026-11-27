@@ -1,18 +1,20 @@
 import { estimateCycleQuota, type CycleQuota } from './cycle-quota.ts';
 import { checkMany } from '../../access-control/check.ts';
-import { metricDisplayResolverForKind } from '../../data-plane/providers/registry.ts';
+import { metricDisplayResolverForKind } from '../../data-plane/upstreams/registry.ts';
 import { userFromContext, type AuthedContext } from '../../middleware/auth.ts';
 import type { CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { upstreamMetricsQuery, upstreamResetCyclesQuery } from '../schemas.ts';
-import { upstreamMetricIdentityKey, type UpstreamMetricDisplay, type UpstreamMetricIdentity } from '@floway-dev/provider';
+import { upstreamMetricIdentityKey, type UpstreamMetricDisplay, type UpstreamMetricIdentity } from '@floway-dev/upstream';
 
 const auditableUpstream = async (c: AuthedContext, upstreamId: string) => {
   const [allowed] = await checkMany(userFromContext(c), [{
     target: { kind: 'upstream', upstreamId },
     requirement: { permission: 'Upstream.Audit' },
   }]);
-  return allowed ? await getRepo().upstreams.getById(upstreamId) : null;
+  if (!allowed) return undefined;
+  const [upstream] = await getRepo().upstreams.getMetaByIds([upstreamId]);
+  return upstream;
 };
 
 export const upstreamMetrics = async (c: CtxWithQuery<typeof upstreamMetricsQuery>) => {
@@ -35,7 +37,7 @@ interface ResetCycles {
 export const upstreamResetCycles = async (c: CtxWithQuery<typeof upstreamResetCyclesQuery>) => {
   const { upstream_id, before, cycle_metric, cycle_start } = c.req.valid('query');
   const upstream = await auditableUpstream(c, upstream_id);
-  const resolve = upstream === null ? undefined : metricDisplayResolverForKind(upstream.kind);
+  const resolve = upstream === undefined ? undefined : metricDisplayResolverForKind(upstream.kind);
   // A filter that is unavailable must not distinguish a missing upstream
   // from one that the operator cannot audit.
   if (resolve === undefined) return c.json<ResetCycles>({ upstreamId: upstream_id, supported: false, metrics: [] });
@@ -49,16 +51,16 @@ export const upstreamResetCycles = async (c: CtxWithQuery<typeof upstreamResetCy
       identity, display: { name, labelKey, ...(labelValues === undefined ? {} : { labelValues }), windowSeconds }, starts,
     }))];
   }));
-  const selection = cycle_metric === undefined ? undefined : metrics.find(metric => upstreamMetricIdentityKey(metric.identity) === cycle_metric);
-  const offset = cycle_start === undefined ? 0 : selection?.starts.indexOf(cycle_start) ?? -1;
-  if (selection !== undefined && (cycle_start === undefined || offset > 0)) {
-    const start = selection.starts[offset];
-    const display = resolve(selection.identity, { quotaDisplay: 'used' });
-    if (start !== undefined && display !== null) {
-      const quota = await estimateCycleQuota(repo, upstream_id, selection.identity, display,
-        { start, next: offset === 0 ? null : selection.starts[offset - 1]!, before });
-      return c.json<ResetCycles>({ upstreamId: upstream_id, supported: true, metrics, quota });
-    }
-  }
-  return c.json<ResetCycles>({ upstreamId: upstream_id, supported: true, metrics });
+  const data = { upstreamId: upstream_id, supported: true, metrics };
+  const selected = cycle_metric === undefined ? undefined
+    : metrics.find(metric => upstreamMetricIdentityKey(metric.identity) === cycle_metric);
+  if (selected === undefined) return c.json<ResetCycles>(data);
+  const offset = cycle_start === undefined ? 0 : selected.starts.indexOf(cycle_start);
+  const start = selected.starts[offset];
+  if (start === undefined || (cycle_start !== undefined && offset === 0)) return c.json<ResetCycles>(data);
+  const display = resolve(selected.identity, { quotaDisplay: 'used' });
+  if (display === null) throw new Error('Missing display for selected quota metric');
+  const quota = await estimateCycleQuota(repo, upstream_id, selected.identity, display,
+    { start, next: selected.starts[offset - 1] ?? null, before });
+  return c.json<ResetCycles>({ ...data, quota });
 };

@@ -2,9 +2,9 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { expect, test } from 'vitest';
 
-import { decodeUpstreamConfig, decodeUpstreamFlagOverrides } from '../../src/repo/upstream-codecs.ts';
+import { decodeUpstreamFlagOverrides, decodeUpstreamManualModel } from '../../src/repo/upstream-codecs.ts';
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
-import { parseFlagOverridesWire, resolveEffectiveFlags } from '@floway-dev/provider';
+import { parseFlagOverridesWire, resolveEffectiveFlags, type UpstreamModelConfig } from '@floway-dev/upstream';
 
 const MIGRATION = '0083_canonical_protocol_names.sql';
 
@@ -46,7 +46,7 @@ const LEGACY_CONFIG = {
   ],
 };
 
-const migrated = (): { overrides: Record<string, boolean>; config: Record<string, unknown> } => {
+const migrated = (): { overrides: Record<string, boolean>; manualModels: UpstreamModelConfig[] } => {
   const db = new DatabaseSync(':memory:');
   for (const [filename, sql] of migrationSqlByFilename) {
     if (filename === MIGRATION) {
@@ -57,37 +57,36 @@ const migrated = (): { overrides: Record<string, boolean>; config: Record<string
     }
     db.exec(sql);
   }
-  const row = db.prepare('SELECT config_json AS config, flag_overrides AS overrides FROM upstreams').get() as { config: string; overrides: string };
+  const row = db.prepare('SELECT flag_overrides AS overrides FROM upstreams').get() as { overrides: string };
+  const manualRows = db.prepare("SELECT config_json FROM upstream_manual_models WHERE upstream_id = 'up_legacy' ORDER BY position").all() as { config_json: string }[];
   db.close();
   return {
     overrides: decodeUpstreamFlagOverrides(row.overrides, 'up_legacy'),
-    config: decodeUpstreamConfig(row.config, 'up_legacy') as Record<string, unknown>,
+    manualModels: manualRows.map(entry => decodeUpstreamManualModel(entry.config_json, 'up_legacy')),
   };
 };
 
-const modelOverrides = (config: Record<string, unknown>, wireId: string): Record<string, boolean> | undefined => {
-  const models = config.models as { upstreamModelId: string; flagOverrides?: Record<string, boolean> }[];
-  return models.find(model => model.upstreamModelId === wireId)?.flagOverrides;
-};
+const modelOverrides = (manualModels: readonly UpstreamModelConfig[], wireId: string): Record<string, boolean> | undefined =>
+  manualModels.find(model => model.upstreamModelId === wireId)?.flagOverrides;
 
 test('the canonical flag-id migration renames the four protocol ids and keeps every toggle a boolean', () => {
-  const { overrides, config } = migrated();
+  const { overrides, manualModels } = migrated();
 
   expect(overrides).toEqual({
     'openai-responses-compact-shim': true,
     'anthropic-messages-web-search-shim': false,
     'vendor-qwen': true,
   });
-  expect(modelOverrides(config, 'wire-a')).toEqual({
+  expect(modelOverrides(manualModels, 'wire-a')).toEqual({
     'openai-responses-web-search-shim': true,
     'openai-responses-image-generation-shim': false,
     'usage-exclusive-cached-tokens': true,
   });
-  expect(modelOverrides(config, 'wire-b')).toBeUndefined();
+  expect(modelOverrides(manualModels, 'wire-b')).toBeUndefined();
 
   // The toggles still resolve to the same behavior, read the way the provider
   // reads them: on stays on, off stays off, under the new names.
-  expect([...resolveEffectiveFlags([overrides, modelOverrides(config, 'wire-a')])].sort()).toEqual([
+  expect([...resolveEffectiveFlags([overrides, modelOverrides(manualModels, 'wire-a')])].sort()).toEqual([
     'openai-responses-compact-shim',
     'openai-responses-web-search-shim',
     'usage-exclusive-cached-tokens',

@@ -7,7 +7,7 @@ import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
 import { dashboardChartBuckets, sameDashboardRange } from '../components/charts/dashboard-time';
-import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
+import { SEARCH_BACKEND_LABEL_KEYS } from '../components/search/backend';
 import { CycleQuota } from '../components/telemetry/cycle-quota';
 import { TelemetryFilterFields } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
@@ -202,9 +202,9 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
           detailsLabel={t('monitoring.usage.charts.search')}
           hidden={hiddenSearch}
           onHiddenChange={setHiddenSearch}
-          title={t('monitoring.usage.charts.searchWithProvider', {
-            provider: searchChart.providers
-              .map(id => SEARCH_PROVIDER_LABEL_KEYS[id] === undefined ? id : t(SEARCH_PROVIDER_LABEL_KEYS[id]))
+          title={t('monitoring.usage.charts.searchWithBackend', {
+            backend: searchChart.backends
+              .map(id => SEARCH_BACKEND_LABEL_KEYS[id] === undefined ? id : t(SEARCH_BACKEND_LABEL_KEYS[id]))
               .join(', '),
           })}
           valueFormatter={value => formatCount(value, locale)}

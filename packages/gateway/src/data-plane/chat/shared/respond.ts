@@ -4,8 +4,8 @@ import { recordSseOutcome, settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { plainResult, readResponseBody } from '@floway-dev/provider';
-import type { EventResultMetadata, ExecuteResult, HttpHead, PlainResult } from '@floway-dev/provider';
+import { plainResult, readResponseBody } from '@floway-dev/upstream';
+import type { EventResultMetadata, ExecuteResult, HttpHead, PlainResult } from '@floway-dev/upstream';
 
 // Used by count_tokens endpoints that either pass through the upstream body
 // or wrap an already-built error/success Response.

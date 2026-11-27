@@ -5,8 +5,8 @@ import { withVendorDeepSeekOpenAIResponsesNormalize } from '../../../../../src/d
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { eventResult, type FlagId } from '@floway-dev/upstream';
 
 const stubCtx = mockChatGatewayCtx();
 

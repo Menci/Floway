@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 
+import { testWebSearchConfigConnection } from '../../data-plane/tools/web-search/backend.ts';
 import { loadWebSearchConfig, parseWebSearchConfigStrict, saveWebSearchConfig } from '../../data-plane/tools/web-search/config.ts';
-import { testWebSearchConfigConnection } from '../../data-plane/tools/web-search/provider.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import type { webSearchConfigSchema } from '../schemas.ts';
 

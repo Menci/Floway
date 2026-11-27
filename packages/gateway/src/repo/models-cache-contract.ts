@@ -1,16 +1,21 @@
-import type { UpstreamModelsCache } from '@floway-dev/provider';
+import type { UpstreamModelsCacheState } from './types.ts';
 
-// Persisted ProviderModel rows contain code-derived metadata as well as the
+// Persisted UpstreamModel rows contain code-derived metadata as well as the
 // upstream response. Increment this whenever that derived catalog contract or
-// its serialization changes so older rows become cold across deployments.
+// its serialization changes so Cron refreshes older rows across deployments.
 export const MODEL_CATALOG_REVISION = 31;
 
-const AUTOMATIC_REFRESH_INTERVAL_MS = 10 * 60_000;
+export const AUTOMATIC_REFRESH_INTERVAL_MS = 10 * 60_000;
 
-// Successful publication starts the interval; a failed attempt retains
-// fetchedAt and is governed by the separate lastError backoff once due.
-export const shouldScheduleModelsRefresh = (cache: UpstreamModelsCache | null, now: number): boolean =>
-  cache?.revision !== MODEL_CATALOG_REVISION || now - cache.fetchedAt >= AUTOMATIC_REFRESH_INTERVAL_MS;
+export const isModelsCacheDue = (
+  cache: UpstreamModelsCacheState,
+  now: number,
+  requiresNetwork: boolean,
+): boolean => {
+  if (cache.revision !== MODEL_CATALOG_REVISION || cache.fetchedAt === null) return true;
+  if (!requiresNetwork) return false;
+  return now - cache.fetchedAt >= AUTOMATIC_REFRESH_INTERVAL_MS;
+};
 
 export const MAX_STORED_MODEL_ERROR_LENGTH = 16_384;
 

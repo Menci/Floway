@@ -88,9 +88,18 @@ const resolveBuckets = (
   return { values, records: applicable.map(({ record }) => record), decisions: [...decisions].map(([recordId, permissions]) => ({ recordId, permissions })) };
 };
 
+export interface ModelUsePlan {
+  readonly globalAllowed: boolean;
+  readonly candidateUpstreamIds: ReadonlySet<string>;
+  readonly deniedUpstreamIds: ReadonlySet<string>;
+  readonly upstreamsWithModelRules: ReadonlySet<string>;
+  readonly upstreamsWithModelGrants: ReadonlySet<string>;
+}
+
 export interface AccessResolver {
   resolve(scope: ResolveScope, evaluation: AccessEvaluation): AccessResolution;
   satisfies(scope: ResolveScope, requirement: AccessRequirement, evaluation: AccessEvaluation): boolean;
+  planModelUse(evaluation: AccessEvaluation): ModelUsePlan;
 }
 
 export const createAccessResolver = (records: readonly AccessRecord[]): AccessResolver => {
@@ -142,49 +151,123 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
   }
   for (const rows of modelBuckets.values()) rows.sort((left, right) => left.order - right.order || left.id - right.id);
   const candidates = (scope: ResolveScope, targetGroups: ReadonlySet<number>, self: boolean): AccessBucket[] => {
-    const result: Array<AccessBucket | undefined> = [];
     switch (scope.kind) {
-    case 'upstream': result.push(upstreamBuckets.get(scope.upstreamId), upstreamsBucket); break;
+    case 'upstream': {
+      const out: AccessBucket[] = [];
+      const upstreamBucket = upstreamBuckets.get(scope.upstreamId);
+      if (upstreamBucket !== undefined) out.push(upstreamBucket);
+      if (upstreamsBucket !== undefined) out.push(upstreamsBucket);
+      return out;
+    }
     case 'upstreamModel': {
-      const targetKey = accessScopeKey(scope);
-      result.push(
-        ...(modelBuckets.get(scope.upstreamId) ?? []).filter(bucket => bucket.scope.kind === 'upstreamModel'
-          && (scope.model.kind === 'regex'
-            ? bucket.scopeKey === targetKey
-            : bucket.scope.model.kind === 'exact'
-              ? bucket.scope.model.value === scope.model.value
-              : bucket.regex!.test(scope.model.value))),
-        upstreamBuckets.get(scope.upstreamId),
-        upstreamsBucket,
-      );
-      break;
+      // `modelBuckets` rows are pre-sorted by `(order, id)` and outrank the
+      // `upstream` and `upstreams` scopes per `accessScopeDepth`, so no per-check sort is needed.
+      const out: AccessBucket[] = [];
+      const rows = modelBuckets.get(scope.upstreamId);
+      if (rows !== undefined) {
+        if (scope.model.kind === 'regex') {
+          const targetKey = accessScopeKey(scope);
+          for (const bucket of rows) {
+            if (bucket.scopeKey === targetKey) out.push(bucket);
+          }
+        } else {
+          const modelValue = scope.model.value;
+          for (const bucket of rows) {
+            if (bucket.scope.kind === 'upstreamModel'
+              && (bucket.scope.model.kind === 'exact'
+                ? bucket.scope.model.value === modelValue
+                : bucket.regex!.test(modelValue))) {
+              out.push(bucket);
+            }
+          }
+        }
+      }
+      const upstreamBucket = upstreamBuckets.get(scope.upstreamId);
+      if (upstreamBucket !== undefined) out.push(upstreamBucket);
+      if (upstreamsBucket !== undefined) out.push(upstreamsBucket);
+      return out;
     }
-    case 'user': result.push(
-      self ? selfBucket : undefined,
-      userBuckets.get(scope.userId),
-      ...[...targetGroups].map(id => groupBuckets.get(id)),
-      usersBucket,
-    ); break;
-    case 'group': result.push(groupBuckets.get(scope.groupId), groupsBucket); break;
-    case 'upstreams': result.push(upstreamsBucket); break;
-    case 'users': result.push(usersBucket); break;
-    case 'groups': result.push(groupsBucket); break;
+    case 'group': {
+      const out: AccessBucket[] = [];
+      const groupBucket = groupBuckets.get(scope.groupId);
+      if (groupBucket !== undefined) out.push(groupBucket);
+      if (groupsBucket !== undefined) out.push(groupsBucket);
+      return out;
     }
-    return result.filter((value): value is AccessBucket => value !== undefined)
-      .toSorted((left, right) => precedenceDepth(right.scope) - precedenceDepth(left.scope)
-        || (left.scope.kind === 'upstreamModel' && right.scope.kind === 'upstreamModel'
-          ? left.order - right.order || left.id - right.id
-          : left.scopeKey.localeCompare(right.scopeKey, 'en', { numeric: true })));
+    case 'upstreams': return upstreamsBucket !== undefined ? [upstreamsBucket] : [];
+    case 'users': return usersBucket !== undefined ? [usersBucket] : [];
+    case 'groups': return groupsBucket !== undefined ? [groupsBucket] : [];
+    case 'user': {
+      const result: Array<AccessBucket | undefined> = [
+        self ? selfBucket : undefined,
+        userBuckets.get(scope.userId),
+        ...[...targetGroups].map(id => groupBuckets.get(id)),
+        usersBucket,
+      ];
+      return result.filter((value): value is AccessBucket => value !== undefined)
+        .toSorted((left, right) => precedenceDepth(right.scope) - precedenceDepth(left.scope)
+          || left.scopeKey.localeCompare(right.scopeKey, 'en', { numeric: true }));
+    }
+    }
   };
   const candidatesFor = (scope: ResolveScope, evaluation: AccessEvaluation): AccessBucket[] =>
     candidates(scope, evaluation.targetGroups, isSelfUserScope(scope, evaluation.subjectUserId));
+  const satisfies = (scope: ResolveScope, requirement: AccessRequirement, evaluation: AccessEvaluation): boolean => {
+    const selection = winningSelection(candidatesFor(scope, evaluation), scope, requirement.permission, evaluation.targetGroups);
+    return selection !== null && accessValueSatisfied(selection.representative.value, requirement);
+  };
   return {
     resolve(scope, evaluation) {
       return resolveBuckets(prepared, candidatesFor(scope, evaluation), scope, evaluation.targetGroups);
     },
-    satisfies(scope, requirement, evaluation) {
-      const selection = winningSelection(candidatesFor(scope, evaluation), scope, requirement.permission, evaluation.targetGroups);
-      return selection !== null && accessValueSatisfied(selection.representative.value, requirement);
+    satisfies,
+    planModelUse(evaluation) {
+      const requirement: AccessRequirement = { permission: 'Model.Use' };
+      const globalAllowed = satisfies({ kind: 'upstreams' }, requirement, evaluation);
+      const upstreamsWithModelRules = new Set<string>();
+      const upstreamsWithModelGrants = new Set<string>();
+      for (const [upstreamId, buckets] of modelBuckets) {
+        let hasRule = false;
+        let hasGrant = false;
+        for (const bucket of buckets) {
+          for (const { record } of bucket.rows) {
+            const value = record.values['Model.Use'];
+            if (value !== undefined) {
+              hasRule = true;
+              if (value === true) hasGrant = true;
+            }
+          }
+        }
+        if (hasRule) upstreamsWithModelRules.add(upstreamId);
+        if (hasGrant) upstreamsWithModelGrants.add(upstreamId);
+      }
+
+      const candidateUpstreamIds = new Set<string>();
+      const deniedUpstreamIds = new Set<string>();
+      if (!globalAllowed) {
+        for (const upstreamId of upstreamBuckets.keys()) {
+          if (satisfies({ kind: 'upstream', upstreamId }, requirement, evaluation)) {
+            candidateUpstreamIds.add(upstreamId);
+          }
+        }
+        for (const upstreamId of upstreamsWithModelGrants) {
+          candidateUpstreamIds.add(upstreamId);
+        }
+      } else {
+        for (const upstreamId of upstreamBuckets.keys()) {
+          if (!satisfies({ kind: 'upstream', upstreamId }, requirement, evaluation) && !upstreamsWithModelGrants.has(upstreamId)) {
+            deniedUpstreamIds.add(upstreamId);
+          }
+        }
+      }
+
+      return {
+        globalAllowed,
+        candidateUpstreamIds,
+        deniedUpstreamIds,
+        upstreamsWithModelRules,
+        upstreamsWithModelGrants,
+      };
     },
   };
 };

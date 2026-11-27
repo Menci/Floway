@@ -5,25 +5,20 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
-import { providerModelsUnavailableResponse } from '../../shared/upstream-response.ts';
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
-import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
+import { internalErrorResult, toInternalDebugError } from '@floway-dev/upstream';
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
 // etc.) as an OpenAI Chat Completions-shaped 502 with the same internal-error
-// envelope the in-flow `internal-error` ExecuteResult produces. A
-// `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
-// that body verbatim — the upstream's `/models` 401 IS the diagnostic. The
-// caller passes its outer `ctx` when one was already constructed (so the
-// dump row preserves the model attribution the request-time
-// `requestedModel` stamped, and the throwing-candidate telemetry stamped
-// in serve.ts survives onto the error row); a fresh ctx is minted only
-// for pre-parse failures where no payload was available to read model from.
+// envelope the in-flow `internal-error` ExecuteResult produces. The caller
+// passes its outer `ctx` when one was already constructed (so the dump row
+// preserves the model attribution the request-time `requestedModel` stamped,
+// and the throwing-candidate telemetry stamped in serve.ts survives onto the
+// error row); a fresh ctx is minted only for pre-parse failures where no
+// payload was available to read model from.
 const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
-  const verbatim = providerModelsUnavailableResponse(error);
-  if (verbatim !== null) return verbatim;
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
   const response = await respondOpenAIChatCompletions(c, result, false, false, effectiveCtx);

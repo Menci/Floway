@@ -1,4 +1,4 @@
-import { createAccessResolver } from './resolution.ts';
+import { createAccessResolver, type AccessResolver } from './resolution.ts';
 import { permissionsForScope } from './types.ts';
 import type { AccessCheck, AccessRequirement, AccessTarget } from './types.ts';
 import { getRepo } from '../repo/index.ts';
@@ -7,6 +7,14 @@ import type { User } from '../repo/types.ts';
 const assertCompatible = (target: AccessTarget, requirement: AccessRequirement): void => {
   const compatible = permissionsForScope(target).includes(requirement.permission);
   if (!compatible) throw new Error(`${requirement.permission} is not valid for ${target.kind}`);
+};
+
+export const loadSubjectAccessResolver = async (subject: User): Promise<AccessResolver> => {
+  const repo = getRepo();
+  const subjectGroupIds = await repo.groups.listIdsByUserId(subject.id);
+  const principals = [{ kind: 'user' as const, id: subject.id }, ...subjectGroupIds.map(id => ({ kind: 'group' as const, id }))];
+  const records = await repo.accessRecords.listByPrincipals(principals);
+  return createAccessResolver(records);
 };
 
 export const checkMany = async (

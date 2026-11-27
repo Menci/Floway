@@ -2,24 +2,24 @@ import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountAlphaSearchRoutes } from '../../../src/data-plane/alpha-search/routes.ts';
-import { resolveConfiguredWebSearchProvider } from '../../../src/data-plane/tools/web-search/provider.ts';
-import type { WebSearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../../../src/data-plane/tools/web-search/types.ts';
+import { resolveConfiguredWebSearchBackend } from '../../../src/data-plane/tools/web-search/backend.ts';
+import type { WebSearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchBackend, WebSearchBackendRequest, WebSearchBackendResult } from '../../../src/data-plane/tools/web-search/types.ts';
 import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
 import { internalErrorResponse } from '../../../src/middleware/internal-error-response.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
-// Real provider construction (`createTavilyWebSearchProvider` etc.) hits the
+// Real provider construction (`createTavilyWebSearchBackend` etc.) hits the
 // network; replace the resolver so tests drive a stub backend instead. A
 // WebSearchConfig row is still seeded so `loadWebSearchConfig` returns a real
 // value; the mock ignores it and returns the configured state each test
 // wants.
-vi.mock('../../../src/data-plane/tools/web-search/provider.ts');
-const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchProvider);
+vi.mock('../../../src/data-plane/tools/web-search/backend.ts');
+const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchBackend);
 
 const TAVILY_CONFIG: WebSearchConfig = {
-  provider: 'tavily',
+  backend: 'tavily',
   tavily: { apiKey: 'test-key' },
   microsoftWebIq: { apiKey: '' },
   jina: { apiKey: '' },
@@ -31,7 +31,7 @@ const PASSTHROUGH_CONFIG: WebSearchConfig = {
   passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_alpha', model: 'gpt-search' },
 };
 
-const searchUpstream = (modelIds: readonly string[]) => buildCustomUpstreamRecord({
+const searchUpstream = () => buildCustomUpstreamRecord({
   id: 'up_alpha',
   name: 'Alpha Search',
   config: {
@@ -40,23 +40,25 @@ const searchUpstream = (modelIds: readonly string[]) => buildCustomUpstreamRecor
     apiKey: 'search-secret',
     endpoints: { openaiResponses: {} },
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models: modelIds.map(upstreamModelId => ({ upstreamModelId, endpoints: { openaiResponses: {} } })),
   },
 });
 
+const searchManualModels = (modelIds: readonly string[]) =>
+  modelIds.map(upstreamModelId => ({ upstreamModelId, kind: 'chat' as const, endpoints: { openaiResponses: {} } }));
+
 interface ProviderOverrides {
-  search?: (req: WebSearchProviderRequest) => Promise<WebSearchProviderResult> | WebSearchProviderResult;
+  search?: (req: WebSearchBackendRequest) => Promise<WebSearchBackendResult> | WebSearchBackendResult;
   fetchPage?: (req: WebSearchFetchPageRequest) => Promise<WebSearchFetchPageResult> | WebSearchFetchPageResult;
 }
 
 interface BackendCall {
   kind: 'search' | 'fetchPage';
-  request: WebSearchProviderRequest | WebSearchFetchPageRequest;
+  request: WebSearchBackendRequest | WebSearchFetchPageRequest;
 }
 
-const makeStubProvider = (overrides: ProviderOverrides = {}): { provider: WebSearchProvider; calls: BackendCall[] } => {
+const makeStubProvider = (overrides: ProviderOverrides = {}): { backend: WebSearchBackend; calls: BackendCall[] } => {
   const calls: BackendCall[] = [];
-  const provider: WebSearchProvider = {
+  const backend: WebSearchBackend = {
     async search(request) {
       calls.push({ kind: 'search', request });
       if (overrides.search) return await overrides.search(request);
@@ -75,7 +77,7 @@ const makeStubProvider = (overrides: ProviderOverrides = {}): { provider: WebSea
       };
     },
   };
-  return { provider, calls };
+  return { backend, calls };
 };
 
 const buildAlphaSearchApp = () => {
@@ -124,7 +126,7 @@ describe('/alpha/search data plane', () => {
     ] as const)('returns the same missing-model response for $reason at $path', async ({ path, reason }) => {
       const { apiKey, repo } = await setupAppTest({ webSearchConfig: PASSTHROUGH_CONFIG });
       await repo.upstreams.deleteAll();
-      await saveUpstreamForTest(repo.upstreams, searchUpstream(['gpt-search']));
+      await saveUpstreamForTest(repo.upstreams, searchUpstream(), { manualModels: searchManualModels(['gpt-search']) });
       const request = { model: 'caller-context', commands: { search_query: [{ q: 'Floway' }] } };
       let upstreamCalls = 0;
       await withMockedFetch(
@@ -141,7 +143,7 @@ describe('/alpha/search data plane', () => {
           expect(upstreamCalls).toBe(1);
           upstreamCalls = 0;
           if (reason === 'missing-model') {
-            await saveUpstreamForTest(repo.upstreams, searchUpstream(['another-model']));
+            await saveUpstreamForTest(repo.upstreams, searchUpstream(), { manualModels: searchManualModels(['another-model']) });
             await warmModelsForTest();
           } else if (reason === 'denied-model') {
             await repo.accessRecords.save({
@@ -166,7 +168,7 @@ describe('/alpha/search data plane', () => {
     it('raw-passthrough mode dispatches to the selected custom upstream and preserves its response', async () => {
       const { apiKey, repo } = await setupAppTest({ webSearchConfig: PASSTHROUGH_CONFIG });
       await repo.upstreams.deleteAll();
-      await saveUpstreamForTest(repo.upstreams, searchUpstream(['gpt-search']));
+      await saveUpstreamForTest(repo.upstreams, searchUpstream(), { manualModels: searchManualModels(['gpt-search']) });
       const upstreamPayload = {
         encrypted_output: 'opaque',
         output: 'upstream output',
@@ -203,7 +205,7 @@ describe('/alpha/search data plane', () => {
     it('runs a search_query and returns rendered results as `output`', async () => {
       const { apiKey, repo } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
+      mockResolveConfigured.mockReturnValue({ type: 'enabled', backend: 'tavily', impl: stub.backend });
       const app = buildAlphaSearchApp();
 
       const response = await postSearch(app, apiKey.key, { commands: { search_query: [{ q: 'react hooks' }] } });
@@ -218,18 +220,18 @@ describe('/alpha/search data plane', () => {
       // Query filters flow through from settings.search_context_size.
       expect(stub.calls).toHaveLength(1);
       expect(stub.calls[0].kind).toBe('search');
-      expect((stub.calls[0].request as WebSearchProviderRequest).query).toBe('react hooks');
+      expect((stub.calls[0].request as WebSearchBackendRequest).query).toBe('react hooks');
 
       // Usage accounted against the caller's key.
       const usage = await repo.webSearchUsage.listAll();
       expect(usage).toHaveLength(1);
-      expect(usage[0]).toMatchObject({ provider: 'tavily', keyId: apiKey.id, action: 'search', requests: 1 });
+      expect(usage[0]).toMatchObject({ backend: 'tavily', keyId: apiKey.id, action: 'search', requests: 1 });
     });
 
     it('maps response_length and query-level filters onto the provider request', async () => {
       const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
+      mockResolveConfigured.mockReturnValue({ type: 'enabled', backend: 'tavily', impl: stub.backend });
       const app = buildAlphaSearchApp();
 
       const response = await postSearch(app, apiKey.key, {
@@ -241,7 +243,7 @@ describe('/alpha/search data plane', () => {
       });
       expect(response.status).toBe(200);
       expect(stub.calls).toHaveLength(1);
-      const request = stub.calls[0].request as WebSearchProviderRequest;
+      const request = stub.calls[0].request as WebSearchBackendRequest;
       expect(request.maxResults).toBe(10);
       expect(request.allowedDomains).toEqual(['example.com']);
       expect(request.recencyDays).toBe(7);
@@ -250,7 +252,7 @@ describe('/alpha/search data plane', () => {
     it('does not widen filtering when global and query domains do not intersect', async () => {
       const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
+      mockResolveConfigured.mockReturnValue({ type: 'enabled', backend: 'tavily', impl: stub.backend });
       const app = buildAlphaSearchApp();
 
       const response = await postSearch(app, apiKey.key, {

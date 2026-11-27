@@ -1,13 +1,10 @@
-import type { ApiErrorResult, PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { ApiErrorResult, PerformanceTelemetryContext } from '@floway-dev/upstream';
 
 // Failures a chat protocol can render before reaching an upstream; unexpected
-// throws bubble as-is. `failedUpstreams` on model-{missing,unsupported}
-// carries upstream names with a recorded catalog-refresh failure. The error
-// may predate this resolution and may accompany a usable last-known-good
-// catalog; empty means no consulted snapshot records such a failure.
+// throws bubble as-is.
 export type ChatServeFailure =
-  | { readonly kind: 'model-missing'; readonly model: string; readonly failedUpstreams: readonly string[] }
-  | { readonly kind: 'model-unsupported'; readonly model: string; readonly failedUpstreams: readonly string[] }
+  | { readonly kind: 'model-missing'; readonly model: string }
+  | { readonly kind: 'model-unsupported'; readonly model: string }
   | { readonly kind: 'routing-unavailable'; readonly message: string };
 
 export interface InputErrorDetails {
@@ -56,11 +53,10 @@ export const openAiErrorResult = (
 export const noViableCandidateFailure = (
   sawModel: boolean,
   model: string,
-  failedUpstreams: readonly string[],
 ): ChatServeFailure =>
   sawModel
-    ? { kind: 'model-unsupported', model, failedUpstreams }
-    : { kind: 'model-missing', model, failedUpstreams };
+    ? { kind: 'model-unsupported', model }
+    : { kind: 'model-missing', model };
 
 export const inputErrorFields = (error: InputErrorDetails): Record<string, unknown> | undefined => {
   const fields = {

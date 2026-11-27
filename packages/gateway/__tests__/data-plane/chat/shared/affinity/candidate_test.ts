@@ -11,13 +11,13 @@ import {
   selectAffinityCandidates,
 } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
-import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
+import { stubModelCandidate } from '@floway-dev/test-utils';
+import type { ModelCandidate } from '@floway-dev/upstream';
 
 const candidate = (upstreamId: string, model: string, rules?: AliasRules) => {
   const base = stubModelCandidate();
   const value = stubModelCandidate({
-    provider: { ...base.provider, upstreamId },
+    upstream: { ...base.upstream, upstreamId },
     model: { id: model },
   });
   return rules === undefined ? value : { ...value, rules };
@@ -30,22 +30,20 @@ const candidateWithScope = (
 ) => {
   const base = stubModelCandidate();
   return stubModelCandidate({
-    provider: { ...base.provider, upstreamId },
+    upstream: { ...base.upstream, upstreamId },
     model: {
       id: model,
+      upstreamModelId: model,
       opaqueBlobCompatibilityScope: scope,
-      providerModels: {
-        [upstreamId]: stubProviderModel({ id: model, upstreamModelId: model, opaqueBlobCompatibilityScope: scope }),
-      },
     },
   });
 };
 
 const targetFor = (value: ReturnType<typeof candidate>): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
+  upstreamId: value.upstream.upstreamId,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
+  opaqueBlobCompatibilityIdentity: { upstreamId: value.upstream.upstreamId, key: value.model.id },
 });
 
 const ownedBlob = (

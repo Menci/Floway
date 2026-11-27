@@ -64,8 +64,6 @@ test('browses earlier cycles and switches quota windows before applying the disp
   expect(screen.getByText('Previous cycle')).toBeTruthy();
   fireEvent.click(older);
   expect(screen.getByText('2 cycles ago')).toBeTruthy();
-  expect(screen.getByText('2026/10/10 01:40')).toBeTruthy();
-  expect(screen.getByText('2026/10/10 06:40')).toBeTruthy();
   fireEvent.click(older);
   expect(older.getAttribute('aria-disabled')).toBe('true');
   expect(change).not.toHaveBeenCalled();

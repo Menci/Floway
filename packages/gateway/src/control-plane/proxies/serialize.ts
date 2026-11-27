@@ -5,7 +5,7 @@
 // present a storage id or join a separately fetched catalog snapshot.
 
 import type { BackoffRow, ProxyRecord } from '../../repo/types.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamRecord } from '@floway-dev/upstream';
 
 export interface SerializedProxyRecord {
   id: string;

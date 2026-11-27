@@ -9,8 +9,8 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { decodeResponseBody, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
+import { decodeResponseBody, type ModelCandidate, directFetcher, type UpstreamOpenAIResponsesResult, type UpstreamStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/upstream';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -20,12 +20,11 @@ import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-
 interface QueuedResolution {
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
-  readonly failedUpstreams: readonly string[];
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastResolveCall: { model?: string } = {};
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
+vi.mock('../../../../src/data-plane/upstreams/resolution.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../../src/data-plane/upstreams/resolution.ts')>();
   return {
     ...original,
     enumerateModelCandidates: vi.fn(async ({ model }: { model: string }) => {
@@ -48,7 +47,6 @@ const queueResolution = (
   resolutionsQueue.push({
     candidates: aliasRules !== undefined ? candidates.map(c => ({ ...c, rules: aliasRules })) : candidates,
     sawModel: candidates.length > 0,
-    failedUpstreams: [],
   });
 };
 
@@ -104,31 +102,28 @@ const makeCandidate = (overrides: {
   upstream?: string;
   modelId?: string;
   endpoints?: ModelEndpoints;
-  callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
+  callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamOpenAIResponsesResult>;
+  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const provider = stubProvider({
+  const instance = stubUpstream({
     callOpenAIResponses: overrides.callOpenAIResponses,
     callAnthropicMessages: overrides.callAnthropicMessages,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream,
       kind: 'custom',
       name: upstream,
       inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      modelsCache: null,
-      instance: provider,
+      instance,
     },
-    // Default keeps stubInternalModel's three-endpoint map intact; tests that
+    // Default keeps stubUpstreamModel's three-endpoint map intact; tests that
     // need a rejected candidate pass an explicit `endpoints` override.
-    model: stubInternalModel({
+    model: stubUpstreamModel({
       id: overrides.modelId ?? 'test-model',
       ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-    }, upstream),
+    }),
     fetcher: directFetcher,
   };
 };
@@ -166,7 +161,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   installRepo();
   const capturedBodies: OpenAIResponsesPayloadEx[] = [];
   const observedModelIds: string[] = [];
-  const callOpenAIResponses = vi.fn(async (model: unknown, body: unknown): Promise<ProviderOpenAIResponsesResult> => {
+  const callOpenAIResponses = vi.fn(async (model: unknown, body: unknown): Promise<UpstreamOpenAIResponsesResult> => {
     observedModelIds.push((model as { id: string }).id);
     capturedBodies.push(body as OpenAIResponsesPayloadEx);
     return { action: 'generate', ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeOpenAIResponsesResult() }]), modelKey: 'gpt-5.4', http: { status: 200, headers: new Headers() } };

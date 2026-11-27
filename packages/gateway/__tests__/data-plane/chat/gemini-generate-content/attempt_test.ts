@@ -4,10 +4,10 @@ import { geminiGenerateContentAttempt } from '../../../../src/data-plane/chat/ge
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { ModelEndpoints } from '@floway-dev/protocols/common';
+import { parseJSONWithRawNumbers, type ModelEndpoints } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
+import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type UpstreamCallResult, type UpstreamCallOptions } from '@floway-dev/upstream';
 
 const API_KEY_ID = 'key_gemini_attempt_test';
 
@@ -27,20 +27,22 @@ const installRepo = (): InMemoryRepo => {
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
-  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<ProviderCallResult>;
-  callGeminiGenerateContentCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  rules?: ModelCandidate['rules'];
+  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<UpstreamCallResult>;
+  callGeminiGenerateContentCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const provider = stubProvider({
+  const instance = stubUpstream({
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
     callGeminiGenerateContentCountTokens: overrides.callGeminiGenerateContentCountTokens,
   });
   return {
-    provider: {
+    upstream: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
+      instance,
     },
-    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
+    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+    ...(overrides.rules === undefined ? {} : { rules: overrides.rules }),
     fetcher: directFetcher,
   };
 };
@@ -49,7 +51,7 @@ test('countTokens translates Gemini generateContent to Anthropic Messages count_
   installRepo();
   let upstreamBody: Record<string, unknown> | undefined;
   let callOptions: AnthropicMessagesUpstreamCallOptions | undefined;
-  const callAnthropicMessagesCountTokens = vi.fn(async (_model, body, _signal, opts): Promise<ProviderCallResult> => {
+  const callAnthropicMessagesCountTokens = vi.fn(async (_model, body, _signal, opts): Promise<UpstreamCallResult> => {
     upstreamBody = body as Record<string, unknown>;
     callOptions = opts;
     return {
@@ -157,4 +159,86 @@ test('countTokens runs the same shape cleanup chain generate does, and skips it 
   assertEquals(nativeBody?.safetySettings, payload.safetySettings);
   assertEquals(nativeBody?.contents, payload.contents);
   assertEquals(nativeBody?.tools, payload.tools);
+});
+
+test('native countTokens clones rawJSON values and applies alias rules', async () => {
+  installRepo();
+  let capturedBody: Record<string, unknown> | undefined;
+  const parsedArgs = parseJSONWithRawNumbers('{"huge":1e400}') as Record<string, unknown>;
+  const payload = makePayload({
+    contents: [{
+      role: 'model',
+      parts: [{ functionCall: { name: 'calc', args: parsedArgs } }],
+    }],
+  });
+
+  const result = await geminiGenerateContentAttempt.countTokens({
+    payload,
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({
+      endpoints: { geminiGenerateContent: {} },
+      rules: { reasoning: { budget_tokens: 2048 } },
+      callGeminiGenerateContentCountTokens: async (_model, body) => {
+        capturedBody = body as Record<string, unknown>;
+        return { http: Response.json({ totalTokens: 12 }), modelKey: 'k' };
+      },
+    }),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'plain');
+  if (result.type !== 'plain') throw new Error('unreachable');
+  assertEquals(JSON.parse(decodeResponseBody(result.body)), { totalTokens: 12 });
+  assertEquals(capturedBody?.generationConfig, { thinkingConfig: { thinkingBudget: 2048 } });
+  const forwardedArgs = (capturedBody?.contents as Array<{ parts?: Array<{ functionCall?: { args?: Record<string, unknown> } }> }>)[0]?.parts?.[0]?.functionCall?.args;
+  assertEquals(JSON.stringify(forwardedArgs), '{"huge":1e400}');
+});
+
+test('translated countTokens uses trip.error for structured Anthropic upstream errors and falls back on non-JSON bodies', async () => {
+  installRepo();
+  const structuredResp = await geminiGenerateContentAttempt.countTokens({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({
+      callAnthropicMessagesCountTokens: async () => ({
+        http: Response.json(
+          { type: 'error', error: { type: 'invalid_request_error', message: 'messages is invalid' } },
+          { status: 400, headers: { 'request-id': 'req-anthropic-err' } },
+        ),
+        modelKey: 'k',
+      }),
+    }),
+    headers: new Headers(),
+  });
+
+  assertEquals(structuredResp.type, 'plain');
+  if (structuredResp.type !== 'plain') throw new Error('unreachable');
+  assertEquals(structuredResp.http.status, 400);
+  assertEquals(structuredResp.http.headers.get('request-id'), 'req-anthropic-err');
+  assertEquals(JSON.parse(decodeResponseBody(structuredResp.body)), {
+    error: {
+      code: 400,
+      message: 'messages is invalid',
+      status: 'INVALID_ARGUMENT',
+      details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: { type: 'invalid_request_error' } }],
+    },
+  });
+
+  const plainTextResp = await geminiGenerateContentAttempt.countTokens({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({
+      callAnthropicMessagesCountTokens: async () => ({
+        http: new Response('upstream unavailable', { status: 503, headers: { 'content-type': 'text/plain' } }),
+        modelKey: 'k',
+      }),
+    }),
+    headers: new Headers(),
+  });
+  assertEquals(plainTextResp.type, 'plain');
+  if (plainTextResp.type !== 'plain') throw new Error('unreachable');
+  assertEquals(plainTextResp.http.status, 503);
+  assertEquals(JSON.parse(decodeResponseBody(plainTextResp.body)), {
+    error: { code: 503, message: 'upstream unavailable', status: 'UNAVAILABLE' },
+  });
 });

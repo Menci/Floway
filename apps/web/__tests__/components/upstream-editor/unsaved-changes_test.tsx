@@ -3,10 +3,10 @@ import { FormProvider, useForm } from 'react-hook-form';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
-import { UpstreamConfigSidebar, configReadOnly } from '../../../src/components/upstream-editor/config-sidebar';
+import { UpstreamConfigSidebar } from '../../../src/components/upstream-editor/config-sidebar';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
-import { ProviderConfigSection } from '../../../src/components/upstream-editor/provider-config';
+import { UpstreamKindConfigSection } from '../../../src/components/upstream-editor/upstream-kind-config';
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
@@ -23,8 +23,8 @@ const customRecord = (
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
     modelsFetch: { authStyle: 'bearer', ...modelsFetch },
-    models: [],
   },
+  manual_models: [],
   state: null,
   proxy_fallback_list: proxyFallbackList,
 });
@@ -36,7 +36,7 @@ const ConfigProbe = ({ record }: { record: UpstreamRecord }) => {
   return (
     <FormProvider {...form}>
       <output data-testid="dirty">{String(form.formState.isDirty)}</output>
-      <ProviderConfigSection record={record} onPatch={vi.fn()} onRefreshModels={vi.fn()} />
+      <UpstreamKindConfigSection record={record} onPatch={vi.fn()} />
     </FormProvider>
   );
 };
@@ -52,7 +52,6 @@ const SidebarProbe = ({ editLevel = 'full', record }: { editLevel?: 'off' | 'mod
         catalogAvailable
         discovered={[]}
         onPatch={vi.fn()}
-        onRefreshModels={vi.fn()}
         editLevel={editLevel}
         proxies={[]}
         record={record}
@@ -76,10 +75,10 @@ it('keeps Full-only values focusable and selectable in a models-only editor', ()
   expect(baseUrl.closest('[inert]')).toBeNull();
   const catalogSwitch = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('upstreams.editor.fields.fetchModels') });
   expect(catalogSwitch.hasAttribute('disabled')).toBe(false);
+  expect(catalogSwitch.getAttribute('aria-readonly')).toBe('true');
   expect(catalogSwitch.checked).toBe(true);
-  expect(configReadOnly('models')).toEqual({ connection: true, modelsFetch: false });
   fireEvent.click(catalogSwitch);
-  expect(catalogSwitch.checked).toBe(false);
+  expect(catalogSwitch.checked).toBe(true);
 });
 
 // The page reads formState.isDirty to decide whether leaving prompts, so each

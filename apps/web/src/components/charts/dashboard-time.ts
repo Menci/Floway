@@ -11,7 +11,7 @@ import {
   telemetryHourKey,
   type TelemetryBucketGranularity,
 } from '@floway-dev/protocols/browser';
-import { normalizeUpstreamMetricIdentity, upstreamMetricIdentityKey, type UpstreamMetricIdentity } from '@floway-dev/provider/browser';
+import { normalizeUpstreamMetricIdentity, upstreamMetricIdentityKey, type UpstreamMetricIdentity } from '@floway-dev/upstream/browser';
 
 export type DashboardPreset = 'today' | '7d' | '30d';
 export interface DashboardResetRange {
@@ -22,7 +22,8 @@ export interface DashboardResetRange {
   /** Null follows the current cycle; a closed cycle stays on the same reset. */
   end: number | null;
 }
-export type DashboardRange = DashboardPreset | CalendarDateRange | DashboardResetRange;
+type DashboardCalendarRange = DashboardPreset | CalendarDateRange;
+export type DashboardRange = DashboardCalendarRange | DashboardResetRange;
 export const isResetRange = (range: DashboardRange): range is DashboardResetRange =>
   typeof range !== 'string' && 'kind' in range;
 export const isCalendarRange = (range: DashboardRange): range is CalendarDateRange =>
@@ -166,22 +167,20 @@ const framesForInterval = (
   return frames;
 };
 
-export const dashboardGranularity = (range: DashboardRange, nowMs: number): DashboardGranularity => {
+export const dashboardGranularity = (range: DashboardCalendarRange, nowMs: number): DashboardGranularity => {
   if (typeof range === 'string') return range === 'today' ? 'hour' : range === '7d' ? '4h' : 'day';
   const interval = dashboardInterval(range, nowMs);
   for (const granularity of AUTO_GRANULARITIES) {
     if (framesForInterval(interval, granularity, AUTO_BUCKET_TARGET).length <= AUTO_BUCKET_TARGET) return granularity;
   }
-  const days = isResetRange(range)
-    ? telemetryDayOrdinal(calendarDate(new Date(interval.end - 1))) - telemetryDayOrdinal(calendarDate(new Date(interval.start))) + 1
-    : telemetryDayOrdinal(range.end) - telemetryDayOrdinal(range.start) + 1;
+  const days = telemetryDayOrdinal(range.end) - telemetryDayOrdinal(range.start) + 1;
   return `${Math.ceil(days / AUTO_BUCKET_TARGET)}d`;
 };
 
-export const dashboardBucketFrames = (range: DashboardRange, nowMs: number): DashboardBucketFrame[] =>
+export const dashboardBucketFrames = (range: DashboardCalendarRange, nowMs: number): DashboardBucketFrame[] =>
   framesForInterval(dashboardInterval(range, nowMs), dashboardGranularity(range, nowMs));
 
-export const dashboardRangeQuery = (range: DashboardRange, nowMs: number) => {
+export const dashboardRangeQuery = (range: DashboardCalendarRange, nowMs: number) => {
   const interval = dashboardInterval(range, nowMs);
   const bucket = dashboardGranularity(range, nowMs);
   const utcHours = bucket === 'hour';

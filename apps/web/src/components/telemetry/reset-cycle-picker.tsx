@@ -10,7 +10,7 @@ import { Dropdown } from '../ui/fluent-form-controls';
 import { PANEL_STACK_CLASS, TIGHT_STACK_CLASS } from '../ui/layout';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { upstreamMetricDisplayName } from '../upstream-metrics/display-name';
-import { formatUpstreamMetricIdentity, upstreamMetricIdentityKey } from '@floway-dev/provider/browser';
+import { formatUpstreamMetricIdentity, upstreamMetricIdentityKey } from '@floway-dev/upstream/browser';
 
 const { Button, Field, Option, Text } = fluentComponents;
 

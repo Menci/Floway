@@ -1,20 +1,20 @@
-import type { WebSearchProvider, WebSearchProviderName, WebSearchProviderRequest, WebSearchProviderResult } from './types.ts';
+import type { WebSearchBackend, WebSearchBackendName, WebSearchBackendRequest, WebSearchBackendResult } from './types.ts';
 import { recordWebSearchUsage } from './usage.ts';
 
 export const runWebSearchAndRecordUsage = async (opts: {
-  provider: WebSearchProvider;
-  providerName: WebSearchProviderName;
+  backend: WebSearchBackend;
+  backendName: WebSearchBackendName;
   keyId: string;
-  request: WebSearchProviderRequest;
-}): Promise<WebSearchProviderResult> => {
+  request: WebSearchBackendRequest;
+}): Promise<WebSearchBackendResult> => {
   try {
-    return await opts.provider.search(opts.request);
+    return await opts.backend.search(opts.request);
   } finally {
-    // Telemetry must never mask the provider result; log and swallow
+    // Telemetry must never mask the backend result; log and swallow
     // recording failures.
     try {
       await recordWebSearchUsage({
-        provider: opts.providerName,
+        backend: opts.backendName,
         keyId: opts.keyId,
         action: 'search',
       });

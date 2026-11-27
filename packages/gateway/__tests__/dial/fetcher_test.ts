@@ -5,8 +5,8 @@ import type { ProxyEntry } from '../../src/dial/proxy-catalog.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import { buildCustomUpstreamRecord } from '../test-utils/app.ts';
-import { isReplayableBody, type ReplayableBody } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type SocketDial } from '@floway-dev/proxy';
+import { isReplayableBody, type ReplayableBody } from '@floway-dev/upstream';
 
 const stubSocketDial: SocketDial = {
   connect: async () => {

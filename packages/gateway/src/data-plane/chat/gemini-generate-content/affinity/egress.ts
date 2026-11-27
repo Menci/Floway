@@ -385,16 +385,14 @@ const mergeEventMetadata = (
   const extras: Record<string, unknown> = {};
   captureExtras(earlier as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_RESULT_KEYS, extras);
   captureExtras(later as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_RESULT_KEYS, extras);
-  const usageMetadata = later.usageMetadata ?? earlier.usageMetadata;
-  const modelVersion = later.modelVersion ?? earlier.modelVersion;
-  const responseId = later.responseId ?? earlier.responseId;
+  const known: Record<string, unknown> = {};
+  for (const key of GEMINI_GENERATE_CONTENT_RESULT_KEYS) {
+    if (key === 'candidates') continue;
+    const value = later[key] ?? earlier[key];
+    if (value !== undefined) known[key] = value;
+  }
   for (const key of Object.keys(target)) if (key !== 'candidates') delete (target as Record<string, unknown>)[key];
-  Object.assign(target, {
-    ...(usageMetadata !== undefined ? { usageMetadata } : {}),
-    ...(modelVersion !== undefined ? { modelVersion } : {}),
-    ...(responseId !== undefined ? { responseId } : {}),
-    ...extras,
-  });
+  Object.assign(target, known, extras);
 };
 
 const clearEventMetadata = (event: GeminiGenerateContentResult): void => {

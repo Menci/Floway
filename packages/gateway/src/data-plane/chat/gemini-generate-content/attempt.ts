@@ -1,3 +1,5 @@
+import { klona } from 'klona/json';
+
 import { inputErrorResult, geminiGenerateContentInternalErrorPayload, gatewayErrorStatus, normalizeGeminiGenerateContentFailure } from './errors.ts';
 import { geminiGenerateContentCountTokensInterceptors, geminiGenerateContentInterceptors } from './interceptors/index.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
@@ -8,15 +10,15 @@ import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import { applyRulesToUpstreamGeminiGenerateContent } from '../shared/alias-rules.ts';
 import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
+import { upstreamStreamResultToExecuteResult } from '../shared/upstream-stream-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { billableUsageFromGeminiGenerateContentEvent, type GeminiGenerateContentPayload, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import { type ModelCandidate, providerModelOf, decodeResponseBody, plainResult, toInternalDebugError, type ApiErrorResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/provider';
 import { routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
+import { type ModelCandidate, decodeResponseBody, plainResult, toInternalDebugError, type ApiErrorResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/upstream';
 
 // A candidate that speaks Gemini's native wire receives the client's payload
 // as shaped, so the source must be tried first. Everything else translates:
@@ -43,7 +45,7 @@ export interface GeminiGenerateContentAttemptCountTokensArgs {
 export const geminiGenerateContentAttempt = {
   generate: async (args: GeminiGenerateContentAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>>> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = structuredClone(sourcePayload);
+    const payload = klona(sourcePayload);
     const headers = new Headers(sourceHeaders);
     const targetApi = geminiGenerateContentGenerateTarget.pick(candidate.model.endpoints);
     const invocation: GeminiGenerateContentInvocation = { payload, candidate, targetApi, headers };
@@ -56,19 +58,20 @@ export const geminiGenerateContentAttempt = {
 
   countTokens: async (args: GeminiGenerateContentAttemptCountTokensArgs): Promise<ApiErrorResult | PlainResult> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = structuredClone(sourcePayload);
+    const payload = klona(sourcePayload);
     const headers = new Headers(sourceHeaders);
     const targetApi = geminiGenerateContentCountTokensTarget.pick(candidate.model.endpoints);
     const invocation: GeminiGenerateContentInvocation = { payload, candidate, targetApi, headers };
     return await runInterceptors(invocation, ctx, geminiGenerateContentCountTokensInterceptors, async () => {
       if (targetApi === 'geminiGenerateContent') {
-        const { http: response } = await candidate.provider.instance.callGeminiGenerateContentCountTokens(
-          providerModelOf(candidate),
+        if (candidate.rules !== undefined) applyRulesToUpstreamGeminiGenerateContent(invocation.payload, candidate.rules);
+        const { http: response } = await candidate.upstream.instance.callGeminiGenerateContentCountTokens(
+          candidate.model,
           invocation.payload,
           ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, invocation.headers),
         );
-        return await plainResultFromResponse(response, candidate.provider.upstreamId);
+        return await plainResultFromResponse(response, candidate.upstream.upstreamId);
       }
       // Without a native target the count is synthesized from Anthropic
       // Messages: the payload the shared interceptor chain already cleaned is
@@ -86,7 +89,7 @@ export const geminiGenerateContentAttempt = {
       const anthropicMessagesResult = await anthropicMessagesAttempt.countTokens({
         payload: target, ctx, candidate, headers: invocation.headers, anthropicBeta: [],
       });
-      return reshapeAnthropicMessagesCountAsGeminiGenerateContent(anthropicMessagesResult);
+      return reshapeAnthropicMessagesCountAsGeminiGenerateContent(anthropicMessagesResult, trip.error);
     });
   },
 };
@@ -97,7 +100,10 @@ export const geminiGenerateContentAttempt = {
 // either is accepted. A missing or non-numeric figure is surfaced as a
 // 502 Google-RPC error so the caller sees a typed Gemini generateContent failure rather
 // than a passthrough of the upstream shape.
-const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (anthropicMessagesResult: PlainResult): PlainResult => {
+const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (
+  anthropicMessagesResult: PlainResult,
+  translateError: (status: number, headers: Headers, body: Uint8Array) => { readonly status: number; readonly headers: Headers; readonly body: unknown } | undefined,
+): PlainResult => {
   const { status, headers } = anthropicMessagesResult.http;
   if (anthropicMessagesResult.body === null && (status === 204 || status === 205 || status === 304)) {
     return anthropicMessagesResult;
@@ -105,7 +111,18 @@ const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (anthropicMessagesR
   const text = decodeResponseBody(anthropicMessagesResult.body);
   const http = { status, headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, headers) };
   if (status !== 200) {
-    // Empty upstream bodies fall back to a fixed message so the Google-RPC envelope is never empty.
+    const rawBody = anthropicMessagesResult.body instanceof Uint8Array
+      ? anthropicMessagesResult.body
+      : new TextEncoder().encode(text);
+    const translated = translateError(status, headers, rawBody);
+    if (translated !== undefined) {
+      return plainResult(
+        { status: translated.status, headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, translated.headers) },
+        new TextEncoder().encode(JSON.stringify(translated.body)),
+        anthropicMessagesResult.upstreamId,
+      );
+    }
+    // Empty or unrecognized upstream bodies fall back to a Google-RPC envelope.
     return plainResult(
       http,
       new TextEncoder().encode(JSON.stringify({
@@ -148,13 +165,13 @@ const dispatchGeminiGenerateContent = async (
     if (candidate.rules !== undefined) applyRulesToUpstreamGeminiGenerateContent(invocation.payload, candidate.rules);
     // The upstream reads the model from the URL, so the payload crosses the
     // provider boundary exactly as the client shaped it.
-    const providerResult = await candidate.provider.instance.callGeminiGenerateContent(
-      providerModelOf(candidate),
+    const upstreamResult = await candidate.upstream.instance.callGeminiGenerateContent(
+      candidate.model,
       invocation.payload,
       ctx.abortSignal,
       buildUpstreamCallOptions(candidate, ctx, invocation.headers),
     );
-    return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, billableUsageFromGeminiGenerateContentEvent);
+    return await upstreamStreamResultToExecuteResult(upstreamResult, candidate, targetApi, ctx, billableUsageFromGeminiGenerateContentEvent);
   }
   // The model comes from the URL and is folded into the translation request.
   const request = { ...invocation.payload, model: candidate.model.id };

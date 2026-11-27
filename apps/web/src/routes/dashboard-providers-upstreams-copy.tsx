@@ -38,11 +38,11 @@ const copyableRecord = (source: UpstreamRecord, name: string, hue: number): Upst
 
   switch (source.kind) {
   case 'custom':
-    return { ...base, kind: 'custom', config: structuredClone(source.config), state: null };
+    return { ...base, kind: 'custom', config: structuredClone(source.config), manual_models: structuredClone(source.manual_models), state: null };
   case 'azure':
-    return { ...base, kind: 'azure', config: structuredClone(source.config), state: null };
+    return { ...base, kind: 'azure', config: structuredClone(source.config), manual_models: structuredClone(source.manual_models), state: null };
   case 'ollama':
-    return { ...base, kind: 'ollama', config: structuredClone(source.config), state: null };
+    return { ...base, kind: 'ollama', config: structuredClone(source.config), manual_models: structuredClone(source.manual_models), state: null };
   case 'kimi-code':
     return { ...base, kind: 'kimi-code', config: structuredClone(source.config), state: null };
   case 'copilot':

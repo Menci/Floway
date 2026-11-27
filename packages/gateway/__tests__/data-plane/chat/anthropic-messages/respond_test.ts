@@ -3,8 +3,8 @@ import { test } from 'vitest';
 
 import { respondAnthropicMessages } from '../../../../src/data-plane/chat/anthropic-messages/respond.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import { toInternalDebugError, internalErrorResult, eventResult } from '@floway-dev/provider';
 import { assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { toInternalDebugError, internalErrorResult, eventResult } from '@floway-dev/upstream';
 
 test.each([false, true])('anthropic-messages internal failures preserve transport shape and namespaced diagnostics (stream=%s)', async stream => {
   const cause = new TypeError('nested');

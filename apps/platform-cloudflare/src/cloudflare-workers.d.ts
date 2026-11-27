@@ -17,20 +17,10 @@ declare module 'cloudflare:workers' {
     protected env: Env;
     constructor(ctx: DurableObjectState, env: Env);
   }
-
-  export abstract class WorkerEntrypoint<Env = unknown> {
-    protected env: Env;
-  }
 }
 
-// The runtime surface used for hibernatable WebSockets and the loopback
-// WorkerEntrypoint that executes database-owning operations outside the DO.
+// The runtime surface used for hibernatable WebSockets.
 interface DurableObjectState {
-  readonly exports: {
-    readonly ExecutionOperationEntrypoint: {
-      fetch(request: Request): Promise<Response>;
-    };
-  };
   acceptWebSocket(server: WebSocket): void;
   getWebSockets(): WebSocket[];
 }

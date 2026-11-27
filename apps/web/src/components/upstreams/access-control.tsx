@@ -1,7 +1,7 @@
 import { ShieldKeyhole24Regular } from '@fluentui/react-icons';
 import { useCallback, useId, useMemo } from 'react';
 
-import { ProviderBadge } from './provider-badge';
+import { UpstreamBadge } from './upstream-kind-badge';
 import type { ControlPlaneModel, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -127,7 +127,7 @@ function AccessRow({ disabled, index, onToggle, reorder, row }: {
       />
       <ReorderHandle {...reorder.handleProps(index)} label={t('upstreams.actions.reorder', { name: row.name })} />
     </div></TableCell>
-    <TableCell><ProviderBadge label={row.name} upstream={row.upstream} /></TableCell>
+    <TableCell><UpstreamBadge label={row.name} upstream={row.upstream} /></TableCell>
     <TableCell><span className="whitespace-nowrap tabular-nums">
       {row.modelCount === null
         ? t('apiKeys.upstreamAccess.modelCountUnknown')

@@ -2,9 +2,9 @@ import { describe, expect, test } from 'vitest';
 
 import { executeTranslation } from '../../../../src/data-plane/chat/shared/execute-translation.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { decodeResponseBody, type ExecuteResult } from '@floway-dev/provider';
 import { testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import type { TranslateTrip } from '@floway-dev/translate';
+import { decodeResponseBody, type ExecuteResult } from '@floway-dev/upstream';
 
 // Fake event types — no real protocol types needed.
 type SrcPayload = { model: string; stream?: boolean };

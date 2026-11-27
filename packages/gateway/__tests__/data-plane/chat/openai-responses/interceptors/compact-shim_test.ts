@@ -6,8 +6,8 @@ import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { type OpenAIResponsesCompactionItemEx, collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesPayloadEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { eventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { eventResult, type ExecuteResult, type FlagId } from '@floway-dev/upstream';
 
 const stubCtx = mockChatGatewayCtx();
 

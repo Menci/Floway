@@ -29,7 +29,7 @@ export const listProxies = async (c: Context) => {
 // the fallback list stays Full-only at the write path.
 export const listProxyOptions = async (c: CtxWithQuery<typeof proxyOptionsQuery>) => {
   const upstreamId = c.req.valid('query').upstream_id;
-  if (!await getRepo().upstreams.getById(upstreamId)) return c.json({ error: 'Upstream not found' }, 404);
+  if ((await getRepo().upstreams.getMetaByIds([upstreamId])).length === 0) return c.json({ error: 'Upstream not found' }, 404);
   const access = (await resolveUpstreamAccesses(userFromContext(c), [upstreamId])).get(upstreamId)!;
   if (!access.audit && access.edit === 'off') {
     return c.json({ error: 'Upstream not found' }, 404);
@@ -184,20 +184,16 @@ export const testProxy = async (c: CtxWithJson<typeof testProxyBody>) => {
 
 export const listAllBackoffs = async (c: Context) => {
   const repo = getRepo();
-  const [rows, upstreams] = await Promise.all([
-    repo.proxyBackoffs.listAll(),
-    repo.upstreams.list(),
-  ]);
+  const rows = await repo.proxyBackoffs.listAll();
+  const upstreams = await repo.upstreams.getMetaByIds(rows.map(row => row.upstreamId));
   return c.json(backoffRowsToJson(rows, upstreams));
 };
 
 export const listProxyBackoffs = async (c: Context) => {
   const id = c.req.param('id') ?? '';
   const repo = getRepo();
-  const [rows, upstreams] = await Promise.all([
-    repo.proxyBackoffs.listForProxy(id),
-    repo.upstreams.list(),
-  ]);
+  const rows = await repo.proxyBackoffs.listForProxy(id);
+  const upstreams = await repo.upstreams.getMetaByIds(rows.map(row => row.upstreamId));
   return c.json(backoffRowsToJson(rows, upstreams));
 };
 

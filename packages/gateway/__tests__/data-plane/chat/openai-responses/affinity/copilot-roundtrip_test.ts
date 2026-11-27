@@ -6,9 +6,9 @@ import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinit
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { initProviderRepo, providerModelOf, type UpstreamRecord } from '@floway-dev/provider';
-import { clearInProcessCopilotTokenCache, copilotProviderModule } from '@floway-dev/provider-copilot';
-import { noopUpstreamCallOptions, sseResponse, stubModelCandidate, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
+import { noopUpstreamCallOptions, sseResponse, stubModelCandidate, stubUpstream, withMockedFetch } from '@floway-dev/test-utils';
+import { initUpstreamRuntimeRepo, type UpstreamRecord } from '@floway-dev/upstream';
+import { clearInProcessCopilotTokenCache, copilotUpstreamModule } from '@floway-dev/upstream-copilot';
 
 const upstream: UpstreamRecord = {
   id: 'up-copilot',
@@ -31,7 +31,6 @@ const upstream: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
   config: {
     githubHost: 'github.com',
@@ -64,31 +63,28 @@ const collectEvents = async (
 };
 
 test('Copilot item-id and generic affinity trailers compose and unwrap in boundary order', async () => {
-  initProviderRepo(() => ({
+  initUpstreamRuntimeRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => ({ ...upstream, configVersion: 1 }),
+      getById: async () => ({ ...upstream, version: 1 }),
       saveState: async () => {},
     },
   }));
   clearInProcessCopilotTokenCache();
-  const provider = copilotProviderModule.create(upstream);
+  const copilotUpstream = copilotUpstreamModule.create(upstream);
   const rawModel = { id: 'gpt-test', supported_endpoints: ['/responses'] };
   const candidate = stubModelCandidate({
-    provider,
+    upstream: copilotUpstream,
     model: { id: 'gpt-test', endpoints: { openaiResponses: {} } },
-    providerData: { rawModels: [rawModel] },
+    upstreamData: { rawModels: [rawModel] },
   });
   const otherCandidate = stubModelCandidate({
-    provider: {
+    upstream: {
       upstreamId: 'up-other',
       kind: 'custom',
       name: 'Other',
       inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      modelsCache: null,
-      instance: stubProvider(),
+      instance: stubUpstream(),
     },
     model: { id: 'gpt-test', endpoints: { openaiResponses: {} } },
   });
@@ -119,8 +115,8 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       return sseResponse();
     },
     async () => {
-      const first = await provider.instance.callOpenAIResponses(
-        providerModelOf(candidate),
+      const first = await copilotUpstream.instance.callOpenAIResponses(
+        candidate.model,
         { input: [], stream: true, store: false },
         'generate',
         undefined,
@@ -132,9 +128,9 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       const publicEvents = await collectEvents(wrapOpenAIResponsesAffinityEgress(first.events, {
         codec,
         affinity: {
-          upstreamId: provider.upstreamId,
+          upstreamId: copilotUpstream.upstreamId,
           modelId: candidate.model.id,
-          opaqueBlobCompatibilityIdentity: { upstreamId: provider.upstreamId, key: candidate.model.id },
+          opaqueBlobCompatibilityIdentity: { upstreamId: copilotUpstream.upstreamId, key: candidate.model.id },
         },
       }));
       const done = publicEvents.find(event => event.type === 'response.output_item.done');
@@ -157,8 +153,8 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       expect(incompatible.input).toEqual([]);
 
       const { model: _model, ...exactBody } = exact;
-      const second = await provider.instance.callOpenAIResponses(
-        providerModelOf(candidate),
+      const second = await copilotUpstream.instance.callOpenAIResponses(
+        candidate.model,
         exactBody,
         'generate',
         undefined,

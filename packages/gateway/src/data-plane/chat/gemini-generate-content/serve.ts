@@ -1,14 +1,14 @@
 import { analyzeGeminiGenerateContentAffinity } from './affinity/ingress.ts';
 import { geminiGenerateContentAttempt, geminiGenerateContentCountTokensTarget, geminiGenerateContentGenerateTarget } from './attempt.ts';
 import { renderGeminiGenerateContentFailure } from './errors.ts';
-import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
+import { enumerateModelCandidates } from '../../upstreams/resolution.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
+import type { ExecuteResult, PlainResult } from '@floway-dev/upstream';
 
 export interface GeminiGenerateContentServeGenerateArgs {
   readonly payload: GeminiGenerateContentPayload;
@@ -30,20 +30,19 @@ export interface GeminiGenerateContentServeCountTokensArgs {
 export const geminiGenerateContentServe = {
   generate: async (args: GeminiGenerateContentServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>>> => {
     const { payload, ctx, model, headers } = args;
-    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
+    const { candidates: enumerated, sawModel } = await enumerateModelCandidates({
       subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       randomizeUpstreams: ctx.randomizeUpstreams,
       model,
       kind: 'chat',
-      scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
     const affinity = await analyzeGeminiGenerateContentAffinity(payload, ctx.affinity.codec);
     const viable = enumerated.filter(c => geminiGenerateContentGenerateTarget.canServe(c.model.endpoints));
     const selection = selectAffinityCandidates(viable, affinity);
     if ('kind' in selection) return renderGeminiGenerateContentFailure(selection, 'generate');
-    if (selection.candidates.length === 0) return renderGeminiGenerateContentFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'generate');
+    if (selection.candidates.length === 0) return renderGeminiGenerateContentFailure(noViableCandidateFailure(sawModel, model), 'generate');
 
     // Gemini generateContent carries the requested model in its URL, so affinity preparation
     // owns each candidate payload while dispatch uses the candidate's canonical model.
@@ -62,20 +61,19 @@ export const geminiGenerateContentServe = {
 
   countTokens: async (args: GeminiGenerateContentServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> | PlainResult> => {
     const { payload, ctx, model, headers } = args;
-    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
+    const { candidates: enumerated, sawModel } = await enumerateModelCandidates({
       subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       randomizeUpstreams: ctx.randomizeUpstreams,
       model,
       kind: 'chat',
-      scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
     const affinity = await analyzeGeminiGenerateContentAffinity(payload, ctx.affinity.codec);
     const viable = enumerated.filter(c => geminiGenerateContentCountTokensTarget.canServe(c.model.endpoints));
     const selection = selectAffinityCandidates(viable, affinity);
     if ('kind' in selection) return renderGeminiGenerateContentFailure(selection, 'countTokens');
-    if (selection.candidates.length === 0) return renderGeminiGenerateContentFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'countTokens');
+    if (selection.candidates.length === 0) return renderGeminiGenerateContentFailure(noViableCandidateFailure(sawModel, model), 'countTokens');
 
     return await iterateCandidates(
       selection.candidates,

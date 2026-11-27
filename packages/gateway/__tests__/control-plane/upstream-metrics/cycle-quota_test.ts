@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildChatGPTUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
-import { upstreamMetricIdentityKey, type UpstreamMetricIdentity } from '@floway-dev/provider';
+import { upstreamMetricIdentityKey, type UpstreamMetricIdentity } from '@floway-dev/upstream';
 
 const time = (hour: number, minute = 0) => Date.UTC(2026, 10, 18, hour, minute);
 const quotaUrl = (upstreamId: string, identity: UpstreamMetricIdentity, cycleStart?: number) => {
@@ -34,6 +34,7 @@ it('estimates the requested cycle from its own priced hours, with upstream audit
   await cost(6, '2', '1');
   await cost(3, '2000', '1', 'another-upstream');
 
+  const historyUrl = `/api/upstream-reset-cycles?upstream_id=${upstreamId}&before=${time(7)}`;
   const url = quotaUrl(upstreamId, metric);
   expect(await (await requestApp(url, { headers })).json()).toEqual({ upstreamId, supported: false, metrics: [] });
   await repo.accessRecords.save({
@@ -47,12 +48,19 @@ it('estimates the requested cycle from its own priced hours, with upstream audit
     expect(response.status).toBe(200);
     return await response.json();
   };
+  expect(await request(historyUrl)).toMatchObject({
+    upstreamId, supported: true, metrics: expect.arrayContaining([
+      expect.objectContaining({ identity: metric, starts: [time(6, 17), time(1, 17)] }),
+    ]),
+  });
   expect(await request(url)).toMatchObject({ quota: { kind: 'estimated', usd: '20' } });
   expect(await request(quotaUrl(upstreamId, metric, time(1, 17)))).toMatchObject({ quota: { kind: 'estimated', usd: '40' } });
   expect(await request(quotaUrl(upstreamId, metric, time(0)))).not.toHaveProperty('quota');
   expect(await request(quotaUrl(upstreamId, spark))).toMatchObject({ quota: { kind: 'unavailable', reason: 'scope' } });
   await cost(3, '4', null);
   expect(await request(quotaUrl(upstreamId, metric, time(1, 17)))).toMatchObject({ quota: { kind: 'unavailable', reason: 'prices' } });
+  await repo.upstreams.delete(upstreamId);
+  expect(await request(historyUrl)).toEqual({ upstreamId, supported: false, metrics: [] });
 });
 
 it('reports the absolute allowance observed at the selected refill instead of estimating it from spend', async () => {

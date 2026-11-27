@@ -162,11 +162,13 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     };
 
     const pendingRegion = pendingRegionAvailableRef.current;
+    let activeQuery = query;
     const [loaded, runtime] = await Promise.all([
       loadWithResetCycles(singleTelemetryUpstream(query.filters.upstream, 'performance'), query.range, requestedAt, signal,
         range => {
-          if (signal.aborted || (regionAvailable === null && pendingRegion !== null)) return Promise.resolve(undefined);
-          return load(range === query.range ? query : { ...query, range });
+          if (range !== query.range) activeQuery = { ...query, range };
+          if (signal.aborted || pendingRegion !== null) return Promise.resolve(undefined);
+          return load(activeQuery);
         }),
       regionAvailable === null && pendingRegion === null
         ? callApi(() => api.api['runtime-info'].$get({}, { init: { signal } }))
@@ -175,8 +177,6 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     if (signal.aborted) return failed();
     if (loaded.data === null) return failed(loaded.error);
 
-    const activeQuery = loaded.range === query.range ? query : { ...query, range: loaded.range };
-    let committedQuery = activeQuery;
     let result = loaded.data;
     if (regionAvailable === null) {
       if (runtime?.error) return failed(result?.error ?? runtime.error);
@@ -189,9 +189,9 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       }, nextRegion);
       if (normalization.changed) {
         const { filters, groupBy } = normalization.state;
-        committedQuery = { ...activeQuery, filters, groupBy };
+        activeQuery = { ...activeQuery, filters, groupBy };
       }
-      if (normalization.changed || result === undefined) result = await load(committedQuery);
+      if (normalization.changed || result === undefined) result = await load(activeQuery);
       if (signal.aborted) return failed();
       if (!result.error || !normalization.changed) {
         pendingRegionAvailableRef.current = null;
@@ -208,7 +208,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     setScope(result.data.snapshot.scope);
     setResetCycles(loaded.resetCycles);
     if (loaded.error) setError(loaded.error);
-    return committedQuery === query ? true : committedQuery;
+    return activeQuery === query ? true : activeQuery;
   }, [query, regionAvailable, performanceLoader]);
 
   const onQueryCommit = useCallback((previous: typeof query, next: typeof query) => {

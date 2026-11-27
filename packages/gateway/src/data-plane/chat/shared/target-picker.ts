@@ -1,5 +1,5 @@
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
-import type { ChatTargetApi } from '@floway-dev/provider';
+import type { ChatTargetApi } from '@floway-dev/upstream';
 
 // Build a picker from an ordered preference list of chat-target keys. The
 // preference encodes which upstream wire the source protocol prefers to

@@ -1,10 +1,10 @@
 import type { AnthropicMessagesCountTokensInterceptor, AnthropicMessagesInterceptor, AnthropicMessagesInvocation } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
+import { resolveConfiguredWebSearchBackend } from '../../../tools/web-search/backend.ts';
 import { loadWebSearchConfig } from '../../../tools/web-search/config.ts';
-import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import { runWebSearchAndRecordUsage } from '../../../tools/web-search/search.ts';
-import type { WebSearchProvider, WebSearchProviderName, WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
+import type { WebSearchBackend, WebSearchBackendName, WebSearchBackendRequest, WebSearchBackendResult } from '../../../tools/web-search/types.ts';
 import type {
   AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesAssistantInputContentBlock,
@@ -25,7 +25,7 @@ import type {
 } from '@floway-dev/protocols/anthropic-messages';
 import { ANTHROPIC_MESSAGES_WEB_SEARCH_ERROR_CODES } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { providerModelOf, internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
+import { internalErrorResult, toInternalDebugError } from '@floway-dev/upstream';
 
 const MAX_QUERY_LENGTH = 1000;
 const WEB_SEARCH_TOOL_NAME = 'web_search';
@@ -66,9 +66,9 @@ interface ReplayAwareAnthropicMessagesWebSearchShimState {
   requestSearchResultOwnership: SearchResultOwnership[];
 }
 
-interface ActiveAnthropicMessagesWebSearchProvider {
-  providerName: WebSearchProviderName;
-  impl: WebSearchProvider;
+interface ActiveAnthropicMessagesWebSearchBackend {
+  backendName: WebSearchBackendName;
+  impl: WebSearchBackend;
   apiKeyId: string;
 }
 
@@ -85,7 +85,7 @@ export type AnthropicMessagesWebSearchShimState =
     maxUses: number | undefined;
     allowedDomains: string[] | undefined;
     blockedDomains: string[] | undefined;
-    userLocation: WebSearchProviderRequest['userLocation'];
+    userLocation: WebSearchBackendRequest['userLocation'];
   } & ReplayAwareAnthropicMessagesWebSearchShimState);
 
 export type PrepareAnthropicMessagesWebSearchShimRequestResult =
@@ -210,7 +210,7 @@ const buildNativeWebSearchServerToolUseBlock = (toolUseId: string, query: string
   input: { query },
 });
 
-const buildNativeWebSearchResultBlock = (result: Extract<WebSearchProviderResult, { type: 'ok' }>['results'][number]): AnthropicMessagesWebSearchResultBlock => ({
+const buildNativeWebSearchResultBlock = (result: Extract<WebSearchBackendResult, { type: 'ok' }>['results'][number]): AnthropicMessagesWebSearchResultBlock => ({
   type: 'web_search_result',
   url: result.source,
   title: result.title,
@@ -561,7 +561,7 @@ const rewriteResponseCitationToNative = (citation: AnthropicMessagesTextCitation
   };
 };
 
-const buildNativeWebSearchResultBlockFromProviderResult = (result: WebSearchProviderResult, toolUseId: string): Extract<AnthropicMessagesAssistantContentBlock, { type: 'web_search_tool_result' }> => {
+const buildNativeWebSearchResultBlockFromBackendResult = (result: WebSearchBackendResult, toolUseId: string): Extract<AnthropicMessagesAssistantContentBlock, { type: 'web_search_tool_result' }> => {
   if (result.type === 'error') {
     return buildNativeWebSearchErrorResultBlock(toolUseId, result.errorCode);
   }
@@ -631,7 +631,7 @@ const runWebSearchStopHandler = async function* (
   block: Extract<ActiveBlock, { kind: 'web-search-tool-use' }>,
   shimState: ShimStreamingState,
   state: Extract<AnthropicMessagesWebSearchShimState, { mode: 'active' }>,
-  provider: ActiveAnthropicMessagesWebSearchProvider,
+  backend: ActiveAnthropicMessagesWebSearchBackend,
 ): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   const parsedInput = (() => {
     if (block.inputJson === '') return null;
@@ -671,16 +671,16 @@ const runWebSearchStopHandler = async function* (
     shimState.currentSearchUseCount += 1;
 
     try {
-      const request: WebSearchProviderRequest = {
+      const request: WebSearchBackendRequest = {
         query,
         allowedDomains: state.allowedDomains,
         blockedDomains: state.blockedDomains,
         userLocation: state.userLocation,
       };
-      const providerResult = await runWebSearchAndRecordUsage({ provider: provider.impl, providerName: provider.providerName, keyId: provider.apiKeyId, request });
-      return buildNativeWebSearchResultBlockFromProviderResult(providerResult, block.upstreamToolUseId);
+      const backendResult = await runWebSearchAndRecordUsage({ backend: backend.impl, backendName: backend.backendName, keyId: backend.apiKeyId, request });
+      return buildNativeWebSearchResultBlockFromBackendResult(backendResult, block.upstreamToolUseId);
     } catch {
-      // TODO: Add gateway-side recent web-search error-log storage so operators can inspect detailed provider/runtime failures even though the client-visible native error intentionally collapses them to `unavailable`.
+      // TODO: Add gateway-side recent web-search error-log storage so operators can inspect detailed backend/runtime failures even though the client-visible native error intentionally collapses them to `unavailable`.
       return buildNativeWebSearchErrorResultBlock(block.upstreamToolUseId, 'unavailable');
     }
   })();
@@ -702,15 +702,15 @@ const runWebSearchStopHandler = async function* (
 export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
   frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   state: AnthropicMessagesWebSearchShimState,
-  provider?: ActiveAnthropicMessagesWebSearchProvider,
+  backend?: ActiveAnthropicMessagesWebSearchBackend,
 ): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   if (state.mode === 'inactive') {
     yield* frames;
     return;
   }
 
-  if (state.mode === 'active' && !provider) {
-    throw new Error('Active messages web-search rewrite requires a provider.');
+  if (state.mode === 'active' && !backend) {
+    throw new Error('Active messages web-search rewrite requires a search backend.');
   }
 
   const shimState: ShimStreamingState = {
@@ -810,7 +810,7 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
           throw new Error('web-search shim entered intercept path without active state.');
         }
 
-        yield* runWebSearchStopHandler(activeBlock, shimState, state, provider!);
+        yield* runWebSearchStopHandler(activeBlock, shimState, state, backend!);
         activeBlocks.delete(event.index);
         activeWebSearchIndex = undefined;
         const resume = deferredFrames;
@@ -884,16 +884,16 @@ const buildSyntheticInvalidRequestUpstreamError = (message: string) => ({
 const buildInvalidRequestResponse = (message: string): Response =>
   Response.json(anthropicMessagesWebSearchInvalidRequestBody(message), { status: 400 });
 
-const resolveActiveAnthropicMessagesWebSearchProvider = async (apiKeyId: string): Promise<{ type: 'ok'; provider: ActiveAnthropicMessagesWebSearchProvider } | ReturnType<typeof internalErrorResult>> => {
+const resolveActiveAnthropicMessagesWebSearchBackend = async (apiKeyId: string): Promise<{ type: 'ok'; backend: ActiveAnthropicMessagesWebSearchBackend } | ReturnType<typeof internalErrorResult>> => {
   const webSearchConfig = await loadWebSearchConfig();
-  const configuredProvider = resolveConfiguredWebSearchProvider(webSearchConfig);
+  const configuredBackend = resolveConfiguredWebSearchBackend(webSearchConfig);
 
-  if (configuredProvider.type === 'enabled') {
+  if (configuredBackend.type === 'enabled') {
     return {
       type: 'ok',
-      provider: {
-        providerName: configuredProvider.provider,
-        impl: configuredProvider.impl,
+      backend: {
+        backendName: configuredBackend.backend,
+        impl: configuredBackend.impl,
         apiKeyId,
       },
     };
@@ -903,9 +903,9 @@ const resolveActiveAnthropicMessagesWebSearchProvider = async (apiKeyId: string)
     500,
     toInternalDebugError(
       new Error(
-        configuredProvider.type === 'disabled'
-          ? 'Native Anthropic Messages web search requires an enabled search provider.'
-          : `Native Anthropic Messages web search is missing the configured ${configuredProvider.provider} credential.`,
+        configuredBackend.type === 'disabled'
+          ? 'Native Anthropic Messages web search requires an enabled search backend.'
+          : `Native Anthropic Messages web search is missing the configured ${configuredBackend.backend} credential.`,
       ),
     ),
   );
@@ -919,7 +919,7 @@ type PrepareAnthropicMessagesWebSearchInvocationResult =
   | { type: 'prepared'; state: PreparedAnthropicMessagesWebSearchShimState };
 
 const prepareAnthropicMessagesWebSearchInvocation = (ctx: AnthropicMessagesInvocation): PrepareAnthropicMessagesWebSearchInvocationResult => {
-  if (ctx.targetApi === 'anthropicMessages' && !providerModelOf(ctx.candidate).enabledFlags.has('anthropic-messages-web-search-shim')) {
+  if (ctx.targetApi === 'anthropicMessages' && !ctx.candidate.model.enabledFlags.has('anthropic-messages-web-search-shim')) {
     return { type: 'inactive' };
   }
 
@@ -949,15 +949,15 @@ export const withAnthropicMessagesWebSearchShim: AnthropicMessagesInterceptor = 
   if (prepared.type === 'inactive') return await run();
   if (prepared.type === 'invalid-request') return buildSyntheticInvalidRequestUpstreamError(prepared.message);
 
-  const provider = prepared.state.mode === 'active' ? await resolveActiveAnthropicMessagesWebSearchProvider(gatewayCtx.apiKeyId) : { type: 'ok' as const, provider: undefined };
-  if (provider.type !== 'ok') return provider;
+  const backend = prepared.state.mode === 'active' ? await resolveActiveAnthropicMessagesWebSearchBackend(gatewayCtx.apiKeyId) : { type: 'ok' as const, backend: undefined };
+  if (backend.type !== 'ok') return backend;
 
   const result = await run();
   if (result.type !== 'events') return result;
 
   return {
     ...result,
-    events: rewriteAnthropicMessagesWebSearchEventsToNative(result.events, prepared.state, provider.provider),
+    events: rewriteAnthropicMessagesWebSearchEventsToNative(result.events, prepared.state, backend.backend),
   };
 };
 

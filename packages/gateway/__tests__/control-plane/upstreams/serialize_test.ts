@@ -1,8 +1,8 @@
 import { test } from 'vitest';
 
 import { upstreamRecordToJson } from '../../../src/control-plane/upstreams/serialize.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
+import type { UpstreamRecord } from '@floway-dev/upstream';
 
 const timestamp = '2026-04-29T00:00:00.000Z';
 
@@ -19,7 +19,6 @@ const custom: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
   config: {
     baseUrl: 'https://api.example.com',
@@ -27,7 +26,6 @@ const custom: UpstreamRecord = {
     apiKey: 'sk-secret-token-12345',
     endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
     modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/models' },
-    models: [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
   },
   state: null,
 };
@@ -80,7 +78,6 @@ const chatgptBase = (overrides: { config?: unknown; state?: unknown }): Upstream
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
   config: overrides.config ?? { accounts: [{ email: 'a@example.com', chatgptAccountId: 'account', chatgptUserId: 'user', planType: 'plus' }] },
   state: overrides.state ?? null,

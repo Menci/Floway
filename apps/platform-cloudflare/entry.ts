@@ -1,10 +1,8 @@
-import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { ExecutionContext } from 'hono';
 
 import { bootstrapCloudflarePlatform, type CloudflareEnv } from './src/bootstrap.ts';
 import {
   app,
-  handleExecutionRequest,
   initBackgroundSchedulerResolver,
   initRepo,
   runScheduledMaintenance,
@@ -14,14 +12,6 @@ import {
 // Re-exported here because the current binding and the rename migration's
 // target resolve the class by its Worker-module export name.
 export { ExecutionDO } from './src/execution-do.ts';
-
-export class ExecutionOperationEntrypoint extends WorkerEntrypoint<CloudflareEnv> {
-  async fetch(request: Request): Promise<Response> {
-    const { db } = bootstrapCloudflarePlatform(this.env);
-    initRepo(new SqlRepo(db));
-    return await handleExecutionRequest(request);
-  }
-}
 
 initBackgroundSchedulerResolver(c => promise => c.executionCtx.waitUntil(promise));
 

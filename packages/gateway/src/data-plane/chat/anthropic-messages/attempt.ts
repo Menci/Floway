@@ -8,16 +8,15 @@ import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import { applyRulesToUpstreamAnthropicMessages } from '../shared/alias-rules.ts';
 import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { providerStreamResultToExecuteResult } from '../shared/provider-stream-result.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
+import { upstreamStreamResultToExecuteResult } from '../shared/upstream-stream-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ModelCandidate, ExecuteResult, AnthropicMessagesUpstreamCallOptions, PlainResult } from '@floway-dev/provider';
-import { providerModelOf } from '@floway-dev/provider';
 import { routeAnthropicMessagesViaOpenAIChatCompletions, routeAnthropicMessagesViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
+import type { ModelCandidate, ExecuteResult, AnthropicMessagesUpstreamCallOptions, PlainResult } from '@floway-dev/upstream';
 
 // `/v1/messages` generate prefers a native Anthropic Messages target, then the
 // translated OpenAI Responses path, then the translated OpenAI Chat Completions path.
@@ -84,15 +83,15 @@ export const anthropicMessagesAttempt = {
     const response = await runInterceptors(invocation, ctx, anthropicMessagesCountTokensInterceptors, async () => {
       if (candidate.rules !== undefined) applyRulesToUpstreamAnthropicMessages(invocation.payload, candidate.rules);
       const { model: _model, ...body } = invocation.payload;
-      const { http: response } = await candidate.provider.instance.callAnthropicMessagesCountTokens(
-        providerModelOf(candidate),
+      const { http: response } = await candidate.upstream.instance.callAnthropicMessagesCountTokens(
+        candidate.model,
         body,
         ctx.abortSignal,
         buildAnthropicMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, invocation.anthropicBeta),
       );
       return response;
     });
-    return await plainResultFromResponse(response, candidate.provider.upstreamId);
+    return await plainResultFromResponse(response, candidate.upstream.upstreamId);
   },
 };
 
@@ -104,13 +103,13 @@ const dispatchAnthropicMessages = async (
   if (targetApi === 'anthropicMessages') {
     if (candidate.rules !== undefined) applyRulesToUpstreamAnthropicMessages(invocation.payload, candidate.rules);
     const { model: _model, ...body } = invocation.payload;
-    const providerResult = await candidate.provider.instance.callAnthropicMessages(
-      providerModelOf(candidate),
+    const upstreamResult = await candidate.upstream.instance.callAnthropicMessages(
+      candidate.model,
       body,
       ctx.abortSignal,
       buildAnthropicMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, invocation.anthropicBeta),
     );
-    return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, createAnthropicMessagesBillableUsageReader());
+    return await upstreamStreamResultToExecuteResult(upstreamResult, candidate, targetApi, ctx, createAnthropicMessagesBillableUsageReader());
   }
   if (targetApi === 'openaiResponses') {
     return await executeTranslation(

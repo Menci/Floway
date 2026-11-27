@@ -32,7 +32,7 @@
 | Current concepts | Keep code, comments, tests, and documentation expressed in the current architecture; preserve historical names only in migrations. | Repository search and final diff review |
 | Product name | Write **Floway** in prose, comments, test names, assertions, and logs; use lowercase `floway` only in established technical contracts. | Repository review |
 | Gateway behavior | Preserve upstream status, headers, and body directly and surface internal failures with stack traces. | Data-plane tests |
-| Upstream-owned values | Derive endpoint capability from metadata and operator configuration, forward open-string protocol values verbatim, and keep vendor knowledge inside the owning provider. | Protocol, translation, and provider tests |
+| Upstream-owned values | Derive endpoint capability from metadata and operator configuration, forward open-string protocol values verbatim, and keep vendor knowledge inside the owning upstream package. | Protocol, translation, and upstream tests |
 | Vendor constants | Attach a reference URL to every vendor constant and wire workaround. | Owning code review |
 | Upstream research | Compare upstream quirks and generic adapter behavior across multiple LLM gateways. | Research evidence |
 | Workspace dependencies | Keep foundation packages runtime-independent and preserve the dependency direction encoded by workspace manifests and ESLint. | Package manifests, ESLint, and typecheck |
@@ -53,7 +53,7 @@
 | CI | `.github/workflows/verify.yaml` | Validates every repository change. |
 | Skill | `$backfill-usage-pricing` | Reprices recorded model usage. |
 | Skill | `$deploy-to-cloudflare` | Deploys Floway to Cloudflare. |
-| Skill | `$fetching-models-pricing` | Researches provider model pricing. |
+| Skill | `$fetching-models-pricing` | Researches upstream model pricing. |
 | Skill | `$probing-prod-upstream` | Probes production upstreams only when explicitly requested. |
 | Skill | `$run-local-demo` | Starts, reports, and cleans up local demo instances. |
 | Package | `apps/platform-cloudflare` | Hosts Floway on Cloudflare. |
@@ -65,15 +65,15 @@
 | Package | `packages/interceptor` | Intercepts gateway traffic. |
 | Package | `packages/platform` | Defines portable runtime contracts. |
 | Package | `packages/protocols` | Defines protocol contracts. |
-| Package | `packages/provider` | Defines provider contracts. |
-| Package | `packages/provider-azure` | Integrates Azure OpenAI. |
-| Package | `packages/provider-chatgpt` | Integrates ChatGPT subscriptions. |
-| Package | `packages/provider-claude-code` | Integrates Claude Code subscriptions. |
-| Package | `packages/provider-copilot` | Integrates GitHub Copilot subscriptions. |
-| Package | `packages/provider-custom` | Integrates OpenAI-compatible providers. |
-| Package | `packages/provider-kimi-code` | Integrates Kimi Code subscriptions. |
-| Package | `packages/provider-ollama` | Integrates Ollama. |
 | Package | `packages/proxy` | Routes traffic through configured proxies. |
 | Package | `packages/test-utils` | Provides shared test infrastructure. |
 | Package | `packages/translate` | Translates between protocol contracts. |
+| Package | `packages/upstream` | Defines upstream contracts. |
+| Package | `packages/upstream-azure` | Integrates Azure OpenAI. |
+| Package | `packages/upstream-chatgpt` | Integrates ChatGPT subscriptions. |
+| Package | `packages/upstream-claude-code` | Integrates Claude Code subscriptions. |
+| Package | `packages/upstream-copilot` | Integrates GitHub Copilot subscriptions. |
+| Package | `packages/upstream-custom` | Integrates OpenAI-compatible upstreams. |
+| Package | `packages/upstream-kimi-code` | Integrates Kimi Code subscriptions. |
+| Package | `packages/upstream-ollama` | Integrates Ollama. |
 | Package | `tools` | Provides repository operation tooling. |

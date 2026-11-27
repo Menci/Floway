@@ -4,7 +4,7 @@ import type { GatewayCtx } from './gateway-ctx.ts';
 import type { RawAttemptResult } from './raw-attempt-result.ts';
 import { upstreamPerformanceContext } from './telemetry/attribution.ts';
 import { isUpstreamTransportError } from '../../dial/transport-error.ts';
-import { discardUpstreamResponse, isAbortError, type HttpHead, type ModelCandidate, type PerformanceOperation } from '@floway-dev/provider';
+import { discardUpstreamResponse, isAbortError, type HttpHead, type ModelCandidate, type PerformanceOperation } from '@floway-dev/upstream';
 
 // HTTP in-flight streams are represented by a 2xx response head. Later
 // protocol errors in their body do not reopen candidate selection.

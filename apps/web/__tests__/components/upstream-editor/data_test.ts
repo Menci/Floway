@@ -18,8 +18,8 @@ const record = upstreamRecord('up_custom', {
       { key: 'x-route', value: 'fast' },
     ],
     modelsFetch: { enabled: false, authStyle: 'bearer' },
-    models: [],
   },
+  manual_models: [],
   state: null,
 }) as CustomRecord;
 
@@ -41,15 +41,19 @@ test('Custom editor values add one blank ingress row and never serialize it', ()
   ];
   expect((createBody(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
   expect((updateBody(record, values, 'full').config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
+  expect(updateBody(record, values, 'models')).toEqual({
+    disabled_public_model_ids: values.disabledPublicModelIds,
+    manual_models: values.manualModels,
+  });
   expect((previewRecord(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
 });
 
-test('Kimi Code uses its entered key for unsaved discovery and preserves connection settings on save', () => {
+test('Kimi Code only allows catalog fetch once persisted and preserves connection settings on save', () => {
   const record = upstreamRecord('', { kind: 'kimi-code', config: { region: 'china', apiKey: '' }, state: null });
   const values = valuesFromRecord(record);
   expect(canFetchModelCatalog(record, values.config)).toBe(false);
   values.config = { region: 'overseas', apiKey: ' sk-kimi-fake-test-key ' };
-  expect(canFetchModelCatalog(record, values.config)).toBe(true);
+  expect(canFetchModelCatalog(record, values.config)).toBe(false);
   expect(manualModelsSupported(record)).toBe(false);
   const expected = { region: 'overseas', apiKey: 'sk-kimi-fake-test-key' };
   expect(createBody(record, values).config).toEqual(expected);

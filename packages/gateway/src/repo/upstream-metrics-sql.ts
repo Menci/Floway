@@ -1,6 +1,6 @@
 import type { UpstreamMetricRecord, UpstreamMetricsRepo } from './types.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
-import { normalizeUpstreamMetricIdentity, type UpstreamMetricIdentity, type UpstreamMetricLabels, type UpstreamMetricResetThreshold } from '@floway-dev/provider';
+import { normalizeUpstreamMetricIdentity, type UpstreamMetricIdentity, type UpstreamMetricLabels, type UpstreamMetricResetThreshold } from '@floway-dev/upstream';
 
 export const UPSTREAM_METRICS_INTERVAL_MS = 60_000;
 const columns = 'upstream_id AS upstreamId, metric_name AS name, metric_labels AS labelsJson, timestamp, value';

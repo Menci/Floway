@@ -38,16 +38,16 @@ import { shortAccountId } from '../components/upstreams/account-id';
 import { planLabel } from '../components/upstreams/chatgpt-account';
 import { kimiCodeAccountName } from '../components/upstreams/kimi-code-account';
 import { MODEL_ERROR_TOOLTIP_LENGTH, modelErrorExcerpt } from '../components/upstreams/model-error';
-import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { UpstreamSignals } from '../components/upstreams/signals';
 import { UpstreamTelemetryRow, loadUpstreamTelemetry, type UpstreamTelemetryData, type UpstreamTelemetryQuery } from '../components/upstreams/telemetry';
+import { UpstreamBadge, UpstreamKindIcon } from '../components/upstreams/upstream-kind-badge';
 import { createUsageOverviewLoader } from '../components/usage/data';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
 import { usageUpstreamDimensionValue } from '@floway-dev/protocols/browser';
-import { ALL_PROVIDER_KINDS, type UpstreamProviderKind } from '@floway-dev/provider/browser';
+import { ALL_UPSTREAM_KINDS, type UpstreamKind } from '@floway-dev/upstream/browser';
 
 const {
   Menu,
@@ -149,7 +149,7 @@ interface ReorderPlan {
   next: ListedUpstreamRecord[];
 }
 
-const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
+const PROVIDER_MENU_ORDER: readonly UpstreamKind[] = [
   'custom',
   'azure',
   'copilot',
@@ -159,12 +159,12 @@ const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
   'ollama',
 ];
 
-const menuRank = (kind: UpstreamProviderKind) => {
+const menuRank = (kind: UpstreamKind) => {
   const index = PROVIDER_MENU_ORDER.indexOf(kind);
   return index === -1 ? PROVIDER_MENU_ORDER.length : index;
 };
 
-const providers = ALL_PROVIDER_KINDS.toSorted((a, b) => menuRank(a) - menuRank(b));
+const providers = ALL_UPSTREAM_KINDS.toSorted((a, b) => menuRank(a) - menuRank(b));
 
 // Both affordances that open a record — the row's name and its edit button —
 // address it from here, so the two cannot come apart.
@@ -442,7 +442,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
                   {providers.map(kind => (
                     <RouteMenuItem
                       icon={{
-                        children: <ProviderIcon kind={kind} className="h-5 w-5" />,
+                        children: <UpstreamKindIcon kind={kind} className="h-5 w-5" />,
                         className: 'self-center',
                       }}
                       key={kind}
@@ -719,7 +719,7 @@ function UpstreamSegment({
           </div>
         </TableCell>
         <TableCell className="overflow-hidden">
-          <ProviderBadge label={record.name} to={canAudit || canEdit ? upstreamEditorPath(record) : undefined} upstream={record} />
+          <UpstreamBadge label={record.name} to={canAudit || canEdit ? upstreamEditorPath(record) : undefined} upstream={record} />
         </TableCell>
         <TableCell className="overflow-hidden"><UpstreamDetailsCell record={record} /></TableCell>
         <TableCell><ModelStatus count={modelCounts.get(record.id)!} record={record} /></TableCell>
@@ -834,9 +834,6 @@ const buildModelCounts = (
     }
   }
   const countFor = (record: ListedUpstreamRecord): number | null => {
-    // Azure's catalog is the operator's own configured list, so it is known
-    // without the listing.
-    if (record.kind === 'azure') return record.config.models.length;
     // The live catalog is filtered by Model.Use. Auditors still see the size
     // of the catalog the upstream stored while it was on, without gaining the
     // catalog rows themselves.

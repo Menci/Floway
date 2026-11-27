@@ -1,8 +1,7 @@
-import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import { mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { inputErrorFields, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
 import { geminiGenerateContentStatusForHttpStatus, type GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
-import { decodeResponseBody, internalDebugErrorFields, type ApiErrorResult, type PerformanceTelemetryContext, type InternalDebugError, type InternalErrorResult } from '@floway-dev/provider';
+import { decodeResponseBody, internalDebugErrorFields, type ApiErrorResult, type PerformanceTelemetryContext, type InternalDebugError, type InternalErrorResult } from '@floway-dev/upstream';
 
 // Google RPC Status envelope, used by Gemini's `error` channel everywhere
 // (HTTP body, SSE-tunnelled error event).
@@ -79,9 +78,9 @@ export const renderGeminiGenerateContentFailure = (
   case 'routing-unavailable':
     return geminiGenerateContentRpcErrorResult(400, failure.message);
   case 'model-missing':
-    return geminiGenerateContentRpcErrorResult(404, appendFailedUpstreams(`Model ${failure.model} is not available on any configured upstream.`, failure.failedUpstreams));
+    return geminiGenerateContentRpcErrorResult(404, `Model ${failure.model} is not available on any configured upstream.`);
   case 'model-unsupported':
-    return geminiGenerateContentRpcErrorResult(400, appendFailedUpstreams(`Model ${failure.model} does not support ${endpoint === 'countTokens' ? 'countTokens' : 'the Gemini generateContent endpoint'}.`, failure.failedUpstreams));
+    return geminiGenerateContentRpcErrorResult(400, `Model ${failure.model} does not support ${endpoint === 'countTokens' ? 'countTokens' : 'the Gemini generateContent endpoint'}.`);
   }
 };
 

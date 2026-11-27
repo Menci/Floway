@@ -3,8 +3,8 @@ import { loadProxyCatalog } from './proxy-catalog.ts';
 import { getRepo } from '../repo/index.ts';
 import { entryMatchesColo, isDirectFallbackId, normalizeProxyFallbackList } from '../repo/proxy-fallback-list.ts';
 import { getFetch, getHttpContentDecoders, getSocketDial } from '@floway-dev/platform';
-import type { Fetcher, ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
+import type { Fetcher, ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/upstream';
 
 export class InvalidProxyConfigurationError extends Error {
   constructor(message: string, cause?: unknown) {
@@ -16,16 +16,12 @@ export class InvalidProxyConfigurationError extends Error {
 // Parse failures on individual proxy rows are isolated to the upstreams that
 // actually request their fetcher: a single malformed URL does not take down
 // every other upstream in the same request.
-//
-// `preFetchedUpstreams` lets a caller reuse a list it already loaded on
-// this request instead of paying a second `upstreams.list()` round-trip.
 const createFetcherResolver = async (
   runtimeLocation: string | null,
-  preFetchedUpstreams: readonly UpstreamRecord[] | undefined,
+  upstreams: readonly Pick<UpstreamRecord, 'id' | 'proxyFallbackList'>[],
   validation: 'lazy' | 'eager',
 ): Promise<(upstreamId: string) => Fetcher> => {
   const repo = getRepo();
-  const upstreams = preFetchedUpstreams ?? await repo.upstreams.list();
   const configuredById = new Map(upstreams.map(u => [u.id, u.proxyFallbackList] as const));
   const fallbackById = new Map(upstreams.map(u => [
     u.id,
@@ -78,13 +74,13 @@ const createFetcherResolver = async (
 
 export const createPerRequestFetcher = (
   runtimeLocation: string | null,
-  preFetchedUpstreams?: readonly UpstreamRecord[],
-): Promise<(upstreamId: string) => Fetcher> => createFetcherResolver(runtimeLocation, preFetchedUpstreams, 'lazy');
+  upstreams: readonly Pick<UpstreamRecord, 'id' | 'proxyFallbackList'>[],
+): Promise<(upstreamId: string) => Fetcher> => createFetcherResolver(runtimeLocation, upstreams, 'lazy');
 
 export const createValidatedPerRequestFetcher = (
   runtimeLocation: string | null,
-  preFetchedUpstreams?: readonly UpstreamRecord[],
-): Promise<(upstreamId: string) => Fetcher> => createFetcherResolver(runtimeLocation, preFetchedUpstreams, 'eager');
+  upstreams: readonly Pick<UpstreamRecord, 'id' | 'proxyFallbackList'>[],
+): Promise<(upstreamId: string) => Fetcher> => createFetcherResolver(runtimeLocation, upstreams, 'eager');
 
 // A fallback policy that no saved upstream owns, such as an edit form's
 // in-progress list. Every referenced proxy must resolve before any dial, and

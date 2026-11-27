@@ -10,7 +10,7 @@ import { useLocale } from '../../lib/use-locale';
 import { useNow } from '../../lib/use-now';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
-import { ProviderBadge } from '../upstreams/provider-badge';
+import { UpstreamBadge } from '../upstreams/upstream-kind-badge';
 
 const { Button, Text } = fluentComponents;
 
@@ -68,7 +68,7 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
         return <li className="grid min-w-0 gap-1 border-0 border-t border-solid border-fui-divider py-3 first:border-t-0 first:pt-1 last:pb-1" key={`${row.proxy_id}:${row.upstream_id}`}>
           <div className="flex min-w-0 items-start justify-between gap-3">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
-              <ProviderBadge label={row.upstream.name} upstream={row.upstream} />
+              <UpstreamBadge label={row.upstream.name} upstream={row.upstream} />
               <div className="flex flex-wrap gap-x-3 text-fui-fg2 text-[12px] leading-4">
                 <span className="tabular-nums">{t('proxies.backoff.failures', { count: row.fail_count })}</span>
                 <span className="tabular-nums">{remaining <= 0

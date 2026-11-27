@@ -1,10 +1,10 @@
 import type { WebSearchConfig } from './types.ts';
 import { getRepo } from '../../../repo/index.ts';
 import { isJsonObject } from '../../../shared/json-helpers.ts';
-import { WEB_SEARCH_PROVIDER_NAMES, isWebSearchProviderName } from '../../../shared/web-search-providers.ts';
+import { WEB_SEARCH_BACKEND_NAMES, isWebSearchBackendName } from '../../../shared/web-search-backends.ts';
 
 export const DEFAULT_WEB_SEARCH_CONFIG: WebSearchConfig = {
-  provider: 'disabled',
+  backend: 'disabled',
   tavily: { apiKey: '' },
   microsoftWebIq: { apiKey: '' },
   jina: { apiKey: '' },
@@ -23,9 +23,9 @@ export const parseWebSearchConfigStrict = (input: unknown): WebSearchConfig => {
   if (!isJsonObject(input)) {
     throw new Error('search config must be a JSON object');
   }
-  if (input.provider !== 'disabled' && !isWebSearchProviderName(input.provider)) {
-    const allowed = ['disabled', ...WEB_SEARCH_PROVIDER_NAMES].map(name => `'${name}'`).join(', ');
-    throw new Error(`search config provider must be one of ${allowed}, got ${JSON.stringify(input.provider)}`);
+  if (input.backend !== 'disabled' && !isWebSearchBackendName(input.backend)) {
+    const allowed = ['disabled', ...WEB_SEARCH_BACKEND_NAMES].map(name => `'${name}'`).join(', ');
+    throw new Error(`search config backend must be one of ${allowed}, got ${JSON.stringify(input.backend)}`);
   }
   if (!isJsonObject(input.tavily)) {
     throw new Error('search config tavily must be an object');
@@ -58,7 +58,7 @@ export const parseWebSearchConfigStrict = (input: unknown): WebSearchConfig => {
     throw new Error('enabled OpenAI search passthrough requires an upstream and model');
   }
   return {
-    provider: input.provider,
+    backend: input.backend,
     tavily: { apiKey: input.tavily.apiKey.trim() },
     microsoftWebIq: { apiKey: input.microsoftWebIq.apiKey.trim() },
     jina: { apiKey: input.jina.apiKey.trim() },

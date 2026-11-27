@@ -3,7 +3,7 @@ import type { InferResponseType } from 'hono/client';
 import { api, callApi, type GlobalError } from '../../api/client';
 import { isResetRange, sameDashboardRange, type DashboardRange, type DashboardResetRange } from '../charts/dashboard-time';
 import { usageUpstreamFromDimensionValue } from '@floway-dev/protocols/browser';
-import { upstreamMetricIdentityKey } from '@floway-dev/provider/browser';
+import { upstreamMetricIdentityKey } from '@floway-dev/upstream/browser';
 
 export type ResetCycleHistory = InferResponseType<(typeof api.api)['upstream-reset-cycles']['$get'], 200>;
 export type ResetMetric = ResetCycleHistory['metrics'][number];
@@ -21,10 +21,12 @@ export const resetRangeAt = (upstreamId: string, metric: ResetMetric, offset: nu
 };
 
 const resolveSelectedCycle = (range: DashboardResetRange, history: ResetCycleHistory): DashboardRange => {
-  const metric = history.metrics.find(({ identity }) => upstreamMetricIdentityKey(identity) === upstreamMetricIdentityKey(range.metric));
+  const key = upstreamMetricIdentityKey(range.metric);
+  const metric = history.metrics.find(({ identity }) => upstreamMetricIdentityKey(identity) === key);
   if (!metric) return 'today';
   const offset = range.end === null ? 0 : metric.starts.indexOf(range.start);
-  const resolved = range.end !== null && offset <= 0 ? null : resetRangeAt(history.upstreamId, metric, offset);
+  if (range.end !== null && offset <= 0) return 'today';
+  const resolved = resetRangeAt(range.upstreamId, metric, offset);
   if (resolved === null) return 'today';
   return sameDashboardRange(resolved, range) ? range : resolved;
 };
@@ -40,20 +42,20 @@ export const loadWithResetCycles = async <T>(
 }> => {
   const range = isResetRange(requested) && requested.upstreamId !== upstreamId ? 'today' : requested;
   if (upstreamId === null) return { data: await load(range), range, resetCycles: null, error: null };
-  const selected = isResetRange(range) ? range : null;
+  const selected = isResetRange(range) ? range : undefined;
   const history = callApi(() => api.api['upstream-reset-cycles'].$get({
     query: {
       upstream_id: upstreamId, before: at,
-      cycle_metric: selected === null ? undefined : upstreamMetricIdentityKey(selected.metric),
+      cycle_metric: selected === undefined ? undefined : upstreamMetricIdentityKey(selected.metric),
       cycle_start: selected?.end == null ? undefined : selected.start,
     },
   }, { init: { signal } }));
-  if (!isResetRange(range)) {
+  if (selected === undefined) {
     const [data, result] = await Promise.all([load(range), history]);
     return { data, range, resetCycles: result.data?.supported ? result.data : null, error: result.error ?? null };
   }
   const result = await history;
-  if (result.error) return { data: null, range, resetCycles: null, error: result.error };
-  const resolved = resolveSelectedCycle(range, result.data);
+  if (result.error) return { data: null, range: selected, resetCycles: null, error: result.error };
+  const resolved = resolveSelectedCycle(selected, result.data);
   return { data: await load(resolved), range: resolved, resetCycles: result.data.supported ? result.data : null, error: null };
 };

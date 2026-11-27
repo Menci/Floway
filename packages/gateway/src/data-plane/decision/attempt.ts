@@ -7,8 +7,7 @@ import { telemetryModelIdentity, upstreamPerformanceContext } from '../shared/te
 import { buildUpstreamCallOptions } from '../shared/upstream-call-options.ts';
 import type { DecisionTarget } from '@floway-dev/protocols/common';
 import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
-import { providerModelOf } from '@floway-dev/provider';
-import type { ModelCandidate, ProviderDecisionCallResult } from '@floway-dev/provider';
+import type { ModelCandidate, UpstreamDecisionCallResult } from '@floway-dev/upstream';
 
 export interface DecisionAttemptResult extends RawAttemptResult {
   readonly target: DecisionTarget;
@@ -20,8 +19,8 @@ export const decisionAttempt = async (
   candidate: ModelCandidate,
   request: CanonicalDecisionRequest,
 ): Promise<DecisionAttemptResult> => {
-  const model = providerModelOf(candidate);
-  const result: ProviderDecisionCallResult = await candidate.provider.instance.callDecision(
+  const model = candidate.model;
+  const result: UpstreamDecisionCallResult = await candidate.upstream.instance.callDecision(
     model,
     request,
     ctx.abortSignal,

@@ -4,11 +4,12 @@ import { fullUpstreamActionError } from '../../access-control/upstream-edit.ts';
 import { userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { copilotOAuthDeviceLoginPollBody, copilotOAuthDeviceLoginStartBody, copilotQuotaBody } from '../schemas.ts';
 import { isRecord } from '../shared/field-validators.ts';
 import { saveUpstream } from '../shared/save-upstreams.ts';
-import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher, UpstreamRecord } from '@floway-dev/upstream';
 import {
   assertCopilotUpstreamRecord,
   clearInProcessCopilotTokenCache,
@@ -30,7 +31,7 @@ import {
   type CopilotUpstreamState,
   type CopilotUpstreamUser,
   type CopilotUsageResponse,
-} from '@floway-dev/provider-copilot';
+} from '@floway-dev/upstream-copilot';
 
 const parseCopilotDraftConfig = (config: unknown): { config: Record<string, unknown>; githubHost: string } => {
   if (!isRecord(config) || typeof config.githubHost !== 'string') {
@@ -154,7 +155,14 @@ export const copilotOAuthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     const updatedAt = new Date(Math.max(Date.now(), previousUpdatedAt + 1)).toISOString();
     const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt };
     clearInProcessCopilotTokenCache();
-    await saveUpstream({ previous: dbRecord, next });
+    await saveUpstream({
+      previous: dbRecord,
+      next,
+      refreshContext: {
+        runtimeLocation: getRuntimeLocation(c.req.raw),
+        scheduler: backgroundSchedulerFromContext(c),
+      },
+    });
   } else {
     nextState = { ...emptyCopilotUpstreamState(), copilotToken: cred.tokenEntry, seat: cred.seat };
   }

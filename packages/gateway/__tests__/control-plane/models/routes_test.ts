@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
 import { assert, assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import type { UpstreamRecord } from '@floway-dev/upstream';
 
 const azureUpstream = (): UpstreamRecord => ({
   id: 'up_azure_models',
@@ -18,18 +18,10 @@ const azureUpstream = (): UpstreamRecord => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
-  modelsCache: null,
   hue: 210,
   config: {
     endpoint: 'https://example.openai.azure.com',
     apiKey: 'az-key',
-    models: [
-      {
-        upstreamModelId: 'azure-model',
-        publicModelId: 'azure-public',
-        endpoints: { openaiResponses: {} },
-      },
-    ],
   },
   state: null,
 });
@@ -37,7 +29,14 @@ const azureUpstream = (): UpstreamRecord => ({
 test('/api/models exposes each upstream as { kind, id } so multi-provider models are unambiguous', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
-  await saveUpstreamForTest(repo.upstreams, azureUpstream());
+  await saveUpstreamForTest(repo.upstreams, azureUpstream(), {
+    manualModels: [{
+      upstreamModelId: 'azure-model',
+      publicModelId: 'azure-public',
+      kind: 'chat',
+      endpoints: { openaiResponses: {} },
+    }],
+  });
 
   await withMockedFetch(
     request => {

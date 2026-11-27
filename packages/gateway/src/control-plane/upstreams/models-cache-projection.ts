@@ -1,9 +1,9 @@
 import type { ListedUpstreamModel, ModelsCacheStatus } from './types.ts';
-import { storedCatalogSize } from '../../data-plane/providers/catalog.ts';
+import { getRepo } from '../../repo/index.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
-import type { ProviderModel, UpstreamModelConfig } from '@floway-dev/provider';
+import type { UpstreamModel, UpstreamModelConfig } from '@floway-dev/upstream';
 
-export const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => ({
+export const reshapeModelForDashboard = (model: UpstreamModel): ListedUpstreamModel => ({
   upstreamModelId: model.upstreamModelId,
   publicModelId: model.id,
   kind: model.kind,
@@ -16,18 +16,20 @@ export const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamMo
   ...(model.flagOverrides ? { flagOverrides: model.flagOverrides } : {}),
 });
 
-export const cachedModelsForDashboard = (record: StoredUpstreamRecord): UpstreamModelConfig[] | null => {
-  const cache = record.modelsCache;
-  if (cache === null || cache.fetchedAt <= 0) return null;
-  if (record.kind === 'custom') return cache.discovered ?? null;
+export const loadCachedModelsForDashboard = async (record: StoredUpstreamRecord): Promise<UpstreamModelConfig[] | null> => {
+  if (record.modelsCache.fetchedAt === null) return null;
   if (record.kind === 'azure') return [];
-  return cache.models.map(reshapeModelForDashboard);
+  const rows = await getRepo().upstreamModels.listByUpstream(record.id, { source: 'auto' });
+  return rows.map(({ model }) => reshapeModelForDashboard(model));
 };
 
-export const modelsCacheStatus = (record: StoredUpstreamRecord): ModelsCacheStatus => ({
-  fetchedAt: record.modelsCache && record.modelsCache.fetchedAt > 0 ? record.modelsCache.fetchedAt : null,
-  lastError: record.modelsCache?.lastError
+export const modelsCacheStatus = (
+  record: StoredUpstreamRecord,
+  modelCount: number | null,
+): ModelsCacheStatus => ({
+  fetchedAt: record.modelsCache.fetchedAt,
+  lastError: record.modelsCache.lastError
     ? { message: record.modelsCache.lastError.message, at: record.modelsCache.lastError.at }
     : null,
-  modelCount: record.modelsCache && record.modelsCache.fetchedAt > 0 ? storedCatalogSize(record) : null,
+  modelCount: record.modelsCache.fetchedAt !== null ? modelCount : null,
 });

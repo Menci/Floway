@@ -3,7 +3,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPart, GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsReasoningItemEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
-import type { ChatTargetApi } from '@floway-dev/provider';
+import type { ChatTargetApi } from '@floway-dev/upstream';
 
 type FirstOutputTokenSignal =
   | { type: 'decode' }

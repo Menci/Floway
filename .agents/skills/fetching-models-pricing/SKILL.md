@@ -1,19 +1,19 @@
 ---
 name: fetching-models-pricing
-description: Refresh provider model pricing for Floway, including API-equivalent subscription valuation and Ollama official standard rates. Manual research procedure; no script.
+description: Refresh upstream model pricing for Floway, including API-equivalent subscription valuation and Ollama official standard rates. Manual research procedure; no script.
 ---
 
 # Fetching Models Pricing
 
 Maintain the per-token rate cards in:
 
-| Provider | Table | Live catalog | Preferred rate source |
+| Upstream | Table | Live catalog | Preferred rate source |
 |---|---|---|---|
-| Copilot | `packages/provider-copilot/src/pricing.ts` | Copilot `/models` | model vendor's first-party API |
-| ChatGPT | `packages/provider-chatgpt/src/pricing.ts` | authenticated `/codex/models` | OpenAI API pricing |
-| Claude Code | `packages/provider-claude-code/src/pricing.ts` | authenticated Anthropic `/v1/models` | Anthropic API pricing |
-| Kimi Code | `packages/provider-kimi-code/src/pricing.ts` | Kimi Code `/models` | Moonshot API pricing |
-| Ollama | `packages/provider-ollama/src/pricing.ts` | `/api/tags` + `/api/show` | Ollama official standard rates; vendor/host valuation for other models |
+| Copilot | `packages/upstream-copilot/src/pricing.ts` | Copilot `/models` | model vendor's first-party API |
+| ChatGPT | `packages/upstream-chatgpt/src/pricing.ts` | authenticated `/codex/models` | OpenAI API pricing |
+| Claude Code | `packages/upstream-claude-code/src/pricing.ts` | authenticated Anthropic `/v1/models` | Anthropic API pricing |
+| Kimi Code | `packages/upstream-kimi-code/src/pricing.ts` | Kimi Code `/models` | Moonshot API pricing |
+| Ollama | `packages/upstream-ollama/src/pricing.ts` | `/api/tags` + `/api/show` | Ollama official standard rates; vendor/host valuation for other models |
 
 Copilot, ChatGPT, Claude Code and Kimi Code use API-equivalent valuation. Ollama uses its
 published standard token rates for covered models and retains vendor/host
@@ -24,12 +24,12 @@ from `/api/usage` includes Ollama billing adjustments such as off-peak discounts
 `BillingMetric` unit. The ten-member `BILLING_METRICS` array in
 `packages/protocols/src/common/pricing.ts` owns the complete metric domain, and
 `BillingMetric` is derived from it. Read the array rather than copying its
-members into this procedure; each provider table may price only the defensible
+members into this procedure; each upstream table may price only the defensible
 subset for a model.
 
 ## Procedure
 
-1. Fetch the provider's live catalog and diff its ids against the table's
+1. Fetch the upstream's live catalog and diff its ids against the table's
    string and RegExp keys. Record new, retired, and renamed models.
 2. Find a defensible rate source for every new id:
    - For Ollama, prefer its own published standard rates at https://ollama.com/pricing; verify cloud aliases against official model tag pages.
@@ -81,7 +81,7 @@ subset for a model.
    USD per million tokens. `tokenPricingEntry` and `tokenBasePricing` apply the
    existing `perMillionTokenRates` conversion, so their resulting `PriceVector`
    values are USD per base token. Do not divide manually or pass number literals.
-   Follow `packages/provider-chatgpt/src/pricing.ts` for a complete production
+   Follow `packages/upstream-chatgpt/src/pricing.ts` for a complete production
    example instead of copying a rate vector into this skill.
 
    `collectModelPricingIssues` in
@@ -107,12 +107,12 @@ subset for a model.
      adjacent version or similarly named model.
 5. Increment `MODEL_CATALOG_REVISION` in
    `packages/gateway/src/repo/models-cache-contract.ts`. Static pricing
-   is serialized inside cached `ProviderModel` rows; a mismatch makes every
+   is serialized inside cached `UpstreamModel` rows; a mismatch makes every
    older row cold before TTL evaluation.
 6. Add boundary tests for exact ids, aliases, dated releases, RegExp coverage,
    threshold edges, Base fallback, and the per-base-unit result through
    `priceRequest`.
-7. Run the affected provider tests, their typecheck, and lint over the changed files.
+7. Run the affected upstream tests, their typecheck, and lint over the changed files.
    CI owns the complete suite.
 8. If an existing rate changed, use `$backfill-usage-pricing` for the intended
    historical usage slice. Catalog revisioning changes future snapshots; it
@@ -120,7 +120,7 @@ subset for a model.
 
 ## Catalog Revision Policy
 
-`MODEL_CATALOG_REVISION` versions the complete persisted `ProviderModel`
+`MODEL_CATALOG_REVISION` versions the complete persisted `UpstreamModel`
 contract, not only pricing tables. Increment it for any code change that alters
 code-derived catalog metadata or its serialized representation. Upstream-only
 catalog changes do not require a bump because normal TTL refreshes fetch them.
@@ -130,7 +130,7 @@ falls back to the incompatible stored row. Successful fetches overwrite the row
 with the current revision; failed fetches leave the old row present but
 ineligible.
 
-## Provider Identity
+## Upstream Identity
 
 - Copilot usage stores raw variant suffixes such as `-high`, `-xhigh`, and
   `-1m` in `model_key`. Its pricing table is keyed by the public id that survives

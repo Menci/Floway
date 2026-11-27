@@ -6,18 +6,18 @@ import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi } from '../api/client';
 import {
   loadEditorAux,
-  providerDefaultName,
+  upstreamDefaultName,
 } from '../components/upstream-editor/data';
 import { UpstreamEditorPage } from '../components/upstream-editor/page';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { pickDistinctHue } from '../lib/hue';
-import { ALL_PROVIDER_KINDS } from '@floway-dev/provider/browser';
+import { ALL_UPSTREAM_KINDS } from '@floway-dev/upstream/browser';
 
 export const handle = dashboardWorkspaceHandle;
 
 export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   await requireDashboardAdmin();
-  const kind = ALL_PROVIDER_KINDS.find(candidate => candidate === params.provider);
+  const kind = ALL_UPSTREAM_KINDS.find(candidate => candidate === params.kind);
   if (!kind) {
     throw redirect('/dashboard/providers/upstreams');
   }
@@ -31,7 +31,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   if (upstreamsResult.error) throw new Error(upstreamsResult.error.message);
   const record = {
     ...recordResult.data,
-    name: providerDefaultName[kind],
+    name: upstreamDefaultName[kind],
     enabled: true,
     // A blueprint carries no hue: the badge only has to be told apart from the
     // ones already on screen, which is a fact the dashboard holds and the

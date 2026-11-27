@@ -5,7 +5,7 @@ import type { CatalogIndex } from './catalog-index';
 import type { ControlPlaneModel } from '../../api/types';
 import { Trans, type TFunction, useTranslation } from '../../i18n/translation';
 import { Chip } from '../ui/chip';
-import { ProviderBadge } from '../upstreams/provider-badge';
+import { UpstreamBadge } from '../upstreams/upstream-kind-badge';
 
 // One step under the chip's 12px caption, so the monospace face does not
 // out-measure the proportional text beside it.
@@ -87,7 +87,7 @@ export function ModelInfoBadges({ cap, catalog, model }: {
   return (
     <div className="flex flex-wrap items-center gap-1.5 min-w-0">
       {effectiveUpstreams(model, catalog, cap).map(upstream => (
-        <ProviderBadge key={upstream.id} label={upstream.name} upstream={upstream} />
+        <UpstreamBadge key={upstream.id} label={upstream.name} upstream={upstream} />
       ))}
       {modelBadges(model, catalog, cap).map(badge => (
         <Chip key={badge.key}>

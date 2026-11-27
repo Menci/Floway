@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { HttpCapture } from '../../src/dump/http-capture.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
-import { jsonRequestBody } from '@floway-dev/provider';
+import { jsonRequestBody } from '@floway-dev/upstream';
 
 const utf8 = (text: string) => new TextEncoder().encode(text);
 

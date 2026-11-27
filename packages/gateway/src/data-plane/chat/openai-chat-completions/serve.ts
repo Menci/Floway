@@ -1,14 +1,14 @@
 import { analyzeOpenAIChatCompletionsAffinity } from './affinity/ingress.ts';
 import { openaiChatCompletionsAttempt, openaiChatCompletionsTarget } from './attempt.ts';
 import { renderOpenAIChatCompletionsFailure } from './errors.ts';
-import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
+import { enumerateModelCandidates } from '../../upstreams/resolution.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { ExecuteResult } from '@floway-dev/provider';
+import type { ExecuteResult } from '@floway-dev/upstream';
 
 export interface OpenAIChatCompletionsServeGenerateArgs {
   readonly payload: OpenAIChatCompletionsPayloadEx;
@@ -19,20 +19,19 @@ export interface OpenAIChatCompletionsServeGenerateArgs {
 export const openaiChatCompletionsServe = {
   generate: async (args: OpenAIChatCompletionsServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> => {
     const { payload, ctx, headers } = args;
-    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
+    const { candidates: enumerated, sawModel } = await enumerateModelCandidates({
       subject: ctx.user,
       upstreamIds: ctx.upstreamIds,
       randomizeUpstreams: ctx.randomizeUpstreams,
       model: payload.model,
       kind: 'chat',
-      scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
     const affinity = await analyzeOpenAIChatCompletionsAffinity(payload, ctx.affinity.codec);
     const viable = enumerated.filter(c => openaiChatCompletionsTarget.canServe(c.model.endpoints));
     const selection = selectAffinityCandidates(viable, affinity);
     if ('kind' in selection) return renderOpenAIChatCompletionsFailure(selection);
-    if (selection.candidates.length === 0) return renderOpenAIChatCompletionsFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams));
+    if (selection.candidates.length === 0) return renderOpenAIChatCompletionsFailure(noViableCandidateFailure(sawModel, payload.model));
 
     // Try each affinity-selected candidate in order. A successful attempt (SSE
     // stream opened) is the final answer; an api-error or internal-error

@@ -1,6 +1,6 @@
 import type { Repo } from '../../repo/types.ts';
 import { decimalStringIsZero, divideDecimalString, multiplyDecimalStrings, TELEMETRY_HOUR_MS, telemetryHourKey, type DecimalString } from '@floway-dev/protocols/common';
-import type { UpstreamMetricDisplay, UpstreamMetricIdentity } from '@floway-dev/provider';
+import type { UpstreamMetricDisplay, UpstreamMetricIdentity } from '@floway-dev/upstream';
 
 export type CycleQuota =
   | { kind: 'estimated'; usd: DecimalString }

@@ -1,25 +1,30 @@
-// Canonical JSON encoding for upstream rows. Key order is sorted recursively so
-// a row's stored text is a function of its data alone: two writes of the same
-// object produce the same bytes, which is what lets `saveState` recognize a
-// mutator that changed nothing and skip the write. config_json shares the
-// encoder for symmetry.
+// Canonical JSON encoding for stored gateway rows. Object keys and Set entries
+// are sorted recursively so two writes of the same logical data produce the
+// exact same bytes. That lets `saveState` detect no-op mutations and lets
+// conditional UPSERTs in `upstream_models` skip unchanged rows.
 
-const canonicalize = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(canonicalize);
+export const canonicalizeStoredJson = (value: unknown): unknown => {
+  if (value instanceof Set) {
+    return [...value].map(canonicalizeStoredJson).toSorted();
+  }
+  if (Array.isArray(value)) return value.map(canonicalizeStoredJson);
   if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.keys(value as Record<string, unknown>)
-        .toSorted()
-        .map(key => [key, canonicalize((value as Record<string, unknown>)[key])]),
-    );
+    const entries: [string, unknown][] = [];
+    for (const key of Object.keys(value as Record<string, unknown>).toSorted()) {
+      const entryValue = (value as Record<string, unknown>)[key];
+      if (entryValue !== undefined) {
+        entries.push([key, canonicalizeStoredJson(entryValue)]);
+      }
+    }
+    return Object.fromEntries(entries);
   }
   return value;
 };
 
 // state_json is nullable; null/undefined collapse to SQL NULL.
 export const serializeStoredState = (value: unknown): string | null =>
-  value === null || value === undefined ? null : JSON.stringify(canonicalize(value));
+  value === null || value === undefined ? null : JSON.stringify(canonicalizeStoredJson(value));
 
 // config_json is NOT NULL; an absent value is stored as the JSON literal `null`.
 export const serializeStoredConfig = (value: unknown): string =>
-  JSON.stringify(canonicalize(value === undefined ? null : value));
+  JSON.stringify(canonicalizeStoredJson(value === undefined ? null : value));
