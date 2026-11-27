@@ -271,3 +271,33 @@ test.each(['deltas', 'initial input'])('Responses restores an enveloped Anthropi
   expect(restored[0]?.input).toEqual(wrapped);
   expect(replay.target.messages[0]?.content).toContainEqual({ type: 'thinking', thinking: 'native reasoning', signature: 'native signature' });
 });
+
+test.each(['deltas', 'initial input'])('Responses restores an Anthropic custom tool call from a nested text reference (%s)', async mode => {
+  const options = { sidecarCodec: createTestSidecarCodec() };
+  const input = '\\"\n😀'.repeat(8_192);
+  const wrapped = { input };
+  const tools: OpenAIResponsesTool[] = [{ type: 'custom', name: 'update', format: { type: 'text' } }];
+  const first = expectTrip(await routeOpenAIResponsesViaAnthropicMessages({ model: 'm', stream: true, input: 'start', tools }, options));
+  const json = JSON.stringify(wrapped);
+  const result = await collectOpenAIResponsesProtocolEventsToResult(first.events(iterate(
+    messagesFrames('update', mode === 'deltas' ? [json.slice(0, 11), json.slice(11)] : wrapped),
+  )));
+  const call = result.output.find(item => item.type === 'custom_tool_call');
+  if (call === undefined) throw new Error('Expected a custom tool call');
+  expect(call.input).toBe(input);
+  const carrier = result.output.find(item => item.type === 'reasoning' && typeof item.encrypted_content === 'string');
+  if (carrier?.type !== 'reasoning' || typeof carrier.encrypted_content !== 'string') throw new Error('Expected an assistant-turn sidecar');
+  const sidecar = await decodeRoundTripSidecar(options.sidecarCodec, 'openaiResponses', carrier.encrypted_content);
+  if (sidecar?.target !== 'anthropicMessages') throw new Error('Expected an Anthropic Messages sidecar');
+  expect(sidecar.referencedContentHashes).toHaveLength(1);
+  expect(sidecar.targetTurn.content).toContainEqual({
+    type: 'tool_use', id: 'native', name: 'update', input: { input: new ContentReference('text', [0]) },
+  });
+
+  const replay = expectTrip(await routeOpenAIResponsesViaAnthropicMessages({
+    model: 'm', stream: true, tools,
+    input: [...toOpenAIResponsesInputItems(result.output), { type: 'custom_tool_call_output', call_id: call.call_id, output: 'done' }],
+  }, options));
+  expect(replay.target.messages[0]?.content).toContainEqual({ type: 'tool_use', id: 'native', name: 'update', input: wrapped });
+  expect(replay.target.messages[0]?.content).toContainEqual({ type: 'thinking', thinking: 'native reasoning', signature: 'native signature' });
+});

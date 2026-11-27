@@ -12,12 +12,14 @@ type AnthropicMessagesTextBlockRule<Block> = Block extends { type: 'text' }
 type AnthropicMessagesReferenceableBlock<Block, Reference> = Block extends { type: 'tool_use' }
   ? {
       [Key in keyof Block]: Key extends 'input'
-        ? ReferenceableValue<Block[Key], JSONRule, Reference> | ToolArgumentsEnvelope<ReferenceableValue<IRJSONObject, JSONRule, Reference>>
+        ? ReferenceableValue<Block[Key], JSONRule, Reference>
+          | ToolArgumentsEnvelope<ReferenceableValue<IRJSONObject, JSONRule, Reference>>
+          | { input: ReferenceableValue<string, TextRule, Reference> }
         : Block[Key];
     }
   : AnthropicMessagesTextBlockRule<Block> extends never ? Block : ReferenceableValue<Block, AnthropicMessagesTextBlockRule<Block>, Reference>;
 type AnthropicMessagesBlockState<Block, States extends ReferenceStateLeaves> = Block extends { type: 'tool_use' }
-  ? { input: States['json'] | ToolArgumentsEnvelope<States['json']> }
+  ? { input: States['json'] | ToolArgumentsEnvelope<States['json']> | { input: States['text'] } }
   : AnthropicMessagesTextBlockRule<Block> extends never ? never : ReferenceState<Block, AnthropicMessagesTextBlockRule<Block>, States>;
 
 export type AnthropicMessagesReferenceableInputAssistantTurn<Reference> = {
