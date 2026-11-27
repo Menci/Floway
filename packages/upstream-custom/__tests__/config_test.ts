@@ -68,6 +68,20 @@ test('assertCustomUpstreamRecord rejects invalid ingress header rules', () => {
   }
 });
 
+test('preserves the OpenAI Audio Speech capability and operator path override', () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      endpoints: { openaiAudioSpeech: {} },
+      pathOverrides: { '/audio/speech': '/generate-audio' },
+    },
+  });
+
+  assertEquals(config.endpoints, { openaiAudioSpeech: {} });
+  assertEquals(config.pathOverrides, { '/audio/speech': '/generate-audio' });
+});
+
 test('assertCustomUpstreamRecord rejects malformed opaque config instead of dropping endpoints', () => {
   assertThrows(
     () =>

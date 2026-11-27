@@ -1,6 +1,6 @@
 import type { DumpCapture } from './types.ts';
 import { encodeBodyForWire } from './wire.ts';
-import { isReplayableBody, toRequestInit, type Fetcher } from '@floway-dev/http';
+import { isReplayableBody, toRequestInit, type Fetcher, type FetchResponse } from '@floway-dev/http';
 
 const errorText = (error: unknown): string => error instanceof Error ? error.stack ?? error.message : String(error);
 
@@ -13,20 +13,29 @@ export class HttpCapture {
       const requestInit: RequestInit & { duplex: 'half' } = { ...toRequestInit(init, body), duplex: 'half' };
       const request = new Request(url, requestInit);
       const bytes = new Uint8Array(await request.arrayBuffer());
+      // The Request validates the lines and supplies a missing Content-Type, but
+      // its Headers list combines fields that a socket can send separately.
+      const headers: Array<[string, string]> = Array.isArray(init.headers)
+        ? init.headers.map(([name, value]) => [name, value])
+        : [...request.headers];
+      const contentType = request.headers.get('content-type');
+      if (contentType !== null && !headers.some(([name]) => name.toLowerCase() === 'content-type')) {
+        headers.push(['content-type', contentType]);
+      }
       const exchange: DumpCapture['exchanges'][number] = {
         upstreamId,
         request: {
           url,
           method: request.method,
-          headers: [...request.headers],
-          body: encodeBodyForWire(bytes, request.headers.get('content-type') ?? ''),
+          headers,
+          body: encodeBodyForWire(bytes, contentType ?? ''),
         },
         response: null,
         error: null,
       };
       this.exchanges.push(exchange);
       try {
-        const response = await fetcher(url, { ...init, headers: request.headers, body: body == null ? null : bytes });
+        const response = await fetcher(url, { ...init, headers, body: body == null ? null : bytes });
         const capture = new RawResponseCapture(response);
         Object.defineProperty(exchange, 'response', { enumerable: true, get: () => capture.snapshot() });
         return capture.wrap();
@@ -44,7 +53,7 @@ class RawResponseCapture {
   private cancelled = false;
   private error: string | null = null;
 
-  constructor(private readonly response: Response) {}
+  constructor(private readonly response: FetchResponse) {}
 
   snapshot(): NonNullable<DumpCapture['exchanges'][number]['response']> {
     const bytes = new Uint8Array(this.chunks.reduce((size, chunk) => size + chunk.byteLength, 0));
@@ -55,14 +64,14 @@ class RawResponseCapture {
     }
     return {
       status: this.response.status,
-      headers: [...this.response.headers],
+      headers: Array.from(this.response.headerLines ?? this.response.headers, ([name, value]) => [name, value]),
       body: encodeBodyForWire(bytes, this.response.headers.get('content-type') ?? ''),
       complete: this.complete,
       error: this.error,
     };
   }
 
-  wrap(): Response {
+  wrap(): FetchResponse {
     if (this.response.body === null) {
       this.complete = true;
       return this.response;
@@ -98,6 +107,10 @@ class RawResponseCapture {
         try { await reader.cancel(reason); } finally { finish(); }
       },
     }, { highWaterMark: 0 });
-    return new Response(stream, { status: this.response.status, statusText: this.response.statusText, headers: this.response.headers });
+    const { status, statusText, headers, headerLines, classifyBodyFailure } = this.response;
+    return Object.assign(new Response(stream, { status, statusText, headers }), {
+      ...(headerLines !== undefined && { headerLines }),
+      ...(classifyBodyFailure !== undefined && { classifyBodyFailure: classifyBodyFailure.bind(this.response) }),
+    });
   }
 }

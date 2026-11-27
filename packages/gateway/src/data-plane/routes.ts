@@ -1,36 +1,33 @@
 import type { Hono } from 'hono';
 
-import { mountAlphaSearchRoutes } from './alpha-search/routes.ts';
+import { mountAlphaSearchRoute } from './alpha-search/route.ts';
 import { mountChatRoutes } from './chat/routes.ts';
 import { mountCodexRoutes } from './codex/routes.ts';
-import { decision } from './decision/serve.ts';
 import { serveGeminiModelInfo } from './models/gemini.ts';
 import { serveModels } from './models/http.ts';
-import { openaiAudioTranscriptions } from './openai-audio/http.ts';
-import { openaiCompletions } from './openai-completions/http.ts';
-import { openaiEmbeddings } from './openai-embeddings/http.ts';
-import { openaiImagesEdits, openaiImagesGenerations } from './openai-images/http.ts';
+import { decisionIngress, openaiAudioSpeechIngress, openaiAudioTranscriptionsIngress, openaiCompletionsIngress, openaiEmbeddingsIngress, openaiImagesEditsIngress, openaiImagesGenerationsIngress, rerankIngress } from './non-chat/index.ts';
 import { mountPublicRoute } from './public-route.ts';
-import { rerank } from './rerank/serve.ts';
+import { pipelineHttpHandler, pipelineHttpHandlerWithFacts } from './shared/pipeline-handler.ts';
 import type { AuthVars } from '../middleware/auth.ts';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
 export const mountDataPlane = (app: Hono<{ Variables: AuthVars }>) => {
-  mountAlphaSearchRoutes(app);
+  mountAlphaSearchRoute(app, PUBLIC_DATA_PLANE_ROUTES.alphaSearch);
   mountChatRoutes(app);
   mountCodexRoutes(app);
 
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.models, (method, path) => app.on(method, path, serveModels));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.geminiModel, (method, path) => app.on(method, path, serveGeminiModelInfo));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiEmbeddings, (method, path) => app.on(method, path, openaiEmbeddings));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiCompletions, (method, path) => app.on(method, path, openaiCompletions));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiImagesGenerations, (method, path) => app.on(method, path, openaiImagesGenerations));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiImagesEdits, (method, path) => app.on(method, path, openaiImagesEdits));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiAudioTranscriptions, (method, path) => app.on(method, path, openaiAudioTranscriptions));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.cohereV1Rerank, (method, path) => app.on(method, path, rerank('cohere-v1')));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.cohereV2Rerank, (method, path) => app.on(method, path, rerank('cohere-v2')));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.jinaV1Rerank, (method, path) => app.on(method, path, rerank('jina-v1')));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.voyageV1Rerank, (method, path) => app.on(method, path, rerank('voyage-v1')));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.typesafeSystemOne, (method, path) => app.on(method, path, decision('typesafe-systemone')));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openAiDecisions, (method, path) => app.on(method, path, decision('openai-decisions')));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiEmbeddings, (method, path) => app.on(method, path, pipelineHttpHandler(openaiEmbeddingsIngress)));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiCompletions, (method, path) => app.on(method, path, pipelineHttpHandler(openaiCompletionsIngress)));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiImagesGenerations, (method, path) => app.on(method, path, pipelineHttpHandler(openaiImagesGenerationsIngress)));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiImagesEdits, (method, path) => app.on(method, path, pipelineHttpHandler(openaiImagesEditsIngress)));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiAudioSpeech, (method, path) => app.on(method, path, pipelineHttpHandler(openaiAudioSpeechIngress)));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiAudioTranscriptions, (method, path) => app.on(method, path, pipelineHttpHandler(openaiAudioTranscriptionsIngress)));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.cohereV1Rerank, (method, path) => app.on(method, path, pipelineHttpHandlerWithFacts(rerankIngress, facts => ({ ...facts, rerankDialect: 'cohere-v1' as const }))));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.cohereV2Rerank, (method, path) => app.on(method, path, pipelineHttpHandlerWithFacts(rerankIngress, facts => ({ ...facts, rerankDialect: 'cohere-v2' as const }))));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.jinaV1Rerank, (method, path) => app.on(method, path, pipelineHttpHandlerWithFacts(rerankIngress, facts => ({ ...facts, rerankDialect: 'jina-v1' as const }))));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.voyageV1Rerank, (method, path) => app.on(method, path, pipelineHttpHandlerWithFacts(rerankIngress, facts => ({ ...facts, rerankDialect: 'voyage-v1' as const }))));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.typesafeSystemOne, (method, path) => app.on(method, path, pipelineHttpHandlerWithFacts(decisionIngress, facts => ({ ...facts, decisionDialect: 'typesafe-systemone' as const }))));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openAiDecisions, (method, path) => app.on(method, path, pipelineHttpHandlerWithFacts(decisionIngress, facts => ({ ...facts, decisionDialect: 'openai-decisions' as const }))));
 };

@@ -1,12 +1,7 @@
-import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame } from '@floway-dev/protocols/common';
-import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
-import { parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
-import type { UpstreamStreamParser } from '@floway-dev/upstream';
-
-const mapParser = <T>(parser: UpstreamStreamParser<T>, map: (event: T) => T): UpstreamStreamParser<T> => async function* (body, options) {
-  for await (const frame of parser(body, options)) yield frame.type === 'done' ? frame : eventFrame(map(frame.event));
-};
+import type { KimiCodeMessagesSpeed, KimiCodeOpenAITier } from './model-selection.ts';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 // In observed chat requests Kimi accepted priority without a response tier marker
 // and rejected fast. Messages accepted fast without a usage speed marker. Expose
@@ -14,15 +9,17 @@ const mapParser = <T>(parser: UpstreamStreamParser<T>, map: (event: T) => T): Up
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
 // https://developers.openai.com/api/docs/guides/priority-processing
 // https://platform.claude.com/docs/en/build-with-claude/fast-mode
-export const kimiCodeChatSpeedParser = (tier: 'priority' | 'default') => mapParser(parseOpenAIChatCompletionsStream, event => ({ ...event, service_tier: tier }));
+export const setKimiCodeChatCompletionsTier = (event: OpenAIChatCompletionsStreamEvent, tier: KimiCodeOpenAITier): OpenAIChatCompletionsStreamEvent => ({ ...event, service_tier: tier });
 
-export const kimiCodeResponsesSpeedParser = (tier: 'priority' | 'default') => mapParser(parseOpenAIResponsesStream, event => 'response' in event ? { ...event, response: { ...event.response, service_tier: tier } } : event);
+export const setKimiCodeResponsesTier = (event: OpenAIResponsesStreamEventEx, tier: KimiCodeOpenAITier): OpenAIResponsesStreamEventEx => 'response' in event
+  ? { ...event, response: { ...event.response, service_tier: tier } }
+  : event;
 
-export const kimiCodeMessagesSpeedParser = (speed: 'fast' | 'standard') => mapParser(parseAnthropicMessagesStream, event => event.type === 'message_start'
+export const setKimiCodeMessagesSpeed = (event: AnthropicMessagesStreamEventEx, speed: KimiCodeMessagesSpeed): AnthropicMessagesStreamEventEx => event.type === 'message_start'
   ? { ...event, message: { ...event.message, usage: { ...event.message.usage, speed } } }
-  : event);
+  : event;
 
-export const kimiCodeMessagesWireBody = (body: Record<string, unknown>): Record<string, unknown> => {
+export const kimiCodeMessagesWireBody = <Body extends { speed?: unknown }>(body: Body): Omit<Body, 'speed'> & { speed?: unknown } => {
   if (body.speed !== 'fast' && body.speed !== 'standard') return body;
   const { speed: _speed, ...wireBody } = body;
   return wireBody;

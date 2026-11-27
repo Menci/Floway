@@ -10,12 +10,38 @@
 // 4.6+ and Fable 5+ return with the alias already (no date),
 // so the alias derivation is the identity. The catalog id we publish is
 // always the alias; the original /v1/models id rides on
-// `upstreamData.upstreamModelId` so the wire fetch in `fetch.ts` and the
+// `upstreamData.upstreamModelId` so the Messages dial stage and the
 // pricing table key by the per-revision id.
 
+import { ensureClaudeCodeAccessToken } from './access-token.ts';
+import { assertClaudeCodeUpstreamRecord } from './config.ts';
+import { CLAUDE_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { CLAUDE_CODE_HEADERS_SONNET_OPUS } from './headers.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
-import { UpstreamModelsUnavailableError, type Fetcher, type FlagId, type UpstreamModel, type UpstreamChatModelConfig } from '@floway-dev/upstream';
+import { assertClaudeCodeUpstreamState } from './state.ts';
+import {
+  getUpstreamRuntimeRepo,
+  resolveEffectiveFlags,
+  UpstreamModelsUnavailableError,
+  type Fetcher,
+  type FlagId,
+  type UpstreamModel,
+  type UpstreamChatModelConfig,
+  type UpstreamRecord,
+} from '@floway-dev/upstream';
+
+export const getClaudeCodeModels = async (record: UpstreamRecord, fetcher: Fetcher): Promise<readonly UpstreamModel[]> => {
+  assertClaudeCodeUpstreamRecord(record);
+  assertClaudeCodeUpstreamState(record.state);
+  const enabledFlags = resolveEffectiveFlags([CLAUDE_CODE_DEFAULT_FLAGS, record.flagOverrides]);
+  const { entry } = await ensureClaudeCodeAccessToken({
+    upstreamId: record.id,
+    repo: getUpstreamRuntimeRepo().upstreams,
+    fetcher,
+  });
+  const apiModels = await fetchClaudeCodeModelsList(entry.token, fetcher);
+  return buildClaudeCodeCatalog(apiModels, enabledFlags);
+};
 
 export interface ClaudeCodeUpstreamData {
   readonly upstreamModelId: string;

@@ -1,27 +1,10 @@
 import { expect, test } from 'vitest';
 
 import { analyzeGeminiGenerateContentAffinity } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/ingress.ts';
-import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
-import { stubModelCandidate } from '@floway-dev/test-utils';
-import type { ModelCandidate } from '@floway-dev/upstream';
+import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { acceptedAffinityEvaluation, affinityCandidate as candidate, affinityTargetFor as targetFor } from '../../shared/affinity/helpers.ts';
 
 const codec = new AffinityCodec('22'.repeat(32));
-
-const candidate = (upstream: string): ModelCandidate => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    upstream: { ...base.upstream, upstreamId: upstream },
-    model: { id: 'model' },
-  });
-};
-
-const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.upstream.upstreamId,
-  modelId: value.model.id,
-  ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.upstream.upstreamId, key: value.model.id },
-});
 
 const candidateA = candidate('upstream-a');
 const candidateB = candidate('upstream-b');

@@ -1,256 +1,245 @@
-import { Hono } from 'hono';
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import type { AuthVars } from '../../../../src/middleware/auth.ts';
-import { initRepo } from '../../../../src/repo/index.ts';
-import type { ApiKey, User } from '../../../../src/repo/types.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
-import { flushBackground } from '../../../test-utils/background-tracker.ts';
-import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { assert, assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
-import { type ModelCandidate, directFetcher, type UpstreamCallResult, type UpstreamStreamResult, type UpstreamCallOptions } from '@floway-dev/upstream';
+import { anthropicMessagesHttpEntry } from '../../../../src/data-plane/chat/anthropic-messages/pipeline/ingress.ts';
+import { anthropicMessagesCountTokensIngress } from '../../../../src/data-plane/non-chat/count-tokens/pipeline.ts';
+import { servePipelineHttp } from '../../../../src/data-plane/shared/pipeline-http.ts';
+import { customCandidate, operationHost, requestFor } from '../../non-chat/count-tokens/fixtures.ts';
+import { mountedChatPanic } from '../pipeline/http-panic-fixtures.ts';
+import { HttpTransportError, type Fetcher } from '@floway-dev/http';
 
-const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean }[] = [];
-vi.mock('../../../../src/data-plane/upstreams/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/upstreams/resolution.ts')>();
-  return {
-    ...original,
-    enumerateModelCandidates: vi.fn(async () => {
-      const next = candidatesQueue.shift();
-      if (next === undefined) throw new Error('http_test: no candidates enqueued');
-      return next;
-    }),
-  };
-});
+const candidate = (id = 'messages') => customCandidate(id, { anthropicMessages: {} });
 
-const { anthropicMessagesHttp } = await import('../../../../src/data-plane/chat/anthropic-messages/http.ts');
-
-const API_KEY_ID = 'key_messages_http_test';
-
-const queueCandidates = (candidates: readonly ModelCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel });
-};
-
-const installRepo = (): InMemoryRepo => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  return repo;
-};
-
-const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
-  id: API_KEY_ID,
-  userId: 1,
-  name: 'http_test',
-  key: 'sk-http-test',
-  serverSecret: '00'.repeat(32),
-  createdAt: '2026-01-01T00:00:00.000Z',
-  upstreamIds: null,
-  randomizeUpstreams: false,
-  deletedAt: null,
-  dumpRetentionSeconds: null,
-  openaiResponsesRetentionSeconds: 0,
-  ...overrides,
-});
-
-const buildUser = (overrides: Partial<User> = {}): User => ({
-  id: 1,
-  username: 'http_test',
-  passwordHash: null,
-  isAdmin: false,
-  createdAt: '2026-01-01T00:00:00.000Z',
-  deletedAt: null,
-  ...overrides,
-});
-
-const makeApp = (): Hono<{ Variables: AuthVars }> => {
-  const app = new Hono<{ Variables: AuthVars }>();
-  app.use('*', async (c, next) => {
-    c.set('apiKey', buildApiKey());
-    c.set('user', buildUser());
-    await next();
-  });
-  app.post('/v1/messages', anthropicMessagesHttp.generate);
-  app.post('/v1/messages/count_tokens', anthropicMessagesHttp.countTokens);
-  return app;
-};
-
-const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEventEx[] => [
-  {
-    type: 'message_start',
-    message: {
-      container: null, diagnostics: null, stop_details: null,
-      id: 'msg_http',
-      type: 'message',
-      role: 'assistant',
-      content: [],
-      model: 'test-model',
-      stop_reason: null,
-      stop_sequence: null,
-      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
+test.each([false, true])('Anthropic Messages retains the nested transport diagnostic for stream=%s', async stream => {
+  const cause = new TypeError('nested transport cause');
+  const failure = new HttpTransportError(new Error('broken socket', { cause }));
+  const head = sse(messageStart);
+  const first = new Uint8Array(await head.arrayBuffer());
+  let emitted = false;
+  const host = operationHost([candidate()], async () => new Response(new ReadableStream<Uint8Array>({
+    pull(reader) {
+      if (emitted) reader.error(failure);
+      else {
+        emitted = true;
+        reader.enqueue(first);
+      }
     },
-  },
-  { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
-  { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
-  { type: 'content_block_stop', index: 0 },
-  { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
-  { type: 'message_stop' },
-];
-
-const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): AsyncGenerator<ProtocolFrame<TEvent>> {
-  for (const event of events) yield eventFrame(event);
-  yield doneFrame();
-};
-
-const makeCandidate = (overrides: {
-  upstream?: string;
-  endpoints?: ModelEndpoints;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>>;
-  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamCallResult>;
-} = {}): ModelCandidate => {
-  const upstream = overrides.upstream ?? 'up_test';
-  const instance = stubUpstream({
-    callAnthropicMessages: overrides.callAnthropicMessages,
-    callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
-  });
-  return {
-    upstream: {
-      upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      instance,
-    },
-    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-    fetcher: directFetcher,
-  };
-};
-
-test('POST /v1/messages returns a single JSON body when stream is omitted', async () => {
-  installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
-  }));
-  queueCandidates([makeCandidate({ callAnthropicMessages })]);
-
-  const response = await makeApp().request('/v1/messages', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
-  });
-
-  assertEquals(response.status, 200);
-  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
-  const body = await response.json() as { role: string; content: unknown };
-  assertEquals(body.role, 'assistant');
-});
-
-test('POST /v1/messages answers the Claude Code model-validation probe without calling the upstream', async () => {
-  const repo = installRepo();
-  const callAnthropicMessages = vi.fn((): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => {
-    throw new Error('the probe reached the upstream');
-  });
-  queueCandidates([makeCandidate({ callAnthropicMessages })]);
-
-  const response = await makeApp().request('/v1/messages', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json', 'user-agent': 'claude-cli/2.1.226 (external, cli)' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      max_tokens: 1,
-      system: [{ citations: null, type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
-      messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: 'Hi', cache_control: { type: 'ephemeral' } }] }],
-      metadata: { user_id: 'user_0_account__session_0' },
-    }),
-  });
-
-  assertEquals(response.status, 200);
-  const body = await response.json() as { model: string; stop_reason: string; usage: { input_tokens: number; output_tokens: number } };
-  assertEquals(body.model, 'test-model');
-  assertEquals(body.stop_reason, 'max_tokens');
-  assertEquals(body.usage.input_tokens, 0);
-  assertEquals(body.usage.output_tokens, 0);
-  assertEquals(callAnthropicMessages.mock.calls.length, 0);
-
-  // The turn is recorded as served, at zero cost, and contributes no latency
-  // sample — there was no upstream call to measure.
-  await flushBackground();
-  const usage = await repo.usage.listAll();
-  assertEquals(usage.length, 1);
-  assertEquals(usage[0]?.requests, 1);
-  assertEquals(usage[0]?.metrics, []);
-  assertEquals(await repo.performance.listAll(), []);
-});
-
-test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', async () => {
-  installRepo();
-  // No candidates queued — the http entry rejects before reaching the serve.
-  const response = await makeApp().request('/v1/messages', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      max_tokens: 32,
-      anthropic_beta: ['something'],
-      messages: [{ role: 'user', content: 'hello' }],
-    }),
-  });
-
-  assertEquals(response.status, 400);
-  const body = await response.json() as { error: { param: string; type: string } };
-  assertEquals(body.error.param, 'anthropic_beta');
-  assertEquals(body.error.type, 'invalid_request_error');
-});
-
-test('POST /v1/messages/count_tokens forwards an upstream rate limit and retry hint unchanged', async () => {
-  installRepo();
-  const body = '{"error":{"type":"rate_limit_error","message":"wait"}}';
-  const callAnthropicMessagesCountTokens = vi.fn(async () => ({
-    http: new Response(body, {
-      status: 429,
-      headers: { 'content-type': 'application/json', 'retry-after': '17', 'request-id': 'req-count', 'set-cookie': 'private=1' },
-    }),
-    modelKey: 'k',
-  }));
-  queueCandidates([makeCandidate({ callAnthropicMessagesCountTokens })]);
-  const response = await makeApp().request('/v1/messages/count_tokens', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }),
-  });
-  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
-  assertEquals(response.status, 429);
-  assertEquals(response.headers.get('retry-after'), '17');
-  assertEquals(response.headers.get('request-id'), 'req-count');
-  assertEquals(response.headers.get('set-cookie'), null);
-  assertEquals(await response.text(), body);
-});
-
-test('POST /v1/messages does not switch upstreams after the response stream opens and breaks', async () => {
-  installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true,
-    events: (async function* () {
-      yield eventFrame(makeAnthropicMessagesEvents()[0]!);
-      throw new Error('connection reset after message_start');
-    })(),
-    modelKey: 'k',
-    http: { status: 200, headers: new Headers() },
-  }));
-  const secondCall = vi.fn(async (): Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'second', http: { status: 200, headers: new Headers() },
-  }));
-  queueCandidates([
-    makeCandidate({ upstream: 'first', callAnthropicMessages }),
-    makeCandidate({ upstream: 'second', callAnthropicMessages: secondCall }),
-  ]);
-  const response = await makeApp().request('/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'test-model', max_tokens: 32, stream: true, messages: [{ role: 'user', content: 'hello' }] }),
-  });
+  }, { highWaterMark: 0 }), { headers: head.headers }));
+  const response = await servePipelineHttp(anthropicMessagesHttpEntry, requestFor('/v1/messages', { ...request, stream }), host.options);
+  expect(response.status).toBe(stream ? 200 : 502);
   const body = await response.text();
-  assertEquals(response.status, 200);
-  assert(body.includes('event: message_start'));
-  assert(body.includes('event: error'));
-  assert(body.includes('connection reset after message_start'));
-  assertEquals(secondCall.mock.calls.length, 0);
-  await flushBackground();
+  expect(body).toContain('"name":"TypeError"');
+  expect(body).toContain('"message":"nested transport cause"');
+  expect(body).toContain('provider_specific_fields');
+  if (stream) expect(body).toContain('event: error');
+  await host.settle();
+});
+const request = { model: 'public-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] };
+
+const sse = (...events: { type: string }[]) => new Response(events
+  .map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''), {
+  headers: { 'content-type': 'text/event-stream' },
+});
+
+const messageStart = {
+  type: 'message_start',
+  message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'wire-model', content: [], usage: { input_tokens: 4, output_tokens: 0 } },
+};
+const messageStop = { type: 'message_stop' };
+const success = () => sse(messageStart, messageStop);
+
+test.each(['/v1/messages', '/v1/messages/count_tokens'])('renders the original pre-head panic on %s', async path => {
+  const { status, text, failure, cause } = await mountedChatPanic(path, { ...request, model: 'test-model' }, { anthropicMessages: {} });
+  expect(status).toBe(502);
+  expect(JSON.parse(text)).toMatchObject({
+    type: 'error',
+    error: { type: 'internal_error', message: failure.message, provider_specific_fields: { stack: failure.stack, cause: { message: cause.message } } },
+  });
+});
+
+test('emits a named Anthropic error event for a post-head panic', async () => {
+  const firstFrame = new Uint8Array(await sse(messageStart).arrayBuffer());
+  const { status, text, failure, cause } = await mountedChatPanic(
+    '/v1/messages', { ...request, model: 'test-model', stream: true }, { anthropicMessages: {} }, firstFrame,
+  );
+  expect(status).toBe(200);
+  expect(text).toContain('event: message_start');
+  const errorBlock = text.trimEnd().split('\n\n').at(-1);
+  expect(errorBlock).toMatch(/^event: error\ndata: /);
+  expect(JSON.parse(errorBlock!.slice('event: error\ndata: '.length))).toMatchObject({
+    type: 'error',
+    error: { type: 'api_error', message: failure.message, provider_specific_fields: { stack: failure.stack, cause: { message: cause.message } } },
+  });
+});
+
+test('collects a native Messages response when stream is omitted', async () => {
+  const fetcher = vi.fn<Fetcher>(async () => success());
+  const host = operationHost([candidate()], fetcher);
+  const response = await servePipelineHttp(anthropicMessagesHttpEntry, requestFor('/v1/messages', request), host.options);
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toBe('application/json');
+  await expect(response.json()).resolves.toMatchObject({ role: 'assistant', id: 'msg_1' });
+  await host.settle();
+  expect(fetcher).toHaveBeenCalledOnce();
+});
+
+test.each([
+  { userAgent: 'claude-cli/2.1.226 (external, cli)', prompt: 'Hi', local: true },
+  { userAgent: 'claude-cli/2.1.226 (external, cli)', prompt: 'What is your latest model?', local: false },
+  { userAgent: 'other-client/1.0', prompt: 'Hi', local: false },
+])('handles model validation for $userAgent and $prompt', async ({ userAgent, prompt, local }) => {
+  const fetcher = vi.fn<Fetcher>(async () => success());
+  const host = operationHost([candidate()], fetcher);
+  const input = requestFor('/v1/messages', {
+    ...request, max_tokens: 1, messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }],
+  });
+  input.http.headers.push(['user-agent', userAgent]);
+  const response = await servePipelineHttp(anthropicMessagesHttpEntry, input, host.options);
+  expect(response.status).toBe(200);
+  if (local) {
+    await expect(response.json()).resolves.toMatchObject({ model: 'public-model', stop_reason: 'max_tokens', usage: { input_tokens: 0, output_tokens: 0 } });
+  }
+  await host.settle();
+  expect(fetcher).toHaveBeenCalledTimes(local ? 0 : 1);
+  expect(host.recordUsage).toHaveBeenCalledTimes(local ? 0 : 1);
+  expect(host.recordPerformance).toHaveBeenCalledTimes(local ? 0 : 1);
+});
+
+test('rejects body anthropic_beta before catalog discovery', async () => {
+  const host = operationHost([], async () => { throw new Error('Rejected input reached the transport'); });
+  const response = await servePipelineHttp(anthropicMessagesHttpEntry, requestFor('/v1/messages', {
+    ...request, anthropic_beta: ['probe'],
+  }), host.options);
+  expect(response.status).toBe(400);
+  await expect(response.json()).resolves.toMatchObject({ error: { param: 'anthropic_beta', type: 'invalid_request_error' } });
+  expect(host.catalogCandidates).not.toHaveBeenCalled();
+});
+
+test('count-tokens preserves the last upstream rate limit and end-to-end headers', async () => {
+  const body = { error: { type: 'rate_limit_error', message: 'wait' } };
+  const host = operationHost([candidate()], async () => Response.json(body, {
+    status: 429, headers: { 'retry-after': '17', 'request-id': 'req-count', 'set-cookie': 'private=1' },
+  }));
+  const response = await servePipelineHttp(anthropicMessagesCountTokensIngress, requestFor('/v1/messages/count_tokens', request), host.options);
+  expect(response.status).toBe(429);
+  expect(response.headers.get('retry-after')).toBe('17');
+  expect(response.headers.get('request-id')).toBe('req-count');
+  expect(response.headers.get('set-cookie')).toBeNull();
+  await expect(response.json()).resolves.toEqual(body);
+  await host.settle();
+});
+
+test('keeps the selected candidate once the Messages stream opens', async () => {
+  const upstreamError = { type: 'error', error: { type: 'overloaded_error', message: 'call failed mid-stream' } };
+  const fetcher = vi.fn<Fetcher>(async () => sse(messageStart, upstreamError));
+  const host = operationHost([candidate('first'), candidate('second')], fetcher);
+  const response = await servePipelineHttp(anthropicMessagesHttpEntry, requestFor('/v1/messages', { ...request, stream: true }), host.options);
+  expect(response.status).toBe(200);
+  const wire = await response.text();
+  expect(wire).toContain('event: message_start');
+  expect(wire).toContain(`event: error\ndata: ${JSON.stringify(upstreamError)}`);
+  expect(fetcher).toHaveBeenCalledOnce();
+  await host.settle();
+  expect(host.recordPerformance).toHaveBeenCalledWith(expect.objectContaining({ upstream: 'first', failed: true }));
+});
+
+test('applies billing and role rules independently to failover candidates', async () => {
+  const first = candidate('first');
+  const second = candidate('second');
+  const billing = { type: 'text', text: 'x-anthropic-billing-header: turn\ncch=deadbeef1234;' };
+  const system = [billing, { type: 'text', text: 'base rules' }];
+  const messages = [{ role: 'system', content: 'inline rules' }, ...request.messages];
+  const beta = 'claude-code-20250219,interleaved-thinking-2025-05-14';
+  const fetcher = vi.fn<Fetcher>(async (url, init) => {
+    const body = JSON.parse(String(init.body)) as unknown;
+    if (new URL(url).hostname === 'first.example') {
+      expect(body).toMatchObject({ system: [system[1]], messages: [{ role: 'user', content: 'inline rules' }, ...request.messages] });
+      expect(new Headers(init.headers).get('anthropic-beta')).toBe('interleaved-thinking-2025-05-14');
+      return Response.json({ error: { message: 'try another' } }, { status: 503 });
+    }
+    expect(body).toMatchObject({ system, messages });
+    expect(new Headers(init.headers).get('anthropic-beta')).toBe(beta);
+    return success();
+  });
+  const host = operationHost([
+    { ...first, model: { ...first.model, enabledFlags: ['strip-billing-attribution', 'rewrite-mid-conv-system-to-user'] } },
+    second,
+  ], fetcher);
+  const input = requestFor('/v1/messages', { ...request, system, messages });
+  input.http.headers.push(['anthropic-beta', beta]);
+  const response = await servePipelineHttp(anthropicMessagesHttpEntry, input, host.options);
+  expect(response.status).toBe(200);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  await host.settle();
+});
+
+test('applies Anthropic alias rules to the resolved model', async () => {
+  const base = candidate();
+  const host = operationHost([{
+    ...base,
+    rules: { reasoning: { effort: 'high', budget_tokens: 2048 }, serviceTier: 'fast' },
+  }], async (_url, init) => {
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      model: 'wire-model', output_config: { effort: 'high' }, speed: 'fast', thinking: { type: 'enabled', budget_tokens: 2048 },
+    });
+    return success();
+  });
+  const response = await servePipelineHttp(anthropicMessagesHttpEntry, requestFor('/v1/messages', { ...request, model: 'alias' }), host.options);
+  expect(response.status).toBe(200);
+  expect(host.catalogCandidates).toHaveBeenCalledExactlyOnceWith({ kind: 'chat', model: 'alias' });
+  await host.settle();
+});
+
+test('preserves the target Responses role rewrite when the source has a competing flag', async () => {
+  const target = customCandidate('responses', { openaiResponses: {} });
+  const host = operationHost([{
+    ...target,
+    model: { ...target.model, enabledFlags: ['rewrite-mid-conv-system-to-user', 'rewrite-system-to-developer'] },
+  }], async (url, init) => {
+    expect(new URL(url).pathname).toBe('/v1/responses');
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      input: [
+        { type: 'message', role: 'user', content: 'hello' },
+        { type: 'message', role: 'developer', content: 'inline instructions' },
+      ],
+    });
+    const completed = {
+      type: 'response.completed',
+      response: { id: 'resp_1', object: 'response', status: 'completed', model: 'wire-model', output: [], error: null },
+    };
+    return sse(completed);
+  });
+  const response = await servePipelineHttp(anthropicMessagesHttpEntry, requestFor('/v1/messages', {
+    ...request, messages: [...request.messages, { role: 'system', content: 'inline instructions' }],
+  }), host.options);
+  expect(response.status).toBe(200);
+  await host.settle();
+});
+
+test('count-tokens shares Anthropic request shaping with generation', async () => {
+  const base = candidate();
+  const host = operationHost([{
+    ...base, model: {
+      ...base.model, enabledFlags: [
+        'strip-billing-attribution', 'disable-reasoning-on-forced-tool-choice', 'rewrite-mid-conv-system-to-user',
+      ],
+    },
+  }], async (_url, init) => {
+    expect(new Headers(init.headers).get('anthropic-beta')).toBe('interleaved-thinking-2025-05-14');
+    expect(JSON.parse(String(init.body))).toEqual({
+      model: 'wire-model', system: 'base rules',
+      messages: [{ role: 'user', content: 'inline rules' }, ...request.messages],
+      thinking: { type: 'disabled' }, tool_choice: { type: 'tool', name: 'lookup' },
+    });
+    return Response.json({ input_tokens: 9 });
+  });
+  const input = requestFor('/v1/messages/count_tokens', {
+    ...request, system: 'x-anthropic-billing-header: token\ncch=deadbeef1234;\nbase rules',
+    messages: [{ role: 'system', content: 'inline rules' }, ...request.messages],
+    thinking: { type: 'enabled', budget_tokens: 1024 }, output_config: { effort: 'high' }, tool_choice: { type: 'tool', name: 'lookup' },
+  });
+  input.http.headers.push(['anthropic-beta', 'claude-code-20250219,interleaved-thinking-2025-05-14']);
+  const response = await servePipelineHttp(anthropicMessagesCountTokensIngress, input, host.options);
+  expect(response.status).toBe(200);
+  await expect(response.json()).resolves.toEqual({ input_tokens: 9 });
+  await host.settle();
 });

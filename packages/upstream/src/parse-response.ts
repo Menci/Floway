@@ -1,9 +1,10 @@
+import { toInternalDebugError, type InternalDebugError } from './error.ts';
 import type { ProtocolError, ProtocolResult, ProtocolStream, ProtocolStreamError } from './pipeline-facts.ts';
 import { getHeader, type HttpResponseFact, type HttpStreamError } from '@floway-dev/http';
 import type { ManagedStream, Result } from '@floway-dev/pipeline';
 import { isEventStreamMediaType, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
-export type FormatProtocolError<Body = unknown> = (status: number | null, message: string) => Body;
+export type FormatProtocolError<Body = unknown> = (status: number | null, message: string, diagnostic?: InternalDebugError) => Body;
 
 type HttpByteStream = ManagedStream<Uint8Array, HttpStreamError>;
 type ByteResults = AsyncIterable<Result<Uint8Array, HttpStreamError>>;
@@ -30,10 +31,11 @@ interface ParsedResponse<Outcome> {
 
 const messageOf = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause);
 
-const ioError = <Body>(error: HttpStreamError, status: number | null, format: FormatProtocolError<Body>): ProtocolError<Body> =>
-  error.kind === 'abort'
-    ? { kind: 'error', source: 'local', error: format(499, 'Upstream request cancelled') }
-    : { kind: 'error', source: 'upstream', error: format(status, messageOf(error.cause)) };
+const ioError = <Body>(error: HttpStreamError, status: number | null, format: FormatProtocolError<Body>): ProtocolError<Body> => {
+  if (error.kind === 'abort') return { kind: 'error', source: 'local', error: format(499, 'Upstream request cancelled') };
+  const diagnostic = toInternalDebugError(error.cause);
+  return { kind: 'error', source: 'upstream', error: format(status, diagnostic.message, diagnostic) };
+};
 
 export const httpDialError = <Body>(error: HttpStreamError, format: FormatProtocolError<Body>): ProtocolError<Body> =>
   ioError(error, null, format);

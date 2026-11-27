@@ -26,17 +26,18 @@ export const validateAzureManualModels = (value: unknown): UpstreamModelConfig[]
 };
 
 export const assertAzureUpstreamRecord = (record: UpstreamRecord): AzureUpstreamRecord => {
-  if (record.kind !== 'azure') throw new Error(`Expected azure upstream record, got ${record.kind}`);
-  if (!isRecord(record.config)) throw new Error('Malformed azure upstream config: config must be an object');
-
-  const config: AzureUpstreamConfig = {
-    endpoint: azureEndpointField(record.config.endpoint, 'azure upstream config: endpoint'),
-    apiKey: nonEmptyStringField(record.config.apiKey, 'azure upstream config: apiKey'),
-  };
-
   return {
     ...record,
     kind: 'azure',
-    config,
+    config: readAzureUpstreamConfig(record),
+  };
+};
+
+export const readAzureUpstreamConfig = ({ kind, config }: Pick<UpstreamRecord, 'kind' | 'config'>): AzureUpstreamConfig => {
+  if (kind !== 'azure') throw new Error(`Expected azure upstream record, got ${kind}`);
+  if (!isRecord(config)) throw new Error('Malformed azure upstream config: config must be an object');
+  return {
+    endpoint: azureEndpointField(config.endpoint, 'azure upstream config: endpoint'),
+    apiKey: nonEmptyStringField(config.apiKey, 'azure upstream config: apiKey'),
   };
 };

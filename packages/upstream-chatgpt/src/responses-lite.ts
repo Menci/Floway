@@ -3,6 +3,7 @@ import { v5 as uuidV5 } from 'uuid';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   CanonicalOpenAIResponsesPayload,
+  OpenAIResponsesPromptCacheOptions,
   OpenAIResponsesInputAdditionalToolsItem,
   CanonicalOpenAIResponsesInputItem,
   OpenAIResponsesInputMessage,
@@ -10,10 +11,13 @@ import type {
   OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
 
-export type ChatGPTResponsesBody = Omit<CanonicalOpenAIResponsesPayload, 'model'>;
+type CacheOptions = OpenAIResponsesPromptCacheOptions | null;
 
-export interface ChatGPTResponsesLiteRequest {
-  body: ChatGPTResponsesBody;
+export type ChatGPTResponsesBody<Cache extends CacheOptions = OpenAIResponsesPromptCacheOptions> =
+  Omit<CanonicalOpenAIResponsesPayload, 'model' | 'prompt_cache_options'> & { prompt_cache_options?: Cache };
+
+export interface ChatGPTResponsesLiteRequest<Cache extends CacheOptions = OpenAIResponsesPromptCacheOptions> {
+  body: ChatGPTResponsesBody<Cache>;
   movedFields: {
     tools?: OpenAIResponsesTool[];
     instructions?: string;
@@ -143,11 +147,11 @@ const removeLiteImageDetail = (item: CanonicalOpenAIResponsesInputItem): Canonic
   return item;
 };
 
-export const encodeChatGPTResponsesLiteRequest = (
-  body: ChatGPTResponsesBody,
+export const encodeChatGPTResponsesLiteRequest = <Cache extends CacheOptions>(
+  body: ChatGPTResponsesBody<Cache>,
   threadId: string,
-): ChatGPTResponsesLiteRequest => {
-  const next: ChatGPTResponsesBody = { ...body };
+): ChatGPTResponsesLiteRequest<Cache> => {
+  const next: ChatGPTResponsesBody<Cache> = { ...body };
   const topLevelTools = Array.isArray(body.tools) ? body.tools : [];
   const input: CanonicalOpenAIResponsesInputItem[] = [...body.input];
   const threadNamespace = uuidV5(threadId, UUID_NAMESPACE_OID);
@@ -189,6 +193,16 @@ export const encodeChatGPTResponsesLiteRequest = (
 // those fields in its response resource; preserve output items, event families,
 // and all other response fields. Positional Lite callers move no top-level
 // fields and bypass this projection entirely.
+export const projectMovedChatGPTResponsesEventFields = (
+  event: OpenAIResponsesStreamEventEx,
+  movedFields: ChatGPTResponsesLiteRequest['movedFields'],
+): OpenAIResponsesStreamEventEx => {
+  if ('response' in event && Object.keys(movedFields).length > 0) {
+    return { ...event, response: { ...event.response, ...movedFields } };
+  }
+  return event;
+};
+
 export const projectMovedChatGPTResponsesFields = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   movedFields: ChatGPTResponsesLiteRequest['movedFields'],
@@ -198,10 +212,6 @@ export const projectMovedChatGPTResponsesFields = async function* (
       yield frame;
       continue;
     }
-    const event = frame.event;
-    if (event.type === 'response.queued' || event.type === 'response.created' || event.type === 'response.in_progress'
-      || event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
-      yield { ...frame, event: { ...event, response: { ...event.response, ...movedFields } } };
-    } else yield frame;
+    yield { ...frame, event: projectMovedChatGPTResponsesEventFields(frame.event, movedFields) };
   }
 };

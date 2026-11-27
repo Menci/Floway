@@ -24,14 +24,14 @@ import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/upstream';
 import { endpointsField, modelsField, validateUpstreamPath } from '@floway-dev/upstream';
 
+// https://docs.anthropic.com/en/api/versioning
+export const ANTHROPIC_VERSION = '2023-06-01';
+
 // Logical endpoints the admin may override. Sub-paths (the messages
 // count-tokens endpoint, the responses compact endpoint) and the catalog
 // (`/models` — owned by modelsFetch.endpoint) are intentionally absent:
 // they derive their URL from a parent override or a separate field. Each
-// key is the default path fragment, so the upstream path is `/v1` + the key
-// unless overridden — the lookup table is the key itself. Kept
-// package-internal because outside callers reach the upstream through
-// the typed `customFetchXxx` transports, not by naming an endpoint key.
+// key names a path fragment resolved by the owning operation.
 const CUSTOM_PATH_OVERRIDE_KEYS = [
   '/completions',
   '/chat/completions',
@@ -42,6 +42,7 @@ const CUSTOM_PATH_OVERRIDE_KEYS = [
   '/alpha/search',
   '/images/generations',
   '/images/edits',
+  '/audio/speech',
   '/audio/transcriptions',
 ] as const;
 
@@ -208,12 +209,9 @@ const modelsFetchField = (value: unknown): CustomModelsFetch => {
 export const validateCustomManualModels = (value: unknown): UpstreamModelConfig[] =>
   modelsField(value ?? [], 'custom');
 
-export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstreamRecord => {
-  if (record.kind !== 'custom') throw new Error(`Expected custom upstream record, got ${record.kind}`);
-  if (!isRecord(record.config)) throw new Error('Malformed custom upstream config: config must be an object');
-
-  const raw = record.config;
-  const base = {
+export const parseCustomUpstreamConfig = (raw: unknown): CustomUpstreamConfig => {
+  if (!isRecord(raw)) throw new Error('Malformed custom upstream config: config must be an object');
+  return {
     apiKey: apiKeyField(raw.apiKey),
     baseUrl: baseUrlField(raw.baseUrl),
     endpoints: endpointsField(raw.endpoints, 'custom upstream config: endpoints', { allowEmpty: true }),
@@ -221,6 +219,9 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
     ingressHeadersRules: ingressHeadersRulesField(raw.ingressHeadersRules),
     modelsFetch: modelsFetchField(raw.modelsFetch),
   };
+};
 
-  return { ...record, kind: 'custom', config: base };
+export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstreamRecord => {
+  if (record.kind !== 'custom') throw new Error(`Expected custom upstream record, got ${record.kind}`);
+  return { ...record, kind: 'custom', config: parseCustomUpstreamConfig(record.config) };
 };

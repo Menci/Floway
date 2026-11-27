@@ -1,14 +1,14 @@
-import { createUpstream } from '../data-plane/upstreams/registry.ts';
 import { createPerRequestFetcher } from '../dial/per-request.ts';
 import { getRepo } from '../repo/index.ts';
 import { hasLocationIndependentEgress } from '../repo/proxy-fallback-list.ts';
+import { runUpstreamScheduledTask } from '../upstreams/registry.ts';
 
 export const runUpstreamScheduledTasks = async (runtimeLocation: string | null): Promise<void> => {
   const upstreams = await getRepo().upstreams.list();
   const failures: Error[] = [];
   await Promise.all(upstreams.map(async record => {
     try {
-      await createUpstream(record).instance.runScheduledTask({
+      await runUpstreamScheduledTask(record, {
         fetcher: async fresh => {
           if (runtimeLocation === null && !hasLocationIndependentEgress(fresh.proxyFallbackList)) return null;
           return (await createPerRequestFetcher(runtimeLocation, [fresh]))(fresh.id);

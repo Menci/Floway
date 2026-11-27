@@ -1,35 +1,7 @@
-export type {
-  OpenAIChatCompletionsInvocation,
-  GeminiGenerateContentInvocation,
-  ChatTargetApi,
-  AnthropicMessagesInvocation,
-  ModelCandidate,
-  OpenAIResponsesInvocation,
-} from './invocation.ts';
-
 export type { InternalDebugError } from './error.ts';
-export { internalDebugErrorFields, toInternalDebugError } from './error.ts';
+export { internalDebugErrorFields, protocolErrorDebugFields, toInternalDebugError } from './error.ts';
 
-export type {
-  ApiErrorResult,
-  BufferedHttpResult,
-  EventResult,
-  EventResultMetadata,
-  ExecuteResult,
-  HttpHead,
-  InternalErrorResult,
-  PlainResult,
-} from './result.ts';
-export {
-  bufferedResultToResponse,
-  decodeResponseBody,
-  discardUpstreamResponse,
-  eventResult,
-  internalErrorResult,
-  plainResult,
-  readResponseBody,
-  readUpstreamApiError,
-} from './result.ts';
+export { discardUpstreamResponse } from './discard-response.ts';
 
 export type {
   InternalAliasedFrom,
@@ -47,28 +19,11 @@ export { parsePerformanceOperation, PERFORMANCE_OPERATIONS } from './telemetry.t
 export type { AddressableForm, ModelPrefixConfig } from './model-prefix.ts';
 export { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeModelPrefix } from './model-prefix.ts';
 
-export type {
-  Upstream,
-  InboundHeaderMatcher,
-  UpstreamInstance,
-  UpstreamCallResult,
-  UpstreamCompactionResult,
-  UpstreamRerankCallResult,
-  UpstreamDecisionCallResult,
-  UpstreamModule,
-  AnthropicMessagesUpstreamCallOptions,
-  UpstreamOpenAIResponsesResult,
-  UpstreamStreamResult,
-  OpenAIResponsesAction,
-  UpstreamCallOptions,
-} from './upstream.ts';
-export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
+export type { UpstreamModule } from './module.ts';
 export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsBody, serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
 export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest, serializeOpenAIAudioTranscriptionsBody } from './audio.ts';
-export type { UpstreamStreamParser } from './streaming.ts';
-export { streamingUpstreamCall } from './streaming.ts';
 
 export { httpTerminal } from './http-terminal.ts';
 export type { UpstreamHttpResponseFacts, UpstreamHttpServices } from './http-terminal.ts';
@@ -76,6 +31,7 @@ export { httpDialError, parseJsonBody, parseUpstreamResult, parseUpstreamStream 
 export type { FormatProtocolError, ProtocolStreamDecoder } from './parse-response.ts';
 export { toUpstreamModelSnapshot, toUpstreamSnapshot } from './pipeline-facts.ts';
 export type {
+  ChatTargetApi,
   ProtocolError,
   ProtocolOutcome,
   ProtocolResult,
@@ -136,8 +92,8 @@ export {
 export type { ValidatePathErr, ValidatePathOk } from './join.ts';
 export { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 
-export type { Fetcher, FetchInit, HttpHeaderLines, ReplayableBody, UpstreamFetchOptions } from './options.ts';
-export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall, isReplayableBody, toRequestInit } from './options.ts';
+export type { Fetcher, FetchInit, HttpHeaderLines, ReplayableBody } from './options.ts';
+export { directFetcher, isReplayableBody, toRequestInit } from './options.ts';
 
 export { isAbortError } from './abort.ts';
 

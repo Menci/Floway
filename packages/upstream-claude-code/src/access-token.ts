@@ -198,11 +198,8 @@ const ensureClaudeCodeAccessTokenInner = async (
   return { entry: newAccessTokenEntry, freshlyMinted: true };
 };
 
-// Terminal flip from the oauth-error path. Distinct from fetch.ts's
-// `persistTerminalAccountState`: the caller has already read the account and
-// established that it is active, so the log's identity and `from_state` come
-// from that read instead of a second one, and the trigger is an oauth-protocol
-// code (logged as `oauth_code`, possibly null for code-internal flips).
+// OAuth errors carry a protocol code. Log it together with the identity
+// already read by the caller when it checked the account's active state.
 const persistTerminalState = async (
   repo: UpstreamsRepoSlim,
   upstreamId: string,

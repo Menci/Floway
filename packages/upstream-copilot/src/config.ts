@@ -14,6 +14,8 @@ export interface CopilotUpstreamConfig {
   user: CopilotUpstreamUser;
 }
 
+export type CopilotAuth = Readonly<{ id: string } & Pick<CopilotUpstreamConfig, 'githubHost' | 'githubToken'>>;
+
 export type CopilotUpstreamRecord = UpstreamRecord & {
   kind: 'copilot';
   config: CopilotUpstreamConfig;
@@ -77,16 +79,30 @@ export const parseCopilotUpstreamConfig = (value: unknown, err: FieldErrorBuilde
   };
 };
 
-export const assertCopilotUpstreamRecord = (record: UpstreamRecord): CopilotUpstreamRecord => {
+type CopilotConfigSource = Pick<UpstreamRecord, 'id' | 'kind' | 'config'>;
+
+const storedCopilotConfig = (record: CopilotConfigSource): Record<string, unknown> => {
   if (record.kind !== 'copilot') throw new Error(`Expected copilot upstream record, got ${record.kind}`);
   if (!isRecord(record.config)) throw malformedConfig('config', 'an object');
+  return record.config;
+};
+
+const storedCopilotAuth = (config: Record<string, unknown>): Omit<CopilotAuth, 'id'> => ({
+  githubHost: githubHostField(config.githubHost, malformedConfig),
+  githubToken: stringField(config.githubToken, 'githubToken', malformedConfig),
+});
+
+export const readCopilotAuth = (record: CopilotConfigSource): CopilotAuth =>
+  ({ id: record.id, ...storedCopilotAuth(storedCopilotConfig(record)) });
+
+export const assertCopilotUpstreamRecord = (record: UpstreamRecord): CopilotUpstreamRecord => {
+  const config = storedCopilotConfig(record);
   return {
     ...record,
     kind: 'copilot',
     config: {
-      githubHost: githubHostField(record.config.githubHost, malformedConfig),
-      githubToken: stringField(record.config.githubToken, 'githubToken', malformedConfig),
-      user: copilotUserField(record.config.user, malformedConfig),
+      ...storedCopilotAuth(config),
+      user: copilotUserField(config.user, malformedConfig),
     },
   };
 };

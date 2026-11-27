@@ -66,6 +66,7 @@ export const parseChatGPTUsage = (value: unknown, now: Date): ChatGPTQuotaSnapsh
 };
 
 export const runChatGPTScheduledTask = async (record: UpstreamRecord, options: UpstreamScheduledOptions): Promise<void> => {
+  assertChatGPTUpstreamRecord(record);
   const account = readChatGPTUpstreamState(record.state).accounts[0];
   if (account.state !== 'active') return;
   const observations = Object.values(account.quotaSnapshot ?? {}).map(snapshot => snapshot.fetchedAt);

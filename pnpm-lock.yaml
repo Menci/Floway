@@ -381,9 +381,9 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
-      '@floway-dev/interceptor':
+      '@floway-dev/pipeline':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../pipeline
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../platform
@@ -483,12 +483,6 @@ importers:
         specifier: ^1.14.3
         version: 1.14.3
 
-  packages/interceptor:
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
-
   packages/pipeline:
     dependencies:
       '@guiiai/logg':
@@ -584,12 +578,12 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
-      '@floway-dev/protocols':
-        specifier: workspace:*
-        version: link:../protocols
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.2.0
@@ -603,9 +597,12 @@ importers:
 
   packages/upstream-azure:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/http':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -619,9 +616,12 @@ importers:
 
   packages/upstream-chatgpt:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/http':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -638,9 +638,12 @@ importers:
 
   packages/upstream-claude-code:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/http':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -660,9 +663,12 @@ importers:
 
   packages/upstream-copilot:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/http':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../platform
@@ -688,6 +694,12 @@ importers:
 
   packages/upstream-custom:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -701,6 +713,12 @@ importers:
 
   packages/upstream-kimi-code:
     dependencies:
+      '@floway-dev/http':
+        specifier: workspace:*
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -714,9 +732,12 @@ importers:
 
   packages/upstream-ollama:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/http':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols

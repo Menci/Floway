@@ -244,7 +244,7 @@ export class RepoOpenAIResponsesStatefulBacking implements OpenAIResponsesStatef
   private readonly earliestVisibleCutoff: number;
 
   constructor(
-    private readonly getRepo: () => Repo,
+    private readonly repo: Pick<Repo, 'openaiResponsesItems' | 'openaiResponsesSnapshots'>,
     requestStartedAt: number,
     retentionSeconds: number,
   ) {
@@ -253,8 +253,8 @@ export class RepoOpenAIResponsesStatefulBacking implements OpenAIResponsesStatef
 
   async lookupItems(query: OpenAIResponsesStatefulItemLookup): Promise<StoredOpenAIResponsesItem[]> {
     const [byId, byItemHash] = await Promise.all([
-      this.getRepo().openaiResponsesItems.lookupMany(query.apiKeyId, query.ids, this.earliestVisibleCutoff),
-      this.getRepo().openaiResponsesItems.lookupManyByItemHash(query.apiKeyId, query.itemHashes, this.earliestVisibleCutoff),
+      this.repo.openaiResponsesItems.lookupMany(query.apiKeyId, query.ids, this.earliestVisibleCutoff),
+      this.repo.openaiResponsesItems.lookupManyByItemHash(query.apiKeyId, query.itemHashes, this.earliestVisibleCutoff),
     ]);
     const rows = new Map<string, StoredOpenAIResponsesItem>();
     for (const row of [...byId, ...byItemHash]) rows.set(scopedOpenAIResponsesKey(row.apiKeyId, row.id), row);
@@ -262,19 +262,19 @@ export class RepoOpenAIResponsesStatefulBacking implements OpenAIResponsesStatef
   }
 
   async insertItems(items: readonly StoredOpenAIResponsesItem[]): Promise<void> {
-    await this.getRepo().openaiResponsesItems.insertMany(items, this.earliestVisibleCutoff);
+    await this.repo.openaiResponsesItems.insertMany(items, this.earliestVisibleCutoff);
   }
 
   async refreshItems(items: readonly StoredOpenAIResponsesItem[], refreshedAt: number): Promise<void> {
-    await this.getRepo().openaiResponsesItems.refreshMany(items, refreshedAt, this.earliestVisibleCutoff);
+    await this.repo.openaiResponsesItems.refreshMany(items, refreshedAt, this.earliestVisibleCutoff);
   }
 
   async lookupSnapshot(apiKeyId: string, id: string): Promise<StoredOpenAIResponsesSnapshot | null> {
-    return await this.getRepo().openaiResponsesSnapshots.lookup(apiKeyId, id, this.earliestVisibleCutoff);
+    return await this.repo.openaiResponsesSnapshots.lookup(apiKeyId, id, this.earliestVisibleCutoff);
   }
 
   async insertSnapshot(snapshot: StoredOpenAIResponsesSnapshot): Promise<void> {
-    await this.getRepo().openaiResponsesSnapshots.insert(snapshot);
+    await this.repo.openaiResponsesSnapshots.insert(snapshot);
   }
 }
 
@@ -356,7 +356,7 @@ type OpenAIResponsesStatePolicy = Pick<ApiKey, 'id' | 'openaiResponsesRetentionS
 const createDurableBacking = (apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number): RepoOpenAIResponsesStatefulBacking | null =>
   apiKey.openaiResponsesRetentionSeconds === 0
     ? null
-    : new RepoOpenAIResponsesStatefulBacking(getRepo, requestStartedAt, apiKey.openaiResponsesRetentionSeconds);
+    : new RepoOpenAIResponsesStatefulBacking(getRepo(), requestStartedAt, apiKey.openaiResponsesRetentionSeconds);
 
 export const createOpenAIResponsesHttpStore = (apiKey: OpenAIResponsesStatePolicy, requestStartedAt: number, store: boolean | undefined): OpenAIResponsesStatefulStore => {
   const durable = createDurableBacking(apiKey, requestStartedAt);

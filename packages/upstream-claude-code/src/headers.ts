@@ -19,6 +19,22 @@
 
 export const CLAUDE_CLI_VERSION = '2.1.280';
 
+// https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L421-L444
+export const CLAUDE_CODE_INBOUND_HEADER_ALLOWLIST = [
+  'accept',
+  /^x-stainless-(?:retry-count|timeout|lang|package-version|os|arch|runtime|runtime-version|helper-method)$/,
+  'anthropic-dangerous-direct-browser-access',
+  'anthropic-version',
+  'x-app',
+  'accept-language',
+  'sec-fetch-mode',
+  'user-agent',
+  'content-type',
+  'accept-encoding',
+  'x-claude-code-session-id',
+  'x-client-request-id',
+] as const;
+
 // `@anthropic-ai/sdk` version bundled inside Claude Code v2.1.280; surfaces
 // on the wire as `X-Stainless-Package-Version`.
 // https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.280.tgz
@@ -31,8 +47,7 @@ const STAINLESS_PACKAGE_VERSION = '0.112.1';
 // would emit different values, so re-capture on any platform bump.
 //
 // `X-Stainless-Helper-Method: stream` is always set: every /v1/messages
-// call we make to Anthropic is a streaming call (see `wireBody.stream =
-// true` in fetch.ts), so this matches real CC's wire output captured in
+// call we make to Anthropic is a streaming call, matching CC's wire output in
 // `@anthropic-ai/claude-code@2.1.10` cli.js and sub2api's pinned set
 // (gateway_service.go:7427-7429 / allowedHeaders list at :432).
 const STAINLESS_BASE = {

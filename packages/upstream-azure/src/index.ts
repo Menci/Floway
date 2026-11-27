@@ -1,10 +1,14 @@
+import { projectAzureModels } from './catalog.ts';
 import { AZURE_DEFAULT_FLAGS } from './defaults.ts';
-import { createAzureUpstream } from './upstream.ts';
 import type { UpstreamModule } from '@floway-dev/upstream';
 
 export const azureUpstreamModule: UpstreamModule = {
-  create: createAzureUpstream,
   defaultFlags: AZURE_DEFAULT_FLAGS,
+  async getModels(record, _fetcher, manualModels = []) {
+    return projectAzureModels(record, manualModels);
+  },
+  async runScheduledTask() {},
 };
 export { assertAzureUpstreamRecord, validateAzureManualModels, type AzureUpstreamConfig } from './config.ts';
-export { projectAzureModels } from './upstream.ts';
+export { projectAzureModels };
+export * from './pipelines/index.ts';

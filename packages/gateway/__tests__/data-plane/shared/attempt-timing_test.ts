@@ -1,51 +1,14 @@
-import { describe, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { attemptTtftMs, stampUpstreamCallStart, type AttemptTiming } from '../../../src/data-plane/shared/attempt-timing.ts';
-import { assert, assertEquals, assertExists } from '@floway-dev/test-utils';
+import { attemptTtftMs } from '../../../src/data-plane/shared/attempt-timing.ts';
 
-describe('stampUpstreamCallStart', () => {
-  const freshTiming = (): AttemptTiming => ({
-    upstreamCallStartedAt: null,
-    firstOutputTokenAt: null,
-  });
+test('TTFT uses the dispatch timestamp, includes a zero timestamp, and rounds to milliseconds', () => {
+  expect(attemptTtftMs({ upstreamCallStartedAt: 0, firstOutputTokenAt: 120.6 })).toBe(121);
+  expect(attemptTtftMs({ upstreamCallStartedAt: 19.7, firstOutputTokenAt: 20.1 })).toBe(0);
+});
 
-  test('stamps upstreamCallStartedAt synchronously before the dispatch runs', async () => {
-    const timing = freshTiming();
-    let stampedAtDispatchEntry: number | null = null;
-    const dispatch = () => {
-      // Sampled inside the dispatch: the factory must have stamped the slot
-      // before handing control off, so this read must see a real number.
-      stampedAtDispatchEntry = timing.upstreamCallStartedAt;
-      return Promise.resolve('done');
-    };
-    const before = performance.now();
-    await stampUpstreamCallStart(timing)(dispatch);
-    const after = performance.now();
-
-    assertExists(stampedAtDispatchEntry);
-    assert(stampedAtDispatchEntry >= before && stampedAtDispatchEntry <= after,
-      `stamp ${stampedAtDispatchEntry} outside [${before}, ${after}]`);
-  });
-
-  test('tool continuations preserve the completed first-token measurement', async () => {
-    const clock = vi.spyOn(performance, 'now').mockReturnValueOnce(100).mockReturnValueOnce(200);
-    try {
-      const timing = freshTiming();
-      const dispatch = stampUpstreamCallStart(timing);
-      await dispatch(() => Promise.resolve());
-      timing.firstOutputTokenAt = 150;
-      assertEquals(attemptTtftMs(timing), 50);
-
-      let continuationStartedAt: number | null = null;
-      await dispatch(() => {
-        continuationStartedAt = timing.upstreamCallStartedAt;
-        return Promise.resolve();
-      });
-
-      assertEquals(continuationStartedAt, 100);
-      assertEquals(attemptTtftMs(timing), 50);
-    } finally {
-      clock.mockRestore();
-    }
-  });
+test('TTFT is absent until dispatch and first output are both observed', () => {
+  expect(attemptTtftMs(undefined)).toBeNull();
+  expect(attemptTtftMs({ upstreamCallStartedAt: null, firstOutputTokenAt: 10 })).toBeNull();
+  expect(attemptTtftMs({ upstreamCallStartedAt: 0, firstOutputTokenAt: null })).toBeNull();
 });

@@ -1,23 +1,6 @@
-// Stable identities for every admin-toggleable per-upstream behavior flag.
-// Interceptor code references a flag by id; the dependency goes interceptor
-// → flag, never the other way. The dashboard owns presentation and translated
-// copy, while this package owns the ids shared by providers and persisted
-// overrides.
-//
-// Vendor-style flags (`vendor-deepseek`, `vendor-qwen`, `vendor-kimi`, `vendor-mistral`) are
-// mutually exclusive per model: a vendor interceptor translates the
-// gateway's OpenAI-canonical request and response shape into the vendor's
-// wire dialect; with no vendor flag set, behavior defaults to the OpenAI
-// standard and no vendor rewrite runs.
-//
-// Defaults are NOT declared in this catalog. Each provider owns the
-// decision of which flags default on for its own upstream (and, when
-// per-model differentiation matters, per model). Vendor-specific
-// knowledge lives inside the provider package that talks to that vendor. See
-// `UpstreamModule.defaultFlags` in `provider.ts` for the module surface, and
-// each provider package's `defaults.ts` for the per-kind constants themselves.
-// Per-model deltas are provider-internal: `createXxxProvider` computes them
-// once and stakes the result into `UpstreamModel.enabledFlags`.
+// Flag IDs are shared by pipeline stages, dashboard controls, and persisted
+// overrides. Upstream packages own their default flags and set each catalog
+// model's effective flags in UpstreamModel.enabledFlags.
 
 export const OPTIONAL_FLAG_IDS = [
   'vendor-deepseek',

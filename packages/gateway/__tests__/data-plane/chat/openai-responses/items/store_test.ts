@@ -24,6 +24,28 @@ const installRepo = (): InMemoryRepo => {
 };
 
 describe('OpenAIResponsesStatefulStore', () => {
+  test.each(['HTTP', 'WebSocket'] as const)('%s keeps the repository that created the turn store', async transport => {
+    const repo = installRepo();
+    const policy = testOpenAIResponsesStatePolicy();
+    const startedAt = Date.now();
+    const store = transport === 'HTTP'
+      ? createOpenAIResponsesHttpStore(policy, startedAt, true)
+      : createOpenAIResponsesWsSession().createStore(policy, startedAt, true);
+    const laterRepo = new InMemoryRepo();
+    initRepo(laterRepo);
+
+    await store.persistOutputItem({
+      id: 'msg_turn',
+      apiKeyId: policy.id,
+      payload: { item: { type: 'message', id: 'msg_turn', role: 'assistant', content: [] } },
+      itemHash: 'turn-output-hash',
+      refreshedAt: startedAt,
+    });
+    await store.commitSnapshot('resp_turn', 'append', ['msg_turn']);
+    expect(await repo.openaiResponsesSnapshots.lookup(policy.id, 'resp_turn', 0)).toMatchObject({ itemIds: ['msg_turn'] });
+    expect(await laterRepo.openaiResponsesSnapshots.lookup(policy.id, 'resp_turn', 0)).toBeNull();
+  });
+
   test('HTTP store=false performs no state writes', async () => {
     const repo = installRepo();
     const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), false);

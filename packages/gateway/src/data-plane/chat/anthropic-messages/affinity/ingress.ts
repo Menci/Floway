@@ -1,4 +1,4 @@
-import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, incompatibleReasoningParts, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
+import { type AffinityCandidate, type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, incompatibleReasoningParts, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 interface AnthropicMessagesBlobLocation {
@@ -7,10 +7,10 @@ interface AnthropicMessagesBlobLocation {
   readonly decoded: DecodedAffinityBlob;
 }
 
-export const analyzeAnthropicMessagesAffinity = async (
-  payload: AnthropicMessagesPayload,
-  codec: AffinityCodec,
-): Promise<AffinityRequestAnalysis<AnthropicMessagesPayload>> => {
+export const analyzeAnthropicMessagesAffinity = async <Payload extends Pick<AnthropicMessagesPayload, 'messages'>>(
+  payload: Payload,
+  codec: Pick<AffinityCodec, 'unwrap'>,
+): Promise<AffinityRequestAnalysis<Payload, AffinityCandidate>> => {
   const locations: AnthropicMessagesBlobLocation[] = [];
   for (const [messageIndex, message] of payload.messages.entries()) {
     if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;

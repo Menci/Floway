@@ -1,11 +1,11 @@
 import { HTTPException } from 'hono/http-exception';
 
-import { flagDefaultsForKind } from '../../data-plane/upstreams/registry.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isModelsCacheDue, MODEL_CATALOG_REVISION } from '../../repo/models-cache-contract.ts';
 import type { StoredUpstreamRecord, UpstreamModelEntry, UpstreamModelsWritePayload } from '../../repo/types.ts';
 import { serializeStoredConfig, serializeStoredState } from '../../repo/upstream-json.ts';
 import { scheduleUpstreamModelsRefresh, supportsManualModels, upstreamRequiresNetworkForModels } from '../../upstreams/models-refresh.ts';
+import { flagDefaultsForKind } from '../../upstreams/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { resolveEffectiveFlags, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/upstream';
 import { projectAzureModels } from '@floway-dev/upstream-azure';

@@ -64,6 +64,15 @@ describe('firstOutputTokenSignal — OpenAI Responses', () => {
     expect(firstOutputTokenSignal(eventFrame({ type, response: { output: [{ type: 'shell_call_output', output: [] }] } }), 'openaiResponses')).toEqual({ type: 'runtime-output', outputType: 'shell_call_output' });
     expect(firstOutputTokenSignal(eventFrame({ type, response: { output: [{ type: 'mcp_list_tools', tools: [] }, { type: 'future_model_output' }] } }), 'openaiResponses')).toBeNull();
   });
+
+  it('counts completed shell output and skips tool discovery', () => {
+    expect(firstOutputTokenSignal(eventFrame({
+      type: 'response.output_item.added', item: { type: 'mcp_list_tools', tools: [] },
+    }), 'openaiResponses')).toBeNull();
+    expect(firstOutputTokenSignal(eventFrame({
+      type: 'response.output_item.done', item: { type: 'shell_call_output', output: [{ stdout: 'result', stderr: '' }] },
+    }), 'openaiResponses')).toEqual({ type: 'runtime-output', outputType: 'shell_call_output' });
+  });
 });
 
 describe('firstOutputTokenSignal — OpenAI Chat Completions', () => {

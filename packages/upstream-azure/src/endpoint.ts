@@ -1,9 +1,9 @@
-import { nonEmptyStringField } from '@floway-dev/upstream';
+import { joinBaseAndPath, nonEmptyStringField } from '@floway-dev/upstream';
 
 const AZURE_ENDPOINT_HOST_SUFFIXES = ['.openai.azure.com', '.services.ai.azure.com'];
 
-export const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
-export const isFoundryProjectRootPath = (path: string): boolean => /^\/api\/projects\/[^/]+$/.test(path);
+const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '');
+const isFoundryProjectRootPath = (path: string): boolean => /^\/api\/projects\/[^/]+$/.test(path);
 const isAnthropicBasePath = (path: string): boolean => path === '/anthropic' || path === '/anthropic/v1' || path === '/anthropic/v1/messages';
 const isAzureEndpointHost = (hostname: string): boolean =>
   AZURE_ENDPOINT_HOST_SUFFIXES.some(suffix => hostname.endsWith(suffix) && hostname.length > suffix.length);
@@ -46,7 +46,7 @@ export const azureEndpointField = (value: unknown, label: string): string => {
   return url;
 };
 
-export const azureOpenAiV1BaseUrl = (endpoint: string): string => {
+const azureOpenAIV1BaseUrl = (endpoint: string): string => {
   const url = new URL(trimTrailingSlash(endpoint));
   const path = trimTrailingSlash(url.pathname);
   if (path.endsWith('/openai/v1')) {
@@ -59,17 +59,7 @@ export const azureOpenAiV1BaseUrl = (endpoint: string): string => {
   return trimTrailingSlash(url.href);
 };
 
-// Microsoft-Decision-1's decision endpoint lives on the resource host, not
-// under the OpenAI v1 base: <host>/providers/microsoft/v1/systemone. Every
-// admitted endpoint shape reduces to its resource host here.
-// https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision
-export const azureResourceRootUrl = (endpoint: string): string => {
-  const url = new URL(trimTrailingSlash(endpoint));
-  url.pathname = '';
-  return trimTrailingSlash(url.href);
-};
-
-export const azureAnthropicBaseUrl = (endpoint: string): string => {
+const azureAnthropicBaseUrl = (endpoint: string): string => {
   const url = new URL(trimTrailingSlash(endpoint));
   if (url.hostname.endsWith('.openai.azure.com')) {
     url.hostname = `${url.hostname.slice(0, -'.openai.azure.com'.length)}.services.ai.azure.com`;
@@ -79,4 +69,38 @@ export const azureAnthropicBaseUrl = (endpoint: string): string => {
   // URL — resolves to the same `/anthropic` base.
   url.pathname = '/anthropic';
   return trimTrailingSlash(url.href);
+};
+
+export const azureOpenAIUrl = (endpoint: string, path: string): string =>
+  joinBaseAndPath(azureOpenAIV1BaseUrl(endpoint), path);
+
+export const azureAnthropicMessagesUrl = (endpoint: string, path: string): string =>
+  joinBaseAndPath(azureAnthropicBaseUrl(endpoint), path);
+
+// https://learn.microsoft.com/en-us/azure/foundry/openai/reference-preview-latest
+export const azureOpenAIImagesUrl = (endpoint: string, path: '/images/generations' | '/images/edits'): string => {
+  const url = new URL(azureOpenAIUrl(endpoint, path));
+  url.searchParams.set('api-version', 'preview');
+  return url.href;
+};
+
+// The path selects the deployment for Whisper and GPT transcription models.
+// https://github.com/Azure/azure-rest-api-specs/blob/b0a48bcbffead733affe03944ef09f5e8d12f8c8/specification/cognitiveservices/OpenAI.Inference/models/audio/audio_transcription.tsp#L119-L126
+// https://github.com/Azure/azure-rest-api-specs/blob/928047803788f7377fa003a26ba2bdc2e0fcccc0/specification/cognitiveservices/OpenAI.Inference/routes/audio_transcription.tsp#L19-L49
+export const azureOpenAIAudioTranscriptionUrl = (endpoint: string, deployment: string): string => {
+  const url = new URL(endpoint);
+  url.pathname = `/openai/deployments/${encodeURIComponent(deployment)}/audio/transcriptions`;
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('api-version', '2025-04-01-preview');
+  return url.href;
+};
+
+// https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision#call-the-decision-api
+const AZURE_DECISION_PATH = '/providers/microsoft/v1/systemone';
+
+export const azureDecisionUrl = (endpoint: string, path = AZURE_DECISION_PATH): string => {
+  const url = new URL(endpoint);
+  url.pathname = '';
+  return joinBaseAndPath(url.href, path);
 };

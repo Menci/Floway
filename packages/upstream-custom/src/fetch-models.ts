@@ -14,10 +14,9 @@
 // if `data` or `models` is an array. Gemini pages its listing, so the fetch
 // follows `nextPageToken` until the catalog is complete.
 
-import type { CustomUpstreamConfig } from './config.ts';
-import { customFetchModels } from './fetch.ts';
+import { ANTHROPIC_VERSION, type CustomUpstreamConfig } from './config.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, type OpaqueBlobCompatibilityScope, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, opaqueBlobCompatibilityScopeField } from '@floway-dev/upstream';
+import { chatField, fetchUpstreamModels, joinBaseAndPath, type Fetcher, type UpstreamChatModelConfig, opaqueBlobCompatibilityScopeField } from '@floway-dev/upstream';
 
 export interface CustomRawModel {
   id: string;
@@ -99,7 +98,7 @@ const parsePricing = (value: unknown): ModelPricing | undefined => {
 };
 
 const parseKind = (value: unknown): ModelKind | undefined => {
-  if (value === 'chat' || value === 'embedding' || value === 'image' || value === 'rerank' || value === 'transcription') return value;
+  if (value === 'chat' || value === 'embedding' || value === 'image' || value === 'rerank' || value === 'speech' || value === 'transcription') return value;
   return undefined;
 };
 
@@ -186,12 +185,25 @@ const parseCustomModelsPage = (value: unknown): CustomModelsPage | null => {
   return { data };
 };
 
+const catalogHeaders = ({ apiKey, modelsFetch }: CustomUpstreamConfig): [string, string][] => {
+  if (apiKey === '') return [];
+  switch (modelsFetch.authStyle) {
+  case 'bearer': return [['Authorization', `Bearer ${apiKey}`]];
+  case 'x-api-key': return [['x-api-key', apiKey], ['anthropic-version', ANTHROPIC_VERSION]];
+  case 'x-goog-api-key': return [['x-goog-api-key', apiKey]];
+  }
+};
+
 export const fetchCustomModels = async (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> => {
+  const headers = catalogHeaders(config);
+  const endpoint = config.modelsFetch.endpoint ?? '/v1/models';
+  const url = joinBaseAndPath(config.baseUrl, endpoint);
   const data: CustomRawModel[] = [];
   let pageToken: string | undefined;
   do {
+    const pageUrl = pageToken === undefined ? url : `${url}${endpoint.includes('?') ? '&' : '?'}pageToken=${encodeURIComponent(pageToken)}`;
     const page = await fetchUpstreamModels(
-      () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }, pageToken),
+      () => fetcher(pageUrl, { method: 'GET', headers }),
       parseCustomModelsPage,
     );
     data.push(...page.data);

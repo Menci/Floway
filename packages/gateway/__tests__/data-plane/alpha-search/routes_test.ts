@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { mountAlphaSearchRoutes } from '../../../src/data-plane/alpha-search/routes.ts';
+import { mountAlphaSearchRoute } from '../../../src/data-plane/alpha-search/route.ts';
 import { resolveConfiguredWebSearchBackend } from '../../../src/data-plane/tools/web-search/backend.ts';
 import type { WebSearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchBackend, WebSearchBackendRequest, WebSearchBackendResult } from '../../../src/data-plane/tools/web-search/types.ts';
 import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
 import { internalErrorResponse } from '../../../src/middleware/internal-error-response.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
 // Real provider construction (`createTavilyWebSearchBackend` etc.) hits the
@@ -84,7 +85,7 @@ const buildAlphaSearchApp = () => {
   const app = new Hono<{ Variables: AuthVars }>();
   app.onError(internalErrorResponse);
   app.use('*', authMiddleware);
-  mountAlphaSearchRoutes(app);
+  mountAlphaSearchRoute(app, PUBLIC_DATA_PLANE_ROUTES.alphaSearch);
   return app;
 };
 

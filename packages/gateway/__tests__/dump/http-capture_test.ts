@@ -40,6 +40,32 @@ test('preserves bytes received before a network failure and propagates the origi
   expect(capture.exchanges[0]?.response?.error).toContain('socket reset');
 });
 
+test('preserves ordered request and response headers and the selected response failure classifier', async () => {
+  const capture = new HttpCapture();
+  const requestHeaders: Array<[string, string]> = [['x-repeat', 'alpha'], ['X-Repeat', 'beta']];
+  const responseHeaders = [
+    ['Set-Cookie', 'first=1; Expires=Wed, 21 Oct 2015 07:28:00 GMT'],
+    ['Set-Cookie', 'second=2'],
+  ] as const;
+  const failure = new Error('selected socket failure');
+  const source = new ReadableStream<Uint8Array>({ start(controller) { controller.error(failure); } });
+  const fetcher = capture.wrapFetcher(async (_url, init) => {
+    expect(init.headers).toEqual([...requestHeaders, ['content-type', 'text/plain;charset=UTF-8']]);
+    return Object.assign(new Response(source, { status: 429 }), {
+      headerLines: responseHeaders,
+      classifyBodyFailure: (cause: unknown) => cause === failure ? { kind: 'transport' as const, cause } : undefined,
+    });
+  }, 'selected');
+
+  const response = await fetcher('https://upstream.test', { method: 'POST', headers: requestHeaders, body: 'sample' });
+  expect(response.status).toBe(429);
+  expect(response.headerLines).toBe(responseHeaders);
+  expect(response.classifyBodyFailure?.(failure)?.cause).toBe(failure);
+  await expect(response.text()).rejects.toBe(failure);
+  expect(capture.exchanges[0]?.request.headers.slice(0, 2)).toEqual(requestHeaders);
+  expect(capture.exchanges[0]?.response?.headers).toEqual(responseHeaders);
+});
+
 test('records every retry independently including empty response and dial failure', async () => {
   const capture = new HttpCapture();
   const failure = new Error('dial failed');

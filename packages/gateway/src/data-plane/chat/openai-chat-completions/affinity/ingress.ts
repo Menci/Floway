@@ -1,13 +1,13 @@
 import { isEncryptedReasoningDetail } from './reasoning-details.ts';
-import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, isIncompatibleAffinityProjection, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
+import { type AffinityCandidate, type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, isIncompatibleAffinityProjection, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 
 const reasoningFields = ['reasoning_text', 'reasoning_content', 'reasoning', 'reasoning_details', 'reasoning_items', 'thinking_blocks'] as const;
 
 export const analyzeOpenAIChatCompletionsAffinity = async (
   payload: OpenAIChatCompletionsPayloadEx,
-  codec: AffinityCodec,
-): Promise<AffinityRequestAnalysis<OpenAIChatCompletionsPayloadEx>> => {
+  codec: Pick<AffinityCodec, 'unwrap'>,
+): Promise<AffinityRequestAnalysis<OpenAIChatCompletionsPayloadEx, AffinityCandidate>> => {
   const locations: Array<{ index: number; opaque: DecodedAffinityBlob | undefined; details: Map<number, DecodedAffinityBlob> }> = [];
   for (const [index, message] of payload.messages.entries()) {
     if (message.role !== 'assistant') continue;

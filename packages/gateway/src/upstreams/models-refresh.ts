@@ -1,4 +1,4 @@
-import { createUpstream } from '../data-plane/upstreams/registry.ts';
+import { getUpstreamModels } from './registry.ts';
 import { createPerRequestFetcher, createValidatedPerRequestFetcher, InvalidProxyConfigurationError } from '../dial/per-request.ts';
 import { getRepo } from '../repo/index.ts';
 import { isModelsCacheDue, MODEL_CATALOG_REVISION } from '../repo/models-cache-contract.ts';
@@ -153,7 +153,7 @@ const discoverModels = async (
     const response = await fetchCustomModels(custom.config, trackedFetcher);
     return projectCustomModels(record, manualModels, response);
   }
-  return [...await createUpstream(record).instance.getModels(trackedFetcher, manualModels)];
+  return [...await getUpstreamModels(record, trackedFetcher, manualModels)];
 });
 
 const runSavedRefresh = async (input: {

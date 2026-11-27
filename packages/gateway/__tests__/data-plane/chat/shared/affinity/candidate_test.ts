@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
+import { affinityCandidate as candidate, affinityTargetFor as targetFor } from './helpers.ts';
 import {
+  type AffinityCandidate,
   type AffinityRequestAnalysis,
   type AffinityIdentity,
   candidateSatisfiesAffinityIdentity,
@@ -10,40 +12,14 @@ import {
   projectRequiredAffinityBlob,
   selectAffinityCandidates,
 } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import type { AliasRules } from '@floway-dev/protocols/common';
-import { stubModelCandidate } from '@floway-dev/test-utils';
-import type { ModelCandidate } from '@floway-dev/upstream';
-
-const candidate = (upstreamId: string, model: string, rules?: AliasRules) => {
-  const base = stubModelCandidate();
-  const value = stubModelCandidate({
-    upstream: { ...base.upstream, upstreamId },
-    model: { id: model },
-  });
-  return rules === undefined ? value : { ...value, rules };
-};
 
 const candidateWithScope = (
   upstreamId: string,
   model: string,
-  scope: { bindToUpstream: boolean; key?: string },
-) => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    upstream: { ...base.upstream, upstreamId },
-    model: {
-      id: model,
-      upstreamModelId: model,
-      opaqueBlobCompatibilityScope: scope,
-    },
-  });
-};
-
-const targetFor = (value: ReturnType<typeof candidate>): AffinityIdentity => ({
-  upstreamId: value.upstream.upstreamId,
-  modelId: value.model.id,
-  ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.upstream.upstreamId, key: value.model.id },
+  scope: AffinityCandidate['model']['opaqueBlobCompatibilityScope'],
+): AffinityCandidate => ({
+  upstream: { upstreamId },
+  model: { id: model, upstreamModelId: model, opaqueBlobCompatibilityScope: scope },
 });
 
 const ownedBlob = (
@@ -62,7 +38,7 @@ const ownedBlob = (
 
 const affinity = (
   requiredTargets: readonly AffinityIdentity[] = [],
-  degrading: readonly ModelCandidate[] = [],
+  degrading: readonly AffinityCandidate[] = [],
 ): AffinityRequestAnalysis<undefined> => defineAffinityRequest(requiredTargets, candidate => {
   const unsatisfiedTargets = requiredTargets.filter(target => !candidateSatisfiesAffinityIdentity(candidate, target));
   return unsatisfiedTargets.length > 0
@@ -71,9 +47,9 @@ const affinity = (
 });
 
 const selectedCandidates = (
-  candidates: readonly ModelCandidate[],
+  candidates: readonly AffinityCandidate[],
   analysis: AffinityRequestAnalysis<undefined>,
-): readonly ModelCandidate[] => {
+): readonly AffinityCandidate[] => {
   const selection = selectAffinityCandidates(candidates, analysis);
   if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
   return selection.candidates;

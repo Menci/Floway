@@ -1,4 +1,4 @@
-import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, incompatibleReasoningParts, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
+import { type AffinityCandidate, type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, incompatibleReasoningParts, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
 import type { GeminiGenerateContentPart, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
 interface GeminiGenerateContentBlobLocation {
@@ -14,8 +14,8 @@ const hasPartContent = (part: GeminiGenerateContentPart): boolean => {
 
 export const analyzeGeminiGenerateContentAffinity = async (
   payload: GeminiGenerateContentPayload,
-  codec: AffinityCodec,
-): Promise<AffinityRequestAnalysis<GeminiGenerateContentPayload>> => {
+  codec: Pick<AffinityCodec, 'unwrap'>,
+): Promise<AffinityRequestAnalysis<GeminiGenerateContentPayload, AffinityCandidate>> => {
   const locations: GeminiGenerateContentBlobLocation[] = [];
   for (const [contentIndex, content] of (payload.contents ?? []).entries()) {
     if (content.role !== 'model') continue;

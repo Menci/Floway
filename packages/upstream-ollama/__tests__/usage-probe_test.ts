@@ -3,13 +3,11 @@ import { test } from 'vitest';
 import { CREDIT_BALANCE as BALANCE_BODY, USAGE_TOTALS as USAGE_BODY } from './usage-fixture.ts';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
 import { readOllamaUpstreamState } from '../src/state.ts';
-import { createOllamaUpstream } from '../src/upstream.ts';
 import {
-  OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS,
   isOllamaUsageEnabled,
   refreshOllamaUsageProbe,
 } from '../src/usage-probe.ts';
-import { assertEquals, assertRejects, noopUpstreamCallOptions, stubUpstreamModel, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, withMockedFetch } from '@floway-dev/test-utils';
 import { directFetcher, initUpstreamRuntimeRepo, type UpstreamRecord } from '@floway-dev/upstream';
 
 const UPSTREAM_ID = 'up_ollama_usage';
@@ -93,46 +91,4 @@ test('usage is probed when the operator enabled it and a key is configured, and 
   assertEquals(enabled({ baseUrl: 'https://ollama.com', cloudUsage: true, models: [] }), false);
   // The cloud endpoint alone does not turn it on; the stored option does.
   assertEquals(enabled({ baseUrl: 'https://ollama.com', apiKey: 'k', models: [] }), false);
-});
-
-// Drives the provider rather than the probe helpers so the arming decision —
-// which call consumes the account's windows, and what the debounce reads — is
-// exercised where it is made.
-const callChat = async (record: UpstreamRecord, onUsageProbe: (path: string) => void): Promise<void> => {
-  const provider = createOllamaUpstream(record);
-  const pending: Promise<unknown>[] = [];
-  await withMockedFetch(
-    request => {
-      const path = new URL(request.url).pathname;
-      if (path === '/api/usage' || path === '/api/balance') {
-        onUsageProbe(path);
-        return Response.json(path === '/api/usage' ? USAGE_BODY : BALANCE_BODY);
-      }
-      return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
-    },
-    async () => {
-      await provider.instance.callOpenAIChatCompletions(
-        stubUpstreamModel({ upstreamData: 'gpt-oss:120b' }),
-        { messages: [] },
-        undefined,
-        noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }),
-      );
-      await Promise.all(pending);
-    },
-  );
-};
-
-test('an inference call arms the probe, and the stored attempt time debounces the next one', async () => {
-  withStateRepo();
-  const probes: string[] = [];
-  await callChat(cloudRecord(), path => { probes.push(path); });
-  assertEquals(probes, ['/api/usage', '/api/balance']);
-
-  const justProbed = { usageProbe: { attemptedAt: Date.now(), observation: null, error: null } };
-  await callChat(cloudRecord({ state: justProbed }), path => { probes.push(path); });
-  assertEquals(probes.length, 2);
-
-  const stale = { usageProbe: { attemptedAt: Date.now() - OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS, observation: null, error: null } };
-  await callChat(cloudRecord({ state: stale }), path => { probes.push(path); });
-  assertEquals(probes, ['/api/usage', '/api/balance', '/api/usage', '/api/balance']);
 });

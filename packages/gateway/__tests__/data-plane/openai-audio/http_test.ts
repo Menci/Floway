@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import type { InMemoryRepo } from '../../repo/memory.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { flushAsyncWork, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { HttpTransportError } from '@floway-dev/http';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/upstream-copilot';
@@ -112,7 +113,7 @@ test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, a
   ]);
 });
 
-test('/v1/audio/transcriptions opens SSE with 200 and streams through transcript.text.done', async () => {
+test('/v1/audio/transcriptions retains the upstream SSE status and streams through transcript.text.done', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {
     entries: [{ rates: { input_audio_tokens: '0.000001', output_tokens: '0.000001' } }],
@@ -128,7 +129,7 @@ test('/v1/audio/transcriptions opens SSE with 200 and streams through transcript
       const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
       });
-      assertEquals(response.status, 200);
+      assertEquals(response.status, 201);
       assertEquals(response.headers.get('x-stream-trace'), 'trace-sse');
       const stream = await response.text();
       assertEquals(stream.includes('transcript.text.delta'), true);
@@ -196,7 +197,7 @@ test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/audio/t
       assertEquals(decode.decode((await reader.read()).value), partial);
       const message = 'upstream transcription read failed';
       const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
-      if (mode === 'read error') upstream.error(new Error(message));
+      if (mode === 'read error') upstream.error(new HttpTransportError(new Error(message)));
       else if (mode === 'premature EOF') upstream.close();
       else upstream.enqueue(new TextEncoder().encode(native));
       const failure = decode.decode((await reader.read()).value);
@@ -207,8 +208,7 @@ test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/audio/t
     },
   );
   await flushAsyncWork();
-  const [usage] = await repo.usage.listAll();
-  assertEquals(usage.requests, 1);
+  assertEquals(await repo.usage.listAll(), []);
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
 });
@@ -227,8 +227,7 @@ test('/v1/audio/transcriptions counts a bodyless SSE response as a failed reques
     },
   );
   await flushAsyncWork();
-  const [usage] = await repo.usage.listAll();
-  assertEquals(usage.requests, 1);
+  assertEquals(await repo.usage.listAll(), []);
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
 });

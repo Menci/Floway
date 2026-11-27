@@ -1,254 +1,311 @@
-import { type Context, Hono } from 'hono';
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
+import { openaiChatCompletionsHttpEntry } from '../../../../src/data-plane/chat/openai-chat-completions/pipeline/ingress.ts';
+import { servePipelineHttp } from '../../../../src/data-plane/shared/pipeline-http.ts';
+import { DumpAccumulator } from '../../../../src/dump/accumulator.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
-import type { AuthVars } from '../../../../src/middleware/auth.ts';
-import { initRepo } from '../../../../src/repo/index.ts';
-import type { ApiKey, User } from '../../../../src/repo/types.ts';
+import type { ApiKey } from '../../../../src/repo/types.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
-import { flushBackground } from '../../../test-utils/background-tracker.ts';
-import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { assert, assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
-import { type ModelCandidate, directFetcher, type UpstreamStreamResult, type UpstreamCallOptions } from '@floway-dev/upstream';
+import { customCandidate, operationHost, requestFor } from '../../non-chat/count-tokens/fixtures.ts';
+import { mountedChatPanic } from '../pipeline/http-panic-fixtures.ts';
+import { HttpTransportError, type Fetcher } from '@floway-dev/http';
 
-const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean }[] = [];
-vi.mock('../../../../src/data-plane/upstreams/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/upstreams/resolution.ts')>();
-  return {
-    ...original,
-    enumerateModelCandidates: vi.fn(async () => {
-      const next = candidatesQueue.shift();
-      if (next === undefined) throw new Error('http_test: no candidates enqueued');
-      return next;
-    }),
-  };
-});
+const path = '/v1/chat/completions';
+const candidate = (id = 'chat') => customCandidate(id, { openaiChatCompletions: {} });
 
-const { openaiChatCompletionsHttp } = await import('../../../../src/data-plane/chat/openai-chat-completions/http.ts');
-
-const API_KEY_ID = 'key_chat_completions_http_test';
-
-const queueCandidates = (candidates: readonly ModelCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel });
-};
-
-const installRepo = (): InMemoryRepo => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  return repo;
-};
-
-const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
-  id: API_KEY_ID,
-  userId: 1,
-  name: 'http_test',
-  key: 'sk-http-test',
-  serverSecret: '00'.repeat(32),
-  createdAt: '2026-01-01T00:00:00.000Z',
-  upstreamIds: null,
-  randomizeUpstreams: false,
-  deletedAt: null,
-  dumpRetentionSeconds: null,
-  openaiResponsesRetentionSeconds: 0,
-  ...overrides,
-});
-
-const buildUser = (overrides: Partial<User> = {}): User => ({
-  id: 1,
-  username: 'http_test',
-  passwordHash: null,
-  isAdmin: false,
-  createdAt: '2026-01-01T00:00:00.000Z',
-  deletedAt: null,
-  ...overrides,
-});
-
-const makeApp = (middleware?: (c: Context) => void, apiKeyOverrides: Partial<ApiKey> = {}): Hono<{ Variables: AuthVars }> => {
-  const app = new Hono<{ Variables: AuthVars }>();
-  app.use('*', async (c, next) => {
-    c.set('apiKey', buildApiKey(apiKeyOverrides));
-    c.set('user', buildUser());
-    middleware?.(c);
-    await next();
-  });
-  app.post('/v1/chat/completions', openaiChatCompletionsHttp.generate);
-  return app;
-};
-
-const makeOpenAIChatCompletionsEvents = (): readonly OpenAIChatCompletionsStreamEvent[] => [
-  {
-    id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{  index: 0, delta: { role: 'assistant' }, finish_reason: null }],
-  },
-  {
-    id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{  index: 0, delta: { content: 'hi' }, finish_reason: null }],
-  },
-  {
-    id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
-  },
-  {
-    id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-    choices: [],
-    usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
-  },
-];
-
-const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): AsyncGenerator<ProtocolFrame<TEvent>> {
-  for (const event of events) yield eventFrame(event);
-  yield doneFrame();
-};
-
-const makeCandidate = (overrides: {
-  upstream?: string;
-  endpoints?: ModelEndpoints;
-  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>>;
-} = {}): ModelCandidate => {
-  const upstream = overrides.upstream ?? 'up_test';
-  const instance = stubUpstream({ callOpenAIChatCompletions: overrides.callOpenAIChatCompletions });
-  return {
-    upstream: {
-      upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      instance,
+test.each([false, true])('Chat Completions retains the nested transport diagnostic for stream=%s', async stream => {
+  const cause = new TypeError('nested transport cause');
+  const failure = new HttpTransportError(new Error('broken socket', { cause }));
+  const head = sse(textChunk);
+  const first = new Uint8Array(await head.arrayBuffer());
+  let emitted = false;
+  const host = operationHost([candidate()], async () => new Response(new ReadableStream<Uint8Array>({
+    pull(reader) {
+      if (emitted) reader.error(failure);
+      else {
+        emitted = true;
+        reader.enqueue(first);
+      }
     },
-    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-    fetcher: directFetcher,
-  };
-};
-
-test.each(['prompt_cache_options', 'user'] as const)('POST /v1/chat/completions rejects a null %s', async field => {
-  installRepo();
-  const response = await makeApp().request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }], [field]: null }),
-  });
-
-  assertEquals(response.status, 400);
-  assertEquals((await response.json() as { error: { param: string; type: string; code: null } }).error, {
-    message: `Invalid '${field}': expected ${field === 'user' ? 'a string' : 'an object'} when present.`,
-    type: 'invalid_request_error',
-    param: field,
-    code: null,
-  });
-});
-
-test('client-carried opaque state restores the exact preferred candidate on the next turn', async () => {
-  installRepo();
-  const observedBodies: Array<{ messages?: Array<{ reasoning_opaque?: string }> }> = [];
-  const callA = vi.fn(async (_model: unknown, body: unknown): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    observedBodies.push(body as { messages?: Array<{ reasoning_opaque?: string }> });
-    const turn = observedBodies.length;
-    return {
-      ok: true,
-      events: makeProtocolFrames([
-        {
-          id: `chatcmpl_affinity_${turn}`,
-          object: 'chat.completion.chunk',
-          created: 0,
-          model: 'test-model',
-          choices: [{  index: 0, delta: { content: `turn ${turn}`, ...(turn === 1 ? { reasoning_opaque: 'opaque-a' } : {}) }, finish_reason: null }],
-        },
-        {
-          id: `chatcmpl_affinity_${turn}`,
-          object: 'chat.completion.chunk',
-          created: 0,
-          model: 'test-model',
-          choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
-        },
-      ]),
-      modelKey: 'a',
-      http: { status: 200, headers: new Headers() },
-    };
-  });
-  const callB = vi.fn(async (): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    throw new Error('affinity should have reordered candidate A before B');
-  });
-  const candidateA = makeCandidate({ upstream: 'up-a', callOpenAIChatCompletions: callA });
-  const candidateB = makeCandidate({ upstream: 'up-b', callOpenAIChatCompletions: callB });
-  queueCandidates([candidateA, candidateB]);
-
-  const first = await makeApp().request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'first' }] }),
-  });
-  const firstBody = await first.json() as { choices: Array<{ message: { content: string; reasoning_opaque: string } }> };
-  const assistant = firstBody.choices[0].message;
-  assert(assistant.reasoning_opaque !== 'opaque-a');
-
-  queueCandidates([candidateB, candidateA]);
-  const second = await makeApp().request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      messages: [
-        { role: 'user', content: 'first' },
-        assistant,
-        { role: 'user', content: 'continue' },
-      ],
-    }),
-  });
-
-  assertEquals(second.status, 200);
-  assertEquals(callB.mock.calls.length, 0);
-  assertEquals(callA.mock.calls.length, 2);
-  assertEquals(observedBodies[1].messages?.[1].reasoning_opaque, 'opaque-a');
-});
-
-test.each([false, true])('POST /v1/chat/completions emits the usage-only chunk only when stream_options.include_usage is set (%s)', async includeUsage => {
-  installRepo();
-  const callOpenAIChatCompletions = vi.fn(async (): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
-  }));
-  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
-
-  const response = await makeApp().request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      stream: true,
-      ...(includeUsage ? { stream_options: { include_usage: true } } : {}),
-      messages: [{ role: 'user', content: 'hello' }],
-    }),
-  });
-
-  assertEquals(response.status, 200);
+  }, { highWaterMark: 0 }), { headers: head.headers }));
+  const response = await servePipelineHttp(openaiChatCompletionsHttpEntry, requestFor(path, { ...request, stream }), host.options);
+  expect(response.status).toBe(stream ? 200 : 502);
   const body = await response.text();
-  assertEquals(body.includes('"choices":[]'), includeUsage);
+  expect(body).toContain('"name":"TypeError"');
+  expect(body).toContain('"message":"nested transport cause"');
+  expect(body).toContain('provider_specific_fields');
+  expect(body).not.toContain('event: error');
+  expect(body).not.toContain('[DONE]');
+  await host.settle();
+});
+const request = { model: 'public-model', messages: [{ role: 'user', content: 'hello' }] };
+
+const sse = (...events: unknown[]) => new Response(events
+  .map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), {
+  headers: { 'content-type': 'text/event-stream' },
 });
 
-test('POST /v1/chat/completions stamps TTFT on a streamed record', async () => {
-  installRepo();
+const chunk = (delta: object, finish_reason: 'stop' | null = null) => ({
+  id: 'chatcmpl_http', object: 'chat.completion.chunk', created: 1, model: 'wire-model',
+  choices: [{ index: 0, delta, finish_reason }],
+});
+const textChunk = chunk({ role: 'assistant', content: 'hello' }, 'stop');
+const usageChunk = { ...textChunk, choices: [], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } };
+const success = () => sse(textChunk, usageChunk);
+
+test('renders a pre-head Chat Completions panic as the original 502 debug envelope', async () => {
+  const { status, text, failure, cause } = await mountedChatPanic(path, { ...request, model: 'test-model' }, { openaiChatCompletions: {} });
+  expect(status).toBe(502);
+  expect(JSON.parse(text)).toMatchObject({
+    error: { type: 'internal_error', message: failure.message, provider_specific_fields: { stack: failure.stack, cause: { message: cause.message } } },
+  });
+});
+
+test('emits one unnamed Chat Completions error data frame for a post-head panic', async () => {
+  const first = sse(chunk({ role: 'assistant', content: 'first content' }));
+  const { status, text, failure, cause } = await mountedChatPanic(
+    path, { ...request, model: 'test-model', stream: true }, { openaiChatCompletions: {} }, new Uint8Array(await first.arrayBuffer()),
+  );
+  expect(status).toBe(200);
+  expect(text).toContain('first content');
+  const errorBlock = text.trimEnd().split('\n\n').at(-1);
+  expect(errorBlock).toMatch(/^data: \{"error":/);
+  expect(JSON.parse(errorBlock!.slice('data: '.length))).toMatchObject({
+    error: { type: 'internal_error', message: failure.message, provider_specific_fields: { stack: failure.stack, cause: { message: cause.message } } },
+  });
+  expect(text).not.toContain('[DONE]');
+});
+
+test.each(['prompt_cache_options', 'user'] as const)('rejects a null Chat Completions %s before routing', async field => {
+  const host = operationHost([], async () => { throw new Error('Rejected input reached the transport'); });
+  const response = await servePipelineHttp(openaiChatCompletionsHttpEntry, requestFor(path, { ...request, [field]: null }), host.options);
+  expect(response.status).toBe(400);
+  await expect(response.json()).resolves.toEqual({
+    error: {
+      message: `Invalid '${field}': expected ${field === 'user' ? 'a string' : 'an object'} when present.`,
+      type: 'invalid_request_error', param: field, code: null,
+    },
+  });
+  expect(host.catalogCandidates).not.toHaveBeenCalled();
+});
+
+test('replays opaque reasoning on its preferred Chat Completions candidate', async () => {
+  const first = candidate('first');
+  const second = candidate('second');
+  let turn = 0;
+  const fetcher = vi.fn<Fetcher>(async (url, init) => {
+    expect(new URL(url).hostname).toBe('first.example');
+    turn++;
+    if (turn === 1) return sse(chunk({ content: 'turn 1', reasoning_opaque: 'opaque-a' }, 'stop'));
+    expect(JSON.parse(String(init.body))).toMatchObject({ messages: [{ role: 'user' }, { reasoning_opaque: 'opaque-a' }, { role: 'user' }] });
+    return sse(chunk({ content: 'turn 2' }, 'stop'));
+  });
+  const host = operationHost([first, second], fetcher);
+  const firstResponse = await servePipelineHttp(openaiChatCompletionsHttpEntry, requestFor(path, request), host.options);
+  expect(firstResponse.status).toBe(200);
+  const firstBody = await firstResponse.json() as { choices: { message: { content: string; reasoning_opaque: string } }[] };
+  const assistant = firstBody.choices[0]!.message;
+  expect(assistant.reasoning_opaque).toEqual(expect.any(String));
+  expect(assistant.reasoning_opaque).not.toBe('opaque-a');
+  host.catalogCandidates.mockResolvedValueOnce({ candidates: [second, first], sawModel: true });
+  const replay = await servePipelineHttp(openaiChatCompletionsHttpEntry, requestFor(path, {
+    ...request, messages: [...request.messages, assistant, { role: 'user', content: 'continue' }],
+  }), host.options);
+  expect(replay.status).toBe(200);
+  await expect(replay.json()).resolves.toMatchObject({ choices: [{ message: { content: 'turn 2' } }] });
+  await host.settle();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
+test.each([false, true])('preserves the client usage-chunk preference (%s) and upstream stream options', async includeUsage => {
+  const host = operationHost([candidate()], async (_url, init) => {
+    expect(JSON.parse(String(init.body))).toMatchObject({ stream: true, stream_options: { include_usage: true, continuous_usage_stats: true } });
+    return success();
+  });
+  const response = await servePipelineHttp(openaiChatCompletionsHttpEntry, requestFor(path, {
+    ...request, stream: true, stream_options: { include_usage: includeUsage, continuous_usage_stats: true },
+  }), host.options);
+  expect(response.status).toBe(200);
+  const text = await response.text();
+  expect(text.includes('"choices":[]')).toBe(includeUsage);
+  await host.settle();
+});
+
+test('stores the selected Chat Completions TTFT for a streamed response', async () => {
   const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
-  const callOpenAIChatCompletions = vi.fn(async (
-    _model: unknown,
-    _body: unknown,
-    _signal?: AbortSignal,
-    opts?: UpstreamCallOptions,
-  ): Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    return await (opts?.wrapUpstreamCall ?? (d => d()))(async () => ({
-      ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
-    }));
+  const host = operationHost([candidate()], async () => success());
+  const apiKey: ApiKey = {
+    id: 'key-test', userId: 1, name: 'Chat Completions dump', key: 'secret',
+    serverSecret: '0'.repeat(64), createdAt: '2026-01-01T00:00:00.000Z',
+    upstreamIds: null, randomizeUpstreams: false, deletedAt: null, dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0,
+  };
+  const input = requestFor(path, { ...request, stream: true });
+  const dump = new DumpAccumulator(apiKey, {
+    method: 'POST', path, headers: [], bodyByteLength: input.http.body.byteLength, streamError: null,
+  }, input.http.body, Date.now(), host.options.waitUntil, true);
+  const response = await servePipelineHttp(openaiChatCompletionsHttpEntry, input, {
+    ...host.options, services: { ...host.options.services, dump }, dump,
   });
-  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
-
-  const app = makeApp(undefined, { dumpRetentionSeconds: 3600 });
-  const response = await app.request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
-  });
-
-  assertEquals(response.status, 200);
+  expect(response.status).toBe(200);
   await response.text();
-  await flushBackground();
-  assertEquals(dumpStubs.stored.length, 1);
-  const meta = dumpStubs.stored[0]!.record.meta;
-  assert(meta.ttftMs !== null && meta.ttftMs !== undefined && meta.ttftMs >= 0);
+  await host.settle();
+  expect(dumpStubs.stored).toHaveLength(1);
+  expect(dumpStubs.stored[0]!.record.meta).toMatchObject({ model: 'public-model', ttftMs: expect.any(Number) });
+  expect(dumpStubs.stored[0]!.record.meta.ttftMs).toBeGreaterThanOrEqual(0);
+});
+
+test('rejects a model without a reachable generation endpoint', async () => {
+  const fetcher = vi.fn<Fetcher>(async () => { throw new Error('Unsupported request reached transport'); });
+  const host = operationHost([customCandidate('gemini', { geminiGenerateContent: {} })], fetcher);
+  const response = await servePipelineHttp(openaiChatCompletionsHttpEntry, requestFor(path, request), host.options);
+  expect(response.status).toBe(400);
+  await expect(response.json()).resolves.toMatchObject({ error: { message: expect.stringContaining('/chat/completions') } });
+  expect(fetcher).not.toHaveBeenCalled();
+});
+
+test('keeps native image parts across failover and applies rules to the selected wire request', async () => {
+  const imageURL = 'https://images.example/image.png';
+  const messages = [{ role: 'user', content: [{ type: 'image_url', image_url: { url: imageURL } }] }];
+  const first = candidate('first');
+  const second = candidate('second');
+  const fetcher = vi.fn<Fetcher>(async (url, init) => {
+    const body = JSON.parse(String(init.body)) as unknown;
+    expect(body).toMatchObject({ model: 'wire-model', messages });
+    if (new URL(url).hostname === 'first.example') return Response.json({ error: { message: 'try another' } }, { status: 503 });
+    expect(body).toMatchObject({ reasoning_effort: 'low', verbosity: 'low' });
+    return success();
+  });
+  const host = operationHost([first, { ...second, rules: { reasoning: { effort: 'low' }, verbosity: 'low' } }], fetcher);
+  const response = await servePipelineHttp(openaiChatCompletionsHttpEntry, requestFor(path, { model: 'alias', messages }), host.options);
+  expect(response.status).toBe(200);
+  expect(host.catalogCandidates).toHaveBeenCalledExactlyOnceWith({ kind: 'chat', model: 'alias' });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  await host.settle();
+});
+
+test('applies native roles, forced reasoning and prompt cache rules before dispatch', async () => {
+  const base = candidate();
+  const host = operationHost([{
+    ...base, model: {
+      ...base.model, enabledFlags: [
+        'rewrite-system-to-developer', 'rewrite-developer-to-system', 'rewrite-mid-conv-system-to-user',
+        'strip-prompt-cache-key', 'disable-reasoning-on-forced-tool-choice',
+      ],
+    },
+  }], async (_url, init) => {
+    const body = JSON.parse(String(init.body)) as unknown;
+    expect(body).toMatchObject({
+      messages: [
+        { role: 'system', content: 'base' }, { role: 'user', content: 'hello' },
+        { role: 'user', content: 'inline' },
+      ],
+      reasoning_effort: 'none',
+    });
+    expect(body).not.toHaveProperty('prompt_cache_key');
+    return success();
+  });
+  const response = await servePipelineHttp(openaiChatCompletionsHttpEntry, requestFor(path, {
+    ...request, messages: [{ role: 'system', content: 'base' }, ...request.messages, { role: 'system', content: 'inline' }],
+    prompt_cache_key: 'cache-key', tool_choice: 'required', reasoning_effort: 'high',
+  }), host.options);
+  expect(response.status).toBe(200);
+  await host.settle();
+});
+
+test.each([
+  { flag: 'rewrite-system-to-developer', roles: ['developer', 'developer'] },
+  { flag: 'rewrite-developer-to-system', roles: ['system', 'system'] },
+] as const)('applies the independent Chat Completions role rewrite $flag', async ({ flag, roles }) => {
+  const base = candidate();
+  const host = operationHost([{ ...base, model: { ...base.model, enabledFlags: [flag] } }], async (_url, init) => {
+    expect(JSON.parse(String(init.body))).toMatchObject({ messages: roles.map(role => expect.objectContaining({ role })) });
+    return success();
+  });
+  const response = await servePipelineHttp(openaiChatCompletionsHttpEntry, requestFor(path, {
+    ...request, messages: [{ role: 'system', content: 'one' }, { role: 'developer', content: 'two' }],
+  }), host.options);
+  expect(response.status).toBe(200);
+  await host.settle();
+});
+
+test('applies the provider-owned Qwen Chat Completions reasoning projection', async () => {
+  const base = candidate();
+  const host = operationHost([{ ...base, model: { ...base.model, enabledFlags: ['vendor-qwen'] } }], async (_url, init) => {
+    const body = JSON.parse(String(init.body)) as unknown;
+    expect(body).toMatchObject({ enable_thinking: false });
+    expect(body).not.toHaveProperty('reasoning_effort');
+    return success();
+  });
+  const response = await servePipelineHttp(openaiChatCompletionsHttpEntry, requestFor(path, {
+    ...request, reasoning_effort: 'none',
+  }), host.options);
+  expect(response.status).toBe(200);
+  await host.settle();
+});
+
+test.each([
+  { tools: [], choice: 'none' },
+  { tools: undefined, choice: 'auto' },
+  { tools: [{ type: 'function', function: { name: 'look' } }], choice: 'auto' },
+])('normalizes tool_choice for explicitly empty Chat Completions tools ($choice)', async ({ tools, choice }) => {
+  const base = candidate();
+  const host = operationHost([{
+    ...base, model: { ...base.model, enabledFlags: ['empty-tools-tool-choice-none'] },
+  }], async (_url, init) => {
+    expect(JSON.parse(String(init.body))).toMatchObject({ tool_choice: choice });
+    return success();
+  });
+  const response = await servePipelineHttp(openaiChatCompletionsHttpEntry, requestFor(path, {
+    ...request, tools, tool_choice: 'auto',
+  }), host.options);
+  expect(response.status).toBe(200);
+  await host.settle();
+});
+
+test('translates Chat Completions to Anthropic without forwarding the source beta header', async () => {
+  const target = customCandidate('messages', { anthropicMessages: {} });
+  const host = operationHost([target], async (url, init) => {
+    expect(new URL(url).pathname).toBe('/v1/messages');
+    expect(new Headers(init.headers).get('anthropic-beta')).toBeNull();
+    return sse({
+      type: 'message_start',
+      message: { id: 'msg_1', type: 'message', role: 'assistant', model: 'wire-model', content: [], usage: { input_tokens: 4, output_tokens: 0 } },
+    }, { type: 'message_stop' });
+  });
+  const input = requestFor(path, request);
+  input.http.headers.push(['anthropic-beta', 'source-protocol-beta']);
+  const response = await servePipelineHttp(openaiChatCompletionsHttpEntry, input, host.options);
+  expect(response.status).toBe(200);
+  await host.settle();
+});
+
+test('rewrites both base and inline instructions on a translated Responses wire', async () => {
+  const target = customCandidate('responses', { openaiResponses: {} });
+  const host = operationHost([{
+    ...target, model: { ...target.model, enabledFlags: ['rewrite-system-to-developer'] },
+  }], async (url, init) => {
+    expect(new URL(url).pathname).toBe('/v1/responses');
+    const body = JSON.parse(String(init.body)) as unknown;
+    expect(body).not.toHaveProperty('instructions');
+    expect(body).toMatchObject({
+      input: [
+        { type: 'message', role: 'developer', content: 'base instructions' },
+        { type: 'message', role: 'user', content: 'hello' },
+        { type: 'message', role: 'developer', content: 'inline instructions' },
+      ],
+    });
+    return sse({
+      type: 'response.completed',
+      response: { id: 'resp_1', object: 'response', status: 'completed', model: 'wire-model', output: [], error: null },
+    });
+  });
+  const response = await servePipelineHttp(openaiChatCompletionsHttpEntry, requestFor(path, {
+    ...request, messages: [
+      { role: 'system', content: 'base instructions' },
+      ...request.messages,
+      { role: 'system', content: 'inline instructions' },
+    ],
+  }), host.options);
+  expect(response.status).toBe(200);
+  await host.settle();
 });

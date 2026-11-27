@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { assertAzureUpstreamRecord, validateAzureManualModels } from '../src/config.ts';
 import { assertThrows } from '@floway-dev/test-utils';
@@ -83,4 +83,13 @@ test('validateAzureManualModels rejects rerank models', () => {
     }]),
     Error,
   );
+});
+
+test('Azure Decision deployment configuration rejects an operator-provided target path', () => {
+  expect(() => validateAzureManualModels([{
+    upstreamModelId: 'private-decision-deployment',
+    kind: 'decision',
+    endpoints: { decision: {} },
+    decisionTarget: { protocol: 'typesafe-systemone', path: '/v1/systemone' },
+  }])).toThrow('decision target is not configurable on this upstream');
 });

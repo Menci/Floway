@@ -200,7 +200,7 @@ export const chatgptCodexModelMetadata = (model: UpstreamModel): ChatGPTCodexMod
   };
 };
 
-export const chatgptModelUsesResponsesLite = (model: UpstreamModel): boolean => {
+export const chatgptModelUsesResponsesLite = (model: Pick<UpstreamModel, 'id' | 'upstreamData'>): boolean => {
   const upstreamData = model.upstreamData;
   if (upstreamData === undefined) return false;
   if (!isPlainRecord(upstreamData)) {
@@ -222,7 +222,7 @@ export const chatgptModelUsesResponsesLite = (model: UpstreamModel): boolean => 
 //
 // `enabledFlags` is the upstream-resolved flag set (provider defaults
 // merged with the row's `flagOverrides`); it propagates per-model so
-// downstream interceptors can read the effective set without re-resolving.
+// the request pipeline can read the effective set without re-resolving.
 export const chatgptRawToUpstreamModel = (raw: ChatGPTRawModel, enabledFlags: ReadonlySet<FlagId>): UpstreamModel => {
   const contextWindow = assertContextWindow(raw.context_window, raw.id, 'context_window');
   const maxContextWindow = raw.max_context_window === undefined

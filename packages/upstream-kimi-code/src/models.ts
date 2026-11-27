@@ -4,7 +4,7 @@ import type { KimiCodeUpstreamData } from './model-selection.ts';
 import { pricingForKimiCodePublicModelId } from './pricing.ts';
 import { kimiCodeModelLabel, parseKimiCodeModelName, publicKimiCodeModelId } from './public-model-id.ts';
 import { object, string, number } from './validation.ts';
-import { fetchUpstreamModels, identityWrapUpstreamCall, UpstreamModelsUnavailableError, type Fetcher, type FlagId, type UpstreamModel } from '@floway-dev/upstream';
+import { fetchUpstreamModels, UpstreamModelsUnavailableError, type Fetcher, type FlagId, type UpstreamModel } from '@floway-dev/upstream';
 
 // Capability and effort metadata are authoritative; display names establish
 // public presentation ids and model-version identity. Only catalog ids are
@@ -111,7 +111,7 @@ const projectCatalog = (value: unknown, enabledFlags: ReadonlySet<FlagId>): Upst
 
 export const fetchKimiCodeModels = (config: KimiCodeUpstreamConfig, fetcher: Fetcher, enabledFlags: ReadonlySet<FlagId>): Promise<UpstreamModel[]> =>
   fetchUpstreamModels(
-    () => kimiCodeFetch(config, '/models', { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
+    () => kimiCodeFetch(config, '/models', { method: 'GET' }, fetcher),
     value => {
       try {
         return projectCatalog(value, enabledFlags);

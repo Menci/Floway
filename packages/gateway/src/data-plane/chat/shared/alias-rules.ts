@@ -48,7 +48,10 @@ export const applyRulesToUpstreamOpenAIResponses = (body: OpenAIResponsesPayload
   if (rules.serviceTier !== undefined) body.service_tier = rules.serviceTier;
 };
 
-export const applyRulesToUpstreamAnthropicMessages = (body: AnthropicMessagesPayload, rules: AliasRules): void => {
+export const applyRulesToUpstreamAnthropicMessages = (
+  body: Pick<AnthropicMessagesPayload, 'output_config' | 'thinking' | 'speed' | 'service_tier'>,
+  rules: AliasRules,
+): void => {
   if (hasReasoning(rules)) {
     const { effort, budget_tokens, adaptive, summary } = rules.reasoning;
     // Anthropic stores explicit effort in `output_config.effort`; budget /

@@ -8,7 +8,7 @@ import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.
 import { ollamaFetchUsage, ollamaFetchBalance } from './fetch.ts';
 import { type OllamaUsageObservation, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { ollamaMetrics } from './upstream-metrics.ts';
-import { type Fetcher, getUpstreamRuntimeRepo, identityWrapUpstreamCall, recordUpstreamMetrics, runScheduledUsageRefresh, type UpstreamScheduledOptions, type UpstreamRecord } from '@floway-dev/upstream';
+import { type Fetcher, getUpstreamRuntimeRepo, normalizeUpstreamMetricIdentity, runScheduledUsageRefresh, type UpstreamScheduledOptions, type UpstreamRecord, type UpstreamRuntimeRepo } from '@floway-dev/upstream';
 
 // Reading account usage takes two things the operator states: that this upstream
 // is an Ollama Cloud account (`cloudUsage` — the endpoint belongs to
@@ -37,65 +37,68 @@ const readOllamaObservation = async (response: Response, path: string): Promise<
 
 // A single outcome commits both upstream bodies. Failed reads retain the last
 // successful pair, and older attempts cannot replace a newer observation.
-const persistUsageReading = async (upstreamId: string, attemptedAt: number, observation: OllamaUsageObservation | null, error: string | null): Promise<void> => {
+const persistUsageReading = async (
+  upstreamId: string,
+  attemptedAt: number,
+  observation: OllamaUsageObservation | null,
+  error: string | null,
+  repo: UpstreamRuntimeRepo,
+  expectedVersion?: number,
+): Promise<void> => {
   let accepted = false;
-  await getUpstreamRuntimeRepo().upstreams.saveState(upstreamId, current => {
+  await repo.upstreams.saveState(upstreamId, (current, version) => {
     accepted = false;
+    if (expectedVersion !== undefined && version !== expectedVersion) return current;
     const state = readOllamaUpstreamState(current);
     if (state.usageProbe && state.usageProbe.attemptedAt > attemptedAt) return current;
     accepted = true;
     return { ...state, usageProbe: { attemptedAt, observation: observation ?? state.usageProbe?.observation ?? null, error } } satisfies OllamaUpstreamState;
   });
-  if (accepted && observation !== null) await recordUpstreamMetrics(upstreamId, ollamaMetrics(observation.data), observation.fetchedAt);
+  if (accepted && observation !== null) {
+    await Promise.all(ollamaMetrics(observation.data).map(metric => {
+      const { name, labels } = normalizeUpstreamMetricIdentity(metric.name, metric.labels);
+      return repo.recordUpstreamMetric(upstreamId, name, labels, metric.value, observation.fetchedAt);
+    }));
+  }
 };
 
-export const refreshOllamaUsageProbe = async (upstreamId: string, config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> => {
+export const refreshOllamaUsageProbe = async (
+  upstreamId: string,
+  config: OllamaUpstreamConfig,
+  fetcher: Fetcher,
+  persistence?: { repo: UpstreamRuntimeRepo; version: number },
+): Promise<OllamaUsageObservation> => {
   const attemptedAt = Date.now();
   let observation: OllamaUsageObservation;
   try {
     const init = { method: 'GET', headers: new Headers({ accept: 'application/json' }) };
-    const options = { fetcher, wrapUpstreamCall: identityWrapUpstreamCall };
-    const [usage, balance] = await Promise.all([
-      ollamaFetchUsage(config, init, options).then(response => readOllamaObservation(response, '/api/usage')),
-      ollamaFetchBalance(config, init, options).then(response => readOllamaObservation(response, '/api/balance')),
+    const [usage, balance] = await Promise.allSettled([
+      ollamaFetchUsage(config, init, fetcher).then(response => readOllamaObservation(response, '/api/usage')),
+      ollamaFetchBalance(config, init, fetcher).then(response => readOllamaObservation(response, '/api/balance')),
     ]);
-    const data = { usage, balance };
+    if (usage.status === 'rejected' && balance.status === 'rejected') throw new AggregateError([usage.reason, balance.reason], 'Ollama usage and balance reads failed');
+    if (usage.status === 'rejected') throw usage.reason;
+    if (balance.status === 'rejected') throw balance.reason;
+    const data = { usage: usage.value, balance: balance.value };
     readOllamaAccountUsage(data);
     observation = { fetchedAt: Date.now(), data };
   } catch (error) {
     if (upstreamId !== '') {
       try {
-        await persistUsageReading(upstreamId, attemptedAt, null, error instanceof Error ? error.message : String(error));
+        await persistUsageReading(upstreamId, attemptedAt, null, error instanceof Error ? error.message : String(error), persistence?.repo ?? getUpstreamRuntimeRepo(), persistence?.version);
       } catch (persistenceError) {
         throw new AggregateError([error, persistenceError], 'Ollama usage refresh and outcome persistence failed');
       }
     }
     throw error;
   }
-  if (upstreamId !== '') await persistUsageReading(upstreamId, attemptedAt, observation, null);
+  if (upstreamId !== '') await persistUsageReading(upstreamId, attemptedAt, observation, null, persistence?.repo ?? getUpstreamRuntimeRepo(), persistence?.version);
   return observation;
 };
 
-const isOllamaUsageProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
+export const isOllamaUsageProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
   const probe = state.usageProbe;
   return probe === null || now - probe.attemptedAt >= OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS;
-};
-
-// A dashboard refresh must not replace the model response with its failure.
-// Record the error on the paired reading and extend the runtime with waitUntil
-// so persistence can finish after the response is relayed.
-export const scheduleOllamaUsageProbe = (
-  upstreamId: string,
-  config: OllamaUpstreamConfig,
-  state: OllamaUpstreamState,
-  fetcher: Fetcher,
-  waitUntil: (promise: Promise<unknown>) => void,
-): void => {
-  if (!isOllamaUsageEnabled(config)) return;
-  if (!isOllamaUsageProbeDue(state, Date.now())) return;
-  waitUntil(refreshOllamaUsageProbe(upstreamId, config, fetcher).catch((error: unknown) => {
-    console.warn(`Failed to refresh Ollama usage for ${upstreamId}:`, error);
-  }));
 };
 
 export const runOllamaScheduledTask = async (record: UpstreamRecord, options: UpstreamScheduledOptions): Promise<void> => {

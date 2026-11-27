@@ -1,4 +1,4 @@
-import { throwChatServeFailure } from '../../shared/errors.ts';
+import { OpenAIResponsesInvalidInputError } from './invalid-input.ts';
 import { isCodexAudioReference, type OpenAIResponsesInputAgentMessageItem, type OpenAIResponsesInputContent, type OpenAIResponsesInputImage } from '@floway-dev/protocols/openai-responses';
 
 interface AgentContentFields {
@@ -12,14 +12,14 @@ interface AgentContentFields {
 
 const requiredString = (value: unknown, path: string): string => {
   if (typeof value !== 'string') {
-    return throwChatServeFailure({ kind: 'invalid-input', message: `Invalid type for '${path}': expected a string.`, param: path });
+    throw new OpenAIResponsesInvalidInputError(`Invalid type for '${path}': expected a string.`, path);
   }
   return value;
 };
 
 const nullableString = (value: unknown, path: string): string | null | undefined => {
   if (value !== undefined && value !== null && typeof value !== 'string') {
-    return throwChatServeFailure({ kind: 'invalid-input', message: `Invalid type for '${path}': expected a string or null.`, param: path });
+    throw new OpenAIResponsesInvalidInputError(`Invalid type for '${path}': expected a string or null.`, path);
   }
   return value;
 };
@@ -106,14 +106,14 @@ export const agentMessageContent = (
       content.push({ ...part, type: 'input_file' });
       break;
     case 'input_audio':
-      if (!isCodexAudioReference(part)) return throwChatServeFailure({ kind: 'invalid-input', message: `Expected one audio_url or file_id in '${path}'.`, param: path });
+      if (!isCodexAudioReference(part)) throw new OpenAIResponsesInvalidInputError(`Expected one audio_url or file_id in '${path}'.`, path);
       content.push({ ...part, type: 'input_audio' });
       break;
     case 'computer_screenshot':
       pushTypedImagePart(content, part.type, inputImage(part, path));
       break;
     default:
-      return throwChatServeFailure({ kind: 'invalid-input', message: `Invalid value: '${part.type}' for '${path}.type'.`, param: `${path}.type` });
+      throw new OpenAIResponsesInvalidInputError(`Invalid value: '${part.type}' for '${path}.type'.`, `${path}.type`);
     }
   }
 

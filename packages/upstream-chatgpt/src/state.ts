@@ -260,7 +260,7 @@ export const readChatGPTUpstreamState = (raw: unknown): ChatGPTUpstreamState => 
 
 // State-transition writes for both planes. The operator-facing refresh handler
 // in the gateway delegates to these so the provider owns its own state writes,
-// and the data plane's createChatGPTUpstream routes the same fields through the
+// and the data plane's ChatGPT service routes the same fields through the
 // same helpers. The control plane no-ops on a missing account rather than
 // throw, matching the refresh contract that a state slot it cannot address
 // should be left alone (saveState skips the write when the mutator returns

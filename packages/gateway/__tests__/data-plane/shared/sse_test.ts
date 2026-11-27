@@ -1,268 +1,111 @@
-import { Hono } from 'hono';
 import { expect, test, vi } from 'vitest';
 
-import { serializeSseFrame, serveSse, type SseOutcome } from '../../../src/data-plane/shared/sse.ts';
-import { FakeTime } from '../../test-time.ts';
-import { parseSSEStream } from '@floway-dev/protocols/common';
-import { sseCommentFrame, type SseFrame, type SseWritableFrame, sseFrame, sseRawFrame } from '@floway-dev/protocols/common';
-import { assertEquals } from '@floway-dev/test-utils';
+import { chatSse } from '../../../src/data-plane/chat/pipeline/encode.ts';
+import { servePipelineHttp } from '../../../src/data-plane/shared/pipeline-http.ts';
+import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, serializeSseFrame } from '../../../src/data-plane/shared/sse.ts';
+import { hostFor } from '../pipeline/fixtures.ts';
+import type { HttpResponseFact } from '@floway-dev/http';
+import { asEntry, factSpace, type ManagedStream, type Result } from '@floway-dev/pipeline';
+import { sseFrame } from '@floway-dev/protocols/common';
+import type { ProtocolStreamError } from '@floway-dev/upstream';
 
-interface Deferred<T> {
-  promise: Promise<T>;
-  resolve: (value: T) => void;
-  reject: (error: unknown) => void;
-}
+type Source = ManagedStream<string, ProtocolStreamError>;
+type Events = AsyncGenerator<Result<string, ProtocolStreamError>, void, unknown>;
 
-const deferred = <T>(): Deferred<T> => {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-
-  return { promise, resolve, reject };
-};
-
-const closedIteratorResult = (): IteratorResult<SseFrame> => ({
-  done: true,
-  value: undefined,
-});
-
-const createIdleSSEEvents = () => {
-  let pendingNext: Deferred<IteratorResult<SseFrame>> | undefined;
-  let returnCalled = false;
-
-  const events: AsyncIterable<SseFrame> = {
-    [Symbol.asyncIterator]() {
+const serveChat = (events: (signal: AbortSignal) => Events) => {
+  const error = vi.fn(() => [{ wire: sseFrame('failure') }]);
+  const host = hostFor({ dump: null });
+  const { defineStage, compose } = factSpace<object, { http: HttpResponseFact; source: Source }, { dump: null }>();
+  const ending = defineStage({
+    name: 'chat-source',
+    request: { needs: [] },
+    return: { provides: ['http', 'source'] },
+    async execute(_facts, scope) {
       return {
-        next() {
-          pendingNext = deferred<IteratorResult<SseFrame>>();
-          return pendingNext.promise;
-        },
-        return() {
-          returnCalled = true;
-          pendingNext?.resolve(closedIteratorResult());
-          return Promise.resolve(closedIteratorResult());
-        },
+        http: { status: 200, statusText: '', headers: [], body: null },
+        source: scope.createStream(({ signal }) => events(signal)),
       };
     },
-  };
-
-  return {
-    events,
-    hasPendingNext: () => pendingNext !== undefined,
-    rejectNext: (error: unknown) => pendingNext?.reject(error),
-    returnCalled: () => returnCalled,
-  };
+  });
+  const encode = defineStage({
+    name: 'chat-sse',
+    through: {
+      request: { needs: [], provides: [], consumes: [] },
+      response: { needs: ['http', 'source'], provides: ['http'], consumes: ['source'] },
+    },
+    async execute(facts, scope) {
+      const { source, http, ...answer } = await scope.next(facts);
+      return {
+        ...answer,
+        http: chatSse(http, source, scope, {
+          protocol: 'openaiChatCompletions',
+          event: data => ({ wire: sseFrame(data) }),
+          error,
+        }),
+      };
+    },
+  });
+  const entry = asEntry(compose('chat', { entry: [], exit: ['http'], stages: [encode], ending }));
+  return { host, error, response: servePipelineHttp(entry, {}, host.options) };
 };
 
-const waitForIteratorStart = async (events: ReturnType<typeof createIdleSSEEvents>) => {
-  for (let i = 0; i < 10; i++) {
-    if (events.hasPendingNext()) return;
-    await Promise.resolve();
-  }
+const bytes = (value: string): Uint8Array => new TextEncoder().encode(value);
 
-  throw new Error('SSE iterator did not start');
-};
-
-const waitForIteratorReturn = async (events: ReturnType<typeof createIdleSSEEvents>) => {
-  for (let i = 0; i < 10; i++) {
-    if (events.returnCalled()) return;
-    await Promise.resolve();
-  }
-
-  throw new Error('SSE iterator was not stopped');
-};
-
-type TestOptions = Omit<Parameters<typeof serveSse<SseWritableFrame>>[1], 'events'>;
-
-const requestSSE = async (events: AsyncIterable<SseWritableFrame>, options: Partial<TestOptions>): Promise<Response> => {
-  const app = new Hono();
-  app.get('/', c =>
-    serveSse(c, {
-      events,
-      downstreamAbortController: undefined,
-      protocol: {
-        encode: frame => ({ wire: serializeSseFrame(frame) }),
-        eof: () => ({ type: 'completed' }),
-        failure: () => [serializeSseFrame(sseFrame('failure'))],
-      },
-      settle: () => {},
-      ...options,
-    }));
-  return await app.request('/');
-};
-
-const decodeChunk = (value: Uint8Array | undefined): string => new TextDecoder().decode(value);
-
-const waitForMicrotasks = async () => {
-  for (let i = 0; i < 5; i++) await Promise.resolve();
-};
-
-const cancelStateWithin = async (promise: Promise<void>, timeoutMs: number): Promise<'canceled' | 'pending'> => {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+test('chat SSE emits idle keepalives while keeping one source read pending', async () => {
+  vi.useFakeTimers();
   try {
-    return await Promise.race([
-      promise.then(() => 'canceled' as const),
-      new Promise<'pending'>(resolve => {
-        timeoutId = setTimeout(() => resolve('pending'), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeoutId !== undefined) clearTimeout(timeoutId);
-  }
-};
-
-test('SSE egress emits comment keepalive frames while idle', async () => {
-  const time = new FakeTime();
-  const idle = createIdleSSEEvents();
-
-  try {
-    const response = await requestSSE(idle.events, {
-      keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') },
+    const resume = Promise.withResolvers<void>();
+    const pull = vi.fn();
+    const { host, response } = serveChat(async function* () {
+      pull();
+      await resume.promise;
+      yield { ok: true, value: 'ready' };
     });
-    const reader = response.body!.getReader();
-
-    await waitForIteratorStart(idle);
-    const read = reader.read();
-    await time.tickAsync(1_000);
-
-    const chunk = await read;
-    assertEquals(decodeChunk(chunk.value), ': keepalive\n\n');
-
-    await reader.cancel();
-  } finally {
-    time.restore();
-  }
-});
-
-test('SSE egress settles cancellation once without rendering a racing iterator error', async () => {
-  const idle = createIdleSSEEvents();
-  const settle = vi.fn<(outcome: SseOutcome) => void>();
-  const failure = vi.fn<TestOptions['protocol']['failure']>(() => [serializeSseFrame(sseFrame('unexpected failure'))]);
-  const response = await requestSSE(idle.events, {
-    protocol: { encode: frame => ({ wire: serializeSseFrame(frame) }), eof: () => ({ type: 'completed' }), failure },
-    settle,
-  });
-  const reader = response.body!.getReader();
-
-  await waitForIteratorStart(idle);
-  await reader.cancel();
-  idle.rejectNext(new Error('late upstream stream failure'));
-  await waitForIteratorReturn(idle);
-
-  assertEquals(idle.returnCalled(), true);
-  await vi.waitFor(() => expect(settle.mock.calls).toEqual([[{ type: 'cancelled' }]]));
-  expect(failure).not.toHaveBeenCalled();
-});
-
-test('SSE egress aborts a pending upstream SSE reader when the downstream response is canceled', async () => {
-  const upstreamCanceled = deferred<void>();
-  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
-  const downstreamAbortController = new AbortController();
-  const upstreamBody = new ReadableStream<Uint8Array>({
-    start(controller) {
-      upstreamController = controller;
-    },
-    cancel() {
-      upstreamCanceled.resolve();
-    },
-  });
-  const response = await requestSSE(
-    parseSSEStream(upstreamBody, {
-      signal: downstreamAbortController.signal,
-    }),
-    {
-      keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') },
-      downstreamAbortController,
-    },
-  );
-  const reader = response.body!.getReader();
-  const pendingRead = reader.read();
-  let cancelResponse: Promise<void> | undefined;
-
-  try {
-    await waitForMicrotasks();
-    cancelResponse = reader.cancel();
-
-    const cancelState = await cancelStateWithin(upstreamCanceled.promise, 20);
-
-    assertEquals(cancelState, 'canceled');
-  } finally {
-    try {
-      upstreamController.close();
-    } catch {
-      // The stream is already canceled in the passing path.
+    const reader = (await response).body!.getReader();
+    for (let heartbeat = 0; heartbeat < 2; heartbeat++) {
+      const reading = reader.read();
+      await vi.advanceTimersByTimeAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
+      await expect(reading).resolves.toEqual({ done: false, value: bytes(': keepalive\n\n') });
+      expect(pull).toHaveBeenCalledOnce();
     }
-    await pendingRead.catch(() => {});
-    await cancelResponse?.catch(() => {});
+    resume.resolve();
+    await expect(reader.read()).resolves.toEqual({ done: false, value: bytes('data: ready\n\n') });
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined });
+    await host.settle();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(host.errors).toEqual([]);
+  } finally {
+    vi.useRealTimers();
   }
 });
 
-test('SSE egress writes a raw frame without SSE field framing', async () => {
-  const data = JSON.stringify({ error: { code: 500, status: 'INTERNAL', message: 'failure' } });
-  const frames = async function* () {
-    yield sseFrame('{"candidates":[]}');
-    yield sseRawFrame(data);
-  };
-  const response = await requestSSE(frames(), {});
-  assertEquals(await response.text(), `data: {"candidates":[]}\n\n${data}`);
-});
-
-test('SSE serialization emits a data field for every line of a named event', () => {
-  const wire = serializeSseFrame(sseFrame('first\r\nsecond\r\n\nlast', 'message'));
-  expect(wire).toBe('event: message\ndata: first\ndata: second\ndata: \ndata: last\n\n');
-});
-
-test.each(['read', 'encode', 'eof'] as const)('SSE egress renders and settles a %s failure after earlier output', async failureAt => {
-  const error = new Error(`failed at ${failureAt}`);
-  const settle = vi.fn<(outcome: SseOutcome) => void>();
-  const failure = vi.fn<TestOptions['protocol']['failure']>(() => [serializeSseFrame(sseFrame('protocol failure'))]);
-  const frames = async function* () {
-    yield sseFrame('partial');
-    if (failureAt === 'read') throw error;
-    if (failureAt === 'encode') yield sseFrame('unencodable');
-  };
-  const response = await requestSSE(frames(), {
-    protocol: {
-      encode: frame => {
-        if (frame.type === 'sse' && frame.data === 'unencodable') throw error;
-        return { wire: serializeSseFrame(frame) };
-      },
-      eof: () => ({ type: 'premature-eof', error }),
-      failure,
-    },
-    settle,
-  });
-  expect(await response.text()).toBe('data: partial\n\ndata: protocol failure\n\n');
-  expect(failure.mock.calls).toEqual([[error]]);
-  expect(settle.mock.calls).toEqual([[{ type: failureAt === 'eof' ? 'premature-eof' : 'source-error', error }]]);
-});
-
-test('SSE egress closes the iterator at a protocol terminal without pulling another frame', async () => {
-  const closed = vi.fn();
-  const settle = vi.fn<(outcome: SseOutcome) => void>();
-  const frames = async function* () {
+test('canceling an idle chat response aborts and releases its pending source read', async () => {
+  const opened = Promise.withResolvers<AbortSignal>();
+  const sourceClosed = vi.fn();
+  const reason = new Error('test client disconnected');
+  const { host, error, response } = serveChat(async function* (signal) {
+    opened.resolve(signal);
     try {
-      yield sseFrame('terminal');
-      throw new Error('trailing read');
+      await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
+      yield { ok: false, error: { kind: 'abort', cause: signal.reason } };
     } finally {
-      closed();
+      sourceClosed();
     }
-  };
-  const response = await requestSSE(frames(), {
-    protocol: {
-      encode: frame => ({
-        wire: serializeSseFrame(frame),
-        end: { type: 'protocol-error', trailer: [serializeSseFrame(sseFrame('trailer'))] },
-      }),
-      eof: () => { throw new Error('unexpected EOF'); },
-      failure: () => [serializeSseFrame(sseFrame('unexpected failure'))],
-    },
-    settle,
   });
-  expect(await response.text()).toBe('data: terminal\n\ndata: trailer\n\n');
-  expect(closed).toHaveBeenCalledOnce();
-  expect(settle.mock.calls).toEqual([[{ type: 'protocol-error' }]]);
+  const reader = (await response).body!.getReader();
+  const reading = reader.read();
+  const signal = await opened.promise;
+  await reader.cancel(reason);
+  expect(signal.reason).toBe(reason);
+  await expect(reading).resolves.toEqual({ done: true, value: undefined });
+  await host.settle();
+  expect(sourceClosed).toHaveBeenCalledOnce();
+  expect(error).not.toHaveBeenCalled();
+  expect(host.errors).toEqual([]);
+});
+
+test('SSE serialization preserves raw frames and separates lines of a named event', () => {
+  expect(serializeSseFrame({ type: 'sse-raw', data: ': raw\n\n' })).toBe(': raw\n\n');
+  expect(serializeSseFrame({ type: 'sse', event: 'delta', data: 'one\r\ntwo\rthree\nfour' }))
+    .toBe('event: delta\ndata: one\ndata: two\ndata: three\ndata: four\n\n');
 });

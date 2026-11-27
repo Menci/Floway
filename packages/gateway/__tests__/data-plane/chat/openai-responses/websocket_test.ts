@@ -3,15 +3,15 @@ import { expect, onTestFinished, test, vi } from 'vitest';
 
 import { app } from '../../../../src/app.ts';
 import { hashOpenAIResponsesItem } from '../../../../src/data-plane/chat/openai-responses/items/identity.ts';
-import { openaiResponsesServe } from '../../../../src/data-plane/chat/openai-responses/serve.ts';
-import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/openai-responses/websocket.ts';
+import { INTERRUPT_UPSTREAM_ABORT_WARNING_MS, KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/openai-responses/websocket.ts';
+import * as servicesModule from '../../../../src/data-plane/pipeline/services.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { initBackgroundSchedulerResolver } from '../../../../src/runtime/background.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { buildChatGPTUpstreamRecord, chatgptModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseOpenAIResponsesResponse, warmModelsForTest } from '../../../test-utils/app.ts';
+import { buildChatGPTUpstreamRecord, chatgptModels, copilotModels, setupAppTest, sseResponse, sseOpenAIResponsesResponse, warmModelsForTest } from '../../../test-utils/app.ts';
 import { trackBackground } from '../../../test-utils/background-tracker.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -68,10 +68,19 @@ const terminalResponseId = (messages: readonly Record<string, unknown>[]): strin
   return id;
 };
 
-const connectOpenAIResponsesWebSocket = async (apiKey: string, upgradeHeaders: Record<string, string> = {}): Promise<TestWorkerWebSocket> => {
+// An upgrade registers one lifetime promise while its execution context is active.
+const connectOpenAIResponsesWebSocketCapturingSessionLifetime = async (
+  apiKey: string,
+  upgradeHeaders: Record<string, string> = {},
+): Promise<{ client: TestWorkerWebSocket; sessionLifetime: Promise<unknown> }> => {
   await warmModelsForTest();
+  const runtime = activeRuntime();
+  const registered: Promise<unknown>[] = [];
   const executionCtx = {
-    waitUntil: () => {},
+    waitUntil: (promise: Promise<unknown>) => {
+      registered.push(promise);
+      runtime.sessions.push(promise);
+    },
     passThroughOnException: () => {},
     props: {},
   } satisfies ExecutionContext;
@@ -85,51 +94,45 @@ const connectOpenAIResponsesWebSocket = async (apiKey: string, upgradeHeaders: R
   }), {}, executionCtx);
   assertEquals(response.status, 101);
 
-  const runtime = activeRuntime();
   const pair = runtime.pairs.at(-1);
   assertExists(pair);
-  return pair.client;
+  assertEquals(registered.length, 1, 'expected the upgrade to register exactly one background task');
+  const sessionLifetime = registered[0];
+  assertExists(sessionLifetime);
+  return { client: pair.client, sessionLifetime };
 };
 
-// The upgrade registers exactly one runtime background task: the session
-// lifetime promise, which resolves once the socket is closed and every
-// session-scoped write has drained. Capturing it lets a test observe the
-// instant the runtime would be free to evict the isolate — on Cloudflare
-// that is the deadline every session-scoped write has to beat.
-const connectOpenAIResponsesWebSocketCapturingSessionLifetime = async (
-  apiKey: string,
-): Promise<{ client: TestWorkerWebSocket; sessionLifetime: Promise<unknown> }> => {
-  const registered: Promise<unknown>[] = [];
-  initBackgroundSchedulerResolver(_c => promise => {
-    registered.push(Promise.resolve(promise));
-    trackBackground(promise);
-  });
-  try {
-    const client = await connectOpenAIResponsesWebSocket(apiKey);
-    assertEquals(registered.length, 1, 'expected the upgrade to register exactly one background task');
-    const sessionLifetime = registered[0];
-    assertExists(sessionLifetime);
-    return { client, sessionLifetime };
-  } finally {
-    initBackgroundSchedulerResolver(_c => trackBackground);
-  }
-};
+const connectOpenAIResponsesWebSocket = async (apiKey: string, upgradeHeaders?: Record<string, string>): Promise<TestWorkerWebSocket> =>
+  (await connectOpenAIResponsesWebSocketCapturingSessionLifetime(apiKey, upgradeHeaders)).client;
 
-let currentRuntime: ReturnType<typeof installWorkerWebSocketRuntime> | undefined;
+type WebSocketRuntimeFixture = ReturnType<typeof installWorkerWebSocketRuntime> & { sessions: Promise<unknown>[] };
 
-const activeRuntime = (): ReturnType<typeof installWorkerWebSocketRuntime> => {
+let currentRuntime: WebSocketRuntimeFixture | undefined;
+
+const activeRuntime = (): WebSocketRuntimeFixture => {
   assertExists(currentRuntime);
   return currentRuntime;
 };
 
 const withWorkerWebSocketRuntime = async <T>(run: () => Promise<T>): Promise<T> => {
-  const runtime = installWorkerWebSocketRuntime();
+  const runtime: WebSocketRuntimeFixture = { ...installWorkerWebSocketRuntime(), sessions: [] };
   currentRuntime = runtime;
+  initBackgroundSchedulerResolver(c => c.req.header('upgrade')?.toLowerCase() === 'websocket'
+    ? promise => c.executionCtx.waitUntil(promise)
+    : trackBackground);
   try {
     return await run();
   } finally {
-    runtime.restore();
-    currentRuntime = undefined;
+    try {
+      for (const { client } of runtime.pairs) {
+        if (client.readyState === WebSocket.OPEN) client.close();
+      }
+      await Promise.all(runtime.sessions);
+    } finally {
+      initBackgroundSchedulerResolver(_c => trackBackground);
+      runtime.restore();
+      currentRuntime = undefined;
+    }
   }
 };
 
@@ -160,7 +163,9 @@ const withSuccessfulOpenAIResponsesUpstream = async <T>(run: () => Promise<T>): 
   );
 
 test('OpenAI Responses WebSocket forwards stream events, echoes event_id, and ends the turn on the terminal event', async () => {
-  const { apiKey } = await setupAppTest();
+  const { apiKey, repo, copilotUpstream } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
   await withMockedFetch(
     async request => {
       const url = new URL(request.url);
@@ -177,25 +182,29 @@ test('OpenAI Responses WebSocket forwards stream events, echoes event_id, and en
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output: [],
+          output: [{
+            id: 'msg_ws', type: 'message', role: 'assistant', status: 'completed',
+            content: [{ type: 'output_text', text: 'answer', annotations: [] }],
+          }],
           usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
         });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
+      const { client, sessionLifetime } = await connectOpenAIResponsesWebSocketCapturingSessionLifetime(apiKey.key);
       const raw = recordRawMessages(client);
       const received = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
 
-      client.send(JSON.stringify({
+      const requestText = JSON.stringify({
         type: 'response.create',
         event_id: 'evt_1',
         response: {
           model: 'gpt-direct-responses',
           input: 'hello',
         },
-      }));
+      }, null, 2);
+      client.send(requestText);
 
       const messages = await received;
       raw.stop();
@@ -215,6 +224,16 @@ test('OpenAI Responses WebSocket forwards stream events, echoes event_id, and en
         total_tokens: 8,
         input_tokens_details: { cached_tokens: 0 },
         output_tokens_details: { reasoning_tokens: 0 },
+      });
+      client.close();
+      await sessionLifetime;
+      assertEquals(dumps.stored.length, 1);
+      const captured = dumps.stored[0]?.record;
+      assertExists(captured);
+      assertEquals(new TextDecoder().decode(captured.request.body), requestText);
+      expect(captured.meta).toMatchObject({
+        method: 'WS', status: 200, model: 'gpt-direct-responses', upstream: { id: copilotUpstream.id },
+        inputTokens: 3, outputTokens: 5, ttftMs: expect.any(Number),
       });
     }),
   );
@@ -315,7 +334,9 @@ test('OpenAI Responses WebSocket reports a failed turn when an output item canno
 });
 
 test('OpenAI Responses WebSocket keep-alive waits for the first event and takes a slot in the stream sequence', async () => {
-  const { apiKey } = await setupAppTest();
+  const { apiKey, repo } = await setupAppTest();
+  const backgroundErrors = vi.spyOn(console, 'error');
+  onTestFinished(() => backgroundErrors.mockRestore());
   // Captured before the clock is faked: the turn's frames cross real event-loop
   // turns (upstream body reads, item persistence), which a faked `setTimeout`
   // cannot yield to.
@@ -381,6 +402,7 @@ test('OpenAI Responses WebSocket keep-alive waits for the first event and takes 
         return new Response(new ReadableStream<Uint8Array>({
           start(controller) {
             upstreamController = controller;
+            request.signal.addEventListener('abort', () => controller.error(request.signal.reason), { once: true });
           },
           pull() {
             resolveReadStartedOnce();
@@ -420,6 +442,7 @@ test('OpenAI Responses WebSocket keep-alive waits for the first event and takes 
           model: 'gpt-direct-responses',
           status: 'completed',
           output: [reasoning],
+          usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
         };
         const inProgress = { ...response, status: 'in_progress', output: [] };
         enqueueSseEvent('response.created', { type: 'response.created', response: inProgress, sequence_number: 0 });
@@ -459,6 +482,10 @@ test('OpenAI Responses WebSocket keep-alive waits for the first event and takes 
       }
     }),
   );
+  const samples = (await repo.performance.listAll()).filter(row => row.keyId === apiKey.id && row.model === 'gpt-direct-responses');
+  expect(samples).toMatchObject([{ requests: 1, ttftSamplesOk: 1, tpotSamples: 1 }]);
+  expect(samples[0]?.tpotUsSum).toBeGreaterThanOrEqual(0);
+  expect(backgroundErrors).not.toHaveBeenCalled();
 });
 
 test('OpenAI Responses WebSocket interrupts an active turn and continues from its completed items', async () => {
@@ -467,6 +494,9 @@ test('OpenAI Responses WebSocket interrupts an active turn and continues from it
   const upstreamBodies: Record<string, unknown>[] = [];
   let resolveUpstreamAborted!: () => void;
   const upstreamAborted = new Promise<void>(resolve => { resolveUpstreamAborted = resolve; });
+  const settleUpstreamAbort = Promise.withResolvers<void>();
+  let delayAbort = false;
+  onTestFinished(() => settleUpstreamAbort.resolve());
   let resolveFollowUp!: () => void;
   const releaseFollowUp = new Promise<void>(resolve => { resolveFollowUp = resolve; });
   const kept = {
@@ -506,11 +536,13 @@ test('OpenAI Responses WebSocket interrupts an active turn and continues from it
                 type: 'response.created', response: { ...completed, status: 'in_progress' }, sequence_number: 0,
               })}\n\n`));
               void releaseFollowUp.then(() => {
+                if (request.signal.aborted) return;
                 controller.enqueue(encoder.encode(`event: response.completed\ndata: ${JSON.stringify({
                   type: 'response.completed', response: completed, sequence_number: 1,
                 })}\n\n`));
                 controller.close();
               });
+              request.signal.addEventListener('abort', () => controller.error(request.signal.reason), { once: true });
             },
           }), { headers: { 'content-type': 'text/event-stream' } });
         }
@@ -538,7 +570,8 @@ test('OpenAI Responses WebSocket interrupts an active turn and continues from it
             });
             request.signal.addEventListener('abort', () => {
               resolveUpstreamAborted();
-              controller.error(request.signal.reason);
+              if (delayAbort) void settleUpstreamAbort.promise.then(() => controller.error(request.signal.reason));
+              else controller.error(request.signal.reason);
             }, { once: true });
           },
         }), { headers: { 'content-type': 'text/event-stream' } });
@@ -574,14 +607,41 @@ test('OpenAI Responses WebSocket interrupts an active turn and continues from it
       client.send(JSON.stringify({ type: 'response.interrupt', response_id: 'resp_wrong', mode: 'discard_partial_items' }));
       assertEquals(((await wrongResponse)[0].error as { code: string }).code, 'response_not_found');
 
-      const interrupted = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
-      client.send(JSON.stringify({
-        type: 'response.interrupt',
-        event_id: 'evt_interrupt',
-        response_id: responseId,
-        mode: 'discard_partial_items',
-      }));
-      const interruptEvents = await interrupted;
+      const time = new FakeTime(Date.now());
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const rawInterrupt = recordRawMessages(client);
+      onTestFinished(() => time.restore());
+      let interruptEvents: readonly Record<string, unknown>[];
+      try {
+        delayAbort = true;
+        const acknowledged = waitForMessages(client, messages => messages.some(message => message.type === 'response.interrupt.accepted'));
+        client.send(JSON.stringify({
+          type: 'response.interrupt',
+          event_id: 'evt_interrupt',
+          response_id: responseId,
+          mode: 'discard_partial_items',
+        }));
+        const accepted = await acknowledged;
+        await upstreamAborted;
+
+        await time.tickAsync(INTERRUPT_UPSTREAM_ABORT_WARNING_MS - 1);
+        assertEquals(warn.mock.calls, []);
+        await time.tickAsync(1);
+        assertEquals(warn.mock.calls, [[
+          'Floway: Responses WebSocket interrupt is still waiting for the upstream stream to stop after abort',
+          { responseId, model: 'gpt-direct-responses', waitedMs: INTERRUPT_UPSTREAM_ABORT_WARNING_MS },
+        ]]);
+        assertEquals(rawInterrupt.messages.map(message => JSON.parse(message)), accepted);
+
+        const interrupted = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
+        settleUpstreamAbort.resolve();
+        interruptEvents = [...accepted, ...await interrupted];
+      } finally {
+        rawInterrupt.stop();
+        settleUpstreamAbort.resolve();
+        warn.mockRestore();
+        time.restore();
+      }
       assertEquals(interruptEvents.map(message => [message.type, message.sequence_number]), [
         ['response.interrupt.accepted', 6],
         ['response.output_item.interrupted', 7],
@@ -595,8 +655,6 @@ test('OpenAI Responses WebSocket interrupts an active turn and continues from it
       assertEquals(incomplete.status, 'incomplete');
       assertEquals(incomplete.output.some(item => (item as { id?: unknown }).id === (keptClientItem as { id: string }).id), true);
       assertEquals(incomplete.incomplete_details, { reason: 'interrupted' });
-      await upstreamAborted;
-
       const followUp = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
       const followUpStarted = waitForMessages(client, messages => messages.some(message => message.type === 'response.created'));
       client.send(JSON.stringify({
@@ -1152,6 +1210,7 @@ test('OpenAI Responses WebSocket makes a done reasoning item reusable from a fre
               enqueue(controller, 'response.created', { type: 'response.created', response, sequence_number: 0 });
               enqueue(controller, 'response.output_item.added', { type: 'response.output_item.added', output_index: 0, item: originalReasoning, sequence_number: 1 });
               enqueue(controller, 'response.output_item.done', { type: 'response.output_item.done', output_index: 0, item: originalReasoning, sequence_number: 2 });
+              request.signal.addEventListener('abort', () => controller.error(request.signal.reason), { once: true });
             },
           }), { headers: { 'content-type': 'text/event-stream' } });
         }
@@ -1200,7 +1259,6 @@ test('OpenAI Responses WebSocket makes a done reasoning item reusable from a fre
       } finally {
         firstClient?.close();
         secondClient?.close();
-        await waitForMicrotasks();
       }
     }),
   );
@@ -1287,28 +1345,15 @@ test('OpenAI Responses WebSocket holds the session lifetime open until a turn th
   );
 });
 
-// The four chat HTTP transports render a mid-attempt throw (interceptor
-// bug, translation error, provider-layer JS exception not represented as a ChatServeFailure) through an
-// `internalErrorResult(..., ctx.attempt.telemetry)` envelope,
-// which internally reaches `recordFailedRequest` and lands an error row
-// attributed to the throwing candidate. The WS transport's outer catch
-// must do the same: alongside its sendError / dump.failed / dump.finalize,
-// it calls `recordFailedRequest(ctx, ctx.attempt.telemetry)` so
-// the failure shows up in performance_summary.
-test('OpenAI Responses WebSocket outer catch records a failed perf sample attributed to the throwing candidate', async () => {
+test('OpenAI Responses WebSocket returns the provider panic without recording an ordinary performance sample', async () => {
   const { apiKey, repo } = await setupAppTest();
-
-  // Mirror what openaiResponsesServe.generate would have stamped before failing
-  // — telemetry set for the throwing candidate — then throw.
-  const generateSpy = vi.spyOn(openaiResponsesServe, 'generate').mockImplementation(async ({ ctx }) => {
-    ctx.attempt.telemetry = {
-      keyId: apiKey.id,
-      model: 'gpt-direct-responses',
-      upstream: 'up_throwing',
-      operation: 'chat',
-      runtimeLocation: 'TEST',
-    };
-    const failure = new Error('simulated mid-attempt provider throw'); delete failure.stack; throw failure;
+  const buildServices = servicesModule.createGatewayServices;
+  const failure = new Error('simulated Copilot authorization panic');
+  delete failure.stack;
+  const credentials = vi.fn(async () => { throw failure; });
+  const createServices = vi.spyOn(servicesModule, 'createGatewayServices').mockImplementation(options => {
+    const services = buildServices(options);
+    return { ...services, copilot: { ...services.copilot, credentials } };
   });
 
   try {
@@ -1325,7 +1370,7 @@ test('OpenAI Responses WebSocket outer catch records a failed perf sample attrib
         throw new Error(`Unhandled fetch ${request.url}`);
       },
       async () => await withWorkerWebSocketRuntime(async () => {
-        const client = await connectOpenAIResponsesWebSocket(apiKey.key);
+        const { client, sessionLifetime } = await connectOpenAIResponsesWebSocketCapturingSessionLifetime(apiKey.key);
         const received = waitForMessages(client, messages => messages.length === 1);
         client.send(JSON.stringify({
           type: 'response.create',
@@ -1333,37 +1378,31 @@ test('OpenAI Responses WebSocket outer catch records a failed perf sample attrib
           response: { model: 'gpt-direct-responses', input: 'hello' },
         }));
 
-        const [errorMessage] = await received;
-        assertExists(errorMessage);
-        assertEquals(errorMessage.type, 'error');
-        assertEquals(errorMessage.status, 500);
-        assertEquals(errorMessage.event_id, 'evt_throw');
-        assertEquals(errorMessage.error, { type: 'internal_error', code: 'internal_error', message: 'simulated mid-attempt provider throw', provider_specific_fields: { name: 'Error' } });
+        assertEquals(await received, [{
+          type: 'error',
+          status: 500,
+          event_id: 'evt_throw',
+          error: {
+            type: 'internal_error', code: 'internal_error', message: failure.message, provider_specific_fields: { name: 'Error' },
+          },
+        }]);
+        client.close();
+        await sessionLifetime;
       }),
     );
 
-    await flushAsyncWork();
-
-    // Filter to the throwing upstream: earlier WS tests in the same file
-    // schedule background recordFailedRequest calls through the session
-    // scheduler, and the shared `getRepo()` global resolves them against
-    // whichever repo `setupAppTest` last installed — so cross-test rows can
-    // land here. Only the row from the mocked generate is load-bearing for
-    // this fix.
-    const perfRows = (await repo.performance.listAll()).filter(row => row.upstream === 'up_throwing');
-    assertEquals(perfRows.length, 1);
-    assertEquals(perfRows[0]?.upstream, 'up_throwing');
-    assertEquals(perfRows[0]?.model, 'gpt-direct-responses');
-    assertEquals(perfRows[0]?.operation, 'chat');
-    assertEquals(perfRows[0]?.errorsNoOutput, 1);
-    assertEquals(perfRows[0]?.requests, 1);
+    assertEquals(credentials.mock.calls.length, 1);
+    const samples = (await repo.performance.listAll()).filter(row => row.keyId === apiKey.id && row.model === 'gpt-direct-responses');
+    assertEquals(samples, []);
   } finally {
-    generateSpy.mockRestore();
+    createServices.mockRestore();
   }
 });
 
 test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata blob that turn carried', async () => {
   const { apiKey, repo } = await setupAppTest();
+  const backgroundErrors = vi.spyOn(console, 'error');
+  onTestFinished(() => backgroundErrors.mockRestore());
   await saveUpstreamForTest(repo.upstreams, buildChatGPTUpstreamRecord({
     flagOverrides: { 'openai-responses-compact-decrypt': false },
   }));
@@ -1481,4 +1520,5 @@ test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata bl
       assertEquals((upstreamBodies[1].client_metadata as Record<string, string>)['x-codex-window-id'], 'codex-thread:1');
     }),
   );
+  expect(backgroundErrors).not.toHaveBeenCalled();
 });

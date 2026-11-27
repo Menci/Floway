@@ -1,0 +1,29 @@
+import { mapChanged } from '../../shared/map-changed.ts';
+import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
+
+/**
+ * Some Copilot data planes reject empty namespace descriptions permitted by
+ * the current OpenAI schema. Fill the permitted-empty text at the Copilot
+ * boundary so the same request remains portable across those deployments.
+ *
+ * References:
+ * - https://github.com/openai/openai-openapi/commit/466c74a42f51c02f1927bc666815251dc53845dc
+ * - https://github.com/caozhiyuan/copilot-api/issues/345
+ * - https://github.com/engineersamuel/copilot-proxy-rs/commit/1c23d7237bd1bd7c24045d0d426412851bfd57f6
+ */
+
+const description = (tool: OpenAIResponsesTool): OpenAIResponsesTool => tool.type === 'namespace' && tool.description === ''
+  ? { ...tool, description: `Tools in the ${tool.name} namespace.` }
+  : tool;
+
+export const fillDescriptions = <Payload extends { input: CanonicalOpenAIResponsesInputItem[]; tools?: OpenAIResponsesTool[] | null }>(payload: Payload): Payload => {
+  const input = mapChanged(payload.input, item => {
+    if (item.type !== 'additional_tools' && item.type !== 'tool_search_output') return item;
+    const tools = mapChanged(item.tools, description);
+    return tools === item.tools ? item : { ...item, tools };
+  });
+  const withInput = input === payload.input ? payload : { ...payload, input };
+  if (!('tools' in payload) || !Array.isArray(payload.tools)) return withInput;
+  const tools = mapChanged(payload.tools, description);
+  return tools === payload.tools ? withInput : { ...withInput, tools };
+};

@@ -1,23 +1,14 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { inputErrorResult } from '../../../../src/data-plane/chat/openai-chat-completions/errors.ts';
-import { assertEquals } from '@floway-dev/test-utils';
-import { decodeResponseBody, type ApiErrorResult } from '@floway-dev/upstream';
+import { openaiChatCompletionsInputError } from '../../../../src/data-plane/chat/openai-chat-completions/errors.ts';
 
-const apiErrorOf = (result: ReturnType<typeof inputErrorResult>): ApiErrorResult => result as ApiErrorResult;
-const bodyOf = (result: ReturnType<typeof inputErrorResult>): unknown =>
-  JSON.parse(decodeResponseBody(apiErrorOf(result).body));
-
-test('inputErrorResult renders an OpenAI 400 invalid_request_error envelope that defaults param to `messages`', () => {
-  const result = inputErrorResult(
+test('translation input error has an OpenAI 400 invalid_request_error envelope that defaults param to messages', () => {
+  const { http, outcome } = openaiChatCompletionsInputError(
     { message: "Missing required field 'tool_call_id' on a 'tool' role message." },
   );
-  const apiError = apiErrorOf(result);
-
-  assertEquals(apiError.type, 'api-error');
-  assertEquals(apiError.source, 'gateway');
-  assertEquals(apiError.http.status, 400);
-  assertEquals(bodyOf(result), {
+  expect(http.status).toBe(400);
+  expect(outcome).toMatchObject({ kind: 'error', source: 'local' });
+  expect(outcome.error).toEqual({
     error: {
       message: "Missing required field 'tool_call_id' on a 'tool' role message.",
       type: 'invalid_request_error',
@@ -25,7 +16,7 @@ test('inputErrorResult renders an OpenAI 400 invalid_request_error envelope that
       code: null,
     },
   });
-  assertEquals(bodyOf(inputErrorResult({ message: 'unsupported', param: 'messages[2].content[1]' })), {
+  expect(openaiChatCompletionsInputError({ message: 'unsupported', param: 'messages[2].content[1]' }).outcome.error).toEqual({
     error: { message: 'unsupported', type: 'invalid_request_error', param: 'messages[2].content[1]', code: null },
   });
 });

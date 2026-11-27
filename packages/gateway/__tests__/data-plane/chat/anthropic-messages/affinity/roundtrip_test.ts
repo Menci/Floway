@@ -2,29 +2,12 @@ import { expect, test } from 'vitest';
 
 import { wrapAnthropicMessagesAffinityEgress } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/egress.ts';
 import { analyzeAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts';
-import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
+import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { acceptedAffinityEvaluation, affinityCandidate as candidate, affinityTargetFor as targetFor } from '../../shared/affinity/helpers.ts';
 import { createAnthropicMessagesUsage, reassembleAnthropicMessagesEvents, type AnthropicMessagesAssistantContentBlock, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { stubModelCandidate } from '@floway-dev/test-utils';
-import type { ModelCandidate } from '@floway-dev/upstream';
 
 const codec = new AffinityCodec('22'.repeat(32));
-
-const candidate = (upstream: string): ModelCandidate => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    upstream: { ...base.upstream, upstreamId: upstream },
-    model: { id: 'model' },
-  });
-};
-
-const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.upstream.upstreamId,
-  modelId: value.model.id,
-  ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.upstream.upstreamId, key: value.model.id },
-});
 
 const frames = async function* (values: ProtocolFrame<AnthropicMessagesStreamEventEx>[]) {
   yield* values;

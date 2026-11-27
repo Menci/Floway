@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { enumerateModelCandidates as enumerateModelCandidatesRaw } from '../../../src/data-plane/upstreams/resolution.ts';
+import { createGatewayServices } from '../../../src/data-plane/pipeline/services.ts';
+import { resolveModelCandidates as resolveModelCandidatesRaw } from '../../../src/data-plane/upstreams/resolution.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest, testAdminUser, warmModelsForTest } from '../../test-utils/app.ts';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
@@ -13,9 +14,9 @@ const withMockedFetch = <T>(
   return await fn();
 });
 
-const enumerateModelCandidates = (
-  input: Omit<Parameters<typeof enumerateModelCandidatesRaw>[0], 'subject'>,
-) => enumerateModelCandidatesRaw({ subject: testAdminUser, ...input });
+const resolveModelCandidates = (
+  input: Omit<Parameters<typeof resolveModelCandidatesRaw>[0], 'subject'>,
+) => resolveModelCandidatesRaw({ subject: testAdminUser, ...input });
 
 test('a cold candidate read returns empty without triggering upstream I/O', async () => {
   const { repo } = await setupAppTest();
@@ -26,12 +27,11 @@ test('a cold candidate read returns empty without triggering upstream I/O', asyn
   await withMockedFetchRaw(
     fetch,
     async () => {
-      const result = await enumerateModelCandidates({
+      const result = await resolveModelCandidates({
         upstreamIds: null,
         randomizeUpstreams: false,
         model: 'eventual-model',
         kind: 'chat',
-        runtimeLocation: 'TEST',
       });
       expect(result.candidates).toEqual([]);
       expect(result.sawModel).toBe(false);
@@ -39,6 +39,58 @@ test('a cold candidate read returns empty without triggering upstream I/O', asyn
   );
 
   expect(fetch).not.toHaveBeenCalled();
+});
+
+test('the pipeline discovers indexed, authorized candidates and only dials a resolved upstream', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  for (const id of ['allowed', 'denied', 'out-of-key']) {
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id, name: id }));
+  }
+  const principal = { kind: 'user' as const, id: apiKey.userId };
+  await repo.accessRecords.deleteByPrincipal(principal);
+  for (const id of ['allowed', 'out-of-key']) {
+    await repo.accessRecords.save({
+      principal, scope: { kind: 'upstream', upstreamId: id }, sortOrder: 0, values: { 'Model.Use': true },
+    });
+  }
+
+  const fetch = vi.fn((request: Request) => new URL(request.url).pathname.endsWith('/models')
+    ? jsonResponse({ object: 'list', data: [{ id: 'm' }] })
+    : new Response('fetched'));
+  await withMockedFetch(fetch, async () => {
+    fetch.mockClear();
+    const list = vi.spyOn(repo.upstreams, 'list').mockRejectedValue(new Error('request scanned upstreams'));
+    const resolve = vi.spyOn(repo.upstreamModels, 'resolve');
+    try {
+      const services = createGatewayServices({
+        apiKey: { ...apiKey, upstreamIds: ['allowed', 'denied'] },
+        subject: { id: apiKey.userId, isAdmin: false },
+        runtimeLocation: 'TEST',
+        dump: null,
+      });
+      const result = await services.catalogCandidates({ kind: 'chat', model: 'm' });
+      expect(result.sawModel).toBe(true);
+      expect(result.candidates.map(({ upstream, model }) => [upstream.id, model.id])).toEqual([['allowed', 'm']]);
+      expect(result.candidates[0]?.upstream).not.toHaveProperty('state');
+      expect(resolve.mock.calls).toEqual([[{ modelIds: ['m'], upstreamIds: ['allowed', 'denied'] }]]);
+      const indexed: Awaited<ReturnType<typeof repo.upstreamModels.resolve>> = await resolve.mock.results[0]!.value;
+      const match = indexed.find(({ upstream }) => upstream.id === 'allowed')!;
+      expect(result.candidates[0]?.model.enabledFlags).toEqual([...match.model.enabledFlags]);
+      expect(list).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+      await expect(services.catalogCandidates({ kind: 'chat', model: 'm', upstreamId: 'out-of-key' }))
+        .resolves.toEqual({ candidates: [], sawModel: false });
+      expect(resolve).toHaveBeenCalledOnce();
+      expect(() => services.fetcher('denied')).toThrow('No data-plane fetcher for resolved upstream denied');
+      const response = await services.fetcher('allowed')('https://upstream.example.com/v1/chat/completions', { method: 'POST' });
+      await expect(response.text()).resolves.toBe('fetched');
+      expect(fetch).toHaveBeenCalledOnce();
+    } finally {
+      resolve.mockRestore();
+      list.mockRestore();
+    }
+  });
 });
 
 test('randomizes upstream candidate groups without splitting or reordering a group', async () => {
@@ -65,15 +117,14 @@ test('randomizes upstream candidate groups without splitting or reordering a gro
     async () => {
       const random = vi.spyOn(Math, 'random').mockReturnValue(0);
       try {
-        const resolved = await enumerateModelCandidates({
+        const resolved = await resolveModelCandidates({
           upstreamIds: null,
           randomizeUpstreams: true,
           model: 'or/gpt-4o',
           kind: 'chat',
-          runtimeLocation: 'TEST',
         });
         assertEquals(
-          resolved.candidates.map(candidate => `${candidate.model.id}@${candidate.upstream.upstreamId}`),
+          resolved.candidates.map(candidate => `${candidate.model.id}@${candidate.upstream.id}`),
           ['or/gpt-4o@up_b', 'gpt-4o@up_b', 'or/gpt-4o@up_a', 'gpt-4o@up_a'],
         );
         expect(random).toHaveBeenCalledOnce();
@@ -84,7 +135,7 @@ test('randomizes upstream candidate groups without splitting or reordering a gro
   );
 });
 
-test('enumerateModelCandidates: healthy upstream still resolves alongside a rejecting one', async () => {
+test('resolveModelCandidates: healthy upstream still resolves alongside a rejecting one', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -113,11 +164,11 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolvedExisting = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'ok-model', kind: 'chat', runtimeLocation: 'TEST' });
-      assertEquals(resolvedExisting.candidates.map(m => m.upstream.upstreamId), ['up_ok']);
+      const resolvedExisting = await resolveModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'ok-model', kind: 'chat' });
+      assertEquals(resolvedExisting.candidates.map(m => m.upstream.id), ['up_ok']);
       assertEquals(resolvedExisting.candidates[0]?.model.id, 'ok-model');
 
-      const resolvedMissing = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'unknown-model', kind: 'chat', runtimeLocation: 'TEST' });
+      const resolvedMissing = await resolveModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'unknown-model', kind: 'chat' });
       assertEquals(resolvedMissing.candidates.length, 0);
     },
   );
@@ -128,7 +179,7 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
 // order, and dedups by (model, upstream, rules). Two targets pointing at
 // the same real model with the same rules collapse; the same pair with
 // distinct rules stays as two candidates so both can be attempted.
-describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
+describe('resolveModelCandidates alias walk (flat + dedup)', () => {
   const aliasCommon = {
     displayName: null,
     visibleInModelsList: true,
@@ -178,11 +229,11 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     await withMockedFetch(
       buildCatalogFetch({ up_a: ['gpt-5'], up_b: ['claude'] }),
       async () => {
-        const resolved = await enumerateModelCandidates({
-          upstreamIds: null, randomizeUpstreams: false, model: 'interleaved-duplicates', kind: 'chat', runtimeLocation: 'TEST',
+        const resolved = await resolveModelCandidates({
+          upstreamIds: null, randomizeUpstreams: false, model: 'interleaved-duplicates', kind: 'chat',
         });
         expect(resolved.candidates.map(candidate => ({
-          binding: `${candidate.model.id}@${candidate.upstream.upstreamId}`,
+          binding: `${candidate.model.id}@${candidate.upstream.id}`,
           effort: candidate.rules?.reasoning?.effort,
         }))).toEqual([
           { binding: 'gpt-5@up_a', effort: 'low' },

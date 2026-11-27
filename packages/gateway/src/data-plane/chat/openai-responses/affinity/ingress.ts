@@ -1,4 +1,6 @@
+import { isOpenAIResponsesCompactShimItem } from '../../../non-chat/openai-responses-compact/compaction.ts';
 import {
+  type AffinityCandidate,
   type AffinityCodec,
   type AffinityIdentity,
   type AffinityRequestAnalysis,
@@ -11,9 +13,7 @@ import {
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
 } from '../../shared/affinity/index.ts';
-import { isOpenAIResponsesCompactShimItem } from '../interceptors/compact-shim.ts';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate } from '@floway-dev/upstream';
 
 interface OpenAIResponsesBlobLocation {
   readonly itemIndex: number;
@@ -61,7 +61,7 @@ const blobRequiresOriginalTarget = (item: CanonicalOpenAIResponsesInputItem, dec
 
 const opaqueBlobLocations = async (
   items: readonly CanonicalOpenAIResponsesInputItem[],
-  codec: AffinityCodec,
+  codec: Pick<AffinityCodec, 'unwrap'>,
 ): Promise<OpenAIResponsesBlobLocation[]> => {
   const locations: OpenAIResponsesBlobLocation[] = [];
   for (const [itemIndex, item] of items.entries()) {
@@ -175,7 +175,7 @@ const materializeOpenAIResponsesPayload = (
 const evaluateOpenAIResponsesCandidate = (
   payload: CanonicalOpenAIResponsesPayload,
   analysis: OpenAIResponsesRequestAnalysis,
-  candidate: ModelCandidate,
+  candidate: AffinityCandidate,
 ) => {
   const unsatisfiedTargets: AffinityIdentity[] = [];
   const projectionsByItem = new Map<number, readonly OpenAIResponsesBlobCandidateProjection[] | null>();
@@ -228,8 +228,8 @@ const evaluateOpenAIResponsesCandidate = (
 
 export const analyzeOpenAIResponsesAffinity = async (
   payload: CanonicalOpenAIResponsesPayload,
-  codec: AffinityCodec,
-): Promise<AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>> => {
+  codec: Pick<AffinityCodec, 'unwrap'>,
+): Promise<AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload, AffinityCandidate>> => {
   const locations = await opaqueBlobLocations(payload.input, codec);
   const analysis = analyzeOpenAIResponsesRequest(payload.input, locations);
   return defineAffinityRequest(

@@ -265,11 +265,6 @@ export const recordUsage = async (
   ]);
 };
 
-export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
-  const measurement = tokenUsageMeasurement(usage);
-  await recordUsage(keyId, modelIdentity, measurement.quantities, measurement.pricingFacts);
-};
-
 // `BillableUsage` is already the canonical exclusive/split shape, so pricing is
 // a rename rather than a computation. It is the sole input: the usage Floway
 // sends the client is a wire projection and is never read here.

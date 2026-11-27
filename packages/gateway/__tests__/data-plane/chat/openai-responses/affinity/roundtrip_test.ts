@@ -2,26 +2,22 @@ import { expect, test } from 'vitest';
 
 import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
-import { expandShimCompactionItems } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import { hydrateOpenAIResponsesPayload } from '../../../../../src/data-plane/chat/openai-responses/items/hydrate.ts';
 import { wrapOpenAIResponsesClientOutput } from '../../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import { createOpenAIResponsesHttpStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
-import { AffinityCodec, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { type AffinityCandidate, AffinityCodec, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { expandShimCompactionItems } from '../../../../../src/data-plane/non-chat/openai-responses-compact/compaction.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from '../test-policy.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { stubModelCandidate } from '@floway-dev/test-utils';
 
-const modelCandidate = (upstream: string) => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    upstream: { ...base.upstream, upstreamId: upstream },
-    model: { id: 'model-a' },
-  });
-};
+const modelCandidate = (upstream: string): AffinityCandidate => ({
+  upstream: { upstreamId: upstream },
+  model: { id: 'model-a', upstreamModelId: 'model-a', opaqueBlobCompatibilityScope: { bindToUpstream: true } },
+});
 
 test('affinity selects the route while item storage preserves the exact emitted id', async () => {
   const repo = new InMemoryRepo();

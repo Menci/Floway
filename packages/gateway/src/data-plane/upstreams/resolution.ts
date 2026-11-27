@@ -1,12 +1,29 @@
 import { isEqual, uniqWith } from 'es-toolkit';
 
-import { createUpstream } from './registry.ts';
 import { createAccessResolver } from '../../access-control/resolution.ts';
-import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord, ResolvedUpstreamModelMatch, StoredUpstreamRecord, User } from '../../repo/types.ts';
-import type { ModelKind } from '@floway-dev/protocols/common';
-import type { Fetcher, ModelCandidate, Upstream } from '@floway-dev/upstream';
+import type { AliasRules, ModelKind } from '@floway-dev/protocols/common';
+import type { UpstreamModel } from '@floway-dev/upstream';
+
+export interface ResolvedModelCandidate {
+  readonly upstream: StoredUpstreamRecord;
+  readonly model: UpstreamModel;
+  readonly rules?: AliasRules;
+}
+
+interface ModelCandidateResolution {
+  readonly candidates: readonly ResolvedModelCandidate[];
+  readonly sawModel: boolean;
+}
+
+interface ResolveModelCandidatesOptions {
+  subject: Pick<User, 'id' | 'isAdmin'>;
+  upstreamIds: readonly string[] | null;
+  randomizeUpstreams: boolean;
+  model: string;
+  kind: ModelKind;
+}
 
 // Fisher-Yates ordering is shared by the two independent routing axes:
 // alias targets and the non-empty upstream candidate groups produced for one
@@ -33,60 +50,31 @@ const buildTargetCandidates = (
   matches: readonly ResolvedUpstreamModelMatch[],
   kind: ModelKind,
   randomizeUpstreams: boolean,
-  upstreamFor: (upstream: StoredUpstreamRecord) => Upstream,
-  fetcherFor: (upstreamId: string) => Fetcher,
-): { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean } => {
-  if (matches.length === 0) return { candidates: [], sawModel: false };
+): ModelCandidateResolution => {
+  const groupsByUpstream = new Map<string, ResolvedModelCandidate[]>();
 
-  const groupsByUpstream = new Map<string, ModelCandidate[]>();
-  const groupOrder: ModelCandidate[][] = [];
-  let sawModel = false;
-
-  for (const match of matches) {
-    sawModel = true;
-    if (match.model.kind !== kind) continue;
-    const upstream = upstreamFor(match.upstream);
-    const candidate: ModelCandidate = {
-      upstream,
-      model: match.model,
-      fetcher: fetcherFor(upstream.upstreamId),
-    };
-    let group = groupsByUpstream.get(upstream.upstreamId);
+  for (const { upstream, model } of matches) {
+    if (model.kind !== kind) continue;
+    let group = groupsByUpstream.get(upstream.id);
     if (group === undefined) {
       group = [];
-      groupsByUpstream.set(upstream.upstreamId, group);
-      groupOrder.push(group);
+      groupsByUpstream.set(upstream.id, group);
     }
-    group.push(candidate);
+    group.push({ upstream, model });
   }
 
+  const groupOrder = [...groupsByUpstream.values()];
   const orderedGroups = randomizeUpstreams ? shuffled(groupOrder) : groupOrder;
-  return { candidates: orderedGroups.flat(), sawModel };
+  return { candidates: orderedGroups.flat(), sawModel: matches.length > 0 };
 };
 
 // Per-request model resolution. Speculatively issues alias lookup, direct
 // `upstream_models` resolution, and (for non-admin callers) group membership in
 // one parallel RTT so direct hits pay 1 metadata RTT for admins and 2 for
-// non-admins, plus an optional proxy-load RTT only when matched upstreams
-// reference configured proxies. Only permitted, matched upstreams are
-// instantiated as `Provider`s.
-export const enumerateModelCandidates = async ({
-  subject, upstreamIds, randomizeUpstreams, model, kind, runtimeLocation,
-}: {
-  subject: User;
-  // null = unrestricted; empty list = no providers visible.
-  upstreamIds: readonly string[] | null;
-  randomizeUpstreams: boolean;
-  model: string;
-  kind: ModelKind;
-  // Runtime location tag for this request — see GatewayCtx.runtimeLocation.
-  // Threaded into the per-request fetcher so colo-scoped fallback entries
-  // can be honoured at dial time.
-  runtimeLocation: string;
-}): Promise<{
-  readonly candidates: readonly ModelCandidate[];
-  readonly sawModel: boolean;
-}> => {
+// non-admins.
+export const resolveModelCandidates = async ({
+  subject, upstreamIds, randomizeUpstreams, model, kind,
+}: ResolveModelCandidatesOptions): Promise<ModelCandidateResolution> => {
   if (upstreamIds !== null && upstreamIds.length === 0) {
     return { candidates: [], sawModel: false };
   }
@@ -147,29 +135,8 @@ export const enumerateModelCandidates = async ({
     return { candidates: [], sawModel: false };
   }
 
-  const matchedUpstreamsById = new Map<string, StoredUpstreamRecord>();
-  for (const match of permittedMatches) {
-    if (match.model.kind === kind && !matchedUpstreamsById.has(match.upstream.id)) {
-      matchedUpstreamsById.set(match.upstream.id, match.upstream);
-    }
-  }
-  if (matchedUpstreamsById.size === 0) {
-    return { candidates: [], sawModel: true };
-  }
-
-  const fetcherFor = await createPerRequestFetcher(runtimeLocation, [...matchedUpstreamsById.values()]);
-  const upstreamCache = new Map<string, Upstream>();
-  const upstreamFor = (record: StoredUpstreamRecord): Upstream => {
-    let upstream = upstreamCache.get(record.id);
-    if (upstream === undefined) {
-      upstream = createUpstream(record);
-      upstreamCache.set(record.id, upstream);
-    }
-    return upstream;
-  };
-
   if (orderedTargets === null) {
-    return buildTargetCandidates(permittedMatches, kind, randomizeUpstreams, upstreamFor, fetcherFor);
+    return buildTargetCandidates(permittedMatches, kind, randomizeUpstreams);
   }
 
   const matchesByInputId = new Map<string, ResolvedUpstreamModelMatch[]>();
@@ -183,10 +150,10 @@ export const enumerateModelCandidates = async ({
   }
 
   let sawModel = false;
-  const flat: ModelCandidate[] = [];
+  const flat: ResolvedModelCandidate[] = [];
   for (const target of orderedTargets) {
     const targetMatches = matchesByInputId.get(target.target_model_id) ?? [];
-    const result = buildTargetCandidates(targetMatches, kind, randomizeUpstreams, upstreamFor, fetcherFor);
+    const result = buildTargetCandidates(targetMatches, kind, randomizeUpstreams);
     if (result.sawModel) sawModel = true;
     for (const candidate of result.candidates) {
       flat.push({ ...candidate, rules: target.rules });
@@ -194,7 +161,7 @@ export const enumerateModelCandidates = async ({
   }
   const deduped = uniqWith(flat, (candidate, existing) =>
     candidate.model.id === existing.model.id
-    && candidate.upstream.upstreamId === existing.upstream.upstreamId
+    && candidate.upstream.id === existing.upstream.id
     && isEqual(candidate.rules, existing.rules));
   return { candidates: deduped, sawModel };
 };

@@ -24,18 +24,13 @@ export type DumpCapture = z.infer<typeof dumpCaptureSchema>;
 
 export type DumpUpstreamRef = z.infer<typeof dumpUpstreamRefSchema>;
 
-// What went wrong on a failed turn. Either a categorized api-error envelope
-// (real upstream non-2xx or a gateway-synthesized envelope — `kind` matches
-// `ApiErrorResult.source`) or an uncategorized failure (anything the
-// respond layer / passthrough-serve caught or observed mid-flight: thrown
-// exceptions, source-emitted error events, downstream cancels, write
-// errors) carrying its one-line reason text. The categorized form stores
-// no status — `DumpMetadata.status` already does.
+// Categorized errors record the failure source. Other delivery failures carry
+// a reason. The status of the delivered response lives in DumpMetadata.status.
 export type DumpErrorMeta = z.infer<typeof dumpErrorSchema>;
 
 export type DumpMetadata = z.infer<typeof dumpMetadataSchema>;
 
-// Canonical protocol frame the gateway's respond layer fans out to every
+// Canonical protocol frame the gateway's delivery path records for every
 // dump-enabled key. Stored as ProtocolFrame (not the SSE-serialized form)
 // so the gateway's live fold and the dashboard's cold fold can share the
 // same `collectXProtocolEventsToResult` reducer; the SSE wire view is

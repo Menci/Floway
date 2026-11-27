@@ -1,11 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
-import { AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, compatibilityIdentityForCandidate, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { type AffinityCandidate, AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, compatibilityIdentityForCandidate, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import { stubModelCandidate } from '@floway-dev/test-utils';
-import type { ModelCandidate } from '@floway-dev/upstream';
 
 const codec = new AffinityCodec('22'.repeat(32));
 const canonicalItemType = (itemType: string): string => itemType === 'compaction' || itemType === 'compaction_summary' || itemType === 'context_compaction' ? 'compaction' : itemType;
@@ -15,19 +13,12 @@ const candidate = (
   upstream: string,
   model = 'model',
   scope: { bindToUpstream: boolean; key?: string } = { bindToUpstream: true },
-): ModelCandidate => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    upstream: { ...base.upstream, upstreamId: upstream },
-    model: {
-      id: model,
-      upstreamModelId: model,
-      opaqueBlobCompatibilityScope: scope,
-    },
-  });
-};
+): AffinityCandidate => ({
+  upstream: { upstreamId: upstream },
+  model: { id: model, upstreamModelId: model, opaqueBlobCompatibilityScope: scope },
+});
 
-const targetFor = (value: ModelCandidate): AffinityIdentity => ({
+const targetFor = (value: AffinityCandidate): AffinityIdentity => ({
   upstreamId: value.upstream.upstreamId,
   modelId: value.model.id,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
@@ -38,8 +29,8 @@ const candidateA = candidate('upstream-a');
 const candidateB = candidate('upstream-b');
 
 const select = (
-  candidates: readonly ModelCandidate[],
-  analysis: AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>,
+  candidates: readonly AffinityCandidate[],
+  analysis: AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload, AffinityCandidate>,
 ) => {
   const selection = selectAffinityCandidates(candidates, analysis);
   if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);

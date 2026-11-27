@@ -14,6 +14,8 @@ import type { OpenAIImagesEditsPayload, OpenAIImagesGenerationsPayload, OpenAIIm
 import type { CanonicalOpenAIResponsesCompactPayload, CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { CanonicalRerankRequest, CanonicalRerankResponse } from '@floway-dev/protocols/rerank';
 
+export type ChatTargetApi = 'anthropicMessages' | 'geminiGenerateContent' | 'openaiResponses' | 'openaiChatCompletions';
+
 export interface UpstreamSnapshot {
   readonly id: string;
   readonly kind: UpstreamKind;

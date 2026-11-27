@@ -60,6 +60,7 @@ const modelEndpointsSchema = z.object({
   openaiEmbeddings: z.object({}).exactOptional(),
   openaiImagesGenerations: z.object({}).exactOptional(),
   openaiImagesEdits: z.object({}).exactOptional(),
+  openaiAudioSpeech: z.object({}).exactOptional(),
   openaiAudioTranscriptions: z.object({}).exactOptional(),
   rerank: z.object({}).exactOptional(),
   decision: z.object({}).exactOptional(),

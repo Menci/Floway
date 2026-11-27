@@ -292,12 +292,23 @@ export const putCopilotSeat = async (upstreamId: string, seat: CopilotSeat): Pro
 export const fetchCopilotUsage = (githubHost: string, githubToken: string, fetcher: Fetcher): Promise<Response> =>
   fetcher(`${githubApiOrigin(githubHost)}/copilot_internal/user`, { headers: githubHeaders(githubToken) });
 
-export const putCopilotQuota = async (upstreamId: string, snapshot: CopilotQuotaSnapshot): Promise<void> => {
+const persistCopilotQuota = async (upstreamId: string, snapshot: CopilotQuotaSnapshot, expectedVersion?: number): Promise<void> => {
+  const { upstreams } = getUpstreamRuntimeRepo();
+  if (expectedVersion !== undefined && (await upstreams.getById(upstreamId))?.version !== expectedVersion) return;
   const fetchedAt = Date.parse(snapshot.observed_at);
   const metrics = copilotMetrics(snapshot);
-  await getUpstreamRuntimeRepo().upstreams.saveState(upstreamId, current => ({
-    ...readCopilotUpstreamState(current),
-    quotaSnapshot: { fetchedAt, data: snapshot },
-  } satisfies CopilotUpstreamState));
+  await upstreams.saveState(upstreamId, (current, version) => expectedVersion === undefined || version === expectedVersion
+    ? {
+      ...readCopilotUpstreamState(current),
+      quotaSnapshot: { fetchedAt, data: snapshot },
+    } satisfies CopilotUpstreamState
+    : current);
+  if (expectedVersion !== undefined && (await upstreams.getById(upstreamId))?.version !== expectedVersion) return;
   await recordUpstreamMetrics(upstreamId, metrics, fetchedAt);
 };
+
+export const putCopilotQuota = (upstreamId: string, snapshot: CopilotQuotaSnapshot): Promise<void> =>
+  persistCopilotQuota(upstreamId, snapshot);
+
+export const putCopilotQuotaAtVersion = (upstreamId: string, snapshot: CopilotQuotaSnapshot, expectedVersion: number): Promise<void> =>
+  persistCopilotQuota(upstreamId, snapshot, expectedVersion);

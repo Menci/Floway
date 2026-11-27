@@ -91,3 +91,43 @@ test.each(['put', 'publish'] as const)('reports an archive %s failure through th
   expect(stubs.stored).toHaveLength(method === 'publish' ? 1 : 0);
   expect(stubs.published).toHaveLength(0);
 });
+
+test('delivers the body before selected metadata is ready for storage', async () => {
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const tasks: Promise<unknown>[] = [];
+  const selected = Promise.withResolvers<void>();
+  const dump = new DumpAccumulator(buildApiKey(), makeSnapshot(), new Uint8Array(), Date.now(), work => { tasks.push(work); });
+  const metadata = selected.promise.then(() => { dump.requestedModel('selected-model'); });
+  const response = dump.finalize(new Response('client response'), metadata);
+
+  await expect(response.text()).resolves.toBe('client response');
+  expect(stubs.stored).toHaveLength(0);
+  selected.resolve();
+  await Promise.all(tasks);
+  expect(stubs.stored[0]?.record.meta.model).toBe('selected-model');
+});
+
+test('cancels the actual HTTP body and records only delivered bytes', async () => {
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const tasks: Promise<unknown>[] = [];
+  const reason = new Error('client disconnected');
+  let cancelled: unknown;
+  let pulls = 0;
+  const dump = new DumpAccumulator(buildApiKey(), makeSnapshot(), new Uint8Array(), Date.now(), work => { tasks.push(work); });
+  const response = dump.finalize(new Response(new ReadableStream<Uint8Array>({
+    pull(output) {
+      pulls++;
+      output.enqueue(new TextEncoder().encode('partial'));
+    },
+    cancel(error) { cancelled = error; },
+  }, { highWaterMark: 0 })));
+  const reader = response.body!.getReader();
+
+  await reader.read();
+  await reader.cancel(reason);
+  await Promise.all(tasks);
+  expect(cancelled).toBe(reason);
+  expect(pulls).toBe(1);
+  expect(stubs.stored[0]?.record.capture?.response).toMatchObject({ complete: false, error: 'client disconnected' });
+  expect(stubs.stored[0]?.record.meta.responseBytes).toBe(7);
+});

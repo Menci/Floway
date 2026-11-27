@@ -6,8 +6,7 @@ import { MODEL_CATALOG_REVISION } from '../../../../../src/repo/models-cache-con
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { seedModelsCache } from '../../../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../../../repo/upstreams.ts';
-import { stubUpstreamModel } from '@floway-dev/test-utils';
-import type { UpstreamRecord } from '@floway-dev/upstream';
+import type { UpstreamModel, UpstreamRecord } from '@floway-dev/upstream';
 
 const repo = new InMemoryRepo();
 
@@ -40,6 +39,20 @@ const upstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   ...overrides,
 } as UpstreamRecord);
 
+const catalogModel = (
+  id: string,
+  upstreamModelId: string,
+  opaqueBlobCompatibilityScope: UpstreamModel['opaqueBlobCompatibilityScope'],
+): UpstreamModel => ({
+  id,
+  upstreamModelId,
+  opaqueBlobCompatibilityScope,
+  kind: 'chat',
+  endpoints: { openaiResponses: {} },
+  limits: {},
+  enabledFlags: new Set(),
+});
+
 test('resolves v1 affinity from the current provider-model cache for bound and unbound scopes', async () => {
   const record = upstream();
   await saveUpstreamForTest(repo.upstreams, record);
@@ -49,16 +62,8 @@ test('resolves v1 affinity from the current provider-model cache for bound and u
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: Date.now(),
     models: [
-      stubUpstreamModel({
-        id: 'gpt-main',
-        upstreamModelId: 'gpt-main-wire',
-        opaqueBlobCompatibilityScope: { bindToUpstream: true, key: 'openai' },
-      }),
-      stubUpstreamModel({
-        id: 'claude-public',
-        upstreamModelId: 'claude-wire',
-        opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'claude-opus' },
-      }),
+      catalogModel('gpt-main', 'gpt-main-wire', { bindToUpstream: true, key: 'openai' }),
+      catalogModel('claude-public', 'claude-wire', { bindToUpstream: false, key: 'claude-opus' }),
     ],
   });
 

@@ -2,29 +2,12 @@ import { expect, test } from 'vitest';
 
 import { wrapOpenAIChatCompletionsAffinityEgress } from '../../../../../src/data-plane/chat/openai-chat-completions/affinity/egress.ts';
 import { analyzeOpenAIChatCompletionsAffinity } from '../../../../../src/data-plane/chat/openai-chat-completions/affinity/ingress.ts';
-import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
+import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { acceptedAffinityEvaluation, affinityCandidate as candidate, affinityTargetFor as targetFor } from '../../shared/affinity/helpers.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsAssistantMessageEx, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { stubModelCandidate } from '@floway-dev/test-utils';
-import type { ModelCandidate } from '@floway-dev/upstream';
 
 const codec = new AffinityCodec('22'.repeat(32));
-
-const candidate = (upstream: string): ModelCandidate => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    upstream: { ...base.upstream, upstreamId: upstream },
-    model: { id: 'model' },
-  });
-};
-
-const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.upstream.upstreamId,
-  modelId: value.model.id,
-  ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.upstream.upstreamId, key: value.model.id },
-});
 
 const chunk = (choices: Array<Omit<OpenAIChatCompletionsStreamEvent['choices'][number], 'delta'> & { delta: OpenAIChatCompletionsAssistantDeltaEx }>): OpenAIChatCompletionsStreamEvent => ({
   id: 'chatcmpl_1',

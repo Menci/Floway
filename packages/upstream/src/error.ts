@@ -1,8 +1,3 @@
-// Errors that bubble out of source/target emit or interceptors and need a
-// structured envelope for the api debug response. The target_api lane is
-// typed as a free string here so the package stays decoupled from the
-// api-internal serve-api unions — the api always passes the narrowed value
-// it owns.
 export interface InternalDebugError {
   type: 'internal_error';
   name: string;
@@ -18,6 +13,9 @@ export const internalDebugErrorFields = ({ name, stack, cause, target_api }: Int
   cause,
   ...(target_api === undefined ? {} : { target_api }),
 });
+
+export const protocolErrorDebugFields = (diagnostic?: InternalDebugError) =>
+  diagnostic === undefined ? {} : { provider_specific_fields: internalDebugErrorFields(diagnostic) };
 
 const serializeCause = (cause: unknown): unknown => {
   if (!(cause instanceof Error)) return cause;

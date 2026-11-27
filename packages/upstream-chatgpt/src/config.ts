@@ -67,7 +67,7 @@ export const patchChatGPTIdentityMetadata = (
   return { accounts: [next] };
 };
 
-function assertChatGPTUpstreamConfig(value: unknown): asserts value is ChatGPTUpstreamConfig {
+export function assertChatGPTUpstreamConfig(value: unknown): asserts value is ChatGPTUpstreamConfig {
   // config_json round-trips through canonical serialization, so any surviving
   // key is persisted. Reject unknown keys to keep the on-disk shape closed.
   const obj = assertAllowedObjectKeys(value, 'ChatGPTUpstreamConfig', CONFIG_KEYS_SET);

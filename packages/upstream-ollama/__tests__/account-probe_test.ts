@@ -1,11 +1,9 @@
 import { test } from 'vitest';
 
-import { CREDIT_BALANCE, USAGE_TOTALS } from './usage-fixture.ts';
-import { OLLAMA_ACCOUNT_PROBE_MIN_INTERVAL_MS, fetchOllamaAccount, refreshOllamaAccount } from '../src/account-probe.ts';
+import { fetchOllamaAccount, refreshOllamaAccount } from '../src/account-probe.ts';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
 import { readOllamaUpstreamState } from '../src/state.ts';
-import { createOllamaUpstream } from '../src/upstream.ts';
-import { assertEquals, noopUpstreamCallOptions, stubUpstreamModel, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 import { directFetcher, initUpstreamRuntimeRepo, type UpstreamRecord } from '@floway-dev/upstream';
 
 const UPSTREAM_ID = 'up_ollama_account';
@@ -95,48 +93,4 @@ test('the account slot resolves a race by read time', async () => {
     () => refreshOllamaAccount(UPSTREAM_ID, config, directFetcher),
   );
   assertEquals(repoWithNewer.read().account?.plan, 'pro');
-});
-
-// Drives the provider so the arming decision is exercised where it is made.
-const callChat = async (record: UpstreamRecord, onCall: (pathname: string) => void): Promise<void> => {
-  const provider = createOllamaUpstream(record);
-  const pending: Promise<unknown>[] = [];
-  await withMockedFetch(
-    request => {
-      const { pathname } = new URL(request.url);
-      onCall(pathname);
-      if (pathname === '/api/me') return new Response(JSON.stringify(ME_BODY), { status: 200 });
-      if (pathname === '/api/usage') return Response.json(USAGE_TOTALS);
-      if (pathname === '/api/balance') return Response.json(CREDIT_BALANCE);
-      return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
-    },
-    async () => {
-      await provider.instance.callOpenAIChatCompletions(
-        stubUpstreamModel({ upstreamData: 'gpt-oss:120b' }),
-        { messages: [] },
-        undefined,
-        noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }),
-      );
-      await Promise.all(pending);
-    },
-  );
-};
-
-test('an inference call arms the account probe on its own daily interval', async () => {
-  withStateRepo();
-  let probes = 0;
-  const count = (pathname: string) => { if (pathname === '/api/me') probes++; };
-
-  await callChat(cloudRecord(), count);
-  assertEquals(probes, 1);
-
-  // Fresh enough for the account, stale for the usage window beside it: the
-  // longer interval is what keeps this one from riding along.
-  const hourOld = { account: { fetchedAt: Date.now() - 60 * 60 * 1000, plan: 'free', name: null, email: null } };
-  await callChat(cloudRecord({ state: hourOld }), count);
-  assertEquals(probes, 1);
-
-  const dayOld = { account: { fetchedAt: Date.now() - OLLAMA_ACCOUNT_PROBE_MIN_INTERVAL_MS, plan: 'free', name: null, email: null } };
-  await callChat(cloudRecord({ state: dayOld }), count);
-  assertEquals(probes, 2);
 });

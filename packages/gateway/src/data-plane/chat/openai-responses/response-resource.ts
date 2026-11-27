@@ -12,44 +12,11 @@ import type {
   OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
 
-// ── The policy boundary ──
-//
-// Interior stages never state a value they did not observe. The egress stage is
-// the only place Floway states one, and only where the wire schema forbids both
-// omission and `null`.
-//
-// The other half of that rule lives in the server-tool shim, which shipped
-// "absent-echo (no tools synthesized when upstream omits it)" in 44322150d
-// (#125) and whose synthesis paths throw on an absent `upstreamResponseSnapshot`
-// rather than fabricate a resource never captured. The two rules do not conflict
-// on any key, because they answer different questions:
-//
-// - The shim's snapshot is interior. Its output re-enters Floway: it becomes
-//   the prologue and terminal resource of a stitched multi-call turn, later
-//   shim logic reads it, and its items are persisted. A value invented there is
-//   indistinguishable from an observed one for every later reader.
-// - This stage is terminal. Nothing below it consumes a value stated here.
-//   Item persistence runs underneath: `wrapOpenAIResponsesClientOutput` commits the
-//   rows carried by `response.output_item.done` and a snapshot record of their
-//   ordered ids, and awaits that before the terminal frame leaves it, so no
-//   response resource is ever stored. Affinity egress runs underneath too, and
-//   billing reads `billableUsage` off the `ExecuteResult` rather than the
-//   resource. One reader sits above this stage, the non-streaming `settle`
-//   call, and it reads only `status`, which rides through from the upstream and
-//   is never stated here. The WebSocket transport buffers the terminal event
-//   and flushes it last, branching only on the event type; it reads nothing off
-//   the resource at all.
-//
-// #125's "no tools synthesized when upstream omits it" therefore still holds:
-// the interior resource carries no `tools`, and egress states `[]` on the way
-// out. `ResponseResource` declares twenty of its thirty-one required keys
-// non-nullable. Thirteen of those — `tools`, `tool_choice`, `truncation`,
-// `temperature`, `service_tier` among them — are ones no interior stage is
-// guaranteed to have observed, and the schema offers no way to say "the backend
-// decided", so the choice is between a stated default and a body that fails
-// validation. Two more, `created_at` and `store`, are answered from gateway
-// state below rather than from any default; the remaining five ride through
-// from the upstream.
+// Responses resources are completed at the client boundary. Hosted tools,
+// item persistence, affinity, and usage observe the resource before that step.
+// The wire schema requires defaults such as `tools: []` for missing non-nullable
+// fields. Missing nullable fields render as null, and `created_at` and `store`
+// can come from the gateway's own state.
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2691-L2723
 
 // A required slot with no `null` alternative: `null` and `undefined` both mean

@@ -3,7 +3,7 @@ import type {
   FullSerializedUpstreamRecord,
   RedactedSerializedUpstreamRecord,
 } from './types.ts';
-import { flagDefaultsForKind } from '../../data-plane/upstreams/registry.ts';
+import { flagDefaultsForKind } from '../../upstreams/registry.ts';
 import type { FlagOverrides, ProxyFallbackEntry, UpstreamModelConfig, UpstreamKind, UpstreamRecord } from '@floway-dev/upstream';
 import { assertAzureUpstreamRecord } from '@floway-dev/upstream-azure';
 import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/upstream-chatgpt';

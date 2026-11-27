@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { assertCustomUpstreamRecord, fetchCustomModels } from '../src/index.ts';
+import { assertCustomUpstreamRecord, fetchCustomModels, projectCustomModels, type CustomAuthStyle } from '../src/index.ts';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 import { directFetcher } from '@floway-dev/upstream';
 
@@ -78,4 +78,36 @@ test('fetchCustomModels keeps models but omits one malformed pricing block', asy
       assertEquals(result.data[1].pricing, { entries: [{ rates: { input_tokens: '1' } }] });
     },
   );
+});
+
+test('a published speech kind supplies the speech endpoint without a manual model', async () => {
+  const record = upstreamRecord();
+  const { config } = assertCustomUpstreamRecord(record);
+  const response = await fetchCustomModels(config, async () => jsonResponse({ data: [{ id: 'public-tts', kind: 'speech' }] }));
+  assertEquals(response.data, [{ id: 'public-tts', kind: 'speech' }]);
+  const models = projectCustomModels(record, [], response);
+  assertEquals(models.map(model => [model.id, model.kind, model.endpoints]), [['public-tts', 'speech', { openaiAudioSpeech: {} }]]);
+});
+
+test.each([
+  { authStyle: 'bearer', expected: [['authorization', 'Bearer token']] },
+  { authStyle: 'x-api-key', expected: [['anthropic-version', '2023-06-01'], ['x-api-key', 'token']] },
+  { authStyle: 'x-goog-api-key', expected: [['x-goog-api-key', 'token']] },
+] satisfies { authStyle: CustomAuthStyle; expected: string[][] }[])('fetches the catalog with $authStyle independently of inference authority', async ({ authStyle, expected }) => {
+  const record = upstreamRecord();
+  const { config } = assertCustomUpstreamRecord({
+    ...record,
+    config: {
+      ...record.config,
+      endpoints: { anthropicMessages: {} },
+      modelsFetch: { enabled: true, authStyle, endpoint: '/catalog' },
+    },
+  });
+  const models = await fetchCustomModels(config, async (url, init) => {
+    assertEquals(url, 'https://custom.example.com/catalog');
+    assertEquals(init.method, 'GET');
+    assertEquals([...new Headers(init.headers)], expected);
+    return jsonResponse({ data: [{ id: 'listed-model' }] });
+  });
+  assertEquals(models.data, [{ id: 'listed-model' }]);
 });

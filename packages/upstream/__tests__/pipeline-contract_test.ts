@@ -1,5 +1,6 @@
 import { expect, expectTypeOf, it } from 'vitest';
 
+import { protocolErrorDebugFields, type InternalDebugError } from '../src/error.ts';
 import { httpTerminal, type UpstreamHttpResponseFacts, type UpstreamHttpServices } from '../src/http-terminal.ts';
 import type { UpstreamModel, UpstreamRecord } from '../src/model.ts';
 import { httpDialError, parseJsonBody, parseUpstreamResult, parseUpstreamStream } from '../src/parse-response.ts';
@@ -15,7 +16,9 @@ interface TestServices extends UpstreamHttpServices {
 }
 const { defineStage, compose } = factSpace<UpstreamRequestFacts, TestResponseFacts, TestServices>();
 
-const formatError = (status: number | null, message: string) => ({ error: { status, message } });
+const formatError = (status: number | null, message: string, diagnostic?: InternalDebugError) => ({
+  error: { status, message, ...protocolErrorDebugFields(diagnostic) },
+});
 const TEST_CHUNK_BYTES = 1024 * 1024;
 const TEST_RESULT_BODY_LIMIT = 2 * TEST_CHUNK_BYTES;
 const TEST_ERROR_BODY_LIMIT = TEST_CHUNK_BYTES;
@@ -167,10 +170,28 @@ it('projects configuration and model data into exact operation boundaries', asyn
 });
 
 it('consumes pre-header transport and cancellation errors as ordinary outcomes', async () => {
-  const outage = runWith(embeddings, embeddingsRequest, async () => { throw new HttpTransportError(new Error('dial failed')); });
+  const nested = new Error('socket closed');
+  const cause = new TypeError('dial failed', { cause: nested });
+  const failure = new HttpTransportError(cause);
+  const outage = runWith(embeddings, embeddingsRequest, async () => { throw failure; });
   await expect(outage.execution.result).resolves.toEqual({
     http: null,
-    openaiEmbeddings: { kind: 'error', source: 'upstream', error: { error: { status: null, message: 'dial failed' } } },
+    openaiEmbeddings: {
+      kind: 'error', source: 'upstream', error: {
+        error: {
+          status: null,
+          message: 'dial failed',
+          provider_specific_fields: {
+            name: 'HttpTransportError',
+            stack: failure.stack,
+            cause: {
+              name: 'TypeError', message: 'dial failed', stack: cause.stack,
+              cause: { name: 'Error', message: 'socket closed', stack: nested.stack },
+            },
+          },
+        },
+      },
+    },
   });
 
   const controller = new AbortController();
@@ -180,6 +201,31 @@ it('consumes pre-header transport and cancellation errors as ordinary outcomes',
     http: null,
     openaiEmbeddings: { kind: 'error', source: 'local', error: { error: { status: 499, message: 'Upstream request cancelled' } } },
   });
+});
+
+it('preserves HTTP error headers and the transport cause when the error body cannot be read', async () => {
+  const cause = new Error('peer reset');
+  const failure = new HttpTransportError(cause);
+  const body = new ReadableStream<Uint8Array>({ start: controller => { controller.error(failure); } });
+  const headerLines = [['retry-after', '30']] as const;
+  const { execution, background } = runWith(embeddings, embeddingsRequest, async () => Object.assign(new Response(body, {
+    status: 503, statusText: 'Unavailable',
+  }), { headerLines }));
+  await expect(execution.result).resolves.toEqual({
+    http: { status: 503, statusText: 'Unavailable', headers: headerLines, body: null, startedAt: expect.any(Number) },
+    openaiEmbeddings: {
+      kind: 'error', source: 'upstream', error: {
+        error: {
+          status: 503,
+          message: 'peer reset',
+          provider_specific_fields: {
+            name: 'HttpTransportError', stack: failure.stack, cause: { name: 'Error', message: 'peer reset', stack: cause.stack },
+          },
+        },
+      },
+    },
+  });
+  await Promise.all(background);
 });
 
 it('preserves upstream error status, header repetitions, JSON values and plain error messages', async () => {

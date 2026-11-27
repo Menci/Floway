@@ -1,11 +1,16 @@
+import { getCopilotModels } from './catalog.ts';
 import { COPILOT_DEFAULT_FLAGS } from './defaults.ts';
-import { createCopilotUpstream } from './upstream.ts';
+import { runCopilotScheduledTask } from './scheduled.ts';
 import type { UpstreamModule } from '@floway-dev/upstream';
 
-export const copilotUpstreamModule: UpstreamModule = {
-  create: createCopilotUpstream,
+export const copilotUpstreamModule = {
   defaultFlags: COPILOT_DEFAULT_FLAGS,
-};
+  getModels: getCopilotModels,
+  runScheduledTask: runCopilotScheduledTask,
+} satisfies UpstreamModule;
+
+export { copilotPipelines } from './pipelines/index.ts';
+export { createCopilotServices, type CopilotService, type CopilotServices } from './service.ts';
 
 export {
   clearInProcessCopilotTokenCache,

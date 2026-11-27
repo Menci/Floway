@@ -1,52 +1,37 @@
-import { inputErrorFields, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
-import { generateAnthropicId, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/upstream';
+import { localChatAnswer } from '../pipeline/local-answer.ts';
+import { inputErrorFields, type ChatRoutingFailure, type InputErrorDetails } from '../shared/errors.ts';
+import { generateAnthropicId } from '@floway-dev/protocols/anthropic-messages';
+import { internalDebugErrorFields, toInternalDebugError } from '@floway-dev/upstream';
 
-// Anthropic Messages error envelope used to render pre-stream
-// `ChatServeFailure`s. These are gateway-synthesized rather than received
-// from any upstream — `source: 'gateway'` so the dump labels them as such.
-// Byte-shape matches Anthropic-direct: `{type:'error', error:{type, message},
-// request_id}` with `request_id` at the top level (alongside `error`, not
-// nested inside it) and key order load-bearing for byte-faithfulness.
-const anthropicErrorResult = (
+export const anthropicMessagesDebugError = (cause: unknown, type?: string) => {
+  const error = toInternalDebugError(cause);
+  return {
+    type: 'error',
+    error: { type: type ?? error.type, message: error.message, provider_specific_fields: internalDebugErrorFields(error) },
+  };
+};
+
+const anthropicError = (
   status: number,
   type: string,
   message: string,
-  performance?: PerformanceTelemetryContext,
   extension?: Record<string, unknown>,
-): ApiErrorResult => ({
-  type: 'api-error',
-  source: 'gateway',
-  http: { status, headers: new Headers({ 'content-type': 'application/json' }) },
-  body: new TextEncoder().encode(JSON.stringify({
-    type: 'error',
-    error: { type, message, ...(extension === undefined ? {} : { provider_specific_fields: extension }) },
-    request_id: generateAnthropicId('req'),
-  })),
-  ...(performance ? { performance } : {}),
+) => localChatAnswer(status, {
+  type: 'error',
+  error: { type, message, ...(extension === undefined ? {} : { provider_specific_fields: extension }) },
+  request_id: generateAnthropicId('req'),
 });
 
-// Validation failures retain the telemetry of the candidate whose attempt rejected the request.
-export const inputErrorResult = (
-  error: InputErrorDetails,
-  performance?: PerformanceTelemetryContext,
-): ApiErrorResult =>
-  anthropicErrorResult(400, 'invalid_request_error', error.message, performance, inputErrorFields(error));
+export const anthropicMessagesInputError = (error: InputErrorDetails) =>
+  anthropicError(400, 'invalid_request_error', error.message, inputErrorFields(error));
 
-// `endpoint` selects between `/messages` and `/messages/count_tokens` only in
-// the `model-unsupported` message string.
-export const renderAnthropicMessagesFailure = (
-  failure: ChatServeFailure,
-  endpoint: 'generate' | 'countTokens',
-): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> => {
-  const endpointPath = endpoint === 'countTokens' ? '/messages/count_tokens' : '/messages';
+export const anthropicMessagesRoutingError = (failure: ChatRoutingFailure) => {
   switch (failure.kind) {
   case 'routing-unavailable':
-    return anthropicErrorResult(400, 'invalid_request_error', failure.message);
+    return anthropicError(400, 'invalid_request_error', failure.message);
   case 'model-missing':
-    return anthropicErrorResult(404, 'not_found_error', `Model ${failure.model} is not available on any configured upstream.`);
+    return anthropicError(404, 'not_found_error', `Model ${failure.model} is not available on any configured upstream.`);
   case 'model-unsupported':
-    return anthropicErrorResult(400, 'invalid_request_error', `Model ${failure.model} does not support the ${endpointPath} endpoint.`);
+    return anthropicError(400, 'invalid_request_error', `Model ${failure.model} does not support the /messages endpoint.`);
   }
 };
