@@ -6,9 +6,10 @@ import { ScopeEditor, type ScopeExpressionData } from '../../../src/components/a
 import { setLanguage } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 import type { AccessScope } from '@floway-dev/gateway/browser';
+import { defaultUserPreferences } from '@floway-dev/protocols/browser';
 
 const data: ScopeExpressionData = {
-  users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false }, groupIds: [] }],
+  users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { ...defaultUserPreferences }, groupIds: [] }],
   groups: [{ hue: 120, id: 3, name: 'operators', createdAt: '', deletedAt: null, memberIds: [2] }],
   upstreams: [
     { id: 'up_a', name: 'Copilot', kind: 'copilot', enabled: true, hue: 210, cachedModelCount: 2 },

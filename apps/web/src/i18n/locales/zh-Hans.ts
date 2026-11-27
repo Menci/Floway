@@ -1559,11 +1559,25 @@ const zhHansCN = {
         },
       },
       charts: {
+        displayOptions: {
+          label: '显示选项',
+          foldSmallSeries: '将小占比项折叠为“其他”',
+          saveFailed: '无法保存偏好设置：{{error}}',
+        },
         series: {
           all: '显示全部序列',
           invert: '反选序列',
           none: '隐藏全部序列',
           toggleHint: '点击切换。Shift 点击或双击可单独显示。',
+          other: '其他',
+          otherCount_other: '其他（{{count, number}}）',
+          otherPartial: '其他（{{visible, number}}/{{count, number}}）',
+          otherToggleHint: '点击整组切换。Shift 点击或双击可单独显示。',
+          expandOther: '展开',
+          collapseOther: '收起',
+          listSeparator: '、',
+          includes: '<strong>包含：</strong>{{members}}',
+          includesTruncated_other: '<strong>包含：</strong>{{members}}，以及另外 {{count, number}} 项',
         },
       },
       usage: {

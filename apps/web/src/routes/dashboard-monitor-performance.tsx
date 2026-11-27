@@ -9,7 +9,14 @@ import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi, type GlobalError } from '../api/client';
 import { dashboardChartBuckets, sameDashboardRange } from '../components/charts/dashboard-time';
 import { PerformanceChartSection } from '../components/performance/chart';
-import { createPerformanceLoader, performanceOverviewForDisplay, performanceRanking, type PerformanceDataset, type PerformanceQuery } from '../components/performance/data';
+import {
+  buildPerformanceChartData,
+  createPerformanceLoader,
+  performanceOverviewForDisplay,
+  performanceRanking,
+  type PerformanceDataset,
+  type PerformanceQuery,
+} from '../components/performance/data';
 import {
   normalizePerformanceBreakdownForRuntime,
   normalizePerformanceDimensionsForRuntime,
@@ -30,6 +37,7 @@ import {
 import { buildPerformanceChart } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
 import { TelemetryFilterFields, TelemetryGroupByField, type TelemetryDimension } from '../components/telemetry/dimension-controls';
+import { TelemetryDisplayOptionsMenu } from '../components/telemetry/display-options-menu';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { TelemetryTimeRange } from '../components/telemetry/time-range';
 import { useTelemetryPolling } from '../components/telemetry/use-poll';
@@ -47,6 +55,7 @@ import { formatDuration } from '../lib/format-duration';
 import { formatCount, formatTokenRateFromTpot } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
+import { useUserPreferences } from '../lib/use-preferences';
 
 const { Button, Spinner, Tab, TabList, Text, Tooltip } = fluentComponents;
 
@@ -126,14 +135,21 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const [pendingBreakdown, setPendingBreakdown] = useState<PerformanceGroupBy>();
   const [sort, setSort] = useState<PerformanceTableSort>(initialState.sort);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
-  const [overview, setOverview] = useState<PerformanceOverviewView | null>(loaderData.overview);
-  const [scope, setScope] = useState(() => loaderData.dataset?.snapshot.scope);
+  const [dataset, setDataset] = useState<PerformanceDataset | null>(loaderData.dataset ?? null);
+  const overview = useMemo<PerformanceOverviewView | null>(
+    () => (dataset === null || dataset === loaderData.dataset
+      ? loaderData.overview
+      : performanceOverviewForDisplay(dataset)),
+    [dataset, loaderData.dataset, loaderData.overview],
+  );
+  const scope = dataset?.snapshot.scope;
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const [ranking, setRanking] = useState<RankingRead>();
   const [rankingFailure, setRankingFailure] = useState<RankingRead & { error: GlobalError }>();
   const pendingRegionAvailableRef = useRef<boolean | null>(null);
   const pageWindow = useRef<{ query: PerformanceQuery; requestedAt: number } | undefined>(undefined);
   const locale = useLocale();
+  const { foldSmallSeries } = useUserPreferences();
   const identityContext = {
     currentUserId: loaderData.currentUserId,
     fallbackGroup: 'model' as const,
@@ -154,8 +170,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       const result = await performanceLoader.load(query, query.groupBy, requestedAt);
       if (signal.aborted) return failed();
       if (result.error) return failed(result.error);
-      setOverview(performanceOverviewForDisplay(result.data));
-      setScope(result.data.snapshot.scope);
+      setDataset(result.data);
       return true;
     }
 
@@ -207,8 +222,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     setRegionAvailable(nextRegionAvailable);
     setBreakdownGroup(current => normalizePerformanceBreakdownForRuntime(current, nextRegionAvailable));
     setPendingBreakdown(current => current === undefined ? undefined : normalizePerformanceBreakdownForRuntime(current, nextRegionAvailable));
-    setOverview(performanceOverviewForDisplay(result.data));
-    setScope(result.data.snapshot.scope);
+    setDataset(result.data);
     return normalization.changed ? committedQuery : true;
   }, [query, regionAvailable, performanceLoader]);
 
@@ -296,7 +310,29 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   }));
   const buckets = useMemo(() => dashboardChartBuckets(loadedQuery.range, loadedAt), [loadedAt, loadedQuery.range]);
   const labels = useMemo(() => overview && performanceLabels(overview, overview.upstreams), [overview]);
-  const chart = useMemo(() => overview && labels && buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range), [buckets, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentile]);
+  const chartView = useMemo(() => {
+    if (overview === null || labels === null) return null;
+    if (dataset === null) {
+      return {
+        chart: buildPerformanceChart(overview.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range),
+        other: undefined,
+      };
+    }
+    const data = buildPerformanceChartData({
+      dataset,
+      buckets,
+      groupBy: loadedQuery.groupBy,
+      metric,
+      foldSmallSeries,
+      hidden: hiddenSeries,
+      labels,
+      otherLabel: t('monitoring.charts.series.other'),
+    });
+    return {
+      chart: buildPerformanceChart(data.series, metric, percentile, loadedQuery.groupBy, labels, buckets, loadedQuery.range, data),
+      other: data.other,
+    };
+  }, [buckets, dataset, foldSmallSeries, hiddenSeries, labels, loadedQuery.groupBy, loadedQuery.range, metric, overview, percentile, t]);
 
   const changeBreakdown = (key: PerformanceGroupBy) => {
     if (key === rankingDimension) return;
@@ -314,8 +350,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   const rankingWindow = Math.max(loadedAt, activeRanking?.requestedAt ?? loadedAt);
   const showRanking = breakdownGroup !== loadedQuery.groupBy;
   const rankingDataset = showRanking ? performanceLoader.get(loadedQuery, breakdownGroup, rankingWindow, scopeKey) : undefined;
-  const rankingRows = useMemo(() => rankingDataset === undefined ? undefined : performanceRanking(rankingDataset), [rankingDataset]);
-  const tableRows = showRanking ? rankingRows : overview?.rows;
+  const tableRows = showRanking ? (rankingDataset === undefined ? undefined : performanceRanking(rankingDataset)) : overview?.rows;
   const rankingError = rankingFailure?.query === loadedQuery && rankingFailure.scopeKey === scopeKey ? rankingFailure : undefined;
   const rankingBusy = pendingBreakdown !== undefined
     || (needsRanking && (rankingPolling || rankingRefreshing || (tableRows === undefined && rankingError === undefined)));
@@ -338,7 +373,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
     {(() => {
-      if (overview === null || chart === null || labels === null || regionAvailable === null) return <Panel><EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine></Panel>;
+      if (overview === null || chartView === null || labels === null || regionAvailable === null) return <Panel><EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine></Panel>;
       const dimensions: Array<TelemetryDimension<PerformanceGroupBy>> = [
         { key: 'model', groupLabel: t('monitoring.performance.groupBy.model'), filterLabel: t('monitoring.performance.filters.model'), allLabel: t('monitoring.performance.filters.all.model'), options: overview.dimensionValues.models.map(value => ({ value, label: value })) },
         { key: 'upstream', groupLabel: t('monitoring.performance.groupBy.upstream'), filterLabel: t('monitoring.performance.filters.upstream'), allLabel: t('monitoring.performance.filters.all.upstream'), options: overview.dimensionValues.upstreams.map(value => ({ value, label: labels.upstreams.get(value) ?? value })) },
@@ -418,7 +453,14 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
           </div>
         </Panel>
         <Panel className="min-w-0">
-          <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('monitoring.performance.chartTitle', { metric: metric === 'ttft' ? t('monitoring.performance.tables.ttft', { percentile }) : t('monitoring.performance.tables.speed', { tail: performancePercentileTailOf(percentile) }), group: t(`monitoring.performance.groupBy.${loadedQuery.groupBy}`) })} />
+          <PerformanceChartSection
+            actions={<TelemetryDisplayOptionsMenu />}
+            chart={chartView.chart}
+            hidden={hiddenSeries}
+            onHiddenChange={setHiddenSeries}
+            other={chartView.other}
+            title={t('monitoring.performance.chartTitle', { metric: metric === 'ttft' ? t('monitoring.performance.tables.ttft', { percentile }) : t('monitoring.performance.tables.speed', { tail: performancePercentileTailOf(percentile) }), group: t(`monitoring.performance.groupBy.${loadedQuery.groupBy}`) })}
+          />
         </Panel>
         <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
           {/* The scrollport clips the 2px ring a focused tab paints, so it takes

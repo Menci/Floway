@@ -1576,11 +1576,27 @@ const en = {
         },
       },
       charts: {
+        displayOptions: {
+          label: 'Display options',
+          foldSmallSeries: 'Fold small series into Other',
+          saveFailed: 'Could not save preference: {{error}}',
+        },
         series: {
           all: 'Show all series',
           invert: 'Invert series selection',
           none: 'Hide all series',
           toggleHint: 'Click to toggle. Shift-click or double-click to isolate.',
+          other: 'Other',
+          otherCount_one: 'Other ({{count, number}})',
+          otherCount_other: 'Other ({{count, number}})',
+          otherPartial: 'Other ({{visible, number}}/{{count, number}})',
+          otherToggleHint: 'Click to toggle all. Shift-click or double-click to isolate.',
+          expandOther: 'Expand',
+          collapseOther: 'Collapse',
+          listSeparator: ', ',
+          includes: '<strong>Includes:</strong> {{members}}',
+          includesTruncated_one: '<strong>Includes:</strong> {{members}} and {{count, number}} more',
+          includesTruncated_other: '<strong>Includes:</strong> {{members}} and {{count, number}} more',
         },
       },
       usage: {

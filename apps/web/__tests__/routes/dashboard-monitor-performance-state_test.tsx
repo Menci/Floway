@@ -1,18 +1,25 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
 import { buildPerformanceQuery, type PerformanceDataset } from '../../src/components/performance/data';
 import { parsePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewView } from '../../src/components/performance/overview';
+import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import { i18n } from '../../src/i18n';
 import DashboardMonitorPerformance from '../../src/routes/dashboard-monitor-performance';
+import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
+import { primeDefaultSession } from '../test-session';
 
 stubLocalStorage();
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  cleanup();
+  useAuthStore.getState().clear();
+  vi.unstubAllGlobals();
+});
 
 const loadedAt = Date.UTC(2026, 7, 5, 12);
 const bucket = dashboardBucketFrames('today', loadedAt).at(-2)!.key;
@@ -48,10 +55,11 @@ const overview: PerformanceOverviewView = {
 };
 
 const renderPage = (search: string, data = overview, dataset?: PerformanceDataset) => {
+  primeDefaultSession();
   const state = parsePerformanceUrlState(new URLSearchParams(search));
   const router = createMemoryRouter([{
     path: '/',
-    Component: () => <DashboardMonitorPerformance
+    Component: () => <OutcomeToastProvider><DashboardMonitorPerformance
       loaderData={{
         currentUserId: '1',
         error: null,
@@ -63,7 +71,7 @@ const renderPage = (search: string, data = overview, dataset?: PerformanceDatase
       }}
       matches={[] as never}
       params={{}}
-    />,
+    /></OutcomeToastProvider>,
   }], { initialEntries: [`/?${search}`] });
   const view = renderInApp(<RouterProvider router={router} />);
   return { ...view, router };

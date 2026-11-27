@@ -9,6 +9,7 @@ import type { GlobalError } from '../api/client';
 import { dashboardChartBuckets, sameDashboardRange } from '../components/charts/dashboard-time';
 import { SEARCH_BACKEND_LABEL_KEYS } from '../components/search/backend';
 import { TelemetryFilterFields } from '../components/telemetry/dimension-controls';
+import { TelemetryDisplayOptionsMenu } from '../components/telemetry/display-options-menu';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { TelemetryTimeRange } from '../components/telemetry/time-range';
 import { useTelemetryPolling } from '../components/telemetry/use-poll';
@@ -30,6 +31,7 @@ import { parseUsageUrlState, serializeUsageUrlState, type UsageUrlState } from '
 import { formatCount } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
+import { useUserPreferences } from '../lib/use-preferences';
 
 type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & {
   currentUserId: string;
@@ -78,6 +80,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const auditableUserIdsRef = useRef(loaderData.usage?.auditableUserIds ?? [Number(loaderData.currentUserId)]);
   const locale = useLocale();
+  const { foldSmallSeries } = useUserPreferences();
   const identityContext = {
     currentUserId: loaderData.currentUserId,
     fallbackGroup: 'model' as const,
@@ -128,12 +131,19 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     currentUserId: loaderData.currentUserId, t,
   }), [loaderData.currentUserId, t, upstreams, usage]);
   const searchChart = useMemo(
-    () => search && buildSearchChart({ search, range: loadedQuery.range, buckets }),
-    [buckets, loadedQuery.range, search],
+    () => search && buildSearchChart({
+      search,
+      range: loadedQuery.range,
+      buckets,
+      foldSmallSeries,
+      hidden: hiddenSearch,
+      otherLabel: t('monitoring.charts.series.other'),
+    }),
+    [buckets, foldSmallSeries, hiddenSearch, loadedQuery.range, search, t],
   );
   // Recorded search traffic stays visible after the operator turns search off.
   // A failed fetch does not establish that there was no search traffic.
-  const showSearch = searchChart === null || searchChart.entries.length > 0;
+  const showSearch = searchChart === null || searchChart.entries.length > 0 || (searchChart.other?.members.length ?? 0) > 0;
 
   const changeGroupBy = (next: UsageGroupBy) => {
     if (next === query.groupBy) return;
@@ -194,10 +204,12 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     {showSearch && <Panel className="min-w-0">
       {searchChart === null ? <EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine> : (
         <UsageChartSection
+          actions={<TelemetryDisplayOptionsMenu />}
           chart={searchChart}
           detailsLabel={t('monitoring.usage.charts.search')}
           hidden={hiddenSearch}
           onHiddenChange={setHiddenSearch}
+          other={searchChart.other}
           title={t('monitoring.usage.charts.searchWithBackend', {
             backend: searchChart.backends
               .map(id => SEARCH_BACKEND_LABEL_KEYS[id] === undefined ? id : t(SEARCH_BACKEND_LABEL_KEYS[id]))

@@ -5,9 +5,8 @@ import { fluentComponents } from '../../fluent';
 
 const { Spinner, Toast, Toaster, ToastTitle, useToastController } = fluentComponents;
 
-// Success only: a failure carries the server's own words and belongs in a hand-dismissed surface next to what failed.
-
 const TOAST_DISMISS_MS = 3000;
+const ERROR_TOAST_DISMISS_MS = 5000;
 
 interface OutcomeHandle {
   succeed: (message: string) => void;
@@ -19,6 +18,8 @@ export interface OutcomeToasts {
   /** Announces work in flight; the toast stays until the handle settles it. */
   start: (pending: string) => OutcomeHandle;
   succeed: (message: string) => void;
+  /** Reports a failure for a background write that has no inline form message bar. */
+  fail: (message: string) => void;
 }
 
 const OutcomeToastContext = createContext<OutcomeToasts | null>(null);
@@ -46,6 +47,11 @@ export function OutcomeToastProvider({ children }: PropsWithChildren) {
     dispatchToast(toastFor(toastId, message, false), { intent: 'success', toastId, timeout: TOAST_DISMISS_MS });
   }, [dispatchToast, nextToastId, toastFor]);
 
+  const fail = useCallback((message: string) => {
+    const toastId = nextToastId();
+    dispatchToast(toastFor(toastId, message, false), { intent: 'error', toastId, timeout: ERROR_TOAST_DISMISS_MS });
+  }, [dispatchToast, nextToastId, toastFor]);
+
   const start = useCallback((pending: string): OutcomeHandle => {
     const toastId = nextToastId();
     dispatchToast(toastFor(toastId, pending, true), { toastId, timeout: -1 });
@@ -60,7 +66,7 @@ export function OutcomeToastProvider({ children }: PropsWithChildren) {
     };
   }, [dismissToast, dispatchToast, nextToastId, toastFor, updateToast]);
 
-  const value = useMemo<OutcomeToasts>(() => ({ start, succeed }), [start, succeed]);
+  const value = useMemo<OutcomeToasts>(() => ({ fail, start, succeed }), [fail, start, succeed]);
 
   return (
     <OutcomeToastContext.Provider value={value}>

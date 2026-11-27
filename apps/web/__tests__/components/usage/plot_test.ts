@@ -78,13 +78,31 @@ describe('bucket callout figures', () => {
       total: '7654320',
     });
   });
+
+  it('weighs cachedRate legend ranking by prompt tokens rather than hit ratio', () => {
+    const model = buildTokenChart({
+      records: [
+        record({ input_tokens: '1', input_cache_read_tokens: '9' }, 'tiny-100pct'),
+        record({ input_tokens: '500', input_cache_read_tokens: '500' }, 'large-50pct'),
+      ],
+      dimensionOptions: [
+        { value: 'tiny-100pct', label: 'Tiny' },
+        { value: 'large-50pct', label: 'Large' },
+      ],
+      metric: 'cachedRate',
+      range: 'today',
+      buckets: [bucket],
+    });
+    expect(model.weights.get('large-50pct')).toBe(1000);
+    expect(model.weights.get('tiny-100pct')).toBe(10);
+  });
 });
 
 describe('search chart', () => {
-  const searchRecord = (backend: string, requests: number) => ({
+  const searchRecord = (backend: string, requests: number, keyId = 'key-1', keyName = 'Key 1') => ({
     backend,
-    keyId: 'key-1',
-    keyName: 'Key 1',
+    keyId,
+    keyName,
     hour: RECORD_HOUR,
     requests,
   });
@@ -92,6 +110,9 @@ describe('search chart', () => {
     search: { records, keys: [{ id: 'key-1', name: 'Key 1' }] },
     range: 'today',
     buckets: [bucket],
+    foldSmallSeries: false,
+    hidden: new Set(),
+    otherLabel: 'Other',
   });
 
   it('plots recorded traffic from every backend, not just the configured one', () => {
@@ -99,5 +120,39 @@ describe('search chart', () => {
     expect(chart.backends).toEqual(['microsoft-web-iq', 'tavily']);
     expect(chart.entries.map(entry => entry.label)).toEqual(['Key 1']);
     expect(areaPlot(chart.plot).lineChartData![0]!.data).toEqual([expect.objectContaining({ y: 7 })]);
+  });
+
+  it('folds minor search series into Other and excludes individually hidden members from the plotted sum', () => {
+    const records = [
+      searchRecord('tavily', 10_000, 'big', 'Big Key'),
+      searchRecord('tavily', 30, 'minor-a', 'Minor A'),
+      searchRecord('tavily', 20, 'minor-b', 'Minor B'),
+    ];
+    const keys = [
+      { id: 'big', name: 'Big Key' },
+      { id: 'minor-a', name: 'Minor A' },
+      { id: 'minor-b', name: 'Minor B' },
+    ];
+    const partial = buildSearchChart({
+      search: { records, keys },
+      range: 'today',
+      buckets: [bucket],
+      foldSmallSeries: true,
+      hidden: new Set(['minor-a']),
+      otherLabel: 'Other',
+    });
+    expect(partial.other?.members.map(member => member.id)).toEqual(['minor-a', 'minor-b']);
+    const otherPlotSeries = areaPlot(partial.plot).lineChartData!.find(series => series.legend === 'Other');
+    expect(otherPlotSeries?.data).toEqual([expect.objectContaining({ y: 20 })]);
+
+    const allOtherHidden = buildSearchChart({
+      search: { records, keys },
+      range: 'today',
+      buckets: [bucket],
+      foldSmallSeries: true,
+      hidden: new Set(['minor-a', 'minor-b']),
+      otherLabel: 'Other',
+    });
+    expect(areaPlot(allOtherHidden.plot).lineChartData!.find(series => series.legend === 'Other')).toBeUndefined();
   });
 });
