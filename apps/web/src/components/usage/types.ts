@@ -1,6 +1,7 @@
 import type { ChartProps } from '@fluentui/react-charts';
 
 import type { ChartBucket, DashboardRange } from '../charts/dashboard-time';
+import type { ChartSectionOther } from '../charts/series-grouping';
 import type { ChartSeries } from '../charts/series-legends';
 import type { BillingMetric, DecimalString } from '@floway-dev/protocols/browser';
 
@@ -88,13 +89,14 @@ export type ChartPlot =
 
 interface ChartModelBase {
   entries: ChartSeries[];
+  weights: Map<string, number>;
   plot: ChartPlot;
   buckets: ChartBucket[];
   range: UsageRange;
 }
 export type TokenChartModel = ChartModelBase & { kind: 'token'; details: Map<string, Map<string, TokenCounters>> };
 // Backends present in the window's data, not the current filter selection.
-export type SearchChartModel = ChartModelBase & { kind: 'search'; backends: string[] };
+export type SearchChartModel = ChartModelBase & { kind: 'search'; backends: string[]; other?: ChartSectionOther | undefined };
 export type UsageChartModel = TokenChartModel | SearchChartModel;
 
 export interface CalloutRow { id: string; label: string; color: string; value: number }

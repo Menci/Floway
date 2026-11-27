@@ -7,6 +7,7 @@ import type { ScopeExpressionData } from '../../../src/components/access-control
 import { OutcomeToastProvider } from '../../../src/components/ui/outcome-toast';
 import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
+import { defaultUserPreferences } from '@floway-dev/protocols/browser';
 
 vi.mock('../../../src/components/ui/json-editor', () => ({
   JsonEditor: ({ active, invalid, label, onChange, readOnly, value }: { active: boolean; invalid: boolean; label: string; onChange: (value: string) => void; readOnly?: boolean; value: string }) =>
@@ -15,8 +16,8 @@ vi.mock('../../../src/components/ui/json-editor', () => ({
 
 const data: ScopeExpressionData = {
   users: [
-    { id: 1, username: 'admin', isAdmin: true, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false }, groupIds: [] },
-    { id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false }, groupIds: [3] },
+    { id: 1, username: 'admin', isAdmin: true, createdAt: '', preferences: { ...defaultUserPreferences }, groupIds: [] },
+    { id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { ...defaultUserPreferences }, groupIds: [3] },
   ],
   groups: [{ hue: 120, id: 3, name: 'operators', createdAt: '', deletedAt: null, memberIds: [2] }],
   upstreams: [{ id: 'up_a', name: 'Copilot', kind: 'copilot', enabled: true, hue: 210, cachedModelCount: 0 }],

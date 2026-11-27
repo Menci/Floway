@@ -1,6 +1,18 @@
-import type { PerformanceDisplayRecord, PerformanceFilters, PerformanceGroupBy, PerformanceOverviewView, PerformanceRange } from './overview';
+import {
+  resolvePerformanceGroup,
+  type PerformanceDisplayRecord,
+  type PerformanceFilters,
+  type PerformanceGroupBy,
+  type PerformanceLabels,
+  type PerformanceMetric,
+  type PerformanceOverviewView,
+  type PerformanceRange,
+} from './overview';
 import { api, callApi, type ApiResult } from '../../api/client';
-import { dashboardFixedRangeQuery } from '../charts/dashboard-time';
+import { dashboardFixedRangeQuery, type ChartBucket } from '../charts/dashboard-time';
+import { OTHER_SERIES_COLOR } from '../charts/palette';
+import { OTHER_SERIES_ID, otherSeriesGroup, partitionSeriesForOther, stableSeriesHues, type ChartSectionOther } from '../charts/series-grouping';
+import type { SeriesLegendEntry } from '../charts/series-legends';
 import { canContinueTelemetrySnapshot, mergeTelemetrySnapshot, sameTelemetryBucketGrid, sameTelemetryScope } from '../telemetry/snapshot';
 import type { PerformanceSlice, PerformanceSliceRow, PerformanceSlicesResponse } from '@floway-dev/gateway/browser';
 import { percentileFromBuckets, type HistogramBucket } from '@floway-dev/protocols/browser';
@@ -115,10 +127,9 @@ const addHistogram = (accumulator: HistogramBucket[], delta: readonly HistogramB
   }
 };
 
-const sum = (buckets: readonly DecodedSlice[], mode: 'series' | 'rows' | 'total'): PerformanceDisplayRecord[] => {
+const sumDecodedRows = (items: Iterable<{ bucket: string; row: DecodedRow }>): PerformanceDisplayRecord[] => {
   const sums = new Map<string, DecodedRow & { bucket: string }>();
-  for (const slice of buckets) for (const row of mode === 'total' ? (slice.total === undefined ? [] : [slice.total]) : slice.rows) {
-    const bucket = mode === 'series' ? slice.bucket : 'all';
+  for (const { bucket, row } of items) {
     const key = JSON.stringify([bucket, row.group]);
     let target = sums.get(key);
     if (target === undefined) {
@@ -140,7 +151,96 @@ const sum = (buckets: readonly DecodedSlice[], mode: 'series' | 'rows' | 'total'
   })).sort((a, b) => a.bucket.localeCompare(b.bucket) || a.group.localeCompare(b.group));
 };
 
+const sum = (buckets: readonly DecodedSlice[], mode: 'series' | 'rows' | 'total'): PerformanceDisplayRecord[] => {
+  const items: Array<{ bucket: string; row: DecodedRow }> = [];
+  for (const slice of buckets) {
+    const bucket = mode === 'series' ? slice.bucket : 'all';
+    const rows = mode === 'total' ? (slice.total === undefined ? [] : [slice.total]) : slice.rows;
+    for (const row of rows) items.push({ bucket, row });
+  }
+  return sumDecodedRows(items);
+};
+
 export const performanceRanking = ({ snapshot }: PerformanceDataset): PerformanceDisplayRecord[] => sum(snapshot.buckets, 'rows');
+
+export interface PerformanceChartData {
+  series: PerformanceDisplayRecord[];
+  seriesByGroup: Map<string, SeriesLegendEntry>;
+  other: ChartSectionOther | undefined;
+}
+
+export const buildPerformanceChartData = ({
+  dataset,
+  buckets,
+  groupBy,
+  metric,
+  foldSmallSeries,
+  hidden,
+  labels,
+  otherLabel,
+}: {
+  dataset: PerformanceDataset;
+  buckets: readonly ChartBucket[];
+  groupBy: PerformanceGroupBy;
+  metric: PerformanceMetric;
+  foldSmallSeries: boolean;
+  hidden: ReadonlySet<string>;
+  labels: PerformanceLabels;
+  otherLabel: string;
+}): PerformanceChartData => {
+  const bucketKeys = new Set(buckets.map(bucket => bucket.key));
+  const windowSlices = dataset.snapshot.buckets.filter(slice => bucketKeys.has(slice.bucket));
+
+  const windowItems: Array<{ bucket: string; row: DecodedRow }> = [];
+  const baselineRequests = new Map<string, number>();
+  const activeSamples = new Map<string, number>();
+  for (const slice of windowSlices) {
+    for (const row of slice.rows) {
+      windowItems.push({ bucket: slice.bucket, row });
+      baselineRequests.set(row.group, addCount(baselineRequests.get(row.group) ?? 0, row.requests));
+      const samples = metric === 'ttft' ? row.ttftSamples : row.tpotSamples;
+      activeSamples.set(row.group, addCount(activeSamples.get(row.group) ?? 0, samples));
+    }
+  }
+
+  const presentItems = [...baselineRequests.keys()].sort().map(id => ({
+    id,
+    label: resolvePerformanceGroup(id, groupBy, labels),
+  }));
+
+  const explicitHues = groupBy === 'upstream' ? labels.upstreamHues : undefined;
+  const hueByGroup = stableSeriesHues(presentItems.map(item => item.id), baselineRequests, explicitHues);
+  const { top, other: otherItems } = partitionSeriesForOther(presentItems, activeSamples, foldSmallSeries);
+  const otherIdSet = new Set(otherItems.map(item => item.id));
+
+  const plotItems: Array<{ bucket: string; row: DecodedRow }> = [];
+  for (const entry of windowItems) {
+    if (otherIdSet.has(entry.row.group)) {
+      if (!hidden.has(entry.row.group)) {
+        plotItems.push({ bucket: entry.bucket, row: { ...entry.row, group: OTHER_SERIES_ID } });
+      }
+    } else {
+      plotItems.push(entry);
+    }
+  }
+
+  const series = sumDecodedRows(plotItems);
+  const seriesByGroup = new Map<string, SeriesLegendEntry>(top.map(item => [item.id, {
+    id: item.id,
+    label: item.label,
+    hue: hueByGroup.get(item.id)!,
+  }]));
+  if (otherItems.length > 0) {
+    seriesByGroup.set(OTHER_SERIES_ID, {
+      id: OTHER_SERIES_ID,
+      label: otherLabel,
+      hue: 0,
+      color: OTHER_SERIES_COLOR,
+    });
+  }
+
+  return { series, seriesByGroup, other: otherSeriesGroup(otherItems) };
+};
 
 export const performanceOverviewForDisplay = ({ snapshot }: PerformanceDataset): PerformanceOverviewView => {
   const { buckets, globalSummary } = snapshot;

@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { clientLoader, shouldRevalidate } from '../../src/routes/dashboard';
 import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
+import { defaultUserPreferences } from '@floway-dev/protocols/browser';
 
 stubLocalStorage();
 
@@ -14,10 +15,10 @@ afterEach(() => {
 test('dashboard navigation refreshes capability fields from auth/me', async () => {
   useAuthStore.getState().primeFromLogin({
     token: 'session',
-    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false } },
+    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { ...defaultUserPreferences } },
   });
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({
-    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false } },
+    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { ...defaultUserPreferences } },
     viaApiKey: false,
     apiKey: null,
   })));

@@ -20,12 +20,15 @@ export interface UserPreferences {
    */
   language: SupportedLanguage | null;
   uiTextEditor: boolean;
+  /** Telemetry charts fold minor series of the active metric into Other. */
+  foldSmallSeries: boolean;
 }
 
 export const defaultUserPreferences: UserPreferences = {
   quotaDisplay: 'remaining',
   language: null,
   uiTextEditor: false,
+  foldSmallSeries: false,
 };
 
 const isQuotaDisplay = (value: unknown): value is QuotaDisplay =>
@@ -33,6 +36,14 @@ const isQuotaDisplay = (value: unknown): value is QuotaDisplay =>
 
 const isSupportedLanguage = (value: unknown): value is SupportedLanguage =>
   SUPPORTED_LANGUAGES.includes(value as SupportedLanguage);
+
+type BooleanPreferenceKey = 'uiTextEditor' | 'foldSmallSeries';
+
+const parseBooleanPreference = (record: Record<string, unknown>, key: BooleanPreferenceKey): boolean => {
+  const value = record[key] === undefined ? defaultUserPreferences[key] : record[key];
+  if (typeof value !== 'boolean') throw new TypeError(`preferences.${key} must be a boolean`);
+  return value;
+};
 
 /**
  * Reads a preferences object from storage, a backup, or a request. Absent
@@ -54,12 +65,10 @@ export const parseUserPreferences = (value: unknown): UserPreferences => {
     throw new TypeError(`preferences.language is not one of ${[...SUPPORTED_LANGUAGES, 'null'].join(', ')}`);
   }
 
-  const uiTextEditor = record.uiTextEditor === undefined ? defaultUserPreferences.uiTextEditor : record.uiTextEditor;
-  if (typeof uiTextEditor !== 'boolean') {
-    throw new TypeError('preferences.uiTextEditor must be a boolean');
-  }
+  const uiTextEditor = parseBooleanPreference(record, 'uiTextEditor');
+  const foldSmallSeries = parseBooleanPreference(record, 'foldSmallSeries');
 
-  return { quotaDisplay, language, uiTextEditor };
+  return { quotaDisplay, language, uiTextEditor, foldSmallSeries };
 };
 
 export const serializeUserPreferences = (preferences: UserPreferences): string => JSON.stringify(preferences);

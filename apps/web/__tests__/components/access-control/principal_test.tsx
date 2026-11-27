@@ -6,9 +6,10 @@ import { PrincipalPicker } from '../../../src/components/access-control/principa
 import type { ScopeExpressionData } from '../../../src/components/access-control/scope-expression';
 import { renderInApp } from '../../render';
 import type { AccessPrincipal } from '@floway-dev/gateway/browser';
+import { defaultUserPreferences } from '@floway-dev/protocols/browser';
 
 const data: ScopeExpressionData = {
-  users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false }, groupIds: [1] }],
+  users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { ...defaultUserPreferences }, groupIds: [1] }],
   groups: [{ id: 1, name: 'Platform', hue: 210, createdAt: '', deletedAt: null, memberIds: [2] }],
   upstreams: [], models: [],
 };

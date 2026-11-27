@@ -1,6 +1,5 @@
 import { LineChart, type CustomizedCalloutData } from '@fluentui/react-charts';
-import { useCallback, useMemo } from 'react';
-import type { ReactElement } from 'react';
+import { useCallback, useMemo, type ReactElement, type ReactNode } from 'react';
 
 import type { PerformancePlot, PerformanceChartPointDetails } from './plot';
 import { fluentComponents } from '../../fluent';
@@ -13,7 +12,7 @@ import { chartTickValues, formatAxisDate, formatCalloutTitle } from '../charts/d
 import { useChartFrame } from '../charts/frame-styles';
 import { ChartHost } from '../charts/host';
 import { FluentChartPointMarkers } from '../charts/point-markers';
-import { ChartSection } from '../charts/section';
+import { ChartSection, type ChartSectionOther } from '../charts/section';
 import type { ChartSeries } from '../charts/series-legends';
 import { visibleSeriesData } from '../charts/series-selection';
 import { ScrollArea } from '../ui/scroll-area';
@@ -44,9 +43,33 @@ const usePerformanceChartStyles = makeStyles({
     '& circle[id*="staticHighlightCircle"]': { visibility: 'hidden' },
   },
 });
-export function PerformanceChartSection({ chart, hidden, onHiddenChange, title }: { chart: PerformancePlot; hidden: Set<string>; onHiddenChange: (next: Set<string>) => void; title: string }) {
+export function PerformanceChartSection({
+  actions,
+  chart,
+  hidden,
+  onHiddenChange,
+  other,
+  title,
+}: {
+  actions?: ReactNode;
+  chart: PerformancePlot;
+  hidden: Set<string>;
+  onHiddenChange: (next: Set<string>) => void;
+  other?: ChartSectionOther | undefined;
+  title: string;
+}) {
   const { t } = useTranslation();
-  return <ChartSection controlsLabel={t('monitoring.performance.series.label')} emptyText={t('monitoring.performance.empty')} entries={chart.entries} hidden={hidden} onHiddenChange={onHiddenChange} title={title}>
+  return <ChartSection
+    actions={actions}
+    controlsLabel={t('monitoring.performance.series.label')}
+    emptyText={t('monitoring.performance.empty')}
+    entries={chart.entries}
+    hidden={hidden}
+    onHiddenChange={onHiddenChange}
+    other={other}
+    title={title}
+    weights={chart.weights}
+  >
     <PerformanceChart chart={chart} hidden={hidden} />
   </ChartSection>;
 }
