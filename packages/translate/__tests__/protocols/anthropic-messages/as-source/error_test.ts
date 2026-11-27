@@ -4,7 +4,7 @@ import { writeAnthropicMessagesError } from '../../../../src/protocols/anthropic
 import { irErrorPayloadFromBody } from '../../../../src/shared/api-error.ts';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
-const decoded = (result: { body: unknown } | undefined) => result!.body as {
+const decoded = (result: { body: unknown }) => result.body as {
   type: string;
   error: { type: string; message: string };
 };

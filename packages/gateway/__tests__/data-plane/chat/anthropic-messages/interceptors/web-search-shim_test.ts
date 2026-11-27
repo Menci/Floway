@@ -414,6 +414,7 @@ test('count_tokens returns a native error response for invalid web-search tools'
   );
 
   assertEquals(response.type, 'api-error');
+  if (response.type !== 'api-error') throw new Error('unreachable');
   assertEquals(response.http.status, 400);
   expect(JSON.parse(decodeResponseBody(response.body))).toMatchObject({ type: 'error', error: { type: 'invalid_request_error' } });
 });

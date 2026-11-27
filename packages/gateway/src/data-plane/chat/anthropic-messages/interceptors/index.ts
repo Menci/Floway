@@ -42,10 +42,10 @@ import { withAnthropicMessagesWebSearchRequestPrepared, withAnthropicMessagesWeb
 //     models that support the role rewrite only content-bearing system groups
 //     outside the placement rules documented by the API.
 //
-// The remaining three entries mutate only the request payload and are shared
+// The remaining four entries mutate only the request payload and are shared
 // with count_tokens in the same order. Token counting therefore observes the
-// same gateway-level billing-attribution, reasoning, and role shape as
-// generation.
+// same gateway-level billing-attribution, reasoning, tool-choice, and role
+// shape as generation.
 const anthropicMessagesPayloadInterceptors: readonly AnthropicMessagesPayloadInterceptor[] = [
   stripBillingAttribution,
   withReasoningDisabledOnForcedToolChoice,

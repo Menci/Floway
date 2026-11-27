@@ -1,4 +1,4 @@
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from './test-policy.ts';
 import { analyzeOpenAIResponsesAffinity } from '../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
@@ -17,8 +17,9 @@ import { acceptedAffinityEvaluation } from '../shared/affinity/helpers.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesPayloadEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type UpstreamModel, type UpstreamOpenAIResponsesResult, type UpstreamStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/upstream';
 
@@ -575,5 +576,83 @@ test('generate lowers a standalone function_call_output to external context acro
     { role: 'assistant', content: null, tool_calls: [{ id: 'call_goal', type: 'function', function: { name: 'create_goal', arguments: '{"objective":"Write unit tests"}' } }] },
     { role: 'tool', tool_call_id: 'call_goal', content: '{"goal":{"status":"active"}}' },
     { role: 'user', content: '<external_goal_objective>Write unit tests</external_goal_objective>' },
+  ]);
+});
+
+test('generate translates through Gemini, lowers agent_message, preserves rawJSON numbers, and pivots compact via the shim', async () => {
+  installRepo();
+  let capturedBody: GeminiGenerateContentPayload | undefined;
+  let wireBody = '';
+  const callGeminiGenerateContent = vi.fn(async (_model: unknown, body: GeminiGenerateContentPayload): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => {
+    capturedBody = body;
+    wireBody = JSON.stringify(body);
+    return {
+      ok: true,
+      modelKey: 'k',
+      http: { status: 200, headers: new Headers() },
+      events: (async function* () {
+        yield eventFrame<GeminiGenerateContentStreamEvent>({
+          responseId: 'gem_resp_gw',
+          modelVersion: 'test-model',
+          candidates: [{
+            index: 0,
+            content: { role: 'model', parts: [{ thought: true, text: 'Gemini thought.' }, { text: 'Compacted summary.' }] },
+            finishReason: 'STOP',
+          }],
+        });
+        yield doneFrame();
+      })(),
+    };
+  });
+  const candidate: ModelCandidate = {
+    upstream: {
+      upstreamId: 'up_gemini', kind: 'custom', name: 'up_gemini', inboundHeaderAllowlist: [],
+      instance: stubUpstream({ callGeminiGenerateContent }),
+    },
+    model: stubUpstreamModel({ endpoints: { geminiGenerateContent: {} } }),
+    fetcher: directFetcher,
+  };
+
+  const result = await openaiResponsesAttempt.generate({
+    payload: makePayload({
+      instructions: 'Follow protocol.',
+      reasoning: { effort: 'medium' },
+      tools: [{ type: 'function', name: 'score', parameters: { type: 'object' } }],
+      input: [
+        { type: 'agent_message', author: 'lead', recipient: 'worker', content: [{ type: 'input_text', text: 'Subagent task prompt' }] },
+        { type: 'message', role: 'user', content: 'Score it.' },
+        { type: 'function_call', call_id: 'call_score', name: 'score', arguments: '{"threshold":1.0}' },
+        { type: 'function_call_output', call_id: 'call_score', output: '{"score":12.50}' },
+      ],
+    }),
+    ctx: makeGatewayCtx(),
+    candidate,
+    headers: new Headers(),
+  });
+  expect(capturedBody).toBeDefined();
+  expect('model' in capturedBody!).toBe(false);
+  expect(wireBody).toContain('Subagent task prompt');
+  expect(wireBody).toContain('"args":{"threshold":1.0}');
+  expect(wireBody).toContain('"response":{"score":12.50}');
+  expect(result.type).toBe('events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  const assembled = await collectOpenAIResponsesProtocolEventsToResult(result.events);
+  expect(assembled.output).toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: 'reasoning', summary: [{ type: 'summary_text', text: 'Gemini thought.' }] }),
+    expect.objectContaining({ type: 'message', content: [expect.objectContaining({ type: 'output_text', text: 'Compacted summary.' })] }),
+  ]));
+
+  const compacted = await openaiResponsesAttempt.invoke({
+    action: 'compact',
+    payload: makePayload({ input: [{ type: 'message', role: 'user', content: 'Summarize this conversation.' }] }),
+    ctx: mockChatGatewayCtx({ apiKeyId: API_KEY_ID, wantsStream: false }),
+    candidate,
+    headers: new Headers(),
+  });
+  expect(callGeminiGenerateContent).toHaveBeenCalledTimes(2);
+  expect(compacted.type).toBe('result');
+  if (compacted.type !== 'result') throw new Error('unreachable');
+  expect(compacted.result.output).toEqual([
+    expect.objectContaining({ type: 'compaction', encrypted_content: expect.any(String) }),
   ]);
 });

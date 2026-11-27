@@ -2,7 +2,7 @@ import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { Interceptor, InterceptorRun } from '@floway-dev/interceptor';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ApiErrorResult, ExecuteResult, AnthropicMessagesInvocation, PlainResult } from '@floway-dev/upstream';
+import type { ApiErrorResult, ExecuteResult, AnthropicMessagesInvocation, InternalErrorResult, PlainResult } from '@floway-dev/upstream';
 
 export type { AnthropicMessagesInvocation };
 
@@ -12,13 +12,13 @@ export type AnthropicMessagesInterceptor = Interceptor<
   ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>
 >;
 
-// count_tokens returns an upstream-shaped HTTP body or an API error. Shared
-// entries must remain pure header/payload mutators; post-run stream inspection
-// is not portable to this result type.
+// count_tokens returns an upstream-shaped HTTP body, an API error, or a
+// gateway internal error. Shared entries must remain pure header/payload
+// mutators; post-run stream inspection is not portable to this result type.
 export type AnthropicMessagesCountTokensInterceptor = Interceptor<
   AnthropicMessagesInvocation,
   GatewayCtx,
-  ApiErrorResult | PlainResult
+  ApiErrorResult | InternalErrorResult | PlainResult
 >;
 
 // Payload-only transforms can run in both the streaming generation chain and

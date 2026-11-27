@@ -7,16 +7,13 @@ import {
   geminiGenerateContentConversationFromIR,
   geminiGenerateContentHeaderFromIR,
   type GeminiGenerateContentToolResultLookup,
+  type NormalizedGeminiContent,
 } from './input-from.ts';
 import type { RestoredAssistantTurn } from '../../../composition/reading.ts';
 import type { IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
 import { segmentTurns } from '../../../composition/request/segments.ts';
 import type { IRInputRequestHeader } from '../../../ir/input/types.ts';
-import type {
-  GeminiGenerateContentContent,
-  GeminiGenerateContentPart,
-  GeminiGenerateContentRequest,
-} from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPart, GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 
 export const geminiGenerateContentPayloadFromSegments = (
   request: IRInputRequestHeader,
@@ -24,20 +21,18 @@ export const geminiGenerateContentPayloadFromSegments = (
   matchedToolResults: GeminiGenerateContentToolResultLookup,
 ): GeminiGenerateContentRequest => {
   const systemParts: GeminiGenerateContentPart[] = [];
-  const contents: (GeminiGenerateContentContent & { role: 'user' | 'model'; parts: GeminiGenerateContentPart[] })[] = [];
+  const contents: NormalizedGeminiContent[] = [];
   const syntheticFunctionCalls = new WeakSet<GeminiGenerateContentPart>();
 
   for (const piece of segmentTurns(turns)) {
     if (piece.kind === 'restored') {
-      for (const entry of piece.turn) {
-        const parts = entry.parts ?? [];
-        if (parts.length > 0) {
-          appendContentParts(contents, 'model', klona(parts));
-        } else if (contents.at(-1)?.role !== 'model') {
-          // A restored turn with no parts (e.g. promptFeedback or SAFETY) still needs a
-          // non-empty part so Gemini accepts the turn boundary without merging surrounding user turns.
-          appendContentParts(contents, 'model', [{ text: '' }]);
-        }
+      const parts = piece.turn.flatMap(entry => entry.parts ?? []);
+      if (parts.length > 0) {
+        appendContentParts(contents, 'model', klona(parts));
+      } else if (contents.at(-1)?.role !== 'model') {
+        // A restored turn with no parts (e.g. promptFeedback or SAFETY) still needs a
+        // non-empty part so Gemini accepts the turn boundary without merging surrounding user turns.
+        appendContentParts(contents, 'model', [{ text: '' }]);
       }
       continue;
     }

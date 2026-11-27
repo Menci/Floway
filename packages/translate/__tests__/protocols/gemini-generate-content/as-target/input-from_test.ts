@@ -370,7 +370,10 @@ test('returns input-error when a source file_id media reference cannot be resolv
     stream: true,
     input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_123', detail: 'auto' }] }],
   }, options());
-  expect(result).toMatchObject({ type: 'input-error' });
+  expect(result).toMatchObject({
+    type: 'input-error',
+    message: 'Cannot translate a file id reference to Gemini GenerateContent; send the content inline or by URL.',
+  });
 });
 
 test('omits empty systemInstruction, non-forcing toolConfig without tools, empty/auto serviceTier, and empty effort or summary', async () => {
@@ -417,7 +420,10 @@ test('maps toolConfig variants (none, required, allowed_tools empty/all/undeclar
   expect(expectTrip(await runChoice('required')).target.toolConfig).toEqual({ functionCallingConfig: { mode: 'ANY' } });
   expect(expectTrip(await runChoice('required', undefined)).target.toolConfig).toEqual({ functionCallingConfig: { mode: 'ANY' } });
   expect(expectTrip(await runChoice({ type: 'allowed_tools', mode: 'auto', tools: [] })).target.toolConfig).toEqual({ functionCallingConfig: { mode: 'NONE' } });
-  expect(await runChoice({ type: 'allowed_tools', mode: 'required', tools: [] })).toMatchObject({ type: 'input-error' });
+  expect(await runChoice({ type: 'allowed_tools', mode: 'required', tools: [] })).toMatchObject({
+    type: 'input-error',
+    message: 'Cannot translate required allowed_tools with an empty callable subset.',
+  });
   expect(expectTrip(await runChoice({
     type: 'allowed_tools',
     mode: 'auto',
@@ -713,7 +719,7 @@ test('keeps tool_result documents and URL attachments intact after contiguous fu
         functionResponse: {
           id: 'toolu_pdf',
           name: 'fetch_pdf',
-          response: { output: 'Attachments is attached in the following user content.' },
+          response: { output: 'Attachments are attached in the following user content.' },
         },
       },
       {
@@ -751,4 +757,143 @@ test('keeps tool_result documents and URL attachments intact after contiguous fu
       { inlineData: { mimeType: 'application/pdf', data: 'JVBERi0=' } },
     ],
   }]);
+});
+
+test('covers assistant custom_tool_call/refusal, empty boundaries, single-kind lifted tool results, media documents, and generation settings', () => {
+  const codec = createTestSidecarCodec('gemini-target-coverage');
+  const write = (
+    header: Parameters<typeof geminiGenerateContentTargetProtocol.write>[0],
+    turns: Parameters<typeof geminiGenerateContentTargetProtocol.write>[1],
+  ) => geminiGenerateContentTargetProtocol.write(header, turns, { sidecarCodec: codec }).payload;
+
+  // 1. Reasoning-only assistant turn followed by real assistant turn, multi-entry restored turn with leading empty entry,
+  //    custom_tool_call, assistant refusal, non-leading instruction, media document, and empty user/assistant messages.
+  const conversation = write({
+    settings: {
+      model: 'gemini-2.5-pro',
+      stream: true,
+      max_visible_output_tokens: 512,
+      top_p: 0.9,
+      seed: 42,
+      presence_penalty: 0.25,
+      frequency_penalty: 0.5,
+      reasoning_effort: 'minimal',
+    },
+  }, [
+    { kind: 'client', items: [{ type: 'message', role: 'user', content: [] }] },
+    { kind: 'assistant', items: [{ type: 'reasoning', id: 'r_drop', summary: ['dropped'] }] },
+    {
+      kind: 'assistant',
+      items: [
+        { type: 'message', content: [{ type: 'refusal', refusal: 'Cannot comply.' }] },
+        { type: 'custom_tool_call', call_id: 'c_patch', name: 'apply_patch', input: 'diff' },
+      ],
+    },
+    { kind: 'client', items: [{ type: 'tool_result', call_id: 'c_patch', output: [] }] },
+    {
+      kind: 'restored',
+      turn: [
+        { role: 'model', parts: [] },
+        { role: 'model', parts: [{ functionCall: { name: 'idless', args: {} } }] },
+      ],
+      sourceCallIds: ['synth_1'],
+    },
+    {
+      kind: 'client',
+      items: [
+        {
+          type: 'tool_result',
+          call_id: 'synth_1',
+          is_error: true,
+          output: [{ type: 'image', image: { source_kind: 'url', url: 'https://example.com/err.png' } }],
+        },
+        { type: 'instruction', content: [{ type: 'text', text: 'Mid-conversation instruction' }] },
+        {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'document', document: { title: 'Manual', source: { source_kind: 'media', media: { source_kind: 'base64', media_type: 'application/pdf', data: 'JVBERi0=' } } } }],
+        },
+      ],
+    },
+    { kind: 'assistant', items: [{ type: 'message', content: [] }] },
+  ]);
+
+  expect(conversation.generationConfig).toEqual({
+    maxOutputTokens: 512,
+    topP: 0.9,
+    seed: 42,
+    presencePenalty: 0.25,
+    frequencyPenalty: 0.5,
+    thinkingConfig: { thinkingLevel: 'MINIMAL', includeThoughts: true },
+  });
+  expect(conversation.contents).toEqual([
+    { role: 'user', parts: [{ text: '' }] },
+    {
+      role: 'model',
+      parts: [
+        { text: 'Cannot comply.' },
+        { functionCall: { id: 'c_patch', name: 'apply_patch', args: { input: 'diff' } }, thoughtSignature: 'skip_thought_signature_validator' },
+      ],
+    },
+    { role: 'user', parts: [{ functionResponse: { id: 'c_patch', name: 'apply_patch', response: { output: '' } } }] },
+    { role: 'model', parts: [{ functionCall: { name: 'idless', args: {} } }] },
+    {
+      role: 'user',
+      parts: [
+        { functionResponse: { name: 'idless', response: { error: 'Image output is attached in the following user content.' } } },
+        { text: 'Image output from tool call idless:' },
+        { fileData: { fileUri: 'https://example.com/err.png' } },
+        { text: 'Mid-conversation instruction' },
+        { text: '<document>\n<title>Manual</title>' },
+        { inlineData: { mimeType: 'application/pdf', data: 'JVBERi0=' } },
+        { text: '</document>' },
+      ],
+    },
+    { role: 'model', parts: [{ text: '' }] },
+  ]);
+
+  // 2. Single-kind file and document lifted tool_result labels + reasoning_budget: 0 and open-string reasoning_effort.
+  const singleKindLifts = write({
+    settings: { model: 'gemini-2.5-pro', stream: true, reasoning_budget: 0 },
+  }, [
+    {
+      kind: 'assistant',
+      items: [
+        { type: 'function_call', call_id: 'c_file', name: 'fetch_file', arguments: '{}' },
+        { type: 'function_call', call_id: 'c_doc', name: 'fetch_doc', arguments: '{}' },
+      ],
+    },
+    {
+      kind: 'client',
+      items: [
+        { type: 'tool_result', call_id: 'c_file', output: [{ type: 'file', file: { source_kind: 'url', url: 'https://example.com/a.bin' } }] },
+        { type: 'tool_result', call_id: 'c_doc', output: [{ type: 'document', document: { source: { source_kind: 'text', media_type: 'text/plain', text: 'Body' } } }] },
+      ],
+    },
+  ]);
+  expect(singleKindLifts.generationConfig).toEqual({ thinkingConfig: { thinkingBudget: 0 } });
+  expect(singleKindLifts.contents[1]).toEqual({
+    role: 'user',
+    parts: [
+      { functionResponse: { id: 'c_file', name: 'fetch_file', response: { output: 'File output is attached in the following user content.' } } },
+      { functionResponse: { id: 'c_doc', name: 'fetch_doc', response: { output: 'Document output is attached in the following user content.' } } },
+      { text: 'File output from tool call c_file:' },
+      { fileData: { fileUri: 'https://example.com/a.bin' } },
+      { text: 'Document output from tool call c_doc:' },
+      { text: '<document>' },
+      { text: 'Body' },
+      { text: '</document>' },
+    ],
+  });
+
+  const openEffort = write({
+    settings: { model: 'gemini-2.5-pro', stream: true, reasoning_effort: 'custom_level' as never },
+  }, [{ kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text: 'hi' }] }] }]);
+  expect(openEffort.generationConfig).toEqual({
+    thinkingConfig: { thinkingLevel: 'custom_level', includeThoughts: true },
+  });
+
+  expect(() => write({ settings: { model: 'gemini-2.5-pro', stream: false } }, [])).toThrow(
+    'A translation target requires a streaming request',
+  );
 });

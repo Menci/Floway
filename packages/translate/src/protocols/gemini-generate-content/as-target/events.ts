@@ -57,6 +57,20 @@ const FAILED_OUTPUT_FINISH_REASONS: ReadonlySet<string> = new Set([
   'MALFORMED_RESPONSE',
 ]);
 
+const USAGE_METADATA_KEYS: readonly (keyof GeminiGenerateContentUsageMetadata)[] = [
+  'promptTokenCount',
+  'candidatesTokenCount',
+  'totalTokenCount',
+  'cachedContentTokenCount',
+  'thoughtsTokenCount',
+  'toolUsePromptTokenCount',
+  'promptTokensDetails',
+  'cacheTokensDetails',
+  'candidatesTokensDetails',
+  'toolUsePromptTokensDetails',
+  'serviceTier',
+];
+
 const mapFinishReason = (
   finishReason: GeminiGenerateContentFinishReason,
   hasToolCalls: boolean,
@@ -67,11 +81,37 @@ const mapFinishReason = (
   return 'stop';
 };
 
+const ensureSegmentIndex = (segment: TextSegment): TextCoordinateIndex => {
+  segment.coordinateIndex ??= TextCoordinateIndex.utf8ToUTF16(segment.text);
+  segment.coordinateIndex.assertUTF16Length(segment.text.length);
+  return segment.coordinateIndex;
+};
+
+const matchesSegmentText = (
+  segment: TextSegment,
+  startByte: number,
+  endByte: number | undefined,
+  expectedText: string,
+): boolean => {
+  if (endByte === undefined || !Number.isInteger(startByte) || !Number.isInteger(endByte) || startByte < 0 || endByte <= startByte) {
+    return false;
+  }
+  const index = ensureSegmentIndex(segment);
+  if (endByte > index.utf8Length) return false;
+  try {
+    const range = index.utf8RangeToUTF16(startByte, endByte);
+    return segment.text.slice(range.start, range.end_exclusive) === expectedText;
+  } catch (error) {
+    if (error instanceof RangeError) return false;
+    throw error;
+  }
+};
+
 // Proto3 JSON omits default zero values like `startIndex: 0` and `partIndex: 0`.
 // https://protobuf.dev/programming-guides/json/#field-presence
 const utf8ByteRangeToUTF16 = (
   choiceIndex: number,
-  segment: NativeTextSegment,
+  segment: TextSegment,
   startByte: number | undefined,
   endByte: number | undefined,
 ): { start: number; end_exclusive: number } | undefined => {
@@ -81,9 +121,8 @@ const utf8ByteRangeToUTF16 = (
     console.warn('Dropping Gemini GenerateContent grounding range with invalid byte bounds', { choice: choiceIndex, startByte: rawStart, endByte });
     return undefined;
   }
-  segment.coordinateIndex ??= TextCoordinateIndex.utf8ToUTF16(segment.text);
-  segment.coordinateIndex.assertUTF16Length(segment.text.length);
-  const availableBytes = segment.coordinateIndex.utf8Length;
+  const index = ensureSegmentIndex(segment);
+  const availableBytes = index.utf8Length;
   const clampedStart = Math.min(rawStart, availableBytes);
   const clampedEnd = Math.min(endByte, availableBytes);
   if (endByte > availableBytes) {
@@ -96,7 +135,7 @@ const utf8ByteRangeToUTF16 = (
   }
   if (clampedStart >= clampedEnd) return undefined;
   try {
-    const relative = segment.coordinateIndex.utf8RangeToUTF16(clampedStart, clampedEnd);
+    const relative = index.utf8RangeToUTF16(clampedStart, clampedEnd);
     return {
       start: segment.utf16Base + relative.start,
       end_exclusive: segment.utf16Base + relative.end_exclusive,
@@ -135,8 +174,8 @@ const groundingChunkToCitation = (
     ...(source === undefined ? {} : { source }),
     ...(retrieved.title === undefined ? {} : { source_label: retrieved.title }),
     ...(sourceText === undefined ? {} : { source_text: sourceText }),
-    ...(typeof retrieved.pageNumber === 'number' && retrieved.pageNumber > 0
-      ? { source_page_range: { start_one_based: retrieved.pageNumber, end_one_based_exclusive: retrieved.pageNumber + 1 } }
+    ...(Number.isInteger(retrieved.pageNumber) && (retrieved.pageNumber as number) > 0
+      ? { source_page_range: { start_one_based: retrieved.pageNumber as number, end_one_based_exclusive: (retrieved.pageNumber as number) + 1 } }
       : {}),
     ...rangeField,
   } as IROutputSourceCitation;
@@ -148,10 +187,9 @@ interface TextPartRecord {
   readonly part: IRPartHandle;
   readonly citations: IROutputSourceCitation[];
   readonly citationKeys: Set<string>;
-  utf16Length: number;
 }
 
-interface NativeTextSegment {
+interface TextSegment {
   readonly textPart: TextPartRecord;
   readonly utf16Base: number;
   text: string;
@@ -161,16 +199,15 @@ interface NativeTextSegment {
 interface GeminiChoiceState {
   readonly irIndex: number;
   message?: IRItemHandle | undefined;
-  activeTextPart?: TextPartRecord | undefined;
+  activeTextSegment?: TextSegment | undefined;
   reasoning?: IRItemHandle | undefined;
   readonly nativeParts: GeminiGenerateContentPart[];
   readonly partsFieldState: PartsFieldState;
-  readonly textSegmentsByNativeIndex: Map<number, NativeTextSegment>;
-  readonly textSegmentsByLogicalIndex: Map<number, NativeTextSegment>;
-  firstTextSegment?: NativeTextSegment | undefined;
+  readonly textSegmentsByNativeIndex: Map<number, TextSegment>;
+  readonly textSegmentsByLogicalIndex: Map<number, TextSegment>;
+  firstTextSegment?: TextSegment | undefined;
   logicalPartCount: number;
-  lastPartWasThought: boolean;
-  lastNativePartIndex: number;
+  lastLogicalKind: 'none' | 'thought' | 'text' | 'other';
   hasToolCalls: boolean;
   logprobTokenCount: number;
   finishReason?: 'stop' | 'length' | 'tool_calls' | 'content_filter';
@@ -181,9 +218,43 @@ const mergeUsageMetadata = (
   target: GeminiGenerateContentUsageMetadata,
   incoming: GeminiGenerateContentUsageMetadata,
 ): void => {
-  for (const [key, value] of Object.entries(incoming)) {
-    if (value != null) (target as Record<string, unknown>)[key] = value;
+  for (const key of USAGE_METADATA_KEYS) {
+    const value = incoming[key];
+    if (value == null || (Array.isArray(value) && value.length === 0)) continue;
+    (target as Record<string, unknown>)[key] = value;
   }
+};
+
+// Reconcile native `Content.parts` indices with logical response part indices:
+// streaming thought chunks and mid-text `thoughtSignature` chunks stay split in
+// `nativeParts` for round-trip fidelity, while Gemini grounding may address the
+// merged logical part or omit `partIndex` (proto3 default `0`).
+// https://ai.google.dev/api/generate-content#Segment
+const resolveGroundingSegment = (
+  choice: GeminiChoiceState,
+  segmentSpec: NonNullable<NonNullable<GeminiGenerateContentGroundingMetadata['groundingSupports']>[number]['segment']> | undefined,
+): TextSegment | undefined => {
+  const partIndex = segmentSpec?.partIndex ?? 0;
+  const candidates: TextSegment[] = [];
+  const addCandidate = (segment: TextSegment | undefined): void => {
+    if (segment !== undefined && !candidates.includes(segment)) candidates.push(segment);
+  };
+  addCandidate(choice.textSegmentsByNativeIndex.get(partIndex));
+  addCandidate(choice.textSegmentsByLogicalIndex.get(partIndex));
+  if (partIndex === 0) addCandidate(choice.firstTextSegment);
+  if (candidates.length <= 1) return candidates[0];
+
+  const startByte = segmentSpec?.startIndex ?? 0;
+  const endByte = segmentSpec?.endIndex;
+  if (typeof segmentSpec?.text === 'string' && segmentSpec.text !== '') {
+    const byText = candidates.find(candidate => matchesSegmentText(candidate, startByte, endByte, segmentSpec.text!));
+    if (byText !== undefined) return byText;
+  }
+  if (typeof endByte === 'number' && Number.isInteger(endByte) && endByte > 0) {
+    const byBounds = candidates.find(candidate => endByte <= ensureSegmentIndex(candidate).utf8Length);
+    if (byBounds !== undefined) return byBounds;
+  }
+  return candidates[0];
 };
 
 export const readGeminiGenerateContentEvents = async function* (
@@ -212,8 +283,7 @@ export const readGeminiGenerateContentEvents = async function* (
         textSegmentsByNativeIndex: new Map(),
         textSegmentsByLogicalIndex: new Map(),
         logicalPartCount: 0,
-        lastPartWasThought: false,
-        lastNativePartIndex: -1,
+        lastLogicalKind: 'none',
         hasToolCalls: false,
         logprobTokenCount: 0,
         ended: false,
@@ -234,7 +304,7 @@ export const readGeminiGenerateContentEvents = async function* (
   };
 
   const closeMessage = (choice: GeminiChoiceState, status: 'completed' | 'incomplete' = 'completed'): void => {
-    choice.activeTextPart = undefined;
+    choice.activeTextSegment = undefined;
     if (choice.message === undefined) return;
     choice.message.end(status);
     choice.message = undefined;
@@ -260,9 +330,9 @@ export const readGeminiGenerateContentEvents = async function* (
       hasModel = true;
       ir.assign(['model'], model);
     }
+    if (!started && !hasModel) throw new TypeError('Gemini GenerateContent stream arrived before a non-empty model');
     if (event.usageMetadata != null) assignUsage(event.usageMetadata);
     if (started) return;
-    if (!hasModel) throw new TypeError('Gemini GenerateContent stream arrived before a non-empty model');
     ir.event({
       type: 'start',
       ...(typeof event.responseId === 'string' && event.responseId !== '' ? { id: event.responseId } : {}),
@@ -275,14 +345,13 @@ export const readGeminiGenerateContentEvents = async function* (
     if (chunks.length === 0) return;
     const touched = new Set<TextPartRecord>();
     for (const support of metadata.groundingSupports ?? []) {
-      const explicitPartIndex = support.segment?.partIndex;
-      const partIndex = explicitPartIndex ?? 0;
-      const segment = choice.textSegmentsByNativeIndex.get(partIndex)
-        ?? choice.textSegmentsByLogicalIndex.get(partIndex)
-        ?? (explicitPartIndex === undefined ? choice.firstTextSegment : undefined);
+      const segment = resolveGroundingSegment(choice, support.segment);
       if (segment === undefined) continue;
       if (!segment.textPart.part.isOpen) {
-        console.warn('Dropping Gemini GenerateContent grounding citation for closed text part', { choice: choiceIndex, partIndex });
+        console.warn('Dropping Gemini GenerateContent grounding citation for closed text part', {
+          choice: choiceIndex,
+          partIndex: support.segment?.partIndex ?? 0,
+        });
         continue;
       }
       const range = utf8ByteRangeToUTF16(choiceIndex, segment, support.segment?.startIndex, support.segment?.endIndex);
@@ -331,16 +400,13 @@ export const readGeminiGenerateContentEvents = async function* (
 
   const readPart = (choiceIndex: number, choice: GeminiChoiceState, part: GeminiGenerateContentPart): void => {
     const partIndex = appendGeminiGenerateContentPart(choice.nativeParts, part);
-    const mergedWithPreviousNative = partIndex === choice.lastNativePartIndex;
-    choice.lastNativePartIndex = partIndex;
     const isThought = part.thought === true;
-    // Consecutive thought chunks share one logical part index in Gemini grounding metadata.
-    const logicalIndex = mergedWithPreviousNative || (isThought && choice.lastPartWasThought)
-      ? choice.logicalPartCount - 1
-      : choice.logicalPartCount++;
-    choice.lastPartWasThought = isThought;
 
     if (isThought) {
+      if (choice.lastLogicalKind !== 'thought') {
+        choice.logicalPartCount++;
+        choice.lastLogicalKind = 'thought';
+      }
       if (typeof part.text === 'string' && part.text !== '') {
         closeMessage(choice);
         choice.reasoning ??= ir.item(choiceIndex, { type: 'reasoning', summary: [''] });
@@ -355,37 +421,44 @@ export const readGeminiGenerateContentEvents = async function* (
       if (part.text === '') return;
       closeReasoning(choice);
       choice.message ??= ir.item(choiceIndex, { type: 'message', content: [] });
-      choice.activeTextPart ??= {
-        part: choice.message.part({ type: 'text', text: '' }),
-        citations: [],
-        citationKeys: new Set(),
-        utf16Length: 0,
-      };
-      let segment = choice.textSegmentsByNativeIndex.get(partIndex);
-      if (segment === undefined) {
-        segment = {
-          textPart: choice.activeTextPart,
-          utf16Base: choice.activeTextPart.utf16Length,
+      if (choice.activeTextSegment === undefined) {
+        const textPart: TextPartRecord = {
+          part: choice.message.part({ type: 'text', text: '' }),
+          citations: [],
+          citationKeys: new Set(),
+        };
+        const logicalSegment: TextSegment = { textPart, utf16Base: 0, text: '' };
+        choice.activeTextSegment = logicalSegment;
+        const logicalIndex = choice.logicalPartCount++;
+        choice.lastLogicalKind = 'text';
+        choice.textSegmentsByLogicalIndex.set(logicalIndex, logicalSegment);
+        choice.firstTextSegment ??= logicalSegment;
+      }
+      const { textPart } = choice.activeTextSegment;
+      let nativeSegment = choice.textSegmentsByNativeIndex.get(partIndex);
+      if (nativeSegment === undefined) {
+        nativeSegment = {
+          textPart,
+          utf16Base: choice.activeTextSegment.text.length,
           text: '',
         };
-        choice.textSegmentsByNativeIndex.set(partIndex, segment);
-        if (!choice.textSegmentsByLogicalIndex.has(logicalIndex)) {
-          choice.textSegmentsByLogicalIndex.set(logicalIndex, segment);
-        }
-        choice.firstTextSegment ??= segment;
+        choice.textSegmentsByNativeIndex.set(partIndex, nativeSegment);
       }
       const existingState = choice.partsFieldState[partIndex];
       const existingTextField = existingState !== undefined && 'text' in existingState ? existingState.text : undefined;
       const textField = existingTextField ?? createReadFieldState('text');
       if (existingTextField === undefined) choice.partsFieldState[partIndex] = { text: textField };
-      appendTextField(choice.activeTextPart.part, 'text', part.text, textField);
-      segment.text += part.text;
-      segment.coordinateIndex?.append(part.text);
-      choice.activeTextPart.utf16Length += part.text.length;
+      appendTextField(textPart.part, 'text', part.text, textField);
+      nativeSegment.text += part.text;
+      nativeSegment.coordinateIndex?.append(part.text);
+      choice.activeTextSegment.text += part.text;
+      choice.activeTextSegment.coordinateIndex?.append(part.text);
       return;
     }
 
     if (part.functionCall !== undefined) {
+      choice.logicalPartCount++;
+      choice.lastLogicalKind = 'other';
       closeReasoning(choice);
       closeMessage(choice);
       choice.hasToolCalls = true;
@@ -417,14 +490,16 @@ export const readGeminiGenerateContentEvents = async function* (
     }
 
     if (part.inlineData !== undefined) {
+      choice.logicalPartCount++;
+      choice.lastLogicalKind = 'other';
       const mimeType = part.inlineData.mimeType.toLowerCase();
       const isAudio = mimeType.startsWith('audio/') || part.audioTranscription !== undefined;
       const isImage = !isAudio && mimeType.startsWith('image/');
       if (!isAudio && !isImage) return;
       closeReasoning(choice);
-      if (choice.activeTextPart !== undefined) {
-        choice.activeTextPart.part.end();
-        choice.activeTextPart = undefined;
+      if (choice.activeTextSegment !== undefined) {
+        choice.activeTextSegment.textPart.part.end();
+        choice.activeTextSegment = undefined;
       }
       choice.message ??= ir.item(choiceIndex, { type: 'message', content: [] });
 
@@ -435,14 +510,11 @@ export const readGeminiGenerateContentEvents = async function* (
           audio: {
             media_type: part.inlineData.mimeType,
             data: '',
-            ...(part.audioTranscription === undefined ? {} : { transcript: '' }),
+            ...(transcript === undefined ? {} : { transcript: '' }),
           },
         });
-        let dataField: ReadFieldState<'text'> | undefined;
-        if (part.inlineData.data !== '') {
-          dataField = createReadFieldState('text');
-          appendTextField(audioPart, ['audio', 'data'], part.inlineData.data, dataField);
-        }
+        const dataField = part.inlineData.data === '' ? undefined : createReadFieldState('text');
+        if (dataField !== undefined) appendTextField(audioPart, ['audio', 'data'], part.inlineData.data, dataField);
         let transcriptField: ReadFieldState<'text'> | undefined;
         if (transcript !== undefined && transcript !== '') {
           transcriptField = createReadFieldState('text');
@@ -461,6 +533,12 @@ export const readGeminiGenerateContentEvents = async function* (
           image: { data: part.inlineData.data, media_type: part.inlineData.mimeType },
         }).end();
       }
+      return;
+    }
+
+    if (part.executableCode !== undefined || part.codeExecutionResult !== undefined || part.toolCall !== undefined || part.toolResponse !== undefined || part.fileData !== undefined) {
+      choice.logicalPartCount++;
+      choice.lastLogicalKind = 'other';
     }
   };
 
@@ -484,12 +562,14 @@ export const readGeminiGenerateContentEvents = async function* (
     choice.ended = true;
   };
 
+  const finishStatus = (): 'completed' | 'incomplete' =>
+    [...choices.values()].some(choice => choice.finishReason === 'length') ? 'incomplete' : 'completed';
+
   const finishStream = function* (): Generator<IRRecord> {
     if (!started || !completion.isComplete()) {
       throw new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
     }
-    const anyIncomplete = [...choices.values()].some(choice => choice.finishReason === 'length');
-    ir.event({ type: 'finish', status: anyIncomplete ? 'incomplete' : 'completed' });
+    ir.event({ type: 'finish', status: finishStatus() });
     yield* ir.drain();
   };
 
@@ -499,7 +579,7 @@ export const readGeminiGenerateContentEvents = async function* (
       type: 'error',
       error: {
         message: `Gemini ended the response with ${finishReason}${suffix}`,
-        type: 'server_error',
+        type: 'api_error',
         code: finishReason,
       },
     });
@@ -529,7 +609,7 @@ export const readGeminiGenerateContentEvents = async function* (
         });
         endChoice(choice, 'content_filter');
       }
-      ir.event({ type: 'finish', status: 'completed' });
+      ir.event({ type: 'finish', status: finishStatus() });
       yield* ir.drain();
       return;
     }
@@ -543,8 +623,9 @@ export const readGeminiGenerateContentEvents = async function* (
 
       const finishReason = candidate.finishReason;
       const isTerminal = isGeminiGenerateContentTerminalFinishReason(finishReason);
+      const isFailed = isTerminal && FAILED_OUTPUT_FINISH_REASONS.has(finishReason);
       const hasParts = (candidate.content?.parts?.length ?? 0) > 0;
-      if (isTerminal && FAILED_OUTPUT_FINISH_REASONS.has(finishReason) && !hasParts && existing === undefined) {
+      if (isFailed && !hasParts && existing === undefined) {
         emitFailedFinishError(finishReason, candidate.finishMessage);
         yield* ir.drain();
         return;
@@ -562,7 +643,7 @@ export const readGeminiGenerateContentEvents = async function* (
       if (candidate.logprobsResult !== undefined) {
         applyLogprobs(choice.irIndex, choice, candidate);
       }
-      if (isTerminal && FAILED_OUTPUT_FINISH_REASONS.has(finishReason)) {
+      if (isFailed) {
         emitFailedFinishError(finishReason, candidate.finishMessage);
         yield* ir.drain();
         return;

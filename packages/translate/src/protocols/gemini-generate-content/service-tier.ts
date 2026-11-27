@@ -9,7 +9,7 @@ export const geminiServiceTierToInputIR = (tier: string | undefined): string | u
 };
 
 export const geminiServiceTierFromInputIR = (tier: string | null | undefined): string | undefined => {
-  // Omit OpenAI's default `auto` lane since Gemini has no matching tier value.
+  // Omit `auto` since Gemini has no matching tier value.
   if (tier == null || tier === '' || tier === 'auto') return undefined;
   if (isFastServiceTier(tier)) return FAST_SERVICE_TIER;
   return tier === 'default' ? 'standard' : tier;
@@ -22,7 +22,7 @@ export const geminiServiceTierToOutputIR = (tier: string | undefined): string | 
 };
 
 export const geminiServiceTierFromOutputIR = (tier: string | undefined): string | undefined => {
-  if (tier === undefined) return undefined;
+  if (tier === undefined || tier === '') return undefined;
   if (tier === 'fast') return FAST_SERVICE_TIER;
   return tier === 'default' ? 'standard' : tier;
 };

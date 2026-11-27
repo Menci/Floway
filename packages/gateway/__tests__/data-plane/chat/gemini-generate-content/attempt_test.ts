@@ -110,11 +110,10 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
     }),
     headers: new Headers(),
   });
-  assertEquals(unexpectedResp.type, 'plain');
-  if (unexpectedResp.type !== 'plain') throw new Error('unreachable');
+  assertEquals(unexpectedResp.type, 'internal-error');
+  if (unexpectedResp.type !== 'internal-error') throw new Error('unreachable');
   assertEquals(unexpectedResp.http.status, 502);
-  const body = JSON.parse(decodeResponseBody(unexpectedResp.body));
-  assertEquals(body.error.status, 'UNAVAILABLE');
+  assertEquals(unexpectedResp.error.message, 'Invalid upstream token counting response.');
 });
 
 test('countTokens runs the same shape cleanup chain generate does, and skips it natively', async () => {
@@ -241,23 +240,4 @@ test('translated countTokens uses trip.error for structured Anthropic upstream e
   assertEquals(JSON.parse(decodeResponseBody(plainTextResp.body)), {
     error: { code: 503, message: 'upstream unavailable', status: 'UNAVAILABLE' },
   });
-
-  const apiErrorResp = await geminiGenerateContentAttempt.countTokens({
-    payload: makePayload({
-      contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
-      tools: [{ googleSearch: {} }],
-    }),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({
-      // Only anthropicMessages is available, and Anthropic web-search shim rejects invalid server tools with ApiErrorResult,
-      // or an upstream Anthropic error body returns PlainResult.
-      callAnthropicMessagesCountTokens: async () => ({
-        http: new Response(null, { status: 204 }),
-        modelKey: 'k',
-      }),
-    }),
-    headers: new Headers(),
-  });
-  assertEquals(apiErrorResp.type, 'plain');
-  assertEquals(apiErrorResp.http.status, 204);
 });

@@ -7,7 +7,7 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { assertEquals } from '@floway-dev/test-utils';
 import type { ExecuteResult } from '@floway-dev/upstream';
@@ -95,6 +95,7 @@ test.each([false, true])('Gemini response exposes EOF with an unfinished observe
     type: 'events', events: (async function* () {
       yield eventFrame({ candidates: [{ index: 0, content: { parts: [{ text: 'done' }] }, finishReason: 'STOP' }] });
       yield eventFrame({ candidates: [{ index: 1, content: { parts: [{ text: 'unfinished' }] } }] });
+      yield doneFrame();
     })(), modelIdentity: testTelemetryModelIdentity,
   }, stream, ctx()));
   const response = await app.request('/');
@@ -102,6 +103,29 @@ test.each([false, true])('Gemini response exposes EOF with an unfinished observe
   assertEquals(response.status, stream ? 200 : 502);
   const errors = stream ? text.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line)) : [JSON.parse(text)];
   assertEquals(errors.length, 1);
+});
+
+test('Gemini SSE treats a done frame without a completed candidate as premature EOF', async () => {
+  const settled = Promise.withResolvers<string>();
+  const dump = {
+    frame: () => {},
+    failed: () => settled.resolve('failed'),
+    success: () => settled.resolve('completed'),
+  } as unknown as DumpAccumulator;
+  const app = new Hono().get('/', c => respondGeminiGenerateContent(c, {
+    type: 'events',
+    events: (async function* () {
+      yield eventFrame<GeminiGenerateContentStreamEvent>({
+        candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'partial' }] } }],
+      });
+      yield doneFrame();
+    })(),
+    modelIdentity: testTelemetryModelIdentity,
+  }, true, mockChatGatewayCtx({ dump })));
+  const response = await app.request('/');
+  const text = await response.text();
+  expect(text).toContain('"error"');
+  expect(await settled.promise).toBe('failed');
 });
 
 test('respondGeminiGenerateContent preserves upstream Google RPC Status body', async () => {

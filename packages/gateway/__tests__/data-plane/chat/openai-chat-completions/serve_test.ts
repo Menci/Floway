@@ -115,8 +115,8 @@ test('generate filters out candidates that do not expose any chat-completions-ta
   installRepo();
   const callOpenAIChatCompletions = vi.fn();
   // `openaiCompletions:{}` is not in the openaiChatCompletionsTarget preference list
-  // (`openai-chat-completions` > `messages` > `responses`), so the picker rejects
-  // this candidate.
+  // (`openai-chat-completions` > `messages` > `responses` > `gemini-generate-content`),
+  // so the picker rejects this candidate.
   queueResolution([makeCandidate({ upstream: 'up_m', endpoints: { openaiCompletions: {} }, callOpenAIChatCompletions })]);
 
   const result = await openaiChatCompletionsServe.generate({

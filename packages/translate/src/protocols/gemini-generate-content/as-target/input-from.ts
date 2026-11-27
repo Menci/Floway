@@ -47,21 +47,17 @@ const inlineBlob = (data: string, mediaType: string | undefined): GeminiGenerate
   data,
 });
 
+const dataURLPart = (value: string): GeminiGenerateContentPart => {
+  const parsed = parseDataURL(value);
+  return { inlineData: inlineBlob(parsed.data, parsed.media_type) };
+};
+
 const mediaPart = (media: IRInputMedia): GeminiGenerateContentPart => {
   switch (media.source_kind) {
   case 'url':
-    if (isDataURL(media.url)) {
-      const parsed = parseDataURL(media.url);
-      return { inlineData: inlineBlob(parsed.data, parsed.media_type) };
-    }
-    return { fileData: { fileUri: media.url } };
-  case 'data': {
-    if (isDataURL(media.data)) {
-      const parsed = parseDataURL(media.data);
-      return { inlineData: inlineBlob(parsed.data, parsed.media_type) };
-    }
-    return { inlineData: inlineBlob(media.data, undefined) };
-  }
+    return isDataURL(media.url) ? dataURLPart(media.url) : { fileData: { fileUri: media.url } };
+  case 'data':
+    return isDataURL(media.data) ? dataURLPart(media.data) : { inlineData: inlineBlob(media.data, undefined) };
   case 'base64':
     return { inlineData: inlineBlob(media.data, media.media_type) };
   case 'file':
@@ -158,7 +154,7 @@ const buildToolResult = (
     case 'file': {
       const converted = mediaPart(part.type === 'image' ? part.image : part.file);
       if (converted.inlineData !== undefined) {
-        inlineParts.push({ inlineData: { mimeType: converted.inlineData.mimeType, data: converted.inlineData.data } });
+        inlineParts.push({ inlineData: converted.inlineData });
       } else {
         liftedKinds.add(part.type);
         rawLiftedParts.push(converted);
@@ -175,14 +171,14 @@ const buildToolResult = (
   let liftedParts: GeminiGenerateContentPart[] = [];
   let liftedPlaceholder = '';
   if (rawLiftedParts.length > 0) {
-    const noun = liftedKinds.size > 1
-      ? 'Attachments'
+    const [noun, verb] = liftedKinds.size > 1
+      ? ['Attachments', 'are']
       : liftedKinds.has('image')
-        ? 'Image output'
+        ? ['Image output', 'is']
         : liftedKinds.has('file')
-          ? 'File output'
-          : 'Document output';
-    liftedPlaceholder = `${noun} is attached in the following user content.`;
+          ? ['File output', 'is']
+          : ['Document output', 'is'];
+    liftedPlaceholder = `${noun} ${verb} attached in the following user content.`;
     liftedParts = [
       { text: `${noun} from tool call ${matched.wireId ?? matched.name}:` },
       ...rawLiftedParts,
@@ -192,9 +188,7 @@ const buildToolResult = (
   const joinedText = texts.join('');
   const response = joinedText !== ''
     ? wrapFunctionResponseText(joinedText, isError)
-    : rawLiftedParts.length > 0
-      ? (isError ? { error: liftedPlaceholder } : { output: liftedPlaceholder })
-      : (isError ? { error: '' } : { output: '' });
+    : isError ? { error: liftedPlaceholder } : { output: liftedPlaceholder };
 
   return {
     responsePart: {
@@ -239,14 +233,15 @@ const userMessageParts = (item: Extract<IRInputClientItem, { type: 'message'; ro
 // https://ai.google.dev/gemini-api/docs/thought-signatures
 const GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR = 'skip_thought_signature_validator';
 
+export type NormalizedGeminiContent = GeminiGenerateContentContent & { role: 'user' | 'model'; parts: GeminiGenerateContentPart[] };
+
 export const applySyntheticThoughtSignatures = (
-  contents: readonly GeminiGenerateContentContent[],
+  contents: readonly NormalizedGeminiContent[],
   syntheticFunctionCalls: WeakSet<GeminiGenerateContentPart>,
 ): void => {
   for (const content of contents) {
     if (content.role !== 'model') continue;
-    const parts = content.parts ?? [];
-    const firstFunctionCall = parts.find(part => part.functionCall !== undefined);
+    const firstFunctionCall = content.parts.find(part => part.functionCall !== undefined);
     if (firstFunctionCall !== undefined && firstFunctionCall.thoughtSignature === undefined && syntheticFunctionCalls.has(firstFunctionCall)) {
       firstFunctionCall.thoughtSignature = GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR;
     }
@@ -277,7 +272,8 @@ const assistantParts = (
       // Readable reasoning from a non-sidecar turn has no Gemini `thoughtSignature`;
       // drop it rather than inventing a signature.
       break;
-    case 'function_call': {
+    case 'function_call':
+    case 'custom_tool_call': {
       const part: GeminiGenerateContentPart = {
         functionCall: {
           id: item.call_id,
@@ -285,19 +281,9 @@ const assistantParts = (
           // `FunctionCall.args` is a `google.protobuf.Struct`; always emit an explicit object
           // so downstream JSON relays never forward a missing/null field.
           // https://github.com/googleapis/googleapis/blob/bc7e3baa28fbb223fa93782e130260fab8205bfc/google/ai/generativelanguage/v1beta/content.proto
-          args: item.arguments === undefined ? {} : parseFunctionCallArguments(item.arguments),
-        },
-      };
-      syntheticFunctionCalls.add(part);
-      parts.push(part);
-      break;
-    }
-    case 'custom_tool_call': {
-      const part: GeminiGenerateContentPart = {
-        functionCall: {
-          id: item.call_id,
-          name: item.name,
-          args: { input: item.input },
+          args: item.type === 'custom_tool_call'
+            ? { input: item.input }
+            : item.arguments === undefined ? {} : parseFunctionCallArguments(item.arguments),
         },
       };
       syntheticFunctionCalls.add(part);
@@ -309,8 +295,6 @@ const assistantParts = (
 
   return parts;
 };
-
-export type NormalizedGeminiContent = GeminiGenerateContentContent & { role: 'user' | 'model'; parts: GeminiGenerateContentPart[] };
 
 export const appendContentParts = (
   contents: NormalizedGeminiContent[],
@@ -343,9 +327,19 @@ export const geminiGenerateContentConversationFromIR = (
   let hoisting = leading;
   let pendingToolResults: BuiltToolResult[] = [];
   let pendingUserParts: GeminiGenerateContentPart[] = [];
+  let pendingEmptyModelBoundary = false;
+
+  const flushEmptyModelBoundary = (): void => {
+    if (!pendingEmptyModelBoundary) return;
+    pendingEmptyModelBoundary = false;
+    // Non-sidecar reasoning-only or empty assistant turns drop their unverified
+    // content; keep an empty model boundary so surrounding user turns do not merge.
+    appendContentParts(contents, 'model', [{ text: '' }]);
+  };
 
   const flushClientRun = (): void => {
     if (pendingToolResults.length === 0 && pendingUserParts.length === 0) return;
+    flushEmptyModelBoundary();
     const ordered = pendingToolResults.toSorted((a, b) => a.order - b.order);
     const parts: GeminiGenerateContentPart[] = [
       ...ordered.map(entry => entry.responsePart),
@@ -363,11 +357,10 @@ export const geminiGenerateContentConversationFromIR = (
       hoisting = false;
       const parts = assistantParts(turn.items, syntheticFunctionCalls);
       if (parts.length > 0) {
+        pendingEmptyModelBoundary = false;
         appendContentParts(contents, 'model', parts);
       } else if ((contents.at(-1)?.role ?? previousRole) !== 'model') {
-        // Non-sidecar reasoning-only or empty assistant turns drop their unverified
-        // content; keep an empty model boundary so surrounding user turns do not merge.
-        appendContentParts(contents, 'model', [{ text: '' }]);
+        pendingEmptyModelBoundary = true;
       }
       continue;
     }
@@ -378,23 +371,11 @@ export const geminiGenerateContentConversationFromIR = (
         pendingToolResults.push(buildToolResult(item, matchedToolResults));
         continue;
       }
-      if (item.type === 'instruction') {
-        if (hoisting) {
-          systemParts.push(...systemTextParts(item.content));
-          hoisting = false;
-          continue;
-        }
-        pendingUserParts.push(...systemTextParts(item.content));
-        continue;
-      }
-      if (item.type === 'message' && item.role !== 'user') {
-        if (hoisting) {
-          systemParts.push(...systemTextParts(item.content));
-          continue;
-        }
+      if (item.type === 'instruction' || (item.type === 'message' && item.role !== 'user')) {
         // Gemini `contents` only admits `'user'` and `'model'` roles; non-leading
         // system/developer turns lower inline into user text parts.
-        pendingUserParts.push(...systemTextParts(item.content));
+        (hoisting ? systemParts : pendingUserParts).push(...systemTextParts(item.content));
+        if (item.type === 'instruction') hoisting = false;
         continue;
       }
       hoisting = false;
@@ -403,6 +384,7 @@ export const geminiGenerateContentConversationFromIR = (
   }
 
   flushClientRun();
+  flushEmptyModelBoundary();
   return { systemParts, contents };
 };
 
@@ -471,22 +453,21 @@ const thinkingLevelFromEffort = (effort: string): string => {
 const thinkingConfigFromSettings = (settings: IRInputSettings): GeminiGenerateContentThinkingConfig | undefined => {
   const summary = settings.reasoning_summary;
   const includeThoughts = summary === undefined || summary === '' ? undefined : summary !== 'omitted';
-  const thoughtFlag = includeThoughts === undefined ? { includeThoughts: true } : { includeThoughts };
   if (settings.reasoning_budget !== undefined) {
     return settings.reasoning_budget === 0
       ? { thinkingBudget: 0 }
-      : { thinkingBudget: settings.reasoning_budget, ...thoughtFlag };
+      : { thinkingBudget: settings.reasoning_budget, includeThoughts: includeThoughts ?? true };
   }
   const effort = settings.reasoning_effort;
   if (effort !== undefined && effort !== '') {
     if (effort === 'none') return { thinkingBudget: 0 };
     return {
       thinkingLevel: thinkingLevelFromEffort(effort),
-      ...thoughtFlag,
+      includeThoughts: includeThoughts ?? true,
     };
   }
   if (settings.reasoning_budget_dynamic === true) {
-    return { thinkingBudget: -1, ...thoughtFlag };
+    return { thinkingBudget: -1, includeThoughts: includeThoughts ?? true };
   }
   if (includeThoughts !== undefined) {
     return { includeThoughts };

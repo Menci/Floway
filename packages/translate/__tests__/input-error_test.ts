@@ -23,6 +23,10 @@ const chat = {
   model: 'm', stream: true,
   messages: [{ role: 'user' as const, content: [{ type: 'input_audio' as const, input_audio: { format: 'wav' as const, data: 'AAAA' } }] }],
 };
+const chatFileId = {
+  model: 'm', stream: true,
+  messages: [{ role: 'user' as const, content: [{ type: 'file' as const, file: { file_id: 'file_123' } }] }],
+};
 const responses = { model: 'm', stream: true, input: [{ type: 'item_reference' as const, id: 'opaque' }] };
 const gemini = {
   model: 'm', contents: [{ role: 'user' as const, parts: [{ fileData: { mimeType: 'application/pdf', fileUri: 'https://example.com/a.pdf' } }] }],
@@ -31,10 +35,13 @@ const gemini = {
 const routes = [
   () => translate.routeAnthropicMessagesViaOpenAIChatCompletions(messages, options),
   () => translate.routeAnthropicMessagesViaOpenAIResponses(messages, options),
+  () => translate.routeAnthropicMessagesViaGeminiGenerateContent(messages, options),
   () => translate.routeOpenAIChatCompletionsViaAnthropicMessages(chat, options),
   () => translate.routeOpenAIChatCompletionsViaOpenAIResponses(chat, options),
+  () => translate.routeOpenAIChatCompletionsViaGeminiGenerateContent(chatFileId, options),
   () => translate.routeOpenAIResponsesViaAnthropicMessages(responses, options),
   () => translate.routeOpenAIResponsesViaOpenAIChatCompletions(responses, options),
+  () => translate.routeOpenAIResponsesViaGeminiGenerateContent(responses, options),
   () => translate.routeGeminiGenerateContentViaAnthropicMessages(gemini, options),
   () => translate.routeGeminiGenerateContentViaOpenAIChatCompletions(gemini, options),
   () => translate.routeGeminiGenerateContentViaOpenAIResponses(gemini, options),

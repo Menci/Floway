@@ -28,10 +28,8 @@ import {
   type ApiErrorResult,
   type ExecuteResult,
   type AnthropicMessagesUpstreamCallOptions,
+  type InternalErrorResult,
   type PlainResult,
-  internalDebugErrorFields,
-  plainResult,
-  toInternalDebugError,
 } from '@floway-dev/upstream';
 
 export const anthropicMessagesGenerateTarget = chatTargetPicker(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions', 'geminiGenerateContent']);
@@ -75,7 +73,7 @@ export const anthropicMessagesAttempt = {
     });
   },
 
-  countTokens: async (args: AnthropicMessagesAttemptArgs): Promise<ApiErrorResult | PlainResult> => {
+  countTokens: async (args: AnthropicMessagesAttemptArgs): Promise<ApiErrorResult | InternalErrorResult | PlainResult> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders, anthropicBeta } = args;
     const payload = { ...sourcePayload, model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
@@ -115,25 +113,15 @@ export const anthropicMessagesAttempt = {
       });
       return reshapeTranslatedCountTokens(geminiResult, {
         translateError: trip.error,
-        fallbackErrorBody: (status, text) => anthropicErrorEnvelopeBody(
-          anthropicErrorTypeForStatus(status),
-          text.trim() || 'Upstream token counting request failed.',
-        ),
-        invalidResponseResult: error => anthropicMessagesInternalPlainResult(502, error),
-        extractCount: decoded => (decoded !== null && typeof decoded === 'object'
-          ? (decoded as { totalTokens?: unknown }).totalTokens as number | undefined
-          : undefined),
+        fallbackErrorBody: (status, message) => anthropicErrorEnvelopeBody(anthropicErrorTypeForStatus(status), message),
+        extractCount: decoded => decoded.totalTokens,
         encodeCount: input_tokens => ({ input_tokens }),
+        performance: ctx.attempt.telemetry,
         capture,
       });
     });
   },
 };
-
-const anthropicMessagesInternalPlainResult = (status: number, error: Error): PlainResult => plainResult(
-  { status, headers: new Headers({ 'content-type': 'application/json' }) },
-  anthropicErrorEnvelopeBody('api_error', error.message, internalDebugErrorFields(toInternalDebugError(error))),
-);
 
 const dispatchAnthropicMessages = async (
   invocation: AnthropicMessagesInvocation,

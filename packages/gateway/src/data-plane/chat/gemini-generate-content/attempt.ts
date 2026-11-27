@@ -1,6 +1,6 @@
 import { klona } from 'klona/json';
 
-import { inputErrorResult, geminiGenerateContentInternalErrorPayload, gatewayErrorStatus } from './errors.ts';
+import { inputErrorResult, geminiGenerateContentRpcErrorPayload } from './errors.ts';
 import { geminiGenerateContentCountTokensInterceptors, geminiGenerateContentInterceptors } from './interceptors/index.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
@@ -18,7 +18,7 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { billableUsageFromGeminiGenerateContentEvent, type GeminiGenerateContentPayload, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
-import { type ModelCandidate, plainResult, toInternalDebugError, type ApiErrorResult, type ExecuteResult, type GeminiGenerateContentInvocation, type PlainResult } from '@floway-dev/upstream';
+import { type ModelCandidate, type ApiErrorResult, type ExecuteResult, type GeminiGenerateContentInvocation, type InternalErrorResult, type PlainResult } from '@floway-dev/upstream';
 
 export const geminiGenerateContentGenerateTarget = chatTargetPicker(['geminiGenerateContent', 'openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
 export const geminiGenerateContentCountTokensTarget = chatTargetPicker(['geminiGenerateContent', 'anthropicMessages']);
@@ -51,7 +51,7 @@ export const geminiGenerateContentAttempt = {
     });
   },
 
-  countTokens: async (args: GeminiGenerateContentAttemptCountTokensArgs): Promise<ApiErrorResult | PlainResult> => {
+  countTokens: async (args: GeminiGenerateContentAttemptCountTokensArgs): Promise<ApiErrorResult | InternalErrorResult | PlainResult> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
     const payload = klona(sourcePayload);
     const headers = new Headers(sourceHeaders);
@@ -87,31 +87,16 @@ export const geminiGenerateContentAttempt = {
       });
       return reshapeTranslatedCountTokens(anthropicMessagesResult, {
         translateError: trip.error,
-        fallbackErrorBody: (status, text) => new TextEncoder().encode(JSON.stringify({
-          error: { code: status, message: text.trim() || 'Upstream token counting request failed.', status: gatewayErrorStatus(status) },
-        })),
-        invalidResponseResult: error => geminiGenerateContentInternalPlainResult(502, error),
+        fallbackErrorBody: (status, message) => new TextEncoder().encode(JSON.stringify(geminiGenerateContentRpcErrorPayload(status, message))),
         // Anthropic emits `{ input_tokens }`; Copilot's translated count emits `{ total_tokens }`.
-        extractCount: decoded => {
-          if (decoded === null || typeof decoded !== 'object') return undefined;
-          const counts = decoded as { input_tokens?: unknown; total_tokens?: unknown };
-          return typeof counts.input_tokens === 'number'
-            ? counts.input_tokens
-            : typeof counts.total_tokens === 'number'
-              ? counts.total_tokens
-              : undefined;
-        },
+        extractCount: decoded => (typeof decoded.input_tokens === 'number' ? decoded.input_tokens : decoded.total_tokens),
         encodeCount: totalTokens => ({ totalTokens }),
+        performance: ctx.attempt.telemetry,
         capture,
       });
     });
   },
 };
-
-const geminiGenerateContentInternalPlainResult = (status: number, error: Error): PlainResult => plainResult(
-  { status, headers: new Headers({ 'content-type': 'application/json' }) },
-  new TextEncoder().encode(JSON.stringify(geminiGenerateContentInternalErrorPayload(status, toInternalDebugError(error)))),
-);
 
 const dispatchGeminiGenerateContent = async (
   invocation: GeminiGenerateContentInvocation,

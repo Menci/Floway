@@ -46,17 +46,16 @@ const googleRpcErrorType = (status: string): string | undefined => {
 // Keep numeric `code` and canonical RPC `status` under their wire names inside
 // `provider_specific_fields` while mapping `status` to canonical `type`, avoiding
 // a second `code` key that collides on sources without a top-level `code` field.
-const geminiGenerateContentErrorPayloadOf = (
+const geminiRpcErrorPayloadOf = (
   error: Readonly<Record<string, unknown>>,
-  envelopeDetails: readonly Readonly<Record<string, unknown>>[] = [],
-  requireMessage = true,
+  envelopeDetails: readonly Readonly<Record<string, unknown>>[],
+  requireMessage: boolean,
 ): IRErrorPayload | undefined => {
   const status = stringOf(error.status);
-  const rpcStatus = status ?? (typeof error.code === 'number' ? geminiGenerateContentStatusForHttpStatus(error.code) : undefined);
+  const rpcStatus = (status !== undefined && status !== '' ? status : undefined)
+    ?? (typeof error.code === 'number' ? geminiGenerateContentStatusForHttpStatus(error.code) : undefined);
   const mappedType = rpcStatus === undefined ? undefined : googleRpcErrorType(rpcStatus);
-  if (typeof error.code !== 'number' && mappedType === undefined) {
-    return requireMessage ? errorPayloadOf(error, envelopeDetails) : errorPayloadFromWire(error);
-  }
+  if (typeof error.code !== 'number' && mappedType === undefined) return undefined;
   const message = stringOf(error.message) ?? stringOf(error.msg);
   if (message === undefined && requireMessage) return undefined;
   const explicitType = stringOf(error.type);
@@ -80,14 +79,16 @@ const unwrapSingleElementArray = (parsed: unknown): unknown =>
 
 export const readGeminiGenerateContentErrorBody = (body: Uint8Array): IRErrorPayload | undefined => {
   const envelope = readErrorBodyEnvelope(body, unwrapSingleElementArray);
-  return envelope === undefined ? undefined : geminiGenerateContentErrorPayloadOf(envelope.source, envelope.details);
+  if (envelope === undefined) return undefined;
+  return geminiRpcErrorPayloadOf(envelope.source, envelope.details, true)
+    ?? errorPayloadOf(envelope.source, envelope.details);
 };
 
 export const geminiGenerateContentErrorPayloadFromWire = (wire: unknown): IRErrorPayload => {
   const record = recordOf(wire);
   if (record !== undefined) {
     const { source, details } = errorEnvelopeOf(record);
-    const payload = geminiGenerateContentErrorPayloadOf(source, details, false);
+    const payload = geminiRpcErrorPayloadOf(source, details, false);
     if (payload !== undefined) return payload;
   }
   return errorPayloadFromWire(wire);

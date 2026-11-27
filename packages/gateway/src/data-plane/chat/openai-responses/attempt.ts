@@ -140,7 +140,7 @@ const dispatchOpenAIResponses = async (
   if (invocation.action === 'compact') {
     // The openai-responses-compact-shim is structurally required on non-openai-responses
     // targets and pivots ctx.action to 'generate' before reaching here;
-    // landing inside this case with action='compact' means the shim
+    // reaching translated dispatch with action='compact' means the shim
     // disengaged or was wired out of the chain. A compaction_trigger in
     // input is caught one layer down by the translator's
     // unexpected-input-item guard.

@@ -53,6 +53,11 @@ test('maps numeric-only, status-only, explicit-type, unmapped, and message-less 
     message: 'nope',
     provider_specific_fields: { code: 418, status: 'TEAPOT' },
   });
+  expect(readGeminiGenerateContentErrorBody(encode({ error: { code: 429, status: '', message: 'rate limited' } }))).toEqual({
+    type: 'rate_limit_error',
+    message: 'rate limited',
+    provider_specific_fields: { code: 429, status: '' },
+  });
   expect(readGeminiGenerateContentErrorBody(encode({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } }))).toBeUndefined();
   expect(geminiGenerateContentErrorPayloadFromWire({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } })).toEqual({
     type: 'rate_limit_error',
@@ -61,14 +66,13 @@ test('maps numeric-only, status-only, explicit-type, unmapped, and message-less 
   });
 });
 
-test('delegates non-numeric string error codes to standard error parsing', () => {
-  const relayError = { error: { code: 'context_length_exceeded', message: 'too long' } };
-  expect(readGeminiGenerateContentErrorBody(encode(relayError))).toEqual({
+test('delegates non-numeric string error codes to standard error parsing without losing outer envelope fields', () => {
+  const relayError = { request_id: 'req_1', error: { code: 'context_length_exceeded', message: 'too long' } };
+  const expected = {
     code: 'context_length_exceeded',
     message: 'too long',
-  });
-  expect(geminiGenerateContentErrorPayloadFromWire(relayError)).toEqual({
-    code: 'context_length_exceeded',
-    message: 'too long',
-  });
+    provider_specific_fields: { request_id: 'req_1' },
+  };
+  expect(readGeminiGenerateContentErrorBody(encode(relayError))).toEqual(expected);
+  expect(geminiGenerateContentErrorPayloadFromWire(relayError)).toEqual(expected);
 });

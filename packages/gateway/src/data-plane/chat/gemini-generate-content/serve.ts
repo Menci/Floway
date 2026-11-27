@@ -46,20 +46,18 @@ export const geminiGenerateContentServe = {
 
     // Gemini generateContent carries the requested model in its URL, so affinity preparation
     // owns each candidate payload while dispatch uses the candidate's canonical model.
-    return await iterateCandidates(
+    const result = await iterateCandidates(
       selection.candidates,
       'geminiGenerateContentServe.generate',
       ctx,
       'chat',
       async candidate => {
-        const result = await geminiGenerateContentAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers });
-        if (result.type === 'events') {
-          ctx.affinity.select(candidate);
-          return result;
-        }
-        return normalizeGeminiGenerateContentFailure(result);
+        const attempt = await geminiGenerateContentAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers });
+        if (attempt.type === 'events') ctx.affinity.select(candidate);
+        return attempt;
       },
     );
+    return result.type === 'events' ? result : normalizeGeminiGenerateContentFailure(result);
   },
 
   countTokens: async (args: GeminiGenerateContentServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>> | PlainResult> => {

@@ -4,6 +4,11 @@ import { fixtureFrames } from './fixtures.ts';
 import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readGeminiGenerateContentEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { usageToIR as messagesUsageToIR } from '../../src/protocols/anthropic-messages/as-target/usage.ts';
 import { usageToIR as geminiUsageToIR } from '../../src/protocols/gemini-generate-content/as-target/usage.ts';
+import {
+  geminiServiceTierFromInputIR,
+  geminiServiceTierFromOutputIR,
+  geminiServiceTierToOutputIR,
+} from '../../src/protocols/gemini-generate-content/service-tier.ts';
 import { usageToIR as chatUsageToIR } from '../../src/protocols/openai-chat-completions/as-target/usage.ts';
 import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';
 import { collectIR } from '../ir/output/helpers.ts';
@@ -65,17 +70,23 @@ test.each([
   expect(convert(usage)).toEqual(expected);
 });
 
-test('GenerateContent retains prior usage counts across partial late usageMetadata snapshots', async () => {
+test('GenerateContent retains prior usage counts and modality details across partial or empty-array late usageMetadata snapshots', async () => {
   const upstream = [
     {
       modelVersion: 'served',
       candidates: [{ index: 0, content: { role: 'model', parts: [{ thought: true, text: 'think' }] } }],
-      usageMetadata: { promptTokenCount: 100, cachedContentTokenCount: 80, thoughtsTokenCount: 40, candidatesTokenCount: 0 },
+      usageMetadata: {
+        promptTokenCount: 100,
+        cachedContentTokenCount: 80,
+        thoughtsTokenCount: 40,
+        candidatesTokenCount: 0,
+        promptTokensDetails: [{ modality: 'TEXT', tokenCount: 100 }],
+      },
     },
     {
       modelVersion: 'served',
       candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'answer' }] }, finishReason: 'STOP' }],
-      usageMetadata: { candidatesTokenCount: 20 },
+      usageMetadata: { candidatesTokenCount: 20, promptTokensDetails: [] },
     },
   ].map(event => eventFrame(event as any));
   const result = await collectIR(readGeminiGenerateContentEvents(iterate(upstream)));
@@ -84,7 +95,31 @@ test('GenerateContent retains prior usage counts across partial late usageMetada
     cached_input_tokens: 80,
     output_tokens_inclusive: 60,
     reasoning_tokens: 40,
+    input_text_tokens: 100,
   });
+  expect(() => geminiUsageToIR({ promptTokenCount: 4, cachedContentTokenCount: 5 })).toThrow(RangeError);
+});
+
+test('GenerateContent service tier helpers normalize aliases and omit auto/empty values', () => {
+  expect(geminiServiceTierFromInputIR(undefined)).toBeUndefined();
+  expect(geminiServiceTierFromInputIR(null)).toBeUndefined();
+  expect(geminiServiceTierFromInputIR('')).toBeUndefined();
+  expect(geminiServiceTierFromInputIR('auto')).toBeUndefined();
+  expect(geminiServiceTierFromInputIR('default')).toBe('standard');
+  expect(geminiServiceTierFromInputIR('fast')).toBe('priority');
+  expect(geminiServiceTierFromInputIR('flex')).toBe('flex');
+
+  expect(geminiServiceTierToOutputIR(undefined)).toBeUndefined();
+  expect(geminiServiceTierToOutputIR('')).toBeUndefined();
+  expect(geminiServiceTierToOutputIR('standard')).toBe('default');
+  expect(geminiServiceTierToOutputIR('priority')).toBe('fast');
+  expect(geminiServiceTierToOutputIR('flex')).toBe('flex');
+
+  expect(geminiServiceTierFromOutputIR(undefined)).toBeUndefined();
+  expect(geminiServiceTierFromOutputIR('')).toBeUndefined();
+  expect(geminiServiceTierFromOutputIR('default')).toBe('standard');
+  expect(geminiServiceTierFromOutputIR('fast')).toBe('priority');
+  expect(geminiServiceTierFromOutputIR('flex')).toBe('flex');
 });
 
 test.each([

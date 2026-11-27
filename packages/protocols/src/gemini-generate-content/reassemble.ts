@@ -1,17 +1,21 @@
 import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from './field-keys.ts';
-import type { GeminiGenerateContentCandidate, GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from './index.ts';
+import type { GeminiGenerateContentCandidate, GeminiGenerateContentContent, GeminiGenerateContentFinishReason, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
+
+// Relays (e.g. New-API) and Vertex chunks can emit empty or unspecified finishReason values on non-terminal frames.
+// https://github.com/googleapis/googleapis/blob/e7513c828b8db536fa12fc5493d541f323aedf90/google/ai/generativelanguage/v1beta/generative_service.proto#L686-L762
+export const isGeminiGenerateContentTerminalFinishReason = (
+  reason: GeminiGenerateContentFinishReason | null | undefined,
+): reason is GeminiGenerateContentFinishReason =>
+  typeof reason === 'string' && reason !== '' && reason !== 'FINISH_REASON_UNSPECIFIED';
 
 const isMergeableTextPart = (part: GeminiGenerateContentPart): boolean =>
   typeof part.text === 'string' && Object.keys(part).every(key => key === 'text' || key === 'thought' && part.thought === false);
 
 export const appendGeminiGenerateContentPart = (parts: GeminiGenerateContentPart[], part: GeminiGenerateContentPart): number => {
   const previous = parts.at(-1);
-  if (previous && isMergeableTextPart(previous) && isMergeableTextPart(part)) {
-    previous.text = `${previous.text}${part.text}`;
-    return parts.length - 1;
-  }
-  parts.push({ ...part });
+  if (previous && isMergeableTextPart(previous) && isMergeableTextPart(part)) previous.text = `${previous.text}${part.text}`;
+  else parts.push({ ...part });
   return parts.length - 1;
 };
 interface CandidateAccumulator {
@@ -47,8 +51,11 @@ export const createGeminiGenerateContentEventAccumulator = (): GeminiGenerateCon
         for (const part of incoming.content.parts ?? []) appendGeminiGenerateContentPart(content.parts, part);
         state.candidate.content = content;
       }
-      const { content: _content, ...fields } = incoming;
+      const { content: _content, finishReason, ...fields } = incoming;
       Object.assign(state.candidate, fields);
+      if (finishReason !== undefined && (isGeminiGenerateContentTerminalFinishReason(finishReason) || !isGeminiGenerateContentTerminalFinishReason(state.candidate.finishReason))) {
+        state.candidate.finishReason = finishReason;
+      }
       captureExtras(incoming as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, state.extras);
     }
     const { candidates: _candidates, ...fields } = event;

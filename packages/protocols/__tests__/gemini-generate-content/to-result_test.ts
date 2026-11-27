@@ -99,6 +99,9 @@ test('collectGeminiGenerateContentProtocolEventsToResult treats empty and unspec
       candidates: [{ index: 0, content: { role: 'model', parts: [] }, finishReason: null as never }],
     });
     yield eventFrame({
+      candidates: [{ index: 0, content: { role: 'model', parts: [] }, finishReason: 0 as never }],
+    });
+    yield eventFrame({
       candidates: [{ index: 0, content: { role: 'model', parts: [{ text: '!' }] }, finishReason: 'STOP' }],
     });
   })());
@@ -118,6 +121,7 @@ test('collectGeminiGenerateContentProtocolEventsToResult ignores non-blocking pr
     yield eventFrame({ promptFeedback: { blockReason: 'BLOCKED_REASON_UNSPECIFIED' } });
     yield eventFrame({ promptFeedback: { blockReason: '' } });
     yield eventFrame({ promptFeedback: { blockReason: null as never } });
+    yield eventFrame({ promptFeedback: { blockReason: 0 as never } });
     yield eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'ok' }] }, finishReason: 'STOP' }] });
   })());
   assertEquals(result.candidates, [{ index: 0, content: { role: 'model', parts: [{ text: 'ok' }] }, finishReason: 'STOP' }]);

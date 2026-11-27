@@ -6,7 +6,6 @@ import type { IRRecord } from '../../../../src/ir/output/records.ts';
 import { consumeIRRecords } from '../../../../src/ir/output/stream.ts';
 import type { IROutput } from '../../../../src/ir/output/types.ts';
 import { readGeminiGenerateContentEvents } from '../../../../src/protocols/gemini-generate-content/as-target/events.ts';
-import { usageToIR } from '../../../../src/protocols/gemini-generate-content/as-target/usage.ts';
 import { referenceAssistantTurn } from '../../../../src/round-trip/reference/reference-selection.ts';
 import { createRoundTripReaderCapture } from '../../../round-trip/test-helpers.ts';
 import { iterate } from '../../../shared/iterables.ts';
@@ -175,16 +174,21 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
             groundingChunks: [
               { web: { uri: 'https://example.com/paris', title: 'Paris' } },
               { retrievedContext: { uri: 'gs://docs/guide.pdf', title: 'Guide', text: 'France facts', pageNumber: 3 } },
-              { retrievedContext: { text: 'Inline snippet', pageNumber: 0 } },
+              { retrievedContext: { text: 'Inline snippet', pageNumber: 1.5 } },
               { retrievedContext: {} },
             ],
             groundingSupports: [
-              // Repeated snapshot entry is deduplicated without reordering.
-              { segment: { endIndex: 5 }, groundingChunkIndices: [0] },
+              // Repeated snapshot entry is deduplicated without reordering (explicit partIndex: 0 matches omitted).
+              { segment: { partIndex: 0, endIndex: 5 }, groundingChunkIndices: [0] },
               // Native part index 4 ("in France.") with range 3..9 ("France") maps to UTF-16 12..18.
               { segment: { partIndex: 4, startIndex: 3, endIndex: 9 }, groundingChunkIndices: [1] },
-              // Out-of-bounds endIndex clamps with warning; mid-char or empty retrievedContext ignored safely.
+              // Merged logical part index 1 ("Paris is in France.") spans across the thoughtSignature split (0..19).
+              { segment: { partIndex: 1, startIndex: 0, endIndex: 19, text: 'Paris is in France.' }, groundingChunkIndices: [0] },
+              // Out-of-bounds endIndex clamps with warning; invalid/outside bounds warn and omit range; undefined endIndex omits range.
               { segment: { partIndex: 4, startIndex: 3, endIndex: 99 }, groundingChunkIndices: [2, 3] },
+              { segment: { partIndex: 4 }, groundingChunkIndices: [2] },
+              { segment: { partIndex: 4, startIndex: 5, endIndex: 5 }, groundingChunkIndices: [2] },
+              { segment: { partIndex: 4, startIndex: 99, endIndex: 120 }, groundingChunkIndices: [2] },
             ],
           },
           finishReason: 'STOP',
@@ -192,7 +196,10 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
       }),
     ]));
 
-    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(3);
+    expect(warn).toHaveBeenNthCalledWith(1, 'Clamping Gemini GenerateContent grounding range to streamed text', expect.objectContaining({ endByte: 99 }));
+    expect(warn).toHaveBeenNthCalledWith(2, 'Dropping Gemini GenerateContent grounding range with invalid byte bounds', expect.objectContaining({ startByte: 5, endByte: 5 }));
+    expect(warn).toHaveBeenNthCalledWith(3, 'Dropping Gemini GenerateContent grounding range outside streamed text', expect.objectContaining({ startByte: 99, endByte: 120 }));
     expect(state.choices[0]?.items).toEqual([
       { type: 'reasoning', summary: ['Step 1. Step 2.'] },
       {
@@ -219,9 +226,21 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
             },
             {
               type: 'source_citation',
+              source_kind: 'url',
+              source: 'https://example.com/paris',
+              source_label: 'Paris',
+              output_text_range: { start: 0, end_exclusive: 19 },
+            },
+            {
+              type: 'source_citation',
               source_kind: 'document',
               source_text: 'Inline snippet',
               output_text_range: { start: 12, end_exclusive: 19 },
+            },
+            {
+              type: 'source_citation',
+              source_kind: 'document',
+              source_text: 'Inline snippet',
             },
           ],
         }],
@@ -232,7 +251,53 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
       { text: 'in France.', thoughtSignature: 'sig_tail' },
     ]);
 
-    // 2. Late grounding on a closed text part warns and drops safely; mid-character UTF-8 split warns and omits range.
+    // 2. Native-vs-logical partIndex collision disambiguated by segment.text:
+    //    part 0 = text "Alpha " (native 0, logical 0)
+    //    part 1 = text "Beta" with thoughtSignature (native 1, still logical 0)
+    //    part 2 = functionCall (native 2, logical 1)
+    //    part 3 = text "Gamma" (native 3, logical 2)
+    //    Wait: native 0 vs logical 0 on range 0..10 ("Alpha Beta") vs native 0 ("Alpha ") on 0..6.
+    warn.mockClear();
+    const disambiguated = await runReader(iterate([
+      eventFrame({
+        modelVersion: 'gemini-2.5-pro',
+        candidates: [{
+          index: 0,
+          content: {
+            role: 'model',
+            parts: [
+              { text: 'Alpha ' },
+              { text: 'Beta', thoughtSignature: 'sig_b' },
+            ],
+          },
+          groundingMetadata: {
+            groundingChunks: [{ web: { uri: 'https://example.com/ab', title: 'AB' } }],
+            groundingSupports: [
+              // Native index 0 ("Alpha ") vs logical index 0 ("Alpha Beta"): `segment.text` picks logical 0..10.
+              { segment: { partIndex: 0, startIndex: 6, endIndex: 10, text: 'Beta' }, groundingChunkIndices: [0] },
+            ],
+          },
+          finishReason: 'STOP',
+        }],
+      }),
+    ]));
+    expect(warn).not.toHaveBeenCalled();
+    expect(disambiguated.state.choices[0]?.items[0]).toEqual({
+      type: 'message',
+      content: [{
+        type: 'text',
+        text: 'Alpha Beta',
+        annotations: [{
+          type: 'source_citation',
+          source_kind: 'url',
+          source: 'https://example.com/ab',
+          source_label: 'AB',
+          output_text_range: { start: 6, end_exclusive: 10 },
+        }],
+      }],
+    });
+
+    // 3. Late grounding on a closed text part warns and drops safely; mid-character UTF-8 split warns and omits range.
     warn.mockClear();
     const closedPart = await runReader(iterate([
       eventFrame({
@@ -259,6 +324,8 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
       }),
     ]));
     expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenNthCalledWith(1, 'Dropping Gemini GenerateContent grounding citation for closed text part', { choice: 0, partIndex: 0 });
+    expect(warn).toHaveBeenNthCalledWith(2, 'Dropping Gemini GenerateContent grounding range that splits a UTF-8 character', { choice: 0, startByte: 1, endByte: 4 });
     expect(closedPart.state.choices[0]?.items[0]).toEqual({
       type: 'message',
       content: [{ type: 'text', text: 'Checking docs.' }],
@@ -328,7 +395,7 @@ test('preserves thought parts, IRAbsent id-less calls, grouped namespaces, custo
 });
 
 test('handles multi-candidate streaming, ended-candidate filtering, prototype finishReason, fallbackModel updates, and media inlineData', async () => {
-  const { records, state, turns } = await runReader(iterate([
+  const { records, state, turns, builder } = await runReader(iterate([
     eventFrame({
       promptFeedback: { blockReason: 'BLOCK_REASON_UNSPECIFIED' },
       candidates: [
@@ -340,6 +407,7 @@ test('handles multi-candidate streaming, ended-candidate filtering, prototype fi
               { inlineData: { mimeType: 'application/pdf', data: 'JVBERi0=' } },
               { inlineData: { mimeType: 'IMAGE/PNG', data: 'aW1n' } },
               { inlineData: { mimeType: 'audio/wav', data: 'YXVk' }, audioTranscription: { text: 'spoken' } },
+              { inlineData: { mimeType: 'audio/mp3', data: 'bXAz' }, audioTranscription: {} as never },
             ],
           },
           logprobsResult: { chosenCandidates: [{ token: 'A', logProbability: -0.2 }] },
@@ -376,6 +444,7 @@ test('handles multi-candidate streaming, ended-candidate filtering, prototype fi
     content: [
       { type: 'image', image: { media_type: 'IMAGE/PNG', data: 'aW1n' } },
       { type: 'audio', audio: { media_type: 'audio/wav', data: 'YXVk', transcript: 'spoken' } },
+      { type: 'audio', audio: { media_type: 'audio/mp3', data: 'bXAz' } },
     ],
   }]);
   expect(state.choices[0]?.logprobs).toEqual([{
@@ -386,15 +455,23 @@ test('handles multi-candidate streaming, ended-candidate filtering, prototype fi
     ],
   }]);
   expect(state.choices[1]?.items).toEqual([{ type: 'message', content: [{ type: 'text', text: 'short' }] }]);
-  expect(turns.get(0)?.turn[0]?.parts).toHaveLength(3);
-  expect(turns.get(0)?.fieldState[0]?.parts?.[0]).toBeUndefined();
-  expect(turns.get(0)?.fieldState[0]?.parts?.[1]).toBeUndefined();
+  const capturedAudio = turns.get(0);
+  if (capturedAudio === undefined) throw new Error('Expected captured native turn');
+  expect(capturedAudio.turn[0]?.parts).toHaveLength(4);
+  expect(capturedAudio.fieldState[0]?.parts?.[0]).toBeUndefined();
+  expect(capturedAudio.fieldState[0]?.parts?.[1]).toBeUndefined();
+  await expect(referenceAssistantTurn<'geminiGenerateContent'>(
+    capturedAudio.turn,
+    capturedAudio.fieldState,
+    builder,
+    new Map(),
+  )).resolves.toEqual({ targetTurn: capturedAudio.turn });
   expect(records).toContainEqual({ type: 'choice_end', choice: 0, finish_reason: 'stop' });
   expect(records).toContainEqual({ type: 'choice_end', choice: 1, finish_reason: 'length' });
   expect(records.at(-1)).toEqual({ type: 'finish', status: 'incomplete' });
 });
 
-test('maps safety refusal_details, promptFeedback blocking with open choices, failed output reasons, and error frames', async () => {
+test('maps safety refusal_details, promptFeedback blocking, failed output reasons, and error frames', async () => {
   const safety = await runReader(iterate([
     eventFrame({
       modelVersion: 'gemini-2.5-pro',
@@ -406,25 +483,39 @@ test('maps safety refusal_details, promptFeedback blocking with open choices, fa
     explanation: 'Blocked by safety policy.',
   });
 
-  // Prompt block arriving while a candidate is already open closes it cleanly before finish.
+  // Immediate prompt block before any candidate opens choice 0 with refusal_details (null explanation when omitted).
+  const blockedImmediately = await runReader(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      promptFeedback: { blockReason: 'SAFETY' },
+    }),
+  ]));
+  expect(blockedImmediately.state.choices[0]?.refusal_details).toEqual({ category: 'SAFETY', explanation: null });
+  expect(blockedImmediately.records).toContainEqual({ type: 'choice_end', choice: 0, finish_reason: 'content_filter' });
+  expect(blockedImmediately.records.at(-1)).toEqual({ type: 'finish', status: 'completed' });
+
+  // Prompt block arriving while one candidate is open and another already hit MAX_TOKENS preserves incomplete finish status.
   const blockedWhileOpen = await runReader(iterate([
     eventFrame({
       modelVersion: 'gemini-2.5-pro',
-      candidates: [{ index: 1, content: { role: 'model', parts: [{ text: 'partial' }] } }],
+      candidates: [
+        { index: 0, content: { role: 'model', parts: [{ text: 'cut' }] }, finishReason: 'MAX_TOKENS' },
+        { index: 1, content: { role: 'model', parts: [{ text: 'partial' }] } },
+      ],
     }),
     eventFrame({
       modelVersion: 'gemini-2.5-pro',
       promptFeedback: { blockReason: 'PROHIBITED_CONTENT', blockReasonMessage: 'Policy block.' },
     }),
   ]));
-  expect(blockedWhileOpen.state.choices[0]?.refusal_details).toEqual({
+  expect(blockedWhileOpen.state.choices[1]?.refusal_details).toEqual({
     category: 'PROHIBITED_CONTENT',
     explanation: 'Policy block.',
   });
-  expect(blockedWhileOpen.records).toContainEqual({ type: 'choice_end', choice: 0, finish_reason: 'content_filter' });
-  expect(blockedWhileOpen.records.at(-1)).toEqual({ type: 'finish', status: 'completed' });
+  expect(blockedWhileOpen.records).toContainEqual({ type: 'choice_end', choice: 1, finish_reason: 'content_filter' });
+  expect(blockedWhileOpen.records.at(-1)).toEqual({ type: 'finish', status: 'incomplete' });
 
-  // Eager failed finish on an empty first candidate emits an error without opening a choice or trailing ': '.
+  // Eager failed finish on an empty first candidate emits an api_error without opening a choice or trailing ': '.
   const malformed = await runReader(iterate([
     eventFrame({
       modelVersion: 'gemini-2.5-pro',
@@ -434,7 +525,23 @@ test('maps safety refusal_details, promptFeedback blocking with open choices, fa
   expect(malformed.state.choices).toEqual([]);
   expect(malformed.records.at(-1)).toEqual({
     type: 'error',
-    error: { type: 'server_error', code: 'MALFORMED_FUNCTION_CALL', message: 'Gemini ended the response with MALFORMED_FUNCTION_CALL' },
+    error: { type: 'api_error', code: 'MALFORMED_FUNCTION_CALL', message: 'Gemini ended the response with MALFORMED_FUNCTION_CALL' },
+  });
+
+  // Mid-stream failed finish with non-empty finishMessage surfaces the message and closes prior open items cleanly.
+  const midStreamFailed = await runReader(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'start' }] } }],
+    }),
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{ index: 0, finishReason: 'MALFORMED_RESPONSE', finishMessage: 'Broken wire payload' }],
+    }),
+  ]));
+  expect(midStreamFailed.records.at(-1)).toEqual({
+    type: 'error',
+    error: { type: 'api_error', code: 'MALFORMED_RESPONSE', message: 'Gemini ended the response with MALFORMED_RESPONSE: Broken wire payload' },
   });
 
   const beforeCandidateError = await runReader(iterate([
@@ -453,7 +560,12 @@ test('maps safety refusal_details, promptFeedback blocking with open choices, fa
 
   await expect(runReader(iterate([
     eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'no model' }] }, finishReason: 'STOP' }] }),
-  ]))).rejects.toThrow(TypeError);
+  ]))).rejects.toThrow(new TypeError('Gemini GenerateContent stream arrived before a non-empty model'));
 
-  expect(() => usageToIR({ promptTokenCount: 4, cachedContentTokenCount: 5 })).toThrow(RangeError);
+  await expect(runReader(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ functionCall: { name: '' } }] }, finishReason: 'STOP' }],
+    }),
+  ]))).rejects.toThrow(new TypeError('Gemini GenerateContent functionCall requires a non-empty name'));
 });

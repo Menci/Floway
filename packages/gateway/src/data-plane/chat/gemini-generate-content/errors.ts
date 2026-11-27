@@ -122,6 +122,8 @@ export const normalizeGeminiGenerateContentFailure = (result: ApiErrorResult | I
 
   const message = decodeResponseBody(result.body).trim();
   const parsed = parseJson(message);
+  // `:streamGenerateContent` returns non-2xx errors wrapped in a single-element JSON array.
+  // https://ai.google.dev/api/generate-content#method:-models.streamgeneratecontent
   const unwrapped = Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : parsed;
   if (isGeminiGenerateContentErrorResponse(unwrapped)) {
     return { ...result, http: { ...http, status: googleRpcHttpStatusCode(unwrapped.error.code) } };

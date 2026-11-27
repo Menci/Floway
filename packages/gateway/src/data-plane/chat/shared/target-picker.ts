@@ -9,26 +9,13 @@ import type { ChatTargetApi } from '@floway-dev/upstream';
 // once it has a viable candidate to choose the dispatch wire. `pick` is
 // contractually total — a null return would mean the serve-side filter
 // was bypassed. `canServe` is a 1-bit projection of `pick`.
-export const chatTargetPicker = (preference: readonly ChatTargetApi[]): {
+export const chatTargetPicker = <const T extends ChatTargetApi>(preference: readonly T[]): {
   canServe: (endpoints: ModelEndpoints) => boolean;
-  pick: (endpoints: ModelEndpoints) => ChatTargetApi;
+  pick: (endpoints: ModelEndpoints) => T;
 } => {
-  const find = (endpoints: ModelEndpoints): ChatTargetApi | null => {
+  const find = (endpoints: ModelEndpoints): T | null => {
     for (const key of preference) {
-      switch (key) {
-      case 'anthropicMessages':
-        if (endpoints.anthropicMessages) return 'anthropicMessages';
-        break;
-      case 'geminiGenerateContent':
-        if (endpoints.geminiGenerateContent) return 'geminiGenerateContent';
-        break;
-      case 'openaiResponses':
-        if (endpoints.openaiResponses) return 'openaiResponses';
-        break;
-      case 'openaiChatCompletions':
-        if (endpoints.openaiChatCompletions) return 'openaiChatCompletions';
-        break;
-      }
+      if (endpoints[key]) return key;
     }
     return null;
   };

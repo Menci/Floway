@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { inputErrorResult } from '../../../../src/data-plane/chat/anthropic-messages/errors.ts';
+import { anthropicErrorTypeForStatus, inputErrorResult } from '../../../../src/data-plane/chat/anthropic-messages/errors.ts';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 import { decodeResponseBody } from '@floway-dev/upstream';
 
@@ -36,4 +36,17 @@ test.each([
     message: 'invalid input',
     ...(expected === undefined ? {} : { provider_specific_fields: expected }),
   });
+});
+
+test.each([
+  [400, 'invalid_request_error'],
+  [401, 'authentication_error'],
+  [403, 'permission_error'],
+  [404, 'not_found_error'],
+  [413, 'request_too_large'],
+  [429, 'rate_limit_error'],
+  [529, 'overloaded_error'],
+  [500, 'api_error'],
+] as const)('anthropicErrorTypeForStatus maps HTTP %i to %s', (status, expected) => {
+  assertEquals(anthropicErrorTypeForStatus(status), expected);
 });

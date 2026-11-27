@@ -68,13 +68,20 @@ export const respondGeminiGenerateContent = async (
   // the upstream finished, including candidates the wrapper has buffered.
   const upstream = (async function* () {
     for await (const frame of observed) {
-      upstreamTerminal = geminiSseTerminal(frame);
-      if (frame.type === 'event' && upstreamTerminal === undefined) completion.observe(frame.event);
+      if (frame.type === 'done') {
+        if (completion.isComplete()) yield frame;
+        return;
+      }
+      upstreamTerminal = geminiSseTerminal(frame.event);
+      if (upstreamTerminal === undefined) completion.observe(frame.event);
       yield frame;
       if (upstreamTerminal !== undefined) return;
     }
   })();
   const upstreamCompleted = () => upstreamTerminal === 'completed' || (upstreamTerminal === undefined && completion.isComplete());
+  const eof = () => upstreamCompleted()
+    ? { type: 'completed' as const }
+    : { type: 'premature-eof' as const, error: new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE) };
 
   return serveSse(c, {
     http: result.http,
@@ -82,14 +89,13 @@ export const respondGeminiGenerateContent = async (
     downstreamAbortController: ctx.downstreamAbortController,
     protocol: {
       encode: frame => {
+        if (frame.type === 'done') return { wire: null, end: eof() };
         const output = geminiGenerateContentProtocolFrameToSSEFrame(frame);
         const wire = output === null ? null : serializeSseFrame(output);
-        const terminal = geminiSseTerminal(frame);
+        const terminal = geminiSseTerminal(frame.event);
         return terminal === undefined ? { wire } : { wire, end: { type: terminal } };
       },
-      eof: () => upstreamCompleted()
-        ? { type: 'completed' }
-        : { type: 'premature-eof', error: new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE) },
+      eof,
       failure: error => {
         const frame = eventFrame(caughtGeminiGenerateContentErrorEvent(error) ?? geminiGenerateContentInternalRpcErrorPayload(500, error));
         ctx.dump?.frame(frame);
@@ -100,10 +106,9 @@ export const respondGeminiGenerateContent = async (
   });
 };
 
-const geminiSseTerminal = (frame: ProtocolFrame<GeminiGenerateContentStreamEvent>): 'completed' | 'protocol-error' | undefined => {
-  if (frame.type === 'done') return 'completed';
-  if (isGeminiGenerateContentErrorEvent(frame.event)) return 'protocol-error';
-  if (isGeminiGenerateContentTerminalEvent(frame.event)) return 'completed';
+const geminiSseTerminal = (event: GeminiGenerateContentStreamEvent): 'completed' | 'protocol-error' | undefined => {
+  if (isGeminiGenerateContentErrorEvent(event)) return 'protocol-error';
+  if (isGeminiGenerateContentTerminalEvent(event)) return 'completed';
   return undefined;
 };
 

@@ -7,7 +7,7 @@ import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type Proto
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
-import { type ModelCandidate, directFetcher, type UpstreamCallResult, type UpstreamStreamResult, type UpstreamCallOptions } from '@floway-dev/upstream';
+import { type ModelCandidate, decodeResponseBody, directFetcher, type UpstreamCallResult, type UpstreamStreamResult, type UpstreamCallOptions } from '@floway-dev/upstream';
 
 // Mock the resolver seam so each test hands the serve exactly the model
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -241,4 +241,53 @@ test('a native candidate keeps a foreign signature verbatim', async () => {
   // unchanged instead of being stripped or re-wrapped.
   assertEquals(observed, payload);
   assertEquals(observed?.contents[1].parts?.[0].thoughtSignature, 'client-owned-signature');
+});
+
+test('generate normalizes terminal native failures after candidate exhaustion and fails over raw failures first', async () => {
+  installRepo();
+  const fail504 = async (): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => ({
+    ok: false,
+    modelKey: 'k',
+    http: new Response('<html>504 Gateway Timeout</html>', {
+      status: 504,
+      headers: new Headers({ 'content-type': 'text/html' }),
+    }),
+  });
+
+  // Exhausted failure is normalized to Google RPC JSON with status 500.
+  queueResolution([makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent: fail504 })]);
+  const failed = await geminiGenerateContentServe.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    model: 'test-model',
+    headers: new Headers(),
+  });
+  const apiError = expectType(failed, 'api-error');
+  assertEquals(apiError.http.status, 500);
+  assertEquals(JSON.parse(decodeResponseBody(apiError.body)), {
+    error: { code: 500, message: '<html>504 Gateway Timeout</html>', status: 'INTERNAL' },
+  });
+
+  // Failover advances past raw failure to a healthy second candidate.
+  queueResolution([
+    makeCandidate({ upstream: 'up_1', endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent: fail504 }),
+    makeCandidate({
+      upstream: 'up_2',
+      endpoints: { geminiGenerateContent: {} },
+      callGeminiGenerateContent: async () => ({
+        ok: true,
+        events: makeProtocolFrames([{ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'recovered' }] }, finishReason: 'STOP' }] }]),
+        modelKey: 'k',
+        http: { status: 200, headers: new Headers() },
+      }),
+    }),
+  ]);
+  const recovered = await geminiGenerateContentServe.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    model: 'test-model',
+    headers: new Headers(),
+  });
+  const events = await collectEvents(expectType(recovered, 'events').events);
+  assertEquals(events, [{ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'recovered' }] }, finishReason: 'STOP' }] }]);
 });
