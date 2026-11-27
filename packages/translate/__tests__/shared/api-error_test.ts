@@ -70,3 +70,20 @@ test('equal values at one metadata key coalesce across namespaces without consum
     },
   });
 });
+
+test('unwraps single-element Google streamGenerateContent error arrays while ignoring other arrays', () => {
+  const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
+  expect(irErrorPayloadFromBody(encode([{
+    error: { code: 400, message: 'bad field', status: 'INVALID_ARGUMENT', details: [{ reason: 'INVALID' }] },
+  }]))).toEqual({
+    type: 'invalid_request_error',
+    code: 'INVALID_ARGUMENT',
+    message: 'bad field',
+    provider_specific_fields: { code: 400, details: [{ reason: 'INVALID' }] },
+  });
+  expect(irErrorPayloadFromBody(encode([
+    { error: { code: 400, message: 'first' } },
+    { error: { code: 500, message: 'second' } },
+  ]))).toBeUndefined();
+  expect(irErrorPayloadFromBody(encode([{ ok: true }]))).toBeUndefined();
+});

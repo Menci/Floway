@@ -86,3 +86,27 @@ test('collectGeminiGenerateContentProtocolEventsToResult throws Gemini generateC
 
   assertEquals(error.cause, errorEvent);
 });
+
+test('collectGeminiGenerateContentProtocolEventsToResult treats empty and unspecified finishReason as non-terminal', async () => {
+  const result = await collectGeminiGenerateContentProtocolEventsToResult((async function* () {
+    yield eventFrame({
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'Hel' }] }, finishReason: 'FINISH_REASON_UNSPECIFIED' }],
+    });
+    yield eventFrame({
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'lo' }] }, finishReason: '' as never }],
+    });
+    yield eventFrame({
+      candidates: [{ index: 0, content: { role: 'model', parts: [] }, finishReason: null as never }],
+    });
+    yield eventFrame({
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: '!' }] }, finishReason: 'STOP' }],
+    });
+  })());
+  assertEquals(result, {
+    candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'Hello!' }] }, finishReason: 'STOP' }],
+  });
+
+  await assertRejects(async () => await collectGeminiGenerateContentProtocolEventsToResult((async function* () {
+    yield eventFrame({ candidates: [{ index: 0, content: { parts: [{ text: 'partial' }] }, finishReason: 'FINISH_REASON_UNSPECIFIED' }] });
+  })()), Error);
+});

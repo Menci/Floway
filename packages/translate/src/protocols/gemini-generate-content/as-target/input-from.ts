@@ -217,92 +217,104 @@ const userMessageParts = (item: Extract<IRInputClientItem, { type: 'message'; ro
   return parts.length === 0 ? [{ text: '' }] : parts;
 };
 
+// Sentinel thoughtSignature documented by Google for non-Gemini or synthetic functionCall parts
+// in multi-turn conversations (attached only to the first functionCall in a turn).
+// https://ai.google.dev/gemini-api/docs/thought-signatures
+const GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR = 'skip_thought_signature_validator';
+
 const systemTextParts = (content: readonly IRInputTextPart[]): GeminiGenerateContentPart[] =>
-  content.map(part => ({ text: part.text }));
+  content.flatMap(part => (part.text === '' ? [] : [{ text: part.text }]));
 
 const assistantParts = (
   items: readonly IRInputAssistantItemWithCallIds[],
   callLookup: GeminiGenerateContentCallLookup,
-): GeminiGenerateContentPart[] => items.flatMap<GeminiGenerateContentPart>(item => {
-  switch (item.type) {
-  case 'message':
-    if (item.content.length === 0) return [{ text: '' }];
-    return item.content.map((part): GeminiGenerateContentPart => part.type === 'text'
-      ? { text: part.text }
-      : { text: part.refusal });
-  case 'reasoning':
-    // Readable reasoning from a non-sidecar turn has no Gemini `thoughtSignature`;
-    // drop it rather than inventing a signature.
-    return [];
-  case 'function_call':
-    callLookup.set(item.call_id, { name: item.name, id: item.call_id });
-    return [{
-      functionCall: {
-        id: item.call_id,
-        name: item.name,
-        ...(item.arguments === undefined ? {} : { args: parseFunctionCallArguments(item.arguments) }),
-      },
-    }];
-  case 'custom_tool_call':
-    callLookup.set(item.call_id, { name: item.name, id: item.call_id });
-    return [{
-      functionCall: {
-        id: item.call_id,
-        name: item.name,
-        args: { input: item.input },
-      },
-    }];
-  }
-});
+): GeminiGenerateContentPart[] => {
+  const parts: GeminiGenerateContentPart[] = [];
+  let signedFunctionCall = false;
 
-const appendUserParts = (contents: GeminiGenerateContentContent[], parts: GeminiGenerateContentPart[]): void => {
+  for (const item of items) {
+    switch (item.type) {
+    case 'message':
+      if (item.content.length === 0) {
+        parts.push({ text: '' });
+      } else {
+        for (const part of item.content) {
+          parts.push(part.type === 'text' ? { text: part.text } : { text: part.refusal });
+        }
+      }
+      break;
+    case 'reasoning':
+      // Readable reasoning from a non-sidecar turn has no Gemini `thoughtSignature`;
+      // drop it rather than inventing a signature.
+      break;
+    case 'function_call': {
+      callLookup.set(item.call_id, { name: item.name, id: item.call_id });
+      const thoughtSignature = signedFunctionCall ? undefined : GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR;
+      signedFunctionCall = true;
+      parts.push({
+        functionCall: {
+          id: item.call_id,
+          name: item.name,
+          // Emit `{}` when arguments are absent so Go relays without `omitempty` (e.g. New-API) do not serialize `"args": null`.
+          args: item.arguments === undefined ? {} : parseFunctionCallArguments(item.arguments),
+        },
+        ...(thoughtSignature === undefined ? {} : { thoughtSignature }),
+      });
+      break;
+    }
+    case 'custom_tool_call': {
+      callLookup.set(item.call_id, { name: item.name, id: item.call_id });
+      const thoughtSignature = signedFunctionCall ? undefined : GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR;
+      signedFunctionCall = true;
+      parts.push({
+        functionCall: {
+          id: item.call_id,
+          name: item.name,
+          args: { input: item.input },
+        },
+        ...(thoughtSignature === undefined ? {} : { thoughtSignature }),
+      });
+      break;
+    }
+    }
+  }
+
+  return parts;
+};
+
+export const appendContentParts = (
+  contents: GeminiGenerateContentContent[],
+  role: 'user' | 'model',
+  parts: readonly GeminiGenerateContentPart[],
+): void => {
   if (parts.length === 0) return;
   const last = contents.at(-1);
-  if (last?.role === 'user') {
+  if (last?.role === role) {
     last.parts ??= [];
     last.parts.push(...parts);
     return;
   }
-  contents.push({ role: 'user', parts: [...parts] });
+  contents.push({ role, parts: [...parts] });
 };
 
 export interface GeminiGenerateContentConversation {
   readonly systemParts: GeminiGenerateContentPart[];
   readonly contents: GeminiGenerateContentContent[];
-  readonly trailingDroppedAssistant: boolean;
 }
 
 export const geminiGenerateContentConversationFromIR = (
   turns: readonly IRInputTurnWithCallIds[],
   leading: boolean,
   callLookup: GeminiGenerateContentCallLookup,
-  separateLeadingUser = false,
 ): GeminiGenerateContentConversation => {
   const systemParts: GeminiGenerateContentPart[] = [];
   const contents: GeminiGenerateContentContent[] = [];
   let hoisting = leading;
-  let separated = separateLeadingUser;
-
-  const appendUser = (parts: GeminiGenerateContentPart[]): void => {
-    if (parts.length === 0) return;
-    if (separated) {
-      separated = false;
-      contents.push({ role: 'user', parts: [...parts] });
-      return;
-    }
-    appendUserParts(contents, parts);
-  };
 
   for (const turn of turns) {
     if (turn.kind === 'assistant') {
       hoisting = false;
-      const parts = assistantParts(turn.items, callLookup);
-      if (parts.length === 0) {
-        separated = true;
-        continue;
-      }
-      separated = false;
-      contents.push({ role: 'model', parts });
+      appendContentParts(contents, 'model', assistantParts(turn.items, callLookup));
       continue;
     }
 
@@ -313,7 +325,7 @@ export const geminiGenerateContentConversationFromIR = (
           hoisting = false;
           continue;
         }
-        appendUser(systemTextParts(item.content));
+        appendContentParts(contents, 'user', systemTextParts(item.content));
         continue;
       }
       if (item.type === 'message' && item.role !== 'user') {
@@ -323,17 +335,19 @@ export const geminiGenerateContentConversationFromIR = (
         }
         // Gemini `contents` only admits `'user'` and `'model'` roles; non-leading
         // system/developer turns lower inline into user text parts.
-        appendUser(systemTextParts(item.content));
+        appendContentParts(contents, 'user', systemTextParts(item.content));
         continue;
       }
       hoisting = false;
-      appendUser(item.type === 'tool_result'
-        ? buildToolResultParts(item, callLookup)
-        : userMessageParts(item));
+      appendContentParts(
+        contents,
+        'user',
+        item.type === 'tool_result' ? buildToolResultParts(item, callLookup) : userMessageParts(item),
+      );
     }
   }
 
-  return { systemParts, contents, trailingDroppedAssistant: separated };
+  return { systemParts, contents };
 };
 
 const toolFromIR = (tool: IRInputTool): GeminiGenerateContentFunctionDeclaration => {
@@ -379,12 +393,7 @@ const toolConfigFromIR = (
 const toolChoiceForTools = (
   choice: IRInputToolChoice | undefined,
   tools: readonly IRInputTool[] | undefined,
-): IRInputToolChoice | undefined => {
-  if (tools !== undefined && tools.length > 0) return choice;
-  if (choice === 'none' || choice === 'auto' || choice === 'required') return choice;
-  if (typeof choice === 'object' && choice.type === 'allowed_tools' && choice.mode === 'auto') return 'none';
-  return undefined;
-};
+): IRInputToolChoice | undefined => (tools !== undefined && tools.length > 0 ? choice : undefined);
 
 // Inverse of `geminiGenerateContentReasoningEffortToIR` in `../as-source/input-to.ts`.
 // https://ai.google.dev/api/generate-content#ThinkingLevel
@@ -413,9 +422,8 @@ const thinkingConfigFromSettings = (settings: IRInputSettings): GeminiGenerateCo
       : { thinkingBudget: settings.reasoning_budget, ...thoughtFlag };
   }
   const effort = settings.reasoning_effort;
-  if (effort !== undefined) {
+  if (effort !== undefined && effort !== '') {
     if (effort === 'none') return { thinkingBudget: 0 };
-    if (effort === '') return { thinkingLevel: '' };
     return {
       thinkingLevel: thinkingLevelFromEffort(effort),
       ...thoughtFlag,
@@ -474,9 +482,10 @@ export const geminiGenerateContentHeaderFromIR = (
   const toolConfig = choice === undefined ? undefined : toolConfigFromIR(choice, request.tools ?? []);
   const generationConfig = geminiGenerateContentSettingsFromIR(request.settings, options);
   // Gemini's ServiceTier enum spells the accelerated lane as `priority` and the standard lane as `standard`.
+  // Omit OpenAI's default `auto` lane since Gemini has no matching tier value.
   // https://ai.google.dev/api/generate-content#ServiceTier
   const tier = request.settings.service_tier;
-  const serviceTier = tier == null
+  const serviceTier = tier == null || tier === 'auto'
     ? undefined
     : isFastServiceTier(tier)
       ? FAST_SERVICE_TIER

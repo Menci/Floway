@@ -2,6 +2,7 @@ import { klona } from 'klona/json';
 
 import type { GeminiGenerateContentInputAssistantTurn } from './assistant-turn.ts';
 import {
+  appendContentParts,
   geminiGenerateContentConversationFromIR,
   geminiGenerateContentHeaderFromIR,
   type GeminiGenerateContentCallLookup,
@@ -17,20 +18,16 @@ import type {
   GeminiGenerateContentRequest,
 } from '@floway-dev/protocols/gemini-generate-content';
 
-const appendSegmentContents = (
+const appendMergedContent = (
   target: GeminiGenerateContentContent[],
-  incoming: readonly GeminiGenerateContentContent[],
-  separateFirstUser: boolean,
+  content: GeminiGenerateContentContent,
 ): void => {
-  for (const [index, content] of incoming.entries()) {
-    const last = target.at(-1);
-    if (index === 0 && !separateFirstUser && content.role === 'user' && last?.role === 'user') {
-      last.parts ??= [];
-      last.parts.push(...(content.parts ?? []));
-      continue;
-    }
-    target.push(content);
+  const role = content.role === 'user' ? 'user' : content.role === 'model' ? 'model' : undefined;
+  if (role !== undefined && target.at(-1)?.role === role) {
+    appendContentParts(target, role, content.parts ?? []);
+    return;
   }
+  target.push(content);
 };
 
 export const geminiGenerateContentPayloadFromSegments = (
@@ -41,26 +38,18 @@ export const geminiGenerateContentPayloadFromSegments = (
 ): GeminiGenerateContentRequest => {
   const systemParts: GeminiGenerateContentPart[] = [];
   const contents: GeminiGenerateContentContent[] = [];
-  let separateNextUser = false;
 
   for (const piece of segmentTurns(turns)) {
     if (piece.kind === 'restored') {
       for (const entry of piece.turn) {
         const { syntheticCallIds: _syntheticCallIds, ...wireContent } = entry;
-        contents.push(klona(wireContent));
+        appendMergedContent(contents, klona(wireContent));
       }
-      separateNextUser = false;
       continue;
     }
-    const segment = geminiGenerateContentConversationFromIR(
-      piece.turns,
-      piece.leading,
-      callLookup,
-      separateNextUser,
-    );
+    const segment = geminiGenerateContentConversationFromIR(piece.turns, piece.leading, callLookup);
     systemParts.push(...segment.systemParts);
-    appendSegmentContents(contents, segment.contents, separateNextUser);
-    separateNextUser = segment.trailingDroppedAssistant;
+    for (const content of segment.contents) appendMergedContent(contents, content);
   }
 
   return {

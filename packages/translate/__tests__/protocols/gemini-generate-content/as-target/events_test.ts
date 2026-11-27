@@ -399,3 +399,108 @@ test('maps MAX_TOKENS, safety refusal_details, promptFeedback.blockReason, inlin
     eventFrame({ modelVersion: 'gemini-2.5-pro', candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'unfinished' }] } }] }),
   ]))).rejects.toThrow(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
 });
+
+test('handles omitted Proto3 startIndex, non-terminal finishReason chunks, empty thought signature carriers before grounding, cumulative grounding, and blockReasonMessage', async () => {
+  const { records, state } = await runReader(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{
+        index: 0,
+        content: { role: 'model', parts: [{ text: 'Hello ' }] },
+        finishReason: 'FINISH_REASON_UNSPECIFIED',
+        groundingMetadata: {
+          groundingChunks: [{ web: { uri: 'https://example.com/1', title: 'One' } }],
+          groundingSupports: [{ segment: { partIndex: 0, endIndex: 5 }, groundingChunkIndices: [0] }],
+        },
+      }],
+    }),
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{
+        index: 0,
+        content: {
+          role: 'model',
+          parts: [
+            { text: 'world' },
+            { text: '', thought: true, thoughtSignature: 'sig_empty_thought' },
+          ],
+        },
+        finishReason: '' as never,
+        groundingMetadata: {
+          groundingChunks: [
+            { web: { uri: 'https://example.com/1', title: 'One' } },
+            { web: { uri: 'https://example.com/2', title: 'Two' } },
+          ],
+          groundingSupports: [
+            { segment: { partIndex: 0, endIndex: 5 }, groundingChunkIndices: [0] },
+            { segment: { partIndex: 0, startIndex: 6, endIndex: 11 }, groundingChunkIndices: [1] },
+          ],
+        },
+      }],
+    }),
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{
+        index: 0,
+        content: {
+          role: 'model',
+          parts: [{ text: '!' }],
+        },
+        groundingMetadata: {
+          groundingChunks: [{ web: { uri: 'https://example.com/3', title: 'Three' } }],
+          groundingSupports: [{ segment: { partIndex: 2, endIndex: 1 }, groundingChunkIndices: [0] }],
+        },
+        finishReason: 'STOP',
+      }],
+    }),
+  ]));
+
+  expect(records).toContainEqual({ type: 'choice_end', choice: 0, finish_reason: 'stop' });
+  expect(state.choices[0]?.items).toEqual([{
+    type: 'message',
+    content: [
+      {
+        type: 'text',
+        text: 'Hello world',
+        annotations: [
+          {
+            type: 'source_citation',
+            source_kind: 'url',
+            source: 'https://example.com/1',
+            source_label: 'One',
+            output_text_range: { start: 0, end_exclusive: 5 },
+          },
+          {
+            type: 'source_citation',
+            source_kind: 'url',
+            source: 'https://example.com/2',
+            source_label: 'Two',
+            output_text_range: { start: 6, end_exclusive: 11 },
+          },
+        ],
+      },
+      {
+        type: 'text',
+        text: '!',
+        annotations: [{
+          type: 'source_citation',
+          source_kind: 'url',
+          source: 'https://example.com/3',
+          source_label: 'Three',
+          output_text_range: { start: 0, end_exclusive: 1 },
+        }],
+      },
+    ],
+  }]);
+
+  const blockedWithMessage = await runReader(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      promptFeedback: { blockReason: 'SAFETY', blockReasonMessage: 'Blocked due to policy details.' },
+    }),
+  ]));
+  expect(blockedWithMessage.state.choices[0]?.refusal_details).toEqual({
+    category: 'SAFETY',
+    explanation: 'Blocked due to policy details.',
+  });
+});

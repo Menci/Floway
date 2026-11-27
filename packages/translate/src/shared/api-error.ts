@@ -26,7 +26,8 @@ export const irErrorPayloadFromBody = (body: Uint8Array): IRErrorPayload | undef
     if (!(error instanceof SyntaxError)) throw error;
     return undefined;
   }
-  const envelopeRecord = recordOf(parsed);
+  // Google :streamGenerateContent HTTP errors can arrive as a single-element JSON array `[{ error: ... }]`.
+  const envelopeRecord = recordOf(Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : parsed);
   if (envelopeRecord === undefined) return undefined;
   const { source, details } = errorEnvelopeOf(envelopeRecord.type === 'error' ? errorEventPayloadOf(envelopeRecord) : envelopeRecord);
   return errorPayloadOf(source, details);

@@ -1,4 +1,8 @@
-import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from './index.ts';
+import type {
+  GeminiGenerateContentErrorResponse,
+  GeminiGenerateContentFinishReason,
+  GeminiGenerateContentStreamEvent,
+} from './index.ts';
 import { reassembleGeminiGenerateContentEvents } from './reassemble.ts';
 import type { ProtocolFrame } from '../common/index.ts';
 
@@ -7,6 +11,12 @@ export const GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE = 'Gemini generate
 export const isGeminiGenerateContentErrorEvent = (event: GeminiGenerateContentStreamEvent): event is GeminiGenerateContentErrorResponse => 'error' in event;
 
 export const isGeminiGenerateContentTerminalEvent = (event: GeminiGenerateContentStreamEvent): boolean => isGeminiGenerateContentErrorEvent(event) || ('promptFeedback' in event && event.promptFeedback?.blockReason !== undefined);
+
+// Relays (e.g. New-API) and Vertex chunks can emit empty or unspecified finishReason values on non-terminal frames.
+export const isGeminiGenerateContentTerminalFinishReason = (
+  reason: GeminiGenerateContentFinishReason | null | undefined,
+): reason is GeminiGenerateContentFinishReason =>
+  reason != null && reason !== '' && reason !== 'FINISH_REASON_UNSPECIFIED';
 
 export const createGeminiGenerateContentCandidateCompletion = () => {
   const observed = new Set<number>();
@@ -20,7 +30,7 @@ export const createGeminiGenerateContentCandidateCompletion = () => {
         // https://github.com/googleapis/googleapis/blob/e7513c828b8db536fa12fc5493d541f323aedf90/google/ai/generativelanguage/v1beta/generative_service.proto#L686-L762
         const index = candidate.index ?? 0;
         observed.add(index);
-        if (candidate.finishReason !== undefined) finished.add(index);
+        if (isGeminiGenerateContentTerminalFinishReason(candidate.finishReason)) finished.add(index);
       }
     },
     isComplete: (): boolean => observed.size > 0 && [...observed].every(index => finished.has(index)),

@@ -104,7 +104,10 @@ test('translates Anthropic Messages system, documents, tool results, thinking bu
       },
       {
         role: 'model',
-        parts: [{ functionCall: { id: 'toolu_1', name: 'read_doc', args: { path: '/a.md' } } }],
+        parts: [{
+          functionCall: { id: 'toolu_1', name: 'read_doc', args: { path: '/a.md' } },
+          thoughtSignature: 'skip_thought_signature_validator',
+        }],
       },
       {
         role: 'user',
@@ -191,7 +194,7 @@ test('translates OpenAI Responses namespaces, custom tools, allowed_tools subset
   });
 });
 
-test('hoists leading developer messages when no top-level instruction exists and keeps user turns separated across a dropped reasoning turn', async () => {
+test('hoists leading developer messages when no top-level instruction exists and merges consecutive user turns across a dropped reasoning turn', async () => {
   const chat: OpenAIChatCompletionsPayload = {
     model: 'gemini-2.5-pro',
     stream: true,
@@ -231,7 +234,7 @@ test('hoists leading developer messages when no top-level instruction exists and
     },
   ]);
 
-  const separated = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+  const mergedUsers = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
     stream: true,
     input: [
@@ -240,9 +243,8 @@ test('hoists leading developer messages when no top-level instruction exists and
       { type: 'message', role: 'user', content: 'Second user turn' },
     ],
   }, options()));
-  expect(separated.target.contents).toEqual([
-    { role: 'user', parts: [{ text: 'First user turn' }] },
-    { role: 'user', parts: [{ text: 'Second user turn' }] },
+  expect(mergedUsers.target.contents).toEqual([
+    { role: 'user', parts: [{ text: 'First user turn' }, { text: 'Second user turn' }] },
   ]);
 });
 
@@ -401,4 +403,124 @@ test('returns input-error when a source file_id media reference cannot be resolv
     type: 'input-error',
     message: expect.stringContaining('file id reference'),
   });
+});
+
+test('omits empty systemInstruction, toolConfig without tools, serviceTier auto, and empty reasoning_effort thinkingLevel', async () => {
+  const emptyEffortOnly = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    stream: true,
+    instructions: '',
+    service_tier: 'auto',
+    reasoning: { effort: '' },
+    tool_choice: 'auto',
+    input: 'Hello',
+  }, options()));
+  expect(emptyEffortOnly.target).not.toHaveProperty('systemInstruction');
+  expect(emptyEffortOnly.target).not.toHaveProperty('toolConfig');
+  expect(emptyEffortOnly.target).not.toHaveProperty('serviceTier');
+  expect(emptyEffortOnly.target).not.toHaveProperty('generationConfig');
+
+  const emptyEffortWithOmittedSummary = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    max_tokens: 100,
+    stream: true,
+    system: [{ type: 'text', text: '' }],
+    tool_choice: { type: 'none' },
+    messages: [{ role: 'user', content: 'Hi' }],
+  }, options()));
+  expect(emptyEffortWithOmittedSummary.target).not.toHaveProperty('systemInstruction');
+  expect(emptyEffortWithOmittedSummary.target).not.toHaveProperty('toolConfig');
+
+  const responsesEmptyEffortOmitted = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    stream: true,
+    reasoning: { effort: '', summary: 'omitted' },
+    tool_choice: 'required',
+    input: 'Hello',
+  }, options()));
+  expect(responsesEmptyEffortOmitted.target).not.toHaveProperty('toolConfig');
+  expect(responsesEmptyEffortOmitted.target.generationConfig).toEqual({
+    thinkingConfig: { includeThoughts: false },
+  });
+});
+
+test('serializes non-sidecar parallel tool calls with default empty args and thoughtSignature only on the first call, and merges consecutive model turns preserving sidecar signatures', async () => {
+  const codec = createTestSidecarCodec('gemini-parallel-and-merge');
+  const parallel = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    stream: true,
+    tools: [
+      { type: 'function', name: 'ping', parameters: { type: 'object', properties: {} } },
+      { type: 'custom', name: 'patch', format: { type: 'text' } },
+    ],
+    input: [
+      { type: 'message', role: 'user', content: 'Run tools' },
+      { type: 'function_call', call_id: 'call_1', name: 'ping', arguments: '' },
+      { type: 'custom_tool_call', call_id: 'call_2', name: 'patch', input: 'diff' },
+      { type: 'function_call_output', call_id: 'call_1', output: 'ok' },
+      { type: 'custom_tool_call_output', call_id: 'call_2', output: 'done' },
+    ],
+  }, { sidecarCodec: codec }));
+  expect(parallel.target.contents[1]).toEqual({
+    role: 'model',
+    parts: [
+      {
+        functionCall: { id: 'call_1', name: 'ping', args: {} },
+        thoughtSignature: 'skip_thought_signature_validator',
+      },
+      {
+        functionCall: { id: 'call_2', name: 'patch', args: { input: 'diff' } },
+      },
+    ],
+  });
+
+  // Produce a sidecar-restored model turn and replay it right after a non-sidecar model turn separated by dropped reasoning.
+  const turn1 = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    stream: true,
+    tools: [{ type: 'function', name: 'ping', parameters: { type: 'object', properties: {} } }],
+    input: 'First question',
+  }, { sidecarCodec: codec }));
+  const result1 = await collectOpenAIResponsesProtocolEventsToResult(turn1.events(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{
+        index: 0,
+        content: {
+          role: 'model',
+          parts: [{ functionCall: { name: 'ping', args: {} }, thoughtSignature: 'real_gemini_sig' }],
+        },
+        finishReason: 'STOP',
+      }],
+    }),
+    doneFrame(),
+  ])));
+  const restoredItems = toOpenAIResponsesInputItems(result1.output);
+  const restoredCall = result1.output.find(item => item.type === 'function_call');
+  if (restoredCall === undefined) throw new Error('Expected function_call');
+
+  const mergedModels = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    stream: true,
+    tools: [{ type: 'function', name: 'ping', parameters: { type: 'object', properties: {} } }],
+    input: [
+      { type: 'message', role: 'user', content: 'First question' },
+      { type: 'message', role: 'assistant', content: 'Let me check.' },
+      // Empty mid-turn developer guidance yields 0 parts, forcing consecutive IR and restored model turns adjacent.
+      { type: 'message', role: 'developer', content: '' },
+      ...restoredItems,
+      { type: 'function_call_output', call_id: restoredCall.call_id, output: 'pong' },
+    ],
+  }, { sidecarCodec: codec }));
+  expect(mergedModels.target.contents).toEqual([
+    { role: 'user', parts: [{ text: 'First question' }] },
+    {
+      role: 'model',
+      parts: [
+        { text: 'Let me check.' },
+        { functionCall: { name: 'ping', args: {} }, thoughtSignature: 'real_gemini_sig' },
+      ],
+    },
+    { role: 'user', parts: [{ functionResponse: { name: 'ping', response: { output: 'pong' } } }] },
+  ]);
 });

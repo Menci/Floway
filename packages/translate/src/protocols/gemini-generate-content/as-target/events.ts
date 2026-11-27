@@ -16,6 +16,7 @@ import { FAST_SERVICE_TIER, type ProtocolFrame } from '@floway-dev/protocols/com
 import {
   GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE,
   createGeminiGenerateContentCandidateCompletion,
+  isGeminiGenerateContentTerminalFinishReason,
   createGeminiGenerateContentEventAccumulator,
   isMergeableGeminiGenerateContentTextPart,
   type GeminiGenerateContentCandidate,
@@ -59,7 +60,7 @@ const mapFinishReason = (
 ): 'stop' | 'length' | 'tool_calls' | 'content_filter' => {
   if (finishReason === 'MAX_TOKENS') return 'length';
   if (CONTENT_FILTER_FINISH_REASONS[finishReason]) return 'content_filter';
-  if (hasToolCalls && (finishReason === 'STOP' || finishReason === 'FINISH_REASON_UNSPECIFIED')) return 'tool_calls';
+  if (hasToolCalls && finishReason === 'STOP') return 'tool_calls';
   return 'stop';
 };
 
@@ -68,11 +69,12 @@ const utf8ByteRangeToUTF16 = (
   startByte: number | undefined,
   endByte: number | undefined,
 ): { start: number; end_exclusive: number } | undefined => {
-  if (startByte === undefined || endByte === undefined) return undefined;
+  // Proto3 JSON omits default zero values like `startIndex: 0`.
+  if (endByte === undefined) return undefined;
   record.coordinateIndex ??= TextCoordinateIndex.utf8ToUTF16(record.text);
   record.coordinateIndex.assertUTF16Length(record.text.length);
   try {
-    return record.coordinateIndex.utf8RangeToUTF16(startByte, endByte);
+    return record.coordinateIndex.utf8RangeToUTF16(startByte ?? 0, endByte);
   } catch (error) {
     if (error instanceof RangeError || error instanceof TypeError) return undefined;
     throw error;
@@ -240,7 +242,8 @@ export const readGeminiGenerateContentEvents = async function* (
   const applyGroundingMetadata = (choiceIndex: number, choice: GeminiChoiceState, metadata: GeminiGenerateContentGroundingMetadata): void => {
     const chunks = metadata.groundingChunks ?? [];
     if (chunks.length === 0) return;
-    const touchedParts = new Set<number>();
+    // Gemini may send cumulative groundingMetadata snapshots across frames; replace per touched partIndex.
+    const nextByPart = new Map<number, IROutputSourceCitation[]>();
     for (const support of metadata.groundingSupports ?? []) {
       const partIndex = support.segment?.partIndex ?? 0;
       const record = choice.textPartsByNativeIndex.get(partIndex);
@@ -255,15 +258,19 @@ export const readGeminiGenerateContentEvents = async function* (
         if (chunk === undefined) continue;
         const citation = groundingChunkToCitation(chunk, range);
         if (citation === undefined) continue;
-        record.annotations.push(citation);
-        touchedParts.add(partIndex);
+        let list = nextByPart.get(partIndex);
+        if (list === undefined) {
+          list = [];
+          nextByPart.set(partIndex, list);
+        }
+        list.push(citation);
       }
     }
-    for (const partIndex of touchedParts) {
+    for (const [partIndex, citations] of nextByPart) {
       const record = choice.textPartsByNativeIndex.get(partIndex);
-      if (record !== undefined && record.annotations.length > 0) {
-        record.part.assign('annotations', [...record.annotations]);
-      }
+      if (record === undefined || citations.length === 0) continue;
+      record.annotations.splice(0, record.annotations.length, ...citations);
+      record.part.assign('annotations', [...record.annotations]);
     }
   };
 
@@ -302,8 +309,8 @@ export const readGeminiGenerateContentEvents = async function* (
     choice.lastPartMergeableText = mergeable;
 
     if (part.thought === true) {
-      closeMessage(choice);
       if (typeof part.text === 'string' && part.text !== '') {
+        closeMessage(choice);
         choice.reasoning ??= ir.item(choiceIndex, { type: 'reasoning', summary: [''] });
         const textField = createReadFieldState('text');
         choice.partsFieldState[partIndex] = { text: textField };
@@ -486,7 +493,7 @@ export const readGeminiGenerateContentEvents = async function* (
       const choice = choiceState(0);
       ir.choice(0).assign('refusal_details', {
         category: event.promptFeedback.blockReason,
-        explanation: null,
+        explanation: event.promptFeedback.blockReasonMessage ?? null,
       });
       endChoice(0, choice, 'content_filter');
       ir.event({ type: 'finish', status: 'completed' });
@@ -518,7 +525,7 @@ export const readGeminiGenerateContentEvents = async function* (
       if (candidate.logprobsResult !== undefined) {
         applyLogprobs(choiceIndex, choice, candidate);
       }
-      if (candidate.finishReason !== undefined && FAILED_OUTPUT_FINISH_REASONS[candidate.finishReason]) {
+      if (isGeminiGenerateContentTerminalFinishReason(candidate.finishReason) && FAILED_OUTPUT_FINISH_REASONS[candidate.finishReason]) {
         ir.event({
           type: 'error',
           error: {
@@ -530,7 +537,7 @@ export const readGeminiGenerateContentEvents = async function* (
         yield* ir.drain();
         return;
       }
-      if (candidate.finishReason !== undefined) {
+      if (isGeminiGenerateContentTerminalFinishReason(candidate.finishReason)) {
         const mapped = mapFinishReason(candidate.finishReason, choice.hasToolCalls);
         if (candidate.finishMessage !== undefined || mapped === 'content_filter') {
           ir.choice(choiceIndex).assign('refusal_details', {

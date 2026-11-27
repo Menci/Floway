@@ -129,14 +129,14 @@ export interface GeminiGenerateContentUsageMetadata {
 }
 export interface GeminiGenerateContentResult {
   candidates?: GeminiGenerateContentCandidate[]; usageMetadata?: GeminiGenerateContentUsageMetadata; modelVersion?: string; responseId?: string;
-  promptFeedback?: { blockReason?: string; safetyRatings?: GeminiGenerateContentSafetyRating[] };
+  promptFeedback?: { blockReason?: string; blockReasonMessage?: string; safetyRatings?: GeminiGenerateContentSafetyRating[] };
   modelStatus?: { retirementTime?: string; message?: string; modelStage?: string };
 }
 export interface GeminiGenerateContentErrorResponse { error: { code: number; message: string; status: string; details?: Record<string, unknown>[] } }
 export type GeminiGenerateContentStreamEvent = GeminiGenerateContentResult | GeminiGenerateContentErrorResponse;
 
 export { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from './field-keys.ts';
-export { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent, collectGeminiGenerateContentProtocolEventsToResult } from './to-result.ts';
+export { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent, isGeminiGenerateContentTerminalFinishReason, collectGeminiGenerateContentProtocolEventsToResult } from './to-result.ts';
 export { createGeminiGenerateContentEventAccumulator, isMergeableGeminiGenerateContentTextPart, reassembleGeminiGenerateContentEvents, type GeminiGenerateContentEventAccumulator } from './reassemble.ts';
 export { geminiGenerateContentProtocolFrameToSSEFrame } from './to-sse.ts';
 export { parseGeminiGenerateContentStream, type ParseGeminiGenerateContentStreamOptions } from './stream.ts';
