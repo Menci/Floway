@@ -111,7 +111,6 @@ interface ChatChoiceState {
   readonly items: IRItemHandle[];
   readonly tools: Map<number, ChatToolState>;
   currentTool?: ChatToolState;
-  legacyCallItemIndex?: number;
   readonly logprobParts: Map<string, { item: IRItemHandle; part: IRPartHandle }>;
   readonly logprobGroups: Map<IRPartHandle, { index: number; length: number }>;
   readonly fieldState: OpenAIChatCompletionsOutputAssistantTurnState<ReadFieldStates>;
@@ -434,7 +433,6 @@ export const readOpenAIChatCompletionsEvents = async function* (
       tool.item = createItem(index, choice, custom
         ? { type: 'custom_tool_call', ...(callId === undefined ? {} : { call_id: callId }), ...namingOf(tool.name), input: '' }
         : { type: 'function_call', ...(callId === undefined ? {} : { call_id: callId }), ...namingOf(tool.name), arguments: '' });
-      if (call.index === -1) choice.legacyCallItemIndex = tool.item.index;
       tool.callIdAssigned = callId !== undefined;
       tool.emittedName = tool.name;
       if (!tool.wrapped && tool.pendingInput !== '') {
@@ -472,12 +470,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
       .toSorted(([left], [right]) => left - right)
       .map(([, tool]) => tool.fieldState);
     const input = toOpenAIChatCompletionsInputAssistantTurn<ReadFieldStates>(nativeChoice.message, choice.fieldState);
-    options.roundTrip.onAssistantTurn(
-      index,
-      input.turn,
-      input.state,
-      choice.legacyCallItemIndex === undefined ? undefined : [choice.legacyCallItemIndex],
-    );
+    options.roundTrip.onAssistantTurn(index, input.turn, input.state);
     ir.choice(index).end(finishReason === 'function_call'
       ? 'tool_calls'
       : finishReason as 'stop' | 'length' | 'tool_calls' | 'content_filter');

@@ -4,12 +4,16 @@ import type { IRJSONObject, IRJSONValue } from '../ir/common/json.ts';
 
 export type RoundTripTurnDigest = Uint8Array;
 
-export const replayMaterialsByType = <Material extends IRJSONObject & { readonly type: string }>(materials: readonly Material[]): [string, Material[]][] => {
+export const replayMaterialsByType = <Material extends IRJSONObject & { readonly type: string }>(
+  materials: readonly Material[],
+  bucketOf: (material: Material) => string = material => material.type,
+): [string, Material[]][] => {
   const groups = new Map<string, Material[]>();
   for (const material of materials) {
-    const group = groups.get(material.type) ?? [];
+    const bucket = bucketOf(material);
+    const group = groups.get(bucket) ?? [];
     group.push(material);
-    groups.set(material.type, group);
+    groups.set(bucket, group);
   }
   return [...groups].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
 };

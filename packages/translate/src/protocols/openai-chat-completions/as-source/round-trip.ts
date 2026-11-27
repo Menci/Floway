@@ -111,6 +111,11 @@ export const collectOpenAIChatCompletionsReplayContents = (turn: OpenAIChatCompl
   return candidates;
 };
 
+export const collectOpenAIChatCompletionsCallIds = (turn: OpenAIChatCompletionsSourceAssistantTurn): readonly (string | undefined)[] => [
+  ...(turn.function_call == null ? [] : [undefined]),
+  ...(turn.tool_calls?.map(call => call.id) ?? []),
+];
+
 export const verifyOpenAIChatCompletionsTurnDigest = createTurnDigestVerifier((turn: OpenAIChatCompletionsSourceAssistantTurn, version) =>
   version === 1 ? chatTurnDigestMaterialV1(turn) : chatTurnDigestMaterialV2(turn));
 

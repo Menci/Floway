@@ -25,32 +25,67 @@ const statedCallIds = <Restored extends ChatRestoredAssistantTurn>(
   for (const piece of turns) {
     if (piece.kind === 'restored') {
       for (const call of piece.turn.tool_calls ?? []) ids.add(call.id);
-      for (const id of piece.synthesizedCallIds ?? []) if (id !== null) ids.add(id);
+      for (const id of piece.sourceCallIds) if (id !== undefined) ids.add(id);
       continue;
     }
     for (const item of piece.items) {
-      if ((item.type === 'function_call' || item.type === 'custom_tool_call') && item.call_id !== undefined) ids.add(item.call_id);
+      if ((item.type === 'function_call' || item.type === 'custom_tool_call' || item.type === 'tool_result') && item.call_id !== undefined) {
+        ids.add(item.call_id);
+      }
     }
   }
   return ids;
 };
 
 /**
- * Native legacy `function_call` has no wire ID. When the sidecar carries a
- * synthesized call ID, it pairs with the first later result carrying that ID
- * (leaving the call pending if unanswered); otherwise it consumes the unique
- * later id-less result stating the same function name (where only a tail call
- * may remain pending), before modern calls consume the remaining results.
- * Internal pairing IDs never change the legacy wire's name-based result correlation.
+ * Recovers the source-side call ID for a restored legacy `function_call` by
+ * subtracting the turn's modern `tool_calls` wire IDs from the authenticated
+ * source call IDs. Chat messages keep `function_call` and `tool_calls` on
+ * separate fields without recording their relative stream order, so multiset
+ * subtraction identifies the single legacy call regardless of order.
+ */
+const legacySourceCallId = <Restored extends ChatRestoredAssistantTurn>(
+  piece: RestoredAssistantTurn<Restored>,
+): string | undefined => {
+  const remainingModernIds = new Map<string, number>();
+  for (const call of piece.turn.tool_calls ?? []) {
+    remainingModernIds.set(call.id, (remainingModernIds.get(call.id) ?? 0) + 1);
+  }
+  const remaining: (string | undefined)[] = [];
+  for (const id of piece.sourceCallIds) {
+    if (id !== undefined) {
+      const count = remainingModernIds.get(id) ?? 0;
+      if (count > 0) {
+        if (count === 1) remainingModernIds.delete(id);
+        else remainingModernIds.set(id, count - 1);
+        continue;
+      }
+    }
+    remaining.push(id);
+  }
+  if (remainingModernIds.size > 0 || remaining.length !== 1) {
+    throw new Error('Authenticated round-trip call IDs do not match restored Chat Completions tool calls');
+  }
+  return remaining[0];
+};
+
+/**
+ * Native legacy `function_call` has no wire ID. When the authenticated source
+ * turn assigned it a public call ID, it pairs FIFO with the first unconsumed
+ * later result carrying that ID (leaving an unanswered call unregistered);
+ * otherwise it consumes the unique unconsumed later id-less result stating the
+ * same function name (where only a tail call may remain unanswered), before
+ * modern calls consume the remaining results. Internal pairing IDs never change
+ * the legacy wire's name-based result correlation.
  */
 export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
   turns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[],
 ): ChatLegacyCalls => {
-  const stated = statedCallIds(turns);
-  const claimed = new Set(stated);
+  const claimed = new Set(statedCallIds(turns));
   const callIds = new Map<ChatRestoredAssistantTurn, string>();
   const names = new Map<string, string>();
   const results = new Map<IRInputToolResultItem, string>();
+  const consumed = new Set<IRInputToolResultItem>();
   let allocated = 0;
 
   const matchingResults = (
@@ -66,7 +101,9 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
         continue;
       }
       if (turn.kind !== 'client') continue;
-      for (const item of turn.items) if (item.type === 'tool_result' && matches(item)) found.push(item);
+      for (const item of turn.items) {
+        if (item.type === 'tool_result' && !consumed.has(item) && matches(item)) found.push(item);
+      }
     }
     return found;
   };
@@ -75,14 +112,15 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
     if (piece.kind !== 'restored') continue;
     const name = piece.turn.function_call?.name;
     if (name === undefined) continue;
-    const synthesizedId = piece.synthesizedCallIds?.[0];
+    const sourceCallId = legacySourceCallId(piece);
     let answer: IRInputToolResultItem | undefined;
-    if (synthesizedId != null) {
+    if (sourceCallId !== undefined) {
       [answer] = matchingResults(
         index + 1,
-        turn => turn.synthesizedCallIds?.[0] === synthesizedId,
-        item => item.call_id === synthesizedId,
+        () => false,
+        item => item.call_id === sourceCallId,
       );
+      if (answer === undefined) continue;
     } else {
       const candidates = matchingResults(
         index + 1,
@@ -95,11 +133,12 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
       [answer] = candidates;
       if (answer === undefined) {
         if (index < turns.length - 1) {
-          throw new TranslateInputException(`Cannot translate the legacy call '${name}': no unique id-less result states that function name.`);
+          throw new TranslateInputException(`Cannot translate the answer to the legacy call '${name}': no unique id-less result states that function name.`);
         }
         continue;
       }
     }
+    consumed.add(answer);
     let callId: string;
     do {
       allocated += 1;
@@ -108,7 +147,7 @@ export const chatLegacyCallsOf = <Restored extends ChatRestoredAssistantTurn>(
     claimed.add(callId);
     callIds.set(piece.turn, callId);
     names.set(callId, name);
-    if (answer !== undefined) results.set(answer, callId);
+    results.set(answer, callId);
   }
   return { callIds, names, results };
 };

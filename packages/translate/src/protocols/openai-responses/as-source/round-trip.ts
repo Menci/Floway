@@ -78,7 +78,11 @@ const replayItemMaterial = (item: OpenAIResponsesSourceAssistantItem): TypedRepl
   return { type: item.type, ...replayItemStatus(item) };
 };
 
+const responsesToolCallBucket = (material: TypedReplayMaterial): string =>
+  material.type === 'function_call' || material.type === 'custom_tool_call' ? 'tool_call' : material.type;
+
 const responsesTurnDigestMaterialV1 = (turn: OpenAIResponsesSourceAssistantTurn): IRJSONValue => replayMaterialsByType(turn.map(replayItemMaterial));
+const responsesTurnDigestMaterialV3 = (turn: OpenAIResponsesSourceAssistantTurn): IRJSONValue => replayMaterialsByType(turn.map(replayItemMaterial), responsesToolCallBucket);
 
 export const findOpenAIResponsesSidecarOccurrences = (turn: OpenAIResponsesSourceAssistantTurn): SidecarOccurrence<OpenAIResponsesSourceAssistantTurn>[] =>
   turn.flatMap((item, itemIndex) => !isOpenAIResponsesEncryptedReasoning(item) ? [] : [{
@@ -90,7 +94,7 @@ export const findOpenAIResponsesSidecarOccurrences = (turn: OpenAIResponsesSourc
     },
   }]);
 
-export const computeOpenAIResponsesTurnDigest = createTurnDigestComputer(responsesTurnDigestMaterialV1);
+export const computeOpenAIResponsesTurnDigest = createTurnDigestComputer(responsesTurnDigestMaterialV3);
 
 export const collectOpenAIResponsesReplayContents = (turn: OpenAIResponsesSourceAssistantTurn): ReplayContent[] => {
   const candidates: ReplayContent[] = [];
@@ -110,7 +114,16 @@ export const collectOpenAIResponsesReplayContents = (turn: OpenAIResponsesSource
   return candidates;
 };
 
-export const verifyOpenAIResponsesTurnDigest = createTurnDigestVerifier(responsesTurnDigestMaterialV1);
+export const collectOpenAIResponsesCallIds = (turn: OpenAIResponsesSourceAssistantTurn): readonly (string | undefined)[] => {
+  const callIds: string[] = [];
+  for (const item of turn) {
+    if (item.type === 'function_call' || item.type === 'custom_tool_call') callIds.push(item.call_id);
+  }
+  return callIds;
+};
+
+export const verifyOpenAIResponsesTurnDigest = createTurnDigestVerifier((turn: OpenAIResponsesSourceAssistantTurn, version) =>
+  version < 3 ? responsesTurnDigestMaterialV1(turn) : responsesTurnDigestMaterialV3(turn));
 
 export const createOpenAIResponsesSidecarItem = (id: string, data: string): OpenAIResponsesSidecarItem => ({
   type: 'reasoning',

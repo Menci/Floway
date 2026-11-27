@@ -1,7 +1,7 @@
 import { restateGeminiGenerateContentError } from './as-source/error-body.ts';
 import { writeGeminiGenerateContentEvents } from './as-source/events.ts';
 import { readGeminiGenerateContentRequest } from './as-source/input-to.ts';
-import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from './as-source/round-trip.ts';
+import { collectGeminiGenerateContentCallIds, collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from './as-source/round-trip.ts';
 import type { SourceProtocol } from '../../composition/index.ts';
 import type { GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 
@@ -14,6 +14,7 @@ export const geminiGenerateContentSourceProtocol: SourceProtocol<
     inspect: findGeminiGenerateContentSidecarOccurrences,
     verify: verifyGeminiGenerateContentTurnDigest,
     collectCandidates: collectGeminiGenerateContentReplayContents,
+    collectCallIds: collectGeminiGenerateContentCallIds,
   },
   error: restateGeminiGenerateContentError,
   writeEvents: (payload, records, roundTrip) => writeGeminiGenerateContentEvents(records, {

@@ -94,7 +94,6 @@ export const writeOpenAIChatCompletionsEvents = async function* (
     return accumulator;
   };
   const outputStates = new Map<number, OpenAIChatCompletionsOutputAssistantTurnState<EmittedFieldStates>>();
-  const synthesizedCallIds = new Map<number, Map<number, string>>();
   const pendingTranscripts = new Map<string, TextProvenanceSpan[]>();
   let usage: OpenAIChatCompletionsUsageEx | undefined;
 
@@ -159,16 +158,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
     ordinal: number,
     tier?: string,
   ): ProtocolFrame<OpenAIChatCompletionsStreamEvent> => {
-    const isSynthesized = item.call_id === undefined || item.call_id === IRAbsent;
-    const callId = isSynthesized ? `${metadata.id}_${choice}_${itemIndex}` : item.call_id;
-    if (isSynthesized) {
-      let byItem = synthesizedCallIds.get(choice);
-      if (byItem === undefined) {
-        byItem = new Map();
-        synthesizedCallIds.set(choice, byItem);
-      }
-      byItem.set(itemIndex, callId);
-    }
+    const callId = item.call_id === undefined || item.call_id === IRAbsent ? `${metadata.id}_${choice}_${itemIndex}` : item.call_id;
     const call = item.type === 'custom_tool_call'
       ? { index: ordinal, id: callId, type: 'custom' as const, custom: { name: item.name } }
       : { index: ordinal, id: callId, type: 'function' as const, function: { name: item.name } };
@@ -401,14 +391,7 @@ export const writeOpenAIChatCompletionsEvents = async function* (
       if (nativeChoice === undefined) throw new Error(`Missing Chat Completions choice ${record.choice} at choice_end`);
       const sourceTurnDigest = await computeOpenAIChatCompletionsTurnDigest(nativeChoice.message);
       const input = toOpenAIChatCompletionsInputAssistantTurn<EmittedFieldStates>(nativeChoice.message, outputState(record.choice));
-      const data = await options.roundTrip.encodeSidecar(
-        record.choice,
-        sourceTurnDigest,
-        input.turn,
-        input.state,
-        collectOpenAIChatCompletionsTextPlacements(input.turn),
-        synthesizedCallIds.get(record.choice),
-      );
+      const data = await options.roundTrip.encodeSidecar(record.choice, sourceTurnDigest, input.turn, input.state, collectOpenAIChatCompletionsTextPlacements(input.turn));
       yield deltaFrame(record.choice, { reasoning_details: createOpenAIChatCompletionsSidecarDetails(data) }, tier);
       yield chunk([{ index: record.choice, delta: {}, finish_reason: record.finish_reason }], tierFields(tier));
       continue;

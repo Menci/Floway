@@ -12,9 +12,8 @@ const envelope: RoundTripSidecar<'openaiChatCompletions'> = {
 
 test('restores current v3 and legacy v1/v2 round-trip payloads recognized by the injected decoder', async () => {
   const codec = createTestSidecarCodec();
-  const withCallIds: RoundTripSidecar<'openaiChatCompletions'> = { ...envelope, synthesizedCallIds: ['call_1', null] };
-  const encoded = await encodeRoundTripSidecar(codec, withCallIds);
-  expect(await decodeRoundTripSidecar(codec, 'openaiResponses', encoded)).toEqual(withCallIds);
+  const encoded = await encodeRoundTripSidecar(codec, envelope);
+  expect(await decodeRoundTripSidecar(codec, 'openaiResponses', encoded)).toEqual(envelope);
   expect(await decodeRoundTripSidecar(codec, 'anthropicMessages', encoded)).toBeUndefined();
 
   for (const version of [1, 2] as const) {
@@ -22,14 +21,6 @@ test('restores current v3 and legacy v1/v2 round-trip payloads recognized by the
     const encodedLegacy = await encodeRoundTripSidecar(codec, legacy);
     expect(await decodeRoundTripSidecar(codec, 'openaiResponses', encodedLegacy)).toEqual(legacy);
   }
-});
-
-test('rejects invalid synthesizedCallIds or pre-v3 envelopes carrying synthesizedCallIds', async () => {
-  const codec = createTestSidecarCodec();
-  const v2WithCallIds = await codec.encode({ ...envelope, v: 2, synthesizedCallIds: ['call_1'] });
-  await expect(decodeRoundTripSidecar(codec, 'openaiResponses', v2WithCallIds)).rejects.toThrow(TypeError);
-  const invalidCallIds = await codec.encode({ ...envelope, v: 3, synthesizedCallIds: [''] });
-  await expect(decodeRoundTripSidecar(codec, 'openaiResponses', invalidCallIds)).rejects.toThrow(TypeError);
 });
 
 test('rejects a payload whose top-level wire version this build does not know', async () => {

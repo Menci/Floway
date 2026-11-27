@@ -13,6 +13,5 @@ export interface RoundTripWriter<Protocol extends keyof InputAssistantTurnByProt
     turn: InputAssistantTurnFor<Protocol>,
     contentState: InputAssistantTurnStateFor<Protocol, EmittedFieldStates>,
     textPlacements: TextPlacementIndex,
-    synthesizedCallIds?: ReadonlyMap<number, string>,
   ) => Promise<string>;
 }
