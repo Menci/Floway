@@ -17,6 +17,12 @@ const record: DumpRecord = {
 };
 
 describe('request detail navigation', () => {
+  it('names the key that captured the record', () => {
+    renderInApp(<RequestDetailPanel record={record} recordId="detail" error={null} collected={null} upstreamCollected={null} retainLastRecord={false} />);
+    // The other match is the tooltip carrying the same name for its description.
+    expect(screen.getByText('Key A (key-a)', { selector: '.fui-Text' })).toBeTruthy();
+  });
+
   it('opens each body directly and preserves malformed raw response text', async () => {
     renderInApp(<RequestDetailPanel record={record} recordId="detail" error={null} collected={{ result: { content: 'parsed response' }, truncated: true, error: null }} upstreamCollected={null} retainLastRecord={false} />);
     expect((await screen.findByTestId('body-content')).textContent).toContain('parsed response');
