@@ -88,7 +88,6 @@ const useStyles = makeStyles({
   selectionRow: {
     backgroundColor: 'transparent',
     display: 'flex',
-    paddingInline: 'var(--floway-panel-inset)',
     // A divider rather than a card stroke, shared by the selection cell and content.
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L46
     // https://github.com/microsoft/microsoft-ui-xaml/blob/188f602b27cdb47572b28c380e9c087b02e1ccee/controls/dev/CommonStyles/Common_themeresources_any.xaml#L250
@@ -115,7 +114,9 @@ const useStyles = makeStyles({
     display: 'grid',
     gridTemplateRows: 'repeat(3, minmax(0, 1fr))',
     outlineStyle: 'none',
-    padding: '6px 0 6px var(--spacingHorizontalL)',
+    // The panel inset sits inside the link rather than around it, so the
+    // focus ring drawn just inside the link keeps clear of the text.
+    padding: '6px var(--floway-panel-inset)',
     position: 'relative',
     flex: 1,
     minWidth: 0,
@@ -141,6 +142,10 @@ const useStyles = makeStyles({
       pointerEvents: 'none',
     },
   },
+  // A leading export checkbox takes the panel inset, leaving the row only the
+  // gap after it.
+  exportCheckbox: { marginInlineStart: 'var(--floway-panel-inset)' },
+  afterCheckbox: { paddingLeft: 'var(--spacingHorizontalL)' },
   // Restated per state because the row's hover rule is a pseudo-class and would
   // otherwise outrank a bare declaration here, washing out a selected row under
   // the pointer. This class must stay last at the mergeClasses call site.
@@ -248,11 +253,11 @@ function RequestRowContent({ compact, exportable, showSourceKey, sharedKeyNames,
 
   return (
     <div style={style} className={mergeClasses(s.selectionRow, selected && s.selected)}>
-      {exportable && <Checkbox aria-label={t('requests.selectExport')} checked={exportIds.has(record.id)} onChange={() => onToggleExport(record.id)} />}
+      {exportable && <Checkbox aria-label={t('requests.selectExport')} className={s.exportCheckbox} checked={exportIds.has(record.id)} onChange={() => onToggleExport(record.id)} />}
       <a
         {...address}
         aria-selected={selected}
-        className={s.row}
+        className={mergeClasses(s.row, exportable && s.afterCheckbox)}
         data-record-index={index}
         onKeyDown={handleKeyDown}
         role="option"
