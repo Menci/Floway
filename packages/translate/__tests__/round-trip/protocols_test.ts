@@ -68,7 +68,7 @@ const verifyChatTurn = (
   turn: Parameters<typeof findOpenAIChatCompletionsSidecarOccurrences>[0],
   sourceTurnDigest: Parameters<typeof verifyOpenAIChatCompletionsTurnDigest>[1],
   data = 'opaque-sidecar',
-  version = 1,
+  version = 2,
 ) => verifyOpenAIChatCompletionsTurnDigest(fixtureSidecar(findOpenAIChatCompletionsSidecarOccurrences(turn), data).turn, sourceTurnDigest, version);
 
 const verifyResponsesTurn = (
@@ -132,6 +132,31 @@ describe('assistant-turn sidecar protocols', () => {
     expect(createOpenAIChatCompletionsSidecarDetails('opaque')).toEqual([
       { type: 'reasoning.encrypted', data: 'opaque', format: 'unknown', index: 1 },
     ]);
+
+    const emittedNullFields: OpenAIChatCompletionsAssistantMessageEx = {
+      role: 'assistant',
+      content: null,
+      refusal: null,
+      function_call: null,
+      tool_calls: turn.tool_calls!,
+      reasoning_details: turn.reasoning_details,
+    };
+    const replayedWithoutNulls: OpenAIChatCompletionsAssistantMessageEx = {
+      role: 'assistant',
+      tool_calls: turn.tool_calls!,
+      reasoning_details: turn.reasoning_details,
+    };
+    const v2NullCheck = await computeOpenAIChatCompletionsTurnDigest(
+      fixtureSidecar(findOpenAIChatCompletionsSidecarOccurrences(emittedNullFields)).turn,
+    );
+    expect(await verifyChatTurn(replayedWithoutNulls, v2NullCheck)).toBe(true);
+    expect(await verifyChatTurn({ ...replayedWithoutNulls, content: '' }, v2NullCheck)).toBe(false);
+    expect(await verifyChatTurn({ ...emittedNullFields, tool_calls: [] }, await computeOpenAIChatCompletionsTurnDigest(
+      fixtureSidecar(findOpenAIChatCompletionsSidecarOccurrences({ role: 'assistant', reasoning_details: turn.reasoning_details })).turn,
+    ))).toBe(true);
+    // A v1 digest continues to verify v1 sidecars strictly.
+    expect(await verifyChatTurn(replayedWithoutNulls, v2NullCheck, 'opaque-sidecar', 1)).toBe(true);
+    expect(await verifyChatTurn(emittedNullFields, v2NullCheck, 'opaque-sidecar', 1)).toBe(false);
   });
 
   it('partitions Responses input on native assistant/user/tool-output boundaries without using the sidecar as a delimiter', () => {
