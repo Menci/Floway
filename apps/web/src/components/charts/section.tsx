@@ -12,7 +12,7 @@ import { useTranslation } from '../../i18n/translation';
 import { EmptyStateLine } from '../ui/empty-state';
 import { SectionHeader } from '../ui/section-header';
 
-const { Button, InteractionTag, InteractionTagPrimary, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
+const { InteractionTag, InteractionTagPrimary, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
 
 export function ChartSection({
   children,
@@ -58,7 +58,7 @@ export function ChartSection({
       } />
 
       {entries.length
-        ? <div className="flex flex-wrap items-center gap-1.5 min-w-0" ref={setLegendElement}>
+        ? <div className="flex flex-wrap gap-1.5 min-w-0" ref={setLegendElement}>
             {legend.shown.map(entry => (
               <InteractionTag appearance="outline" key={entry.id} shape="circular" size="small" {...{ [LEGEND_TAG_ATTRIBUTE]: '' }}>
                 <Tooltip content={t('monitoring.charts.series.toggleHint')} relationship="description">
@@ -74,13 +74,15 @@ export function ChartSection({
                 </Tooltip>
               </InteractionTag>
             ))}
-            {legend.collapsible && <Button appearance="transparent" onClick={legend.toggle} shape="circular" size="small" {...{ [LEGEND_FOLD_ATTRIBUTE]: '' }}>
-              {legend.expanded
-                ? t('monitoring.charts.series.showFewer')
-                : foldedHidden > 0
-                  ? t('monitoring.charts.series.showMoreWithHidden', { count: legend.folded.length, hidden: foldedHidden })
-                  : t('monitoring.charts.series.showMore', { count: legend.folded.length })}
-            </Button>}
+            {legend.collapsible && <InteractionTag appearance="outline" shape="circular" size="small" {...{ [LEGEND_FOLD_ATTRIBUTE]: '' }}>
+              <InteractionTagPrimary onClick={legend.toggle}>
+                {legend.expanded
+                  ? t('monitoring.charts.series.showFewer')
+                  : foldedHidden > 0
+                    ? t('monitoring.charts.series.showMoreWithHidden', { count: legend.folded.length, hidden: foldedHidden })
+                    : t('monitoring.charts.series.showMore', { count: legend.folded.length })}
+              </InteractionTagPrimary>
+            </InteractionTag>}
           </div>
         : <EmptyStateLine>{emptyText}</EmptyStateLine>}
 
