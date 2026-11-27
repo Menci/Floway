@@ -1,10 +1,64 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  groupModelNames,
   partitionSeriesForOther,
   stableSeriesHues,
 } from '../../../src/components/charts/series-grouping';
 import { rankedLegend } from '../../../src/components/charts/series-legends';
+
+describe('model variant grouping', () => {
+  it('merges prefix and case variants using the heaviest spelling and keeps empty tails intact', () => {
+    const rawModels = [
+      'openrouter/anthropic/claude-sonnet-4-5',
+      'bedrock/Claude-Sonnet-4-5',
+      'claude-sonnet-4-5',
+      'GLM-5',
+      'bedrock/claude-3-7-sonnet',
+      'vendor/',
+    ];
+    const weights = new Map([
+      ['openrouter/anthropic/claude-sonnet-4-5', 100],
+      ['bedrock/Claude-Sonnet-4-5', 500],
+      ['claude-sonnet-4-5', 200],
+      ['GLM-5', 300],
+      ['bedrock/claude-3-7-sonnet', 50],
+      ['vendor/', 10],
+    ]);
+
+    const grouped = groupModelNames(rawModels, weights);
+    const byId = new Map(grouped.groups.map(group => [group.id, group]));
+
+    const sonnet = byId.get('claude-sonnet-4-5')!;
+    expect(sonnet.label).toBe('Claude-Sonnet-4-5');
+    expect(sonnet.members).toEqual([
+      'bedrock/Claude-Sonnet-4-5',
+      'claude-sonnet-4-5',
+      'openrouter/anthropic/claude-sonnet-4-5',
+    ]);
+    expect(grouped.keyOf.get('openrouter/anthropic/claude-sonnet-4-5')).toBe('claude-sonnet-4-5');
+
+    const glm = byId.get('glm-5')!;
+    expect(glm.label).toBe('GLM-5');
+    expect(glm.members).toBeUndefined();
+
+    const bedrockOnly = byId.get('claude-3-7-sonnet')!;
+    expect(bedrockOnly.label).toBe('claude-3-7-sonnet');
+    expect(bedrockOnly.members).toEqual(['bedrock/claude-3-7-sonnet']);
+
+    const emptyTail = byId.get('vendor/')!;
+    expect(emptyTail.label).toBe('vendor/');
+    expect(emptyTail.members).toBeUndefined();
+  });
+
+  it('prefers an unprefixed spelling when variant weights tie', () => {
+    const grouped = groupModelNames(
+      ['anthropic/GPT-5', 'gpt-5'],
+      new Map([['anthropic/GPT-5', 100], ['gpt-5', 100]]),
+    );
+    expect(grouped.groups[0]!.label).toBe('gpt-5');
+  });
+});
 
 describe('stable hues, Other partitioning, and legend ranking', () => {
   it('assigns deterministic hues by baseline volume and honors explicit upstream hues', () => {

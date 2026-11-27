@@ -20,6 +20,7 @@ export const buildTokenChart = ({
   buckets,
   seriesHues,
   seriesColors,
+  seriesMembers,
   seriesWeights,
 }: {
   records: DisplayUsageRecord[];
@@ -29,6 +30,7 @@ export const buildTokenChart = ({
   buckets: ChartBucket[];
   seriesHues?: ReadonlyMap<string, number> | undefined;
   seriesColors?: ReadonlyMap<string, string> | undefined;
+  seriesMembers?: ReadonlyMap<string, readonly string[]> | undefined;
   seriesWeights?: ReadonlyMap<string, number> | undefined;
 }): TokenChartModel => {
   const { values, details } = aggregateTokenRecords(records, metric, range, buckets);
@@ -45,6 +47,7 @@ export const buildTokenChart = ({
       label: option.label,
       hue: seriesHues?.get(option.value) ?? hueForSeriesSlot(slot),
       color: seriesColors?.get(option.value),
+      members: seriesMembers?.get(option.value),
     })));
 
   const isPercent = metricConfig[metric].kind === 'percent';

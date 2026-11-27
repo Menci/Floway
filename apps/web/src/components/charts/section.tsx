@@ -111,6 +111,15 @@ export function ChartSection({
     onHiddenChange(onlyOtherVisible ? new Set() : new Set(topIds));
   };
 
+  const seriesTooltip = (members: readonly string[] | undefined) => members === undefined
+    ? t('monitoring.charts.series.toggleHint')
+    : (
+        <span className="grid gap-1">
+          <SeriesIncludesText names={members} />
+          <Text size={200} className="text-fui-fg2">{t('monitoring.charts.series.toggleHint')}</Text>
+        </span>
+      );
+
   const otherTooltip = otherExpanded
     ? t('monitoring.charts.series.otherToggleHint')
     : (
@@ -120,9 +129,9 @@ export function ChartSection({
         </span>
       );
 
-  const renderSeriesTag = (item: Pick<SeriesLegendEntry, 'id' | 'label'>, color: string) => (
+  const renderSeriesTag = (item: Pick<SeriesLegendEntry, 'id' | 'label' | 'members'>, color: string) => (
     <InteractionTag appearance="outline" key={item.id} shape="circular" size="small">
-      <Tooltip content={t('monitoring.charts.series.toggleHint')} relationship="description">
+      <Tooltip content={seriesTooltip(item.members)} relationship="description">
         <InteractionTagPrimary
           className={hidden.has(item.id) ? 'line-through opacity-[0.55]' : ''}
           icon={<SeriesMarker className="mx-[4px]" color={color} />}

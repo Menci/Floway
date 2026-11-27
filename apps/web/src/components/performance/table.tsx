@@ -17,6 +17,7 @@ import { useTranslation } from '../../i18n/translation';
 import { formatDuration } from '../../lib/format-duration';
 import { formatCount, formatTokenRate } from '../../lib/format-number';
 import { useLocale } from '../../lib/use-locale';
+import { SeriesIncludesText } from '../charts/section';
 import { EmptyStateLine } from '../ui/empty-state';
 import { ScrollArea } from '../ui/scroll-area';
 import { sortDirectionProps, TableTrailingCell, TableTrailingHeader } from '../ui/table-actions';
@@ -24,12 +25,23 @@ import { TableColumns } from '../ui/table-columns';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
 
 const {
-  Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow,
+  Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Tooltip,
 } = fluentComponents;
 
-export function PerformanceTable({ groupBy, labels, onSortChange, percentile, rows, sort }: {
+export function PerformanceTable({
+  groupBy,
+  labelByGroup,
+  labels,
+  membersByGroup,
+  onSortChange,
+  percentile,
+  rows,
+  sort,
+}: {
   groupBy: PerformanceGroupBy;
+  labelByGroup?: ReadonlyMap<string, string> | undefined;
   labels: PerformanceLabels;
+  membersByGroup?: ReadonlyMap<string, readonly string[]> | undefined;
   onSortChange: (sort: PerformanceTableSort) => void;
   percentile: PerformancePercentile;
   rows: PerformanceDisplayRecord[];
@@ -41,21 +53,31 @@ export function PerformanceTable({ groupBy, labels, onSortChange, percentile, ro
     ? { key, direction: sort.direction === 'ascending' ? 'descending' : 'ascending' }
     : { key, direction: performanceSortDirectionForKey(key) });
   const sortedRows = useMemo(() => rows.toSorted((left, right) => {
-    const leftValue = performanceTableSortValue(left, sort.key, groupBy, labels, percentile);
-    const rightValue = performanceTableSortValue(right, sort.key, groupBy, labels, percentile);
+    const leftValue = performanceTableSortValue(left, sort.key, groupBy, labels, labelByGroup, percentile);
+    const rightValue = performanceTableSortValue(right, sort.key, groupBy, labels, labelByGroup, percentile);
     const order = typeof leftValue === 'string' && typeof rightValue === 'string'
       ? leftValue.localeCompare(rightValue)
       : Number(leftValue) - Number(rightValue);
     return sort.direction === 'ascending' ? order : -order;
-  }), [groupBy, labels, percentile, rows, sort]);
+  }), [groupBy, labelByGroup, labels, percentile, rows, sort]);
   const sortDirection = (key: PerformanceTableSortKey) => sort.key === key ? sort.direction : undefined;
+
   return <section className="grid gap-2.5 min-w-0">
     <ScrollArea axes="horizontal" className="rounded-[var(--winui-overlay-corner-radius,8px)] min-w-0"><Table aria-label={t(`monitoring.performance.groupBy.${groupBy}`)} size="small" className="min-w-[570px]">
       {/* Sizing the four measure columns to their widest label leaves the rest
           to the name, the only column whose content has no bound. */}
       <TableColumns widths={[null, '112px', '88px', '112px', '160px']} />
       <TableHeader><TableRow><TableHeaderCell sortable {...sortDirectionProps(sortDirection('group'))} onClick={() => sortBy('group')}>{t(`monitoring.performance.filters.${groupBy}`)}</TableHeaderCell><TableTrailingHeader sortable {...sortDirectionProps(sortDirection('requests'))} onClick={() => sortBy('requests')} className="whitespace-nowrap">{t('monitoring.performance.tables.requests')}</TableTrailingHeader><TableTrailingHeader sortable {...sortDirectionProps(sortDirection('errors'))} onClick={() => sortBy('errors')} className="whitespace-nowrap">{t('monitoring.performance.tables.errors')}</TableTrailingHeader><TableTrailingHeader sortable {...sortDirectionProps(sortDirection('ttft'))} onClick={() => sortBy('ttft')} className="whitespace-nowrap">{t('monitoring.performance.tables.ttft', { percentile })}</TableTrailingHeader><TableTrailingHeader sortable {...sortDirectionProps(sortDirection('speed'))} onClick={() => sortBy('speed')} className="whitespace-nowrap">{t('monitoring.performance.tables.speed', { tail: performancePercentileTailOf(percentile) })}</TableTrailingHeader></TableRow></TableHeader>
-      <TableBody>{sortedRows.length ? sortedRows.map(row => <TableRow key={row.group}><TableCell><TruncationTooltip content={row.group} relationship="description">{measureRef => <span className="winui-focus-rect block overflow-hidden text-ellipsis whitespace-nowrap" ref={measureRef} tabIndex={0}>{resolvePerformanceGroup(row.group, groupBy, labels)}</span>}</TruncationTooltip></TableCell><TableTrailingCell>{formatCount(row.requests, locale)}</TableTrailingCell><TableTrailingCell>{formatCount(row.errors, locale)}</TableTrailingCell><TableTrailingCell>{formatPerformanceLatency(row, percentile, locale)}</TableTrailingCell><TableTrailingCell>{formatPerformanceSpeed(row, percentile)}</TableTrailingCell></TableRow>) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('monitoring.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
+      <TableBody>{sortedRows.length ? sortedRows.map(row => {
+        const displayName = labelByGroup?.get(row.group) ?? resolvePerformanceGroup(row.group, groupBy, labels);
+        const members = membersByGroup?.get(row.group);
+        return <TableRow key={row.group}><TableCell>{members !== undefined
+          ? <Tooltip content={<SeriesIncludesText names={members} />} relationship="description">
+              <span className="winui-focus-rect block overflow-hidden text-ellipsis whitespace-nowrap" tabIndex={0}>{displayName}</span>
+            </Tooltip>
+          : <TruncationTooltip content={row.group} relationship="description">{measureRef => <span className="winui-focus-rect block overflow-hidden text-ellipsis whitespace-nowrap" ref={measureRef} tabIndex={0}>{displayName}</span>}</TruncationTooltip>
+        }</TableCell><TableTrailingCell>{formatCount(row.requests, locale)}</TableTrailingCell><TableTrailingCell>{formatCount(row.errors, locale)}</TableTrailingCell><TableTrailingCell>{formatPerformanceLatency(row, percentile, locale)}</TableTrailingCell><TableTrailingCell>{formatPerformanceSpeed(row, percentile)}</TableTrailingCell></TableRow>;
+      }) : <TableRow><TableCell colSpan={5}><EmptyStateLine>{t('monitoring.performance.empty')}</EmptyStateLine></TableCell></TableRow>}</TableBody>
     </Table></ScrollArea>
   </section>;
 }
@@ -71,9 +93,10 @@ const performanceTableSortValue = (
   key: PerformanceTableSortKey,
   groupBy: PerformanceGroupBy,
   labels: PerformanceLabels,
+  labelByGroup: ReadonlyMap<string, string> | undefined,
   percentile: PerformancePercentile,
 ): string | number => {
-  if (key === 'group') return resolvePerformanceGroup(row.group, groupBy, labels);
+  if (key === 'group') return labelByGroup?.get(row.group) ?? resolvePerformanceGroup(row.group, groupBy, labels);
   if (key === 'requests' || key === 'errors') return row[key];
   return performanceValue(row, key === 'ttft' ? 'ttft' : 'tokPerSec', percentile) ?? Number.NEGATIVE_INFINITY;
 };

@@ -11,7 +11,7 @@ import {
 import { api, callApi, type ApiResult } from '../../api/client';
 import { dashboardFixedRangeQuery, type ChartBucket } from '../charts/dashboard-time';
 import { OTHER_SERIES_COLOR } from '../charts/palette';
-import { OTHER_SERIES_ID, otherSeriesGroup, partitionSeriesForOther, stableSeriesHues, type ChartSectionOther } from '../charts/series-grouping';
+import { groupModelNames, OTHER_SERIES_ID, otherSeriesGroup, partitionSeriesForOther, stableSeriesHues, type ChartSectionOther } from '../charts/series-grouping';
 import type { SeriesLegendEntry } from '../charts/series-legends';
 import { canContinueTelemetrySnapshot, mergeTelemetrySnapshot, sameTelemetryBucketGrid, sameTelemetryScope } from '../telemetry/snapshot';
 import type { PerformanceSlice, PerformanceSliceRow, PerformanceSlicesResponse } from '@floway-dev/gateway/browser';
@@ -163,6 +163,51 @@ const sum = (buckets: readonly DecodedSlice[], mode: 'series' | 'rows' | 'total'
 
 export const performanceRanking = ({ snapshot }: PerformanceDataset): PerformanceDisplayRecord[] => sum(snapshot.buckets, 'rows');
 
+export interface PerformanceRankingView {
+  rows: PerformanceDisplayRecord[];
+  labelByGroup?: Map<string, string> | undefined;
+  membersByGroup?: Map<string, readonly string[]> | undefined;
+}
+
+const groupSliceModels = (slices: readonly DecodedSlice[]) => {
+  const rawRequests = new Map<string, number>();
+  for (const slice of slices) {
+    for (const row of slice.rows) {
+      rawRequests.set(row.group, addCount(rawRequests.get(row.group) ?? 0, row.requests));
+    }
+  }
+  return groupModelNames([...rawRequests.keys()], rawRequests);
+};
+
+// Merges model variants by raw histogram counts before percentile evaluation so
+// P50/P95/P99 for a grouped model match an exact union over its requests.
+export const performanceRankingForDisplay = ({
+  dataset,
+  breakdown,
+  mergeModelVariants,
+}: {
+  dataset: PerformanceDataset;
+  breakdown: PerformanceGroupBy;
+  mergeModelVariants: boolean;
+}): PerformanceRankingView => {
+  if (breakdown !== 'model' || !mergeModelVariants) {
+    return { rows: performanceRanking(dataset) };
+  }
+  const grouped = groupSliceModels(dataset.snapshot.buckets);
+  const items: Array<{ bucket: string; row: DecodedRow }> = [];
+  for (const slice of dataset.snapshot.buckets) {
+    for (const row of slice.rows) {
+      const key = grouped.keyOf.get(row.group)!;
+      items.push({ bucket: 'all', row: key === row.group ? row : { ...row, group: key } });
+    }
+  }
+  return {
+    rows: sumDecodedRows(items),
+    labelByGroup: new Map(grouped.groups.map(entry => [entry.id, entry.label])),
+    membersByGroup: new Map(grouped.groups.flatMap(entry => entry.members === undefined ? [] : [[entry.id, entry.members] as const])),
+  };
+};
+
 export interface PerformanceChartData {
   series: PerformanceDisplayRecord[];
   seriesByGroup: Map<string, SeriesLegendEntry>;
@@ -174,6 +219,7 @@ export const buildPerformanceChartData = ({
   buckets,
   groupBy,
   metric,
+  mergeModelVariants,
   foldSmallSeries,
   hidden,
   labels,
@@ -183,6 +229,7 @@ export const buildPerformanceChartData = ({
   buckets: readonly ChartBucket[];
   groupBy: PerformanceGroupBy;
   metric: PerformanceMetric;
+  mergeModelVariants: boolean;
   foldSmallSeries: boolean;
   hidden: ReadonlySet<string>;
   labels: PerformanceLabels;
@@ -190,23 +237,28 @@ export const buildPerformanceChartData = ({
 }): PerformanceChartData => {
   const bucketKeys = new Set(buckets.map(bucket => bucket.key));
   const windowSlices = dataset.snapshot.buckets.filter(slice => bucketKeys.has(slice.bucket));
+  const groupedModels = groupBy === 'model' && mergeModelVariants ? groupSliceModels(windowSlices) : null;
 
-  const windowItems: Array<{ bucket: string; row: DecodedRow }> = [];
+  const groupedSlices: Array<{ bucket: string; row: DecodedRow }> = [];
   const baselineRequests = new Map<string, number>();
   const activeSamples = new Map<string, number>();
   for (const slice of windowSlices) {
     for (const row of slice.rows) {
-      windowItems.push({ bucket: slice.bucket, row });
-      baselineRequests.set(row.group, addCount(baselineRequests.get(row.group) ?? 0, row.requests));
+      const id = groupedModels === null ? row.group : groupedModels.keyOf.get(row.group)!;
+      const mappedRow = id === row.group ? row : { ...row, group: id };
+      groupedSlices.push({ bucket: slice.bucket, row: mappedRow });
+      baselineRequests.set(id, addCount(baselineRequests.get(id) ?? 0, row.requests));
       const samples = metric === 'ttft' ? row.ttftSamples : row.tpotSamples;
-      activeSamples.set(row.group, addCount(activeSamples.get(row.group) ?? 0, samples));
+      activeSamples.set(id, addCount(activeSamples.get(id) ?? 0, samples));
     }
   }
 
-  const presentItems = [...baselineRequests.keys()].sort().map(id => ({
-    id,
-    label: resolvePerformanceGroup(id, groupBy, labels),
-  }));
+  const presentItems: Array<{ id: string; label: string; members?: readonly string[] | undefined }> = groupedModels !== null
+    ? groupedModels.groups.map(entry => ({ id: entry.id, label: entry.label, members: entry.members }))
+    : [...baselineRequests.keys()].sort().map(id => ({
+        id,
+        label: resolvePerformanceGroup(id, groupBy, labels),
+      }));
 
   const explicitHues = groupBy === 'upstream' ? labels.upstreamHues : undefined;
   const hueByGroup = stableSeriesHues(presentItems.map(item => item.id), baselineRequests, explicitHues);
@@ -214,7 +266,7 @@ export const buildPerformanceChartData = ({
   const otherIdSet = new Set(otherItems.map(item => item.id));
 
   const plotItems: Array<{ bucket: string; row: DecodedRow }> = [];
-  for (const entry of windowItems) {
+  for (const entry of groupedSlices) {
     if (otherIdSet.has(entry.row.group)) {
       if (!hidden.has(entry.row.group)) {
         plotItems.push({ bucket: entry.bucket, row: { ...entry.row, group: OTHER_SERIES_ID } });
@@ -229,6 +281,7 @@ export const buildPerformanceChartData = ({
     id: item.id,
     label: item.label,
     hue: hueByGroup.get(item.id)!,
+    members: item.members,
   }]));
   if (otherItems.length > 0) {
     seriesByGroup.set(OTHER_SERIES_ID, {

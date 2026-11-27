@@ -314,6 +314,7 @@ export const updateOwnPreferencesBody = z.object({
   quotaDisplay: z.enum(QUOTA_DISPLAYS).exactOptional(),
   language: z.enum(SUPPORTED_LANGUAGES).nullable().exactOptional(),
   uiTextEditor: z.boolean().exactOptional(),
+  mergeModelVariants: z.boolean().exactOptional(),
   foldSmallSeries: z.boolean().exactOptional(),
 }).refine(body => Object.values(body).some(value => value !== undefined), {
   error: 'Provide at least one preference',

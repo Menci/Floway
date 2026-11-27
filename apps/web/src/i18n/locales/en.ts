@@ -1578,6 +1578,7 @@ const en = {
       charts: {
         displayOptions: {
           label: 'Display options',
+          mergeModelVariants: 'Merge model variants',
           foldSmallSeries: 'Fold small series into Other',
           saveFailed: 'Could not save preference: {{error}}',
         },

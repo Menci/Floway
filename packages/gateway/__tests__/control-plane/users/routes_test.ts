@@ -128,16 +128,18 @@ test('PATCH /api/users/me/preferences merges a partial update and clears languag
     quotaDisplay: 'remaining',
     language: 'zh-Hans',
     uiTextEditor: false,
+    mergeModelVariants: false,
     foldSmallSeries: false,
   });
 
-  const telemetry = await patchPreferences(adminSession, { foldSmallSeries: true });
+  const telemetry = await patchPreferences(adminSession, { mergeModelVariants: true, foldSmallSeries: true });
   assertEquals(telemetry.status, 200);
   expect(await telemetry.json()).toEqual({
     preferences: {
       quotaDisplay: 'remaining',
       language: 'zh-Hans',
       uiTextEditor: false,
+      mergeModelVariants: true,
       foldSmallSeries: true,
     },
   });
@@ -148,6 +150,7 @@ test('PATCH /api/users/me/preferences merges a partial update and clears languag
     quotaDisplay: 'remaining',
     language: null,
     uiTextEditor: false,
+    mergeModelVariants: true,
     foldSmallSeries: true,
   });
 });

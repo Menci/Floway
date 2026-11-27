@@ -10,7 +10,13 @@ const MIN_OTHER_SHARE_PERCENT = 1;
 // written to the URL; visibility state lives on individual member ids.
 export const OTHER_SERIES_ID = '\u0000other';
 
-type OtherSeriesMember = Pick<SeriesLegendEntry, 'id' | 'label'>;
+const stripModelPrefix = (model: string): string => {
+  const slash = model.lastIndexOf('/');
+  const tail = slash >= 0 ? model.slice(slash + 1) : model;
+  return tail === '' ? model : tail;
+};
+
+type OtherSeriesMember = Pick<SeriesLegendEntry, 'id' | 'label' | 'members'>;
 
 export interface ChartSectionOther {
   color: string;
@@ -21,9 +27,57 @@ export const otherSeriesGroup = (items: readonly OtherSeriesMember[]): ChartSect
   items.length > 0
     ? {
         color: OTHER_SERIES_COLOR,
-        members: items.map(({ id, label }) => ({ id, label })),
+        members: items.map(({ id, label, members }) => ({ id, label, members })),
       }
     : undefined;
+
+interface GroupedModelEntry {
+  id: string;
+  label: string;
+  /** Present only when multiple raw variants merged or a prefix was stripped. */
+  members: string[] | undefined;
+}
+
+interface ModelGroupingResult {
+  keyOf: Map<string, string>;
+  groups: GroupedModelEntry[];
+}
+
+// Takes each group's display casing from its heaviest raw variant (preferring
+// an unprefixed name on ties) so a low-volume variant cannot dictate the label.
+export const groupModelNames = (
+  rawModels: readonly string[],
+  rawWeights: ReadonlyMap<string, number>,
+): ModelGroupingResult => {
+  const keyOf = new Map<string, string>();
+  const rawByGroup = new Map<string, Set<string>>();
+
+  for (const model of rawModels) {
+    const key = stripModelPrefix(model).toLowerCase();
+    keyOf.set(model, key);
+    let members = rawByGroup.get(key);
+    if (members === undefined) {
+      members = new Set();
+      rawByGroup.set(key, members);
+    }
+    members.add(model);
+  }
+
+  const weightOf = (model: string) => rawWeights.get(model) ?? 0;
+  const groups: GroupedModelEntry[] = [];
+
+  for (const [id, rawSet] of rawByGroup) {
+    const rawMembers = [...rawSet].sort((left, right) =>
+      weightOf(right) - weightOf(left)
+      || Number(left.includes('/')) - Number(right.includes('/'))
+      || left.localeCompare(right));
+    const label = stripModelPrefix(rawMembers[0]!);
+    const members = rawMembers.length > 1 || rawMembers[0] !== label ? rawMembers : undefined;
+    groups.push({ id, label, members });
+  }
+
+  return { keyOf, groups };
+};
 
 // Assigns palette slots from a metric-independent baseline so switching metrics
 // or toggling Other never recolours surviving series.
