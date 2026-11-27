@@ -317,7 +317,7 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
       }],
     });
 
-    // 3. Untranslated server-side parts (`executableCode`) and empty `thought` parts advance logical grounding indices without losing later text citations.
+    // 3. Untranslated server-side parts (`executableCode`) and empty `thought` parts close the open IR text part and advance logical grounding indices.
     warn.mockClear();
     const afterUntranslated = await runReader(iterate([
       eventFrame({
@@ -333,6 +333,24 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
               { text: 'world!', thoughtSignature: 's_w' },
               { executableCode: { language: 'PYTHON', code: '1+1' } },
               { text: 'Done.' },
+            ],
+          },
+          groundingMetadata: {
+            groundingChunks: [{ web: { uri: 'https://example.com/done', title: 'Done' } }],
+            groundingSupports: [
+              // Logical 3 ("Done.") collides with native 3 ("world!") and resolves to 0..5 on the new text part.
+              { segment: { partIndex: 3, startIndex: 0, endIndex: 5, text: 'Done.' }, groundingChunkIndices: [0] },
+            ],
+          },
+        }],
+      }),
+      eventFrame({
+        modelVersion: 'gemini-2.5-pro',
+        candidates: [{
+          index: 0,
+          content: {
+            role: 'model',
+            parts: [
               { thought: true, thoughtSignature: 's_empty' },
               { text: 'End' },
             ],
@@ -343,9 +361,11 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
               { web: { uri: 'https://example.com/end', title: 'End' } },
             ],
             groundingSupports: [
-              // Logical 3 ("Done.") collides with native 3 ("world!") and resolves to UTF-16 12..17.
+              // Repeated cumulative citation on closed logical 3 ("Done.") deduplicates silently.
               { segment: { partIndex: 3, startIndex: 0, endIndex: 5, text: 'Done.' }, groundingChunkIndices: [0] },
-              // Logical 5 ("End") after empty thought resolves to UTF-16 17..20.
+              // A new late citation on closed logical 3 ("Done.") warns and drops.
+              { segment: { partIndex: 3, startIndex: 0, endIndex: 5, text: 'Done.' }, groundingChunkIndices: [1] },
+              // Logical 5 ("End") after empty thought resolves to 0..3 on the third text part.
               { segment: { partIndex: 5, startIndex: 0, endIndex: 3, text: 'End' }, groundingChunkIndices: [1] },
             ],
           },
@@ -353,29 +373,35 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
         }],
       }),
     ]));
-    expect(warn).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith('Dropping Gemini GenerateContent grounding citation for closed text part', { choice: 0, partIndex: 3 });
     expect(afterUntranslated.state.choices[0]?.items[1]).toEqual({
       type: 'message',
-      content: [{
-        type: 'text',
-        text: 'Hello world!Done.End',
-        annotations: [
-          {
+      content: [
+        { type: 'text', text: 'Hello world!' },
+        {
+          type: 'text',
+          text: 'Done.',
+          annotations: [{
             type: 'source_citation',
             source_kind: 'url',
             source: 'https://example.com/done',
             source_label: 'Done',
-            output_text_range: { start: 12, end_exclusive: 17 },
-          },
-          {
+            output_text_range: { start: 0, end_exclusive: 5 },
+          }],
+        },
+        {
+          type: 'text',
+          text: 'End',
+          annotations: [{
             type: 'source_citation',
             source_kind: 'url',
             source: 'https://example.com/end',
             source_label: 'End',
-            output_text_range: { start: 17, end_exclusive: 20 },
-          },
-        ],
-      }],
+            output_text_range: { start: 0, end_exclusive: 3 },
+          }],
+        },
+      ],
     });
 
     // 4. Late grounding on a closed text part warns and drops safely; mid-character UTF-8 split warns and omits range.
@@ -530,7 +556,8 @@ test('handles multi-candidate streaming, ended-candidate filtering, prototype fi
   expect(state.choices[0]?.items).toEqual([{
     type: 'message',
     content: [
-      { type: 'text', text: 'BeforeMid' },
+      { type: 'text', text: 'Before' },
+      { type: 'text', text: 'Mid' },
       { type: 'image', image: { media_type: 'IMAGE/PNG', data: 'aW1n' } },
       { type: 'audio', audio: { media_type: 'audio/wav', data: 'YXVk', transcript: 'spoken' } },
       { type: 'audio', audio: { media_type: 'audio/mp3', data: 'bXAz' } },
