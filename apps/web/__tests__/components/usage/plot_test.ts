@@ -101,3 +101,21 @@ describe('search chart', () => {
     expect(areaPlot(chart.plot).lineChartData![0]!.data).toEqual([expect.objectContaining({ y: 7 })]);
   });
 });
+
+describe('legend weights', () => {
+  const options = [{ value: 'small', label: 'Small' }, { value: 'large', label: 'Large' }];
+
+  it('weighs a rate by the requests behind it rather than by summed percentages', () => {
+    const model = buildTokenChart({
+      records: [
+        record({ input_tokens: '0', input_cache_read_tokens: '10' }, 'small'),
+        { ...record({ input_tokens: '10' }, 'large'), requests: 7 },
+      ],
+      dimensionOptions: options,
+      metric: 'cachedRate',
+      range: 'today',
+      buckets: [bucket],
+    });
+    expect(model.weights).toEqual(new Map([['small', 1], ['large', 7]]));
+  });
+});

@@ -43,7 +43,7 @@ export function UsageChartCallout({ chart, labelByTime, point, valueFormatter }:
               color: item.color,
               key: item.id,
               label: item.label,
-              values: [formatCount(summary.requests, locale), formatUsd(summary.cost), formatCompactDecimalCount(summary.total, locale), formatCompactDecimalCount(summary.cacheRead, locale), formatRatePercent(summary.cachedRate), formatCompactDecimalCount(summary.prefill, locale), formatCompactDecimalCount(summary.output, locale)],
+              values: [formatCount(summary.requests, locale), formatUsd(summary.cost), formatCompactDecimalCount(summary.total), formatCompactDecimalCount(summary.cacheRead), formatRatePercent(summary.cachedRate), formatCompactDecimalCount(summary.prefill), formatCompactDecimalCount(summary.output)],
             }];
           })}
           title={title}

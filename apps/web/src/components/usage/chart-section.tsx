@@ -28,6 +28,7 @@ export function UsageChartSection({
       hidden={hidden}
       onHiddenChange={onHiddenChange}
       title={title}
+      weights={chart.weights}
     >
       <UsageChart chart={chart} hidden={hidden} valueFormatter={valueFormatter} />
     </ChartSection>

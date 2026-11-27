@@ -57,6 +57,7 @@ export const buildTokenChart = ({
 
   return {
     entries,
+    weights: tokenSeriesWeights(entries, buckets, values, details, isPercent),
     buckets,
     details,
     kind: 'token',
@@ -66,6 +67,18 @@ export const buildTokenChart = ({
       : { form: 'area', data: areaChartData(buckets, series) },
   };
 };
+
+// A rate has no total to rank by, so a percent metric ranks by the traffic
+// behind each series instead.
+const tokenSeriesWeights = (
+  entries: readonly ChartSeries[],
+  buckets: readonly ChartBucket[],
+  values: ReadonlyMap<string, ReadonlyMap<string, number | null>>,
+  details: ReadonlyMap<string, ReadonlyMap<string, TokenCounters>>,
+  isPercent: boolean,
+): Map<string, number> => new Map(entries.map(entry => [entry.id, buckets.reduce((sum, bucket) => sum + (isPercent
+  ? details.get(bucket.key)?.get(entry.id)?.requests ?? 0
+  : values.get(bucket.key)?.get(entry.id) ?? 0), 0)]));
 
 type PlottedSeries = Array<{ entry: ChartSeries; data: Array<number | null> }>;
 
@@ -133,6 +146,7 @@ export const buildSearchChart = ({
   );
   return {
     entries,
+    weights: new Map(entries.map(entry => [entry.id, [...groups.get(entry.id)?.values() ?? []].reduce((sum, value) => sum + value, 0)])),
     buckets,
     kind: 'search',
     providers: [...providers].sort(),

@@ -11,9 +11,11 @@ export const formatBytes = (value: number, locale: string): string => {
   return `${decimals(value / 1024 ** 3, 2, locale)} GB`;
 };
 
-// `Intl` rather than a hand-rolled thousands ladder: zh-Hans groups by 万, not K.
-export const formatCompactCount = (value: number, locale: string): string =>
-  new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+// Compact counts read in K / M / B / T in every dashboard language, so a figure
+// keeps one spelling between the axis, the callout, and the tiles whatever the
+// locale would group by (zh-Hans groups by 万 and 亿).
+const compactCount = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
+export const formatCompactCount = (value: number): string => compactCount.format(value);
 
 export const formatNumber = (value: number, locale: string): string =>
   new Intl.NumberFormat(locale).format(value);

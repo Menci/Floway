@@ -1,6 +1,8 @@
 import { SelectAllOffRegular, SelectAllOnRegular, SquareMultipleRegular } from '@fluentui/react-icons';
+import { useMemo, useState } from 'react';
 
 import { chartHeight } from './layout';
+import { LEGEND_FOLD_ATTRIBUTE, LEGEND_TAG_ATTRIBUTE, rankedLegend, useLegendFold } from './legend-fold';
 import { colorForHue } from './palette';
 import type { SeriesLegendEntry } from './series-legends';
 import { SeriesMarker } from './series-marker';
@@ -10,7 +12,7 @@ import { useTranslation } from '../../i18n/translation';
 import { EmptyStateLine } from '../ui/empty-state';
 import { SectionHeader } from '../ui/section-header';
 
-const { InteractionTag, InteractionTagPrimary, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
+const { Button, InteractionTag, InteractionTagPrimary, Toolbar, ToolbarButton, Tooltip } = fluentComponents;
 
 export function ChartSection({
   children,
@@ -20,6 +22,7 @@ export function ChartSection({
   hidden,
   onHiddenChange,
   title,
+  weights,
 }: {
   children: React.ReactNode;
   controlsLabel: string;
@@ -28,9 +31,14 @@ export function ChartSection({
   hidden: Set<string>;
   onHiddenChange: (next: Set<string>) => void;
   title: string;
+  /** How much each series carries, by id; the legend lists the heaviest first. */
+  weights?: ReadonlyMap<string, number> | undefined;
 }) {
   const { t } = useTranslation();
+  const [legendElement, setLegendElement] = useState<HTMLDivElement | null>(null);
   const ids = entries.map(entry => entry.id);
+  const legend = useLegendFold(useMemo(() => rankedLegend(entries, weights), [entries, weights]), legendElement);
+  const foldedHidden = legend.folded.filter(entry => hidden.has(entry.id)).length;
   const isolate = (id: string) => onHiddenChange(isolatedSeries(ids, hidden, id));
 
   return (
@@ -50,9 +58,9 @@ export function ChartSection({
       } />
 
       {entries.length
-        ? <div className="flex flex-wrap gap-1.5 min-w-0">
-            {entries.map(entry => (
-              <InteractionTag appearance="outline" key={entry.id} shape="circular" size="small">
+        ? <div className="flex flex-wrap items-center gap-1.5 min-w-0" ref={setLegendElement}>
+            {legend.shown.map(entry => (
+              <InteractionTag appearance="outline" key={entry.id} shape="circular" size="small" {...{ [LEGEND_TAG_ATTRIBUTE]: '' }}>
                 <Tooltip content={t('monitoring.charts.series.toggleHint')} relationship="description">
                   <InteractionTagPrimary
                     className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''}
@@ -66,6 +74,13 @@ export function ChartSection({
                 </Tooltip>
               </InteractionTag>
             ))}
+            {legend.collapsible && <Button appearance="transparent" onClick={legend.toggle} shape="circular" size="small" {...{ [LEGEND_FOLD_ATTRIBUTE]: '' }}>
+              {legend.expanded
+                ? t('monitoring.charts.series.showFewer')
+                : foldedHidden > 0
+                  ? t('monitoring.charts.series.showMoreWithHidden', { count: legend.folded.length, hidden: foldedHidden })
+                  : t('monitoring.charts.series.showMore', { count: legend.folded.length })}
+            </Button>}
           </div>
         : <EmptyStateLine>{emptyText}</EmptyStateLine>}
 

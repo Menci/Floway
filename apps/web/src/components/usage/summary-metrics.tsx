@@ -4,7 +4,7 @@ import type { TokenSummary, UsageMetric } from './types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { useLocale } from '../../lib/use-locale';
-const { Text, ToggleButton, makeStyles, mergeClasses } = fluentComponents;
+const { Text, ToggleButton, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
 // A metric tile is one of a set, so it is styled as a WinUI ListViewItem
 // rather than as a checked ToggleButton.
@@ -99,17 +99,19 @@ const useStyles = makeStyles({
 
 function SummaryMetricButton({
   active,
+  exact,
   label,
   onClick,
   value,
 }: {
   active: boolean;
+  exact: string | null;
   label: string;
   onClick: () => void;
   value: string;
 }) {
   const s = useStyles();
-  return (
+  const button = (
     <ToggleButton
       appearance="subtle"
       checked={active}
@@ -118,17 +120,21 @@ function SummaryMetricButton({
     >
       <span className="grid gap-1 min-w-0">
         <Text size={200} weight="semibold" className="text-fui-fg2">{label}</Text>
-        <Text size={500} weight="semibold" className="tabular-nums [overflow-wrap:anywhere]">{value}</Text>
+        <Text size={500} weight="semibold" className="tabular-nums" wrap={false}>{value}</Text>
       </span>
     </ToggleButton>
   );
+  return exact === null ? button : <Tooltip content={exact} relationship="description">{button}</Tooltip>;
 }
 export function SummaryMetrics({ metric, onMetricChange, summary }: { metric: UsageMetric; onMetricChange: (metric: UsageMetric) => void; summary: TokenSummary }) {
   const { t } = useTranslation();
   const locale = useLocale();
   return <div className="grid gap-2.5 grid-cols-5 max-[900px]:grid-cols-2 max-[520px]:grid-cols-1">
     {summaryMetrics.map(group => <div className="grid gap-2 content-start min-w-0" key={group.join('-')}>
-      {group.map(item => <SummaryMetricButton active={metric === item} key={item} label={t(metricConfig[item].labelKey)} onClick={() => onMetricChange(item)} value={formatSummaryMetric(summary, item, locale)} />)}
+      {group.map(item => {
+        const { text, exact } = formatSummaryMetric(summary, item, locale);
+        return <SummaryMetricButton active={metric === item} exact={exact} key={item} label={t(metricConfig[item].labelKey)} onClick={() => onMetricChange(item)} value={text} />;
+      })}
     </div>)}
   </div>;
 }

@@ -308,7 +308,7 @@ function RequestRowContent({ compact, exportable, exportIds, onToggleExport, add
                 {measureRef => <Text size={200} className={mergeClasses('ml-auto', s.error)} ref={measureRef} truncate wrap={false}>{rowError}</Text>}
               </TruncationTooltip>
             : <Text size={200} className="ml-auto text-fui-fg3 tabular-nums" truncate wrap={false}>
-                {tokens === null ? NO_READING : `${formatCompactCount(tokens, locale)} tok`}
+                {tokens === null ? NO_READING : `${formatCompactCount(tokens)} tok`}
               </Text>}
         </div>
       </a>

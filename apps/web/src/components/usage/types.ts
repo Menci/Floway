@@ -88,6 +88,8 @@ export type ChartPlot =
 
 interface ChartModelBase {
   entries: ChartSeries[];
+  /** What each series carries across the window, by id, for ranking the legend. */
+  weights: Map<string, number>;
   plot: ChartPlot;
   buckets: ChartBucket[];
   range: UsageRange;
