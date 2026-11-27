@@ -16,7 +16,7 @@ vi.mock('../../src/components/ui/json-editor', () => ({ JsonEditor: () => null }
 const scope = { kind: 'upstream', upstreamId: 'a' } as const;
 const initial: PermissionsData = {
   directory: {
-    users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const }, groupIds: [1] }],
+    users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false }, groupIds: [1] }],
     groups: [{ id: 1, name: 'Platform', hue: 210, memberIds: [2], createdAt: '', deletedAt: null }],
     principalUserIds: [2],
     principalGroupIds: [1],
@@ -71,7 +71,7 @@ test('an operator sees every authorized principal in a read-only view', async ()
 test('the permissions loader redirects an operator without Permission.Audit', async () => {
   useAuthStore.getState().primeFromLogin({
     token: 'operator-session',
-    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const } },
+    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false } },
   });
   await expect(clientLoader()).rejects.toMatchObject({ status: 302 });
 });

@@ -21,8 +21,8 @@ import { getSessionToken, setSessionToken } from '../../src/auth/session';
 import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
 
-const oldUser = { id: 1, username: 'old', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const } };
-const newUser = { id: 2, username: 'new', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const } };
+const oldUser = { id: 1, username: 'old', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false } };
+const newUser = { id: 2, username: 'new', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false } };
 
 describe('auth store request ownership', () => {
   stubLocalStorage();

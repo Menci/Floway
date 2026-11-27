@@ -124,21 +124,21 @@ test('PATCH /api/users/me/preferences merges a partial update and clears languag
   const { adminSession, repo } = await setupAppTest();
 
   await patchPreferences(adminSession, { language: 'zh-Hans' });
-  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: 'zh-Hans', uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 });
+  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: 'zh-Hans', uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false });
 
   const cleared = await patchPreferences(adminSession, { language: null });
   assertEquals(cleared.status, 200);
-  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 });
+  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: null, uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false });
 });
 
-test('PATCH /api/users/me/preferences stores Usage model groups and refuses ones it could not load back', async () => {
+test('PATCH /api/users/me/preferences stores the Usage grouping switches and refuses a non-boolean', async () => {
   const { adminSession, repo } = await setupAppTest();
 
-  const saved = await patchPreferences(adminSession, { usageModelGroups: [{ pattern: 'gpt-*', name: 'GPT' }], usageOtherShare: 1 });
+  const saved = await patchPreferences(adminSession, { usageAutoGroup: true });
   assertEquals(saved.status, 200);
-  expect(await repo.userPreferences.get(1)).toMatchObject({ usageModelGroups: [{ pattern: 'gpt-*', name: 'GPT' }], usageOtherShare: 1 });
+  expect(await repo.userPreferences.get(1)).toMatchObject({ usageAutoGroup: true, usageAutoFold: false });
 
-  const blank = await patchPreferences(adminSession, { usageModelGroups: [{ pattern: '', name: 'GPT' }] });
-  assertEquals(blank.status, 400);
-  expect(await repo.userPreferences.get(1)).toMatchObject({ usageModelGroups: [{ pattern: 'gpt-*', name: 'GPT' }] });
+  const invalid = await patchPreferences(adminSession, { usageAutoFold: 'yes' });
+  assertEquals(invalid.status, 400);
+  expect(await repo.userPreferences.get(1)).toMatchObject({ usageAutoGroup: true, usageAutoFold: false });
 });

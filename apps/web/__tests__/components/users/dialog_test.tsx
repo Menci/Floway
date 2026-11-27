@@ -10,7 +10,7 @@ import { renderInApp } from '../../render';
 const user: ControlPlaneUser = {
   id: 2, username: 'operator', isAdmin: false,
   createdAt: '2026-01-01T00:00:00.000Z',
-  preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const },
+  preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false },
 };
 
 afterEach(() => vi.unstubAllGlobals());

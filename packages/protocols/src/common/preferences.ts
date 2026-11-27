@@ -12,23 +12,6 @@ export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
 export const DEFAULT_LANGUAGE: SupportedLanguage = 'en';
 
-/**
- * Folds the Usage models a pattern matches into one series named `name`. The
- * pattern is a case-insensitive glob in which `*` matches any run of
- * characters; the first group whose pattern matches a model claims it.
- */
-export interface UsageModelGroup {
-  pattern: string;
-  name: string;
-}
-
-export const USAGE_MODEL_GROUP_LIMITS = { groups: 100, pattern: 200, name: 100 } as const;
-
-/** Percent of the window below which a Usage model series folds into Other; 0 keeps every series. */
-export const USAGE_OTHER_SHARES = [0, 0.5, 1, 2, 5] as const;
-
-export type UsageOtherShare = (typeof USAGE_OTHER_SHARES)[number];
-
 export interface UserPreferences {
   quotaDisplay: QuotaDisplay;
   /**
@@ -37,16 +20,18 @@ export interface UserPreferences {
    */
   language: SupportedLanguage | null;
   uiTextEditor: boolean;
-  usageModelGroups: UsageModelGroup[];
-  usageOtherShare: UsageOtherShare;
+  /** Usage charts grouped by model merge a model's upstream-prefixed and tier-suffixed variants. */
+  usageAutoGroup: boolean;
+  /** Usage charts grouped by model fold the series carrying a small share into Other. */
+  usageAutoFold: boolean;
 }
 
 export const defaultUserPreferences: UserPreferences = {
   quotaDisplay: 'remaining',
   language: null,
   uiTextEditor: false,
-  usageModelGroups: [],
-  usageOtherShare: 0,
+  usageAutoGroup: false,
+  usageAutoFold: false,
 };
 
 const isQuotaDisplay = (value: unknown): value is QuotaDisplay =>
@@ -55,37 +40,9 @@ const isQuotaDisplay = (value: unknown): value is QuotaDisplay =>
 const isSupportedLanguage = (value: unknown): value is SupportedLanguage =>
   SUPPORTED_LANGUAGES.includes(value as SupportedLanguage);
 
-const isUsageOtherShare = (value: unknown): value is UsageOtherShare =>
-  USAGE_OTHER_SHARES.includes(value as UsageOtherShare);
-
-const boundedText = (value: unknown, field: string, limit: number): string => {
-  if (typeof value !== 'string') throw new TypeError(`${field} must be a string`);
-  if (value.trim() === '') throw new TypeError(`${field} must not be blank`);
-  if (value.length > limit) throw new TypeError(`${field} must be at most ${limit} characters`);
-  return value;
-};
-
-export const parseUsageModelGroups = (value: unknown): UsageModelGroup[] => {
-  if (!Array.isArray(value)) throw new TypeError('preferences.usageModelGroups must be an array');
-  if (value.length > USAGE_MODEL_GROUP_LIMITS.groups) {
-    throw new TypeError(`preferences.usageModelGroups holds at most ${USAGE_MODEL_GROUP_LIMITS.groups} groups`);
-  }
-  return value.map((group: unknown, index) => {
-    if (typeof group !== 'object' || group === null || Array.isArray(group)) {
-      throw new TypeError(`preferences.usageModelGroups[${index}] must be an object`);
-    }
-    const record = group as Record<string, unknown>;
-    const extra = Object.keys(record).find(key => key !== 'pattern' && key !== 'name');
-    if (extra !== undefined) throw new TypeError(`preferences.usageModelGroups[${index}] has unknown field ${extra}`);
-    return {
-      pattern: boundedText(record.pattern, `preferences.usageModelGroups[${index}].pattern`, USAGE_MODEL_GROUP_LIMITS.pattern),
-      name: boundedText(record.name, `preferences.usageModelGroups[${index}].name`, USAGE_MODEL_GROUP_LIMITS.name),
-    };
-  });
-};
-
-export const parseUsageOtherShare = (value: unknown): UsageOtherShare => {
-  if (!isUsageOtherShare(value)) throw new TypeError(`preferences.usageOtherShare is not one of ${USAGE_OTHER_SHARES.join(', ')}`);
+const parseBooleanPreference = (record: Record<string, unknown>, key: 'usageAutoGroup' | 'usageAutoFold'): boolean => {
+  const value = record[key] === undefined ? defaultUserPreferences[key] : record[key];
+  if (typeof value !== 'boolean') throw new TypeError(`preferences.${key} must be a boolean`);
   return value;
 };
 
@@ -114,14 +71,10 @@ export const parseUserPreferences = (value: unknown): UserPreferences => {
     throw new TypeError('preferences.uiTextEditor must be a boolean');
   }
 
-  const usageModelGroups = record.usageModelGroups === undefined
-    ? [...defaultUserPreferences.usageModelGroups]
-    : parseUsageModelGroups(record.usageModelGroups);
-  const usageOtherShare = record.usageOtherShare === undefined
-    ? defaultUserPreferences.usageOtherShare
-    : parseUsageOtherShare(record.usageOtherShare);
+  const usageAutoGroup = parseBooleanPreference(record, 'usageAutoGroup');
+  const usageAutoFold = parseBooleanPreference(record, 'usageAutoFold');
 
-  return { quotaDisplay, language, uiTextEditor, usageModelGroups, usageOtherShare };
+  return { quotaDisplay, language, uiTextEditor, usageAutoGroup, usageAutoFold };
 };
 
 export const serializeUserPreferences = (preferences: UserPreferences): string => JSON.stringify(preferences);

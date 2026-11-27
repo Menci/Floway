@@ -12,7 +12,7 @@ const groups: ControlPlaneGroup[] = [
   { id: 1, name: 'Platform', hue: 210, createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
   { id: 2, name: 'Research', hue: 150, createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
 ];
-const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, createdAt: '2026-10-01T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const } };
+const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, createdAt: '2026-10-01T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false } };
 const memberships = [
   { groupId: 1, userId: 1, createdAt: '2026-10-10T09:30:00Z' },
   { groupId: 2, userId: 1, createdAt: '2026-10-12T10:00:00Z' },

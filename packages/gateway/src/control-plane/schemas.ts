@@ -21,7 +21,7 @@ import { accessPrincipalSchema, accessRecordInputSchema, accessTargetScopeSchema
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { RETENTION_MAX_SECONDS, SECONDS_PER_DAY } from '../shared/retention.ts';
-import { isTelemetryBucketGranularity, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, parseUsageModelGroups, parseUsageOtherShare, QUOTA_DISPLAYS, RERANK_PROTOCOLS, SUPPORTED_LANGUAGES, tokenUsageUnattributedUserId, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
+import { isTelemetryBucketGranularity, kindForEndpoints, MODEL_KINDS, parseNonNegativeDecimalString, QUOTA_DISPLAYS, RERANK_PROTOCOLS, SUPPORTED_LANGUAGES, tokenUsageUnattributedUserId, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_HUE_DEGREES } from '@floway-dev/upstream';
 
 // --- shared atoms ---
@@ -310,24 +310,12 @@ export const changeOwnPasswordBody = z.object({
   newPassword: passwordSchema,
 });
 
-// The stored shape is checked by the same parsers that read it back, so a
-// value the API accepts is one storage and backups can always load. The guard
-// is flagOverridesSchema's: an absent exact-optional key still reaches it.
-const preferenceSchema = <T>(parse: (value: unknown) => T) => z.unknown().refine(value => value !== undefined).transform((value, ctx): T => {
-  try {
-    return parse(value);
-  } catch (e) {
-    ctx.issues.push({ code: 'custom', message: e instanceof Error ? e.message : String(e), input: value });
-    return z.NEVER;
-  }
-});
-
 export const updateOwnPreferencesBody = z.object({
   quotaDisplay: z.enum(QUOTA_DISPLAYS).exactOptional(),
   language: z.enum(SUPPORTED_LANGUAGES).nullable().exactOptional(),
   uiTextEditor: z.boolean().exactOptional(),
-  usageModelGroups: preferenceSchema(parseUsageModelGroups).exactOptional(),
-  usageOtherShare: preferenceSchema(parseUsageOtherShare).exactOptional(),
+  usageAutoGroup: z.boolean().exactOptional(),
+  usageAutoFold: z.boolean().exactOptional(),
 }).refine(body => Object.values(body).some(value => value !== undefined), {
   error: 'Provide at least one preference',
 });

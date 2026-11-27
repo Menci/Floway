@@ -1,4 +1,4 @@
-import { DataUsage24Regular, Edit24Regular, Group24Regular, LockClosed24Regular } from '@fluentui/react-icons';
+import { DataUsage24Regular, Edit24Regular, Group24Regular, LockClosed24Regular, TextCollapse24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -19,8 +19,7 @@ import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { SectionHeader } from '../components/ui/section-header';
 import { SettingsCard } from '../components/ui/settings-card';
-import { useDialogInvocation } from '../components/ui/use-dialog-invocation';
-import { ModelGroupsDialog } from '../components/usage/model-groups-dialog';
+import { OTHER_SHARE_PERCENT } from '../components/usage/model-groups';
 import { fluentComponents } from '../fluent';
 import { browserLanguage, languageNames, normalizeLanguage, supportedLanguages } from '../i18n/languages';
 import { getAltKeyLabel, syncUiTextEditorPreference } from '../i18n/ui-text-editor/mirror';
@@ -96,9 +95,6 @@ export default function DashboardSettings() {
         <div className={SETTINGS_SECTION_HEADER_CLASS}><SectionHeader level={4} title={t('settings.account.appearance')} /></div>
         <PreferencesSection />
 
-        <div className={SETTINGS_SECTION_HEADER_CLASS}><SectionHeader level={4} title={t('settings.account.usage')} /></div>
-        <UsageModelGroupsCard />
-
         <div className={SETTINGS_SECTION_HEADER_CLASS}><SectionHeader level={4} title={t('settings.account.security')} /></div>
         <SettingsCard
           description={t('settings.account.password.description')}
@@ -111,27 +107,6 @@ export default function DashboardSettings() {
       <PasswordDialog onOpenChange={setPasswordOpen} open={passwordOpen} />
     </section>
   );
-}
-
-// The groups are edited in the dialog the Usage chart opens; here it has no
-// chart behind it, so it previews no matches.
-function UsageModelGroupsCard() {
-  const { t } = useTranslation();
-  const { usageModelGroups, usageOtherShare } = useUserPreferences();
-  const dialog = useDialogInvocation<void>();
-  const other = usageOtherShare === 0
-    ? t('monitoring.usage.modelGroups.other.off')
-    : t('monitoring.usage.modelGroups.other.below', { share: usageOtherShare });
-  return <>
-    <SettingsCard
-      description={t('settings.account.usageModelGroups.summary', { count: usageModelGroups.length, other })}
-      header={t('monitoring.usage.modelGroups.title')}
-      icon={<Group24Regular />}
-      onClick={() => dialog.open()}
-    />
-    {dialog.invocation && <ModelGroupsDialog key={dialog.invocation.key} models={null} open={dialog.isOpen}
-      onOpenChange={open => { if (!open) dialog.close(); }} />}
-  </>;
 }
 
 // SettingsCard rows carry the choice; the save is one action for the group, as
@@ -148,7 +123,9 @@ function PreferencesSection() {
 
   const dirty = draft.quotaDisplay !== saved.quotaDisplay
     || draft.language !== saved.language
-    || draft.uiTextEditor !== saved.uiTextEditor;
+    || draft.uiTextEditor !== saved.uiTextEditor
+    || draft.usageAutoGroup !== saved.usageAutoGroup
+    || draft.usageAutoFold !== saved.usageAutoFold;
 
   const save = async () => {
     // Nothing to send, so the button answers a press without a request rather
@@ -157,9 +134,7 @@ function PreferencesSection() {
     if (saving || !dirty) return;
     setSaving(true);
     setError(null);
-    // Only this group's fields: the Usage model groups are saved from their own
-    // dialog, and a draft taken before that save would overwrite it.
-    const result = await updateOwnPreferences({ quotaDisplay: draft.quotaDisplay, language: draft.language, uiTextEditor: draft.uiTextEditor });
+    const result = await updateOwnPreferences(draft);
     setSaving(false);
     if (result.error) {
       setError(result.error.message);
@@ -232,6 +207,28 @@ function PreferencesSection() {
         description={t('settings.account.preferences.uiTextEditor.description', { key: getAltKeyLabel() })}
         header={t('settings.account.preferences.uiTextEditor.title')}
         icon={<Edit24Regular />}
+      />
+
+      <SettingsCard
+        action={<Switch
+          aria-label={t('settings.account.preferences.usageAutoGroup.title')}
+          checked={draft.usageAutoGroup}
+          onChange={(_, data) => setDraft(current => ({ ...current, usageAutoGroup: data.checked }))}
+        />}
+        description={t('settings.account.preferences.usageAutoGroup.description')}
+        header={t('settings.account.preferences.usageAutoGroup.title')}
+        icon={<Group24Regular />}
+      />
+
+      <SettingsCard
+        action={<Switch
+          aria-label={t('settings.account.preferences.usageAutoFold.title')}
+          checked={draft.usageAutoFold}
+          onChange={(_, data) => setDraft(current => ({ ...current, usageAutoFold: data.checked }))}
+        />}
+        description={t('settings.account.preferences.usageAutoFold.description', { share: OTHER_SHARE_PERCENT })}
+        header={t('settings.account.preferences.usageAutoFold.title')}
+        icon={<TextCollapse24Regular />}
       />
     </div>
 

@@ -18,7 +18,7 @@ const user = {
   isAdmin: true,
   canViewPermissions: true,
   canViewUpstreams: true,
-  preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const },
+  preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false },
 };
 
 const renderPage = () => renderInApp(<RouterProvider router={createMemoryRouter([
@@ -41,7 +41,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('preference form', () => {
   it('saves the draft only after the operator submits it', async () => {
-    const fetch = vi.fn(async () => Response.json({ preferences: { quotaDisplay: 'used', language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 as const } }));
+    const fetch = vi.fn(async () => Response.json({ preferences: { quotaDisplay: 'used', language: null, uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false } }));
     vi.stubGlobal('fetch', fetch);
     renderPage();
 
@@ -56,13 +56,13 @@ describe('preference form', () => {
     expect(fetch).not.toHaveBeenCalled();
 
     fireEvent.click(save);
-    await waitFor(() => expect(useAuthStore.getState().session!.user.preferences).toEqual({ quotaDisplay: 'used', language: null, uiTextEditor: false, usageModelGroups: [], usageOtherShare: 0 }));
+    await waitFor(() => expect(useAuthStore.getState().session!.user.preferences).toEqual({ quotaDisplay: 'used', language: null, uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false }));
 
     const request = fetch.mock.calls[0] as unknown as [string, RequestInit];
     const url = new URL(request[0], 'http://localhost');
     expect(url.pathname).toBe('/api/users/me/preferences');
     expect(request[1].method).toBe('PATCH');
-    expect(JSON.parse(String(request[1].body))).toEqual({ quotaDisplay: 'used', language: null, uiTextEditor: false });
+    expect(JSON.parse(String(request[1].body))).toEqual({ quotaDisplay: 'used', language: null, uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false });
     expect(reload).not.toHaveBeenCalled();
   });
 
