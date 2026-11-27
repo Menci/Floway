@@ -15,7 +15,7 @@ import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 import { BatchExport } from './batch-export';
 import { RequestFilters } from './filters';
 import { errorLabel, requestSeverity, totalTokens } from './format';
-import { RequestKeyChip } from './key-chip';
+import { RequestKeyLabel } from './key-label';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -198,6 +198,8 @@ interface RowProps {
   exportable: boolean;
   /** Whether every row names the key that captured it. */
   showSourceKey: boolean;
+  /** Key names worn by more than one key, whose labels add the key's suffix. */
+  sharedKeyNames: ReadonlySet<string>;
   exportIds: Set<string>;
   onToggleExport: (id: string) => void;
   addressOfRecord: (recordId: string) => string;
@@ -214,7 +216,7 @@ function RequestRow({ index, records, style, ...rest }: RowComponentProps<RowPro
   return <RequestRowContent {...rest} index={index} record={record} records={records} style={style} />;
 }
 
-function RequestRowContent({ compact, exportable, showSourceKey, exportIds, onToggleExport, addressOfRecord, index, now, onSelect, record, records, selectByIndex, selectedId, style }: RowProps & {
+function RequestRowContent({ compact, exportable, showSourceKey, sharedKeyNames, exportIds, onToggleExport, addressOfRecord, index, now, onSelect, record, records, selectByIndex, selectedId, style }: RowProps & {
   index: number;
   record: DumpMetadata;
   style: CSSProperties;
@@ -228,6 +230,8 @@ function RequestRowContent({ compact, exportable, showSourceKey, exportIds, onTo
   const rowError = errorLabel(record.error, record.status);
   const StatusIcon = severity === 'success' ? CheckmarkCircleRegular : DismissCircleRegular;
   const selected = selectedId === record.id;
+  const keyLabel = (className: string) => <RequestKeyLabel apiKey={record.key} className={className} withSuffix={sharedKeyNames.has(record.key.name)} />;
+  const pathLineCrowded = compact || showSourceKey;
 
   const handleKeyDown = (event: KeyboardEvent<HTMLAnchorElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -257,13 +261,9 @@ function RequestRowContent({ compact, exportable, showSourceKey, exportIds, onTo
         <div className="flex items-center gap-2 min-w-0">
           <StatusIcon aria-hidden="true" className={`${s[severity]} block flex-none`} fontSize={22} />
           <span className="sr-only">{t(`requests.status.${severity}`)}</span>
-          <Text size={300} className="min-w-0 flex-1 font-mono" truncate wrap={false}>
+          <Text size={300} className="min-w-0 font-mono" truncate wrap={false}>
             {record.model ?? t('requests.unknownModel')}
           </Text>
-          {/* The merged log names the key each row came from; a single key's
-              log already says so in the selector above it. Compact, the name
-              gives way to the timestamp rather than folding the row. */}
-          {showSourceKey && !compact && <RequestKeyChip apiKey={record.key} className="flex-none max-w-40" />}
           {/* These triggers stay unfocusable: the row is an `option` under a
             roving tabindex, and a focusable descendant breaks that stop. */}
           <Tooltip content={dateTime(record.startedAt, locale)} relationship="description">
@@ -275,16 +275,20 @@ function RequestRowContent({ compact, exportable, showSourceKey, exportIds, onTo
           </Tooltip>
         </div>
         <div className="flex items-center gap-2 min-w-0">
-          <Tooltip content={`${record.method} ${record.path}`} relationship="description">
-            <Text size={200} className={mergeClasses('min-w-0 flex-1 text-fui-fg3 font-mono', compact && 'min-w-16')} truncate wrap={false}>
-              {record.path}
-            </Text>
-          </Tooltip>
-          {/* Compact has no room on the model line, so the source key takes the
-              end of the path line instead of disappearing. */}
-          {showSourceKey && compact && <RequestKeyChip apiKey={record.key} className="flex-none max-w-24" />}
-          {/* Compact, the upstream chip gives way to the path rather than overflowing. */}
-          {record.upstream && <span className={compact ? 'flex min-w-0 shrink' : 'contents'}><UpstreamBadge
+          {/* The merged log names the key each row came from beside the
+              upstream it went to; a single key's log already names the key in
+              the selector above it. The path gives way first, and compact
+              gives it up to the key: the record's details still carry it. */}
+          {showSourceKey && compact
+            ? keyLabel('flex-1 min-w-16')
+            : <Tooltip content={`${record.method} ${record.path}`} relationship="description">
+                <Text size={200} className={mergeClasses('min-w-0 flex-1 text-fui-fg3 font-mono', pathLineCrowded && 'min-w-16')} truncate wrap={false}>
+                  {record.path}
+                </Text>
+              </Tooltip>}
+          {showSourceKey && !compact && keyLabel('flex-none max-w-32')}
+          {/* Crowded, the upstream chip gives way to the path rather than overflowing. */}
+          {record.upstream && <span className={pathLineCrowded ? 'flex min-w-0 shrink' : 'contents'}><UpstreamBadge
             upstream={record.upstream}
             label={record.upstream.name}
             title={`${record.upstream.kind}, ${record.upstream.id}`}
@@ -347,6 +351,15 @@ export function RequestListPanel(props: RequestListProps) {
   const allKeys = props.selectedKeyId === null;
   const selectedKey = allKeys ? null : props.apiKeys.find(key => key.id === props.selectedKeyId)!;
   const selectedValue = allKeys ? ALL_KEYS_OPTION : props.selectedKeyId!;
+  // Read from the rows as well as the key list, since a key created after the
+  // list loaded can stream rows before the next key refresh names it.
+  const sharedKeyNames = useMemo(() => {
+    const idsByName = new Map<string, Set<string>>();
+    for (const { id, name } of [...props.apiKeys, ...props.records.map(record => record.key)]) {
+      idsByName.set(name, (idsByName.get(name) ?? new Set()).add(id));
+    }
+    return new Set([...idsByName].filter(([, ids]) => ids.size > 1).map(([name]) => name));
+  }, [props.apiKeys, props.records]);
   const selectedLabel = selectedKey === null
     ? t('requests.allKeys')
     : `${selectedKey.name} (${selectedKey.key.slice(-4)})`;
@@ -363,6 +376,7 @@ export function RequestListPanel(props: RequestListProps) {
   const rowProps = useMemo<RowProps>(() => ({
     compact, exportable,
     showSourceKey: allKeys,
+    sharedKeyNames,
     exportIds, onToggleExport,
     addressOfRecord: props.addressOfRecord,
     now,
@@ -370,7 +384,7 @@ export function RequestListPanel(props: RequestListProps) {
     records,
     selectedId: props.selectedRecordId,
     selectByIndex,
-  }), [allKeys, compact, exportable, exportIds, onToggleExport, now, onRecordChange, props.addressOfRecord, records, props.selectedRecordId, selectByIndex]);
+  }), [allKeys, compact, exportable, exportIds, onToggleExport, now, onRecordChange, props.addressOfRecord, records, props.selectedRecordId, selectByIndex, sharedKeyNames]);
 
   return (
     <div className="h-full min-h-0 flex flex-col">
