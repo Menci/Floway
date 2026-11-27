@@ -68,7 +68,9 @@ describe('RequestListPanel at a phone width', () => {
     const failuresOnly = () => screen.queryByRole('checkbox', { name: i18n.t('requests.failuresOnly') });
     const rowExport = () => screen.queryByRole('checkbox', { name: i18n.t('requests.selectExport') });
 
-    expect(screen.getByRole('textbox', { name: i18n.t('requests.search') })).toBeTruthy();
+    // The placeholder clips rather than wraps, so it shortens; the name still
+    // lists what the search matches.
+    expect(screen.getByRole('textbox', { name: i18n.t('requests.search') }).getAttribute('placeholder')).toBe(i18n.t('requests.searchShort'));
     expect(failuresOnly()).toBeNull();
     expect(rowExport()).toBeNull();
     // The sizes give their room to the error or token count.
@@ -95,5 +97,13 @@ describe('RequestListPanel at a phone width', () => {
     renderList(true);
 
     expect(screen.getByRole('button', { name: i18n.t('requests.toolsActive', { active: '1' }) })).toBeTruthy();
+  });
+});
+
+describe('RequestListPanel wider than a phone', () => {
+  it('lists what the search matches in its placeholder', () => {
+    renderList(false);
+
+    expect(screen.getByRole('textbox', { name: i18n.t('requests.search') }).getAttribute('placeholder')).toBe(i18n.t('requests.search'));
   });
 });

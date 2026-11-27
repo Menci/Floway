@@ -417,6 +417,7 @@ export function RequestListPanel(props: RequestListProps) {
             {props.failures ? t('requests.toolsActive', { active: '1' }) : t('requests.tools')}
           </ToggleButton>}
           collapsed={!toolsShown}
+          narrow={compact}
           key={`${props.q}-${props.failures}`}
           q={props.q ?? ''}
           failures={props.failures ?? false}

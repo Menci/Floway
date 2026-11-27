@@ -1535,6 +1535,7 @@ const zhHansCN = {
       clientResponse: '客户端响应',
       exportRecord: '导出记录',
       search: '搜索 ID、模型、路径、密钥、上游、状态或错误',
+      searchShort: '搜索请求',
       failuresOnly: '仅看失败',
       tools: '筛选',
       toolsActive: '筛选（{{active}}）',

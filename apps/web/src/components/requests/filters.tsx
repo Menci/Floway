@@ -10,9 +10,12 @@ const { Button, Tooltip } = fluentComponents;
 
 // `beside` sits on the search field's row, and `collapsed` leaves the field
 // alone there: the failures switch still applies with the next search.
-export function RequestFilters({ beside, collapsed = false, q, failures, onChange }: {
+// `narrow` shortens the placeholder, which clips rather than wraps, to fit a
+// phone-width field; the field's name still lists what the search matches.
+export function RequestFilters({ beside, collapsed = false, narrow = false, q, failures, onChange }: {
   beside?: ReactNode | undefined;
   collapsed?: boolean | undefined;
+  narrow?: boolean | undefined;
   q: string;
   failures: boolean;
   onChange: (q: string, failures: boolean) => void;
@@ -24,7 +27,7 @@ export function RequestFilters({ beside, collapsed = false, q, failures, onChang
     <div className="flex items-center gap-2 min-w-0"><Input
       className="flex-1 min-w-0"
       aria-label={t('requests.search')}
-      placeholder={t('requests.search')}
+      placeholder={t(narrow ? 'requests.searchShort' : 'requests.search')}
       value={query}
       onChange={(_, data) => setQuery(data.value)}
       contentAfter={<Tooltip content={t('requests.applyFilters')} relationship="label">

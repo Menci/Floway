@@ -1552,6 +1552,7 @@ const en = {
       clientResponse: 'Client response',
       exportRecord: 'Export record',
       search: 'Search ID, model, path, key, upstream, status or error',
+      searchShort: 'Search requests',
       failuresOnly: 'Failures only',
       tools: 'Filters',
       toolsActive: 'Filters ({{active}})',
