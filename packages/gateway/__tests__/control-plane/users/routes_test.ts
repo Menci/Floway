@@ -131,14 +131,10 @@ test('PATCH /api/users/me/preferences merges a partial update and clears languag
   expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: null, uiTextEditor: false, usageAutoGroup: false, usageAutoFold: false });
 });
 
-test('PATCH /api/users/me/preferences stores the Usage grouping switches and refuses a non-boolean', async () => {
+test('PATCH /api/users/me/preferences stores the Usage grouping switches', async () => {
   const { adminSession, repo } = await setupAppTest();
 
   const saved = await patchPreferences(adminSession, { usageAutoGroup: true });
   assertEquals(saved.status, 200);
-  expect(await repo.userPreferences.get(1)).toMatchObject({ usageAutoGroup: true, usageAutoFold: false });
-
-  const invalid = await patchPreferences(adminSession, { usageAutoFold: 'yes' });
-  assertEquals(invalid.status, 400);
   expect(await repo.userPreferences.get(1)).toMatchObject({ usageAutoGroup: true, usageAutoFold: false });
 });

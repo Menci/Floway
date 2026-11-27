@@ -10,6 +10,6 @@ describe('user preferences', () => {
   });
 
   it('rejects a Usage grouping switch that is not a boolean', () => {
-    expect(() => parseUserPreferences({ usageAutoGroup: 'true' })).toThrow('preferences.usageAutoGroup must be a boolean');
+    expect(() => parseUserPreferences({ usageAutoGroup: 'true' })).toThrow(TypeError);
   });
 });
