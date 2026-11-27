@@ -155,10 +155,7 @@ test('translates OpenAI Responses namespaces, custom tools, allowed_tools subset
     ],
   };
 
-  const trip = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent(source, {
-    ...options(),
-    fallbackMaxOutputTokens: 8192,
-  }));
+  const trip = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent(source, options()));
   expect(trip.target.serviceTier).toBe('standard');
   expect(trip.target.systemInstruction).toEqual({
     parts: [{ text: 'Top-level instructions' }],
@@ -175,7 +172,6 @@ test('translates OpenAI Responses namespaces, custom tools, allowed_tools subset
     },
   });
   expect(trip.target.generationConfig).toEqual({
-    maxOutputTokens: 8192,
     thinkingConfig: { thinkingLevel: 'XHIGH', includeThoughts: true },
   });
   expect(trip.target.contents).toEqual([{
@@ -194,7 +190,7 @@ test('translates OpenAI Responses namespaces, custom tools, allowed_tools subset
   });
 });
 
-test('hoists leading developer messages when no top-level instruction exists and merges consecutive user turns across a dropped reasoning turn', async () => {
+test('hoists leading developer messages when no top-level instruction exists and keeps a model boundary across a dropped reasoning-only turn', async () => {
   const chat: OpenAIChatCompletionsPayload = {
     model: 'gemini-2.5-pro',
     stream: true,
@@ -234,7 +230,7 @@ test('hoists leading developer messages when no top-level instruction exists and
     },
   ]);
 
-  const mergedUsers = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+  const separatedUsers = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
     stream: true,
     input: [
@@ -243,8 +239,10 @@ test('hoists leading developer messages when no top-level instruction exists and
       { type: 'message', role: 'user', content: 'Second user turn' },
     ],
   }, options()));
-  expect(mergedUsers.target.contents).toEqual([
-    { role: 'user', parts: [{ text: 'First user turn' }, { text: 'Second user turn' }] },
+  expect(separatedUsers.target.contents).toEqual([
+    { role: 'user', parts: [{ text: 'First user turn' }] },
+    { role: 'model', parts: [{ text: '' }] },
+    { role: 'user', parts: [{ text: 'Second user turn' }] },
   ]);
 });
 
@@ -319,8 +317,8 @@ test('round-trips parallel id-less Gemini functionCalls (answered out of order) 
     {
       role: 'user',
       parts: [
-        { functionResponse: { name: 'read', response: { ok: true } } },
         { functionResponse: { name: 'code_patch', response: { applied: true } } },
+        { functionResponse: { name: 'read', response: { ok: true } } },
       ],
     },
   ]);
@@ -611,4 +609,150 @@ test('maps Anthropic adaptive thinking with and without explicit effort, and res
     role: 'model',
     parts: [{ functionCall: { name: 'bash', args: { cmd: 'pwd' } }, thoughtSignature: 'sig_no_refusal_null' }],
   });
+});
+
+test('reorders parallel same-name id-less tool results to match call order and avoids cross-turn call_id overwrites', async () => {
+  const codec = createTestSidecarCodec('gemini-order-and-dup-call-id');
+  const turn1Req: AnthropicMessagesPayload = {
+    model: 'gemini-2.5-pro',
+    max_tokens: 1024,
+    stream: true,
+    tools: [
+      { name: 'read_file', input_schema: { type: 'object', properties: { path: { type: 'string' } } } },
+      { name: 'other_tool', input_schema: { type: 'object', properties: {} } },
+    ],
+    messages: [{ role: 'user', content: 'Read a and b' }],
+  };
+  const trip1 = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent(turn1Req, { sidecarCodec: codec }));
+  const result1 = await collectAnthropicMessagesProtocolEventsToResult(trip1.events(iterate([
+    eventFrame({
+      responseId: 'gem_same_name',
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{
+        index: 0,
+        content: {
+          role: 'model',
+          parts: [
+            { functionCall: { name: 'read_file', args: { path: 'a.ts' } }, thoughtSignature: 'sig_a' },
+            { functionCall: { name: 'read_file', args: { path: 'b.ts' } }, thoughtSignature: 'sig_b' },
+          ],
+        },
+        finishReason: 'STOP',
+      }],
+    }),
+    doneFrame(),
+  ])));
+  const uses = result1.content.filter(block => block.type === 'tool_use');
+  expect(uses).toHaveLength(2);
+
+  // Answer b.ts before a.ts, then reuse uses[0].id in a later non-sidecar turn for a different tool.
+  const turn2 = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
+    ...turn1Req,
+    messages: [
+      ...turn1Req.messages,
+      { role: 'assistant', content: result1.content },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: uses[1]!.id, content: 'contents of b' },
+          { type: 'tool_result', tool_use_id: uses[0]!.id, content: 'contents of a' },
+        ],
+      },
+      { role: 'assistant', content: [{ type: 'tool_use', id: uses[0]!.id, name: 'other_tool', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: uses[0]!.id, content: 'other output' }] },
+    ],
+  }, { sidecarCodec: codec }));
+
+  expect(turn2.target.contents[2]).toEqual({
+    role: 'user',
+    parts: [
+      { functionResponse: { name: 'read_file', response: { output: 'contents of a' } } },
+      { functionResponse: { name: 'read_file', response: { output: 'contents of b' } } },
+    ],
+  });
+  expect(turn2.target.contents[4]).toEqual({
+    role: 'user',
+    parts: [
+      { functionResponse: { id: uses[0]!.id, name: 'other_tool', response: { output: 'other output' } } },
+    ],
+  });
+});
+
+test('keeps tool_result documents intact after contiguous functionResponses and defaults untyped binary media to application/octet-stream', async () => {
+  const trip = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    max_tokens: 1024,
+    stream: true,
+    tools: [
+      { name: 'fetch_pdf', input_schema: { type: 'object', properties: {} } },
+      { name: 'status', input_schema: { type: 'object', properties: {} } },
+    ],
+    messages: [
+      { role: 'user', content: 'Fetch' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', id: 'toolu_pdf', name: 'fetch_pdf', input: {} },
+          { type: 'tool_use', id: 'toolu_status', name: 'status', input: {} },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_pdf',
+            content: [{
+              type: 'document',
+              title: 'Spec',
+              source: { type: 'base64', media_type: 'application/pdf', data: 'JVBERi0=' },
+            }],
+          },
+          {
+            type: 'tool_result',
+            tool_use_id: 'toolu_status',
+            content: 'ok',
+          },
+        ],
+      },
+    ],
+  }, options()));
+
+  expect(trip.target.contents[2]).toEqual({
+    role: 'user',
+    parts: [
+      {
+        functionResponse: {
+          id: 'toolu_pdf',
+          name: 'fetch_pdf',
+          response: { output: 'Document output is attached in the following user content.' },
+        },
+      },
+      {
+        functionResponse: {
+          id: 'toolu_status',
+          name: 'status',
+          response: { output: 'ok' },
+        },
+      },
+      { text: 'Document output from tool call toolu_pdf:' },
+      { text: '<document>\n<title>Spec</title>' },
+      { inlineData: { mimeType: 'application/pdf', data: 'JVBERi0=' } },
+      { text: '</document>' },
+    ],
+  });
+
+  const untypedMedia = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-2.5-pro',
+    stream: true,
+    input: [{
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_file', file_data: 'SGVsbG8=' }],
+    }],
+  }, options()));
+  expect(untypedMedia.target.contents).toEqual([{
+    role: 'user',
+    parts: [{ inlineData: { mimeType: 'application/octet-stream', data: 'SGVsbG8=' } }],
+  }]);
 });

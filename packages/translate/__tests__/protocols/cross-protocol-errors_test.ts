@@ -163,6 +163,7 @@ test('maps Google RPC status errors across HTTP and stream phases onto client pr
     },
   };
   const encoded = new TextEncoder().encode(JSON.stringify(googleError));
+  const encodedArray = new TextEncoder().encode(JSON.stringify([googleError]));
 
   const messagesTrip = await requireTrip(routeAnthropicMessagesViaGeminiGenerateContent(messages, options()));
   const messagesHttp = messagesTrip.error(429, new Headers(), encoded);
@@ -174,11 +175,12 @@ test('maps Google RPC status errors across HTTP and stream phases onto client pr
       message: 'Quota exceeded.',
       provider_specific_fields: {
         code: 429,
-        code_1: 'RESOURCE_EXHAUSTED',
+        status: 'RESOURCE_EXHAUSTED',
         details: googleError.error.details,
       },
     },
   });
+  expect(messagesTrip.error(429, new Headers(), encodedArray)?.body).toEqual(messagesHttp?.body);
   const messagesStream = await collect(messagesTrip.events(iterate([eventFrame(googleError)])));
   expect(messagesStream).toEqual([eventFrame(messagesHttp?.body)]);
 
@@ -187,10 +189,10 @@ test('maps Google RPC status errors across HTTP and stream phases onto client pr
   expect(chatHttp?.body).toEqual({
     error: {
       type: 'rate_limit_error',
-      code: 'RESOURCE_EXHAUSTED',
       message: 'Quota exceeded.',
       provider_specific_fields: {
         code: 429,
+        status: 'RESOURCE_EXHAUSTED',
         details: googleError.error.details,
       },
     },
@@ -201,14 +203,18 @@ test('maps Google RPC status errors across HTTP and stream phases onto client pr
   expect(responsesStream).toEqual([eventFrame({
     type: 'error',
     sequence_number: 0,
-    code: 'RESOURCE_EXHAUSTED',
     message: 'Quota exceeded.',
     provider_specific_fields: {
       type: 'rate_limit_error',
       code: 429,
+      status: 'RESOURCE_EXHAUSTED',
       details: googleError.error.details,
     },
   })]);
+
+  // Non-Gemini targets do not unwrap Google `:streamGenerateContent` error arrays.
+  const nonGeminiTrip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));
+  expect(nonGeminiTrip.error(429, new Headers(), encodedArray)).toBeUndefined();
 });
 
 test.each([

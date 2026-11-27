@@ -268,11 +268,9 @@ export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader)
   };
 };
 
-/** A numeric or dynamic budget approximates effort only when the caller supplied no level. */
+/** A numeric budget approximates effort only when the caller supplied no level. */
 const chatReasoningEffort = (settings: IRInputSettings): string | undefined =>
-  settings.reasoning_effort ?? (settings.reasoning_budget !== undefined
-    ? reasoningEffortForBudget(settings.reasoning_budget)
-    : settings.reasoning_budget_dynamic === true ? 'medium' : undefined);
+  settings.reasoning_effort ?? (settings.reasoning_budget === undefined ? undefined : reasoningEffortForBudget(settings.reasoning_budget));
 
 export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): Partial<OpenAIChatCompletionsPayloadEx> => {
   const ceiling = settings.max_output_tokens !== undefined ? settings.max_output_tokens : settings.max_visible_output_tokens;

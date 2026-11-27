@@ -31,7 +31,7 @@ export const anthropicErrorEnvelopeBody = (
   request_id: generateAnthropicId('req'),
 }));
 
-export const anthropicErrorResult = (
+const anthropicErrorResult = (
   status: number,
   type: string,
   message: string,

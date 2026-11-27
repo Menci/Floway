@@ -181,7 +181,6 @@ const dispatchOpenAIResponses = async (
       invocation.payload,
       p => routeOpenAIResponsesViaGeminiGenerateContent(p, {
         sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
-        fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       }),
       ({ model: _model, ...body }) => geminiGenerateContentAttempt.generate({
         payload: body, ctx, candidate, headers: invocation.headers,

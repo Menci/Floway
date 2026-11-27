@@ -1,6 +1,7 @@
 import { resolveReading } from './reading.ts';
 import type { SourceReading, RestoredAssistantTurn } from './reading.ts';
 import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
+import type { IRErrorPayload } from '../ir/output/error.ts';
 import type { IRRecord } from '../ir/output/records.ts';
 import { createRoundTripCoordinator } from '../round-trip/coordinator.ts';
 import type { AssistantTurnProtocol, InputAssistantTurnFor } from '../round-trip/input-assistant-turn.ts';
@@ -9,6 +10,7 @@ import type { SidecarRecognition } from '../round-trip/resolve.ts';
 import { roundTripAssistantTurn } from '../round-trip/resolve.ts';
 import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
 import type { RoundTripWriter } from '../round-trip/writer.ts';
+import { irErrorPayloadFromBody } from '../shared/api-error.ts';
 import { TranslateInputException } from '../shared/input-error.ts';
 import type { ApiErrorTranslator, TranslateOptions, Translator } from '../types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -17,7 +19,7 @@ export interface SourceProtocol<Name extends AssistantTurnProtocol, Payload, Eve
   readonly name: Name;
   readonly read: (payload: Payload) => SourceReading<SourceAssistantTurnFor<Name>>;
   readonly sidecarRecognition: SidecarRecognition<SourceAssistantTurnFor<Name>>;
-  readonly error: ApiErrorTranslator;
+  readonly writeError: (status: number, headers: Headers, error: IRErrorPayload) => NonNullable<ReturnType<ApiErrorTranslator>>;
   /**
    * States the returned stream to this protocol's client.
    *
@@ -52,6 +54,8 @@ export interface TargetProtocol<Name extends AssistantTurnProtocol, Payload, Eve
     context: Context,
     roundTripReader: RoundTripReader<Name>,
   ) => AsyncIterable<IRRecord>;
+  /** Parses this target's non-streaming HTTP error body into IR when it carries protocol-specific envelopes or fields. */
+  readonly readError?: (body: Uint8Array) => IRErrorPayload | undefined;
 }
 
 export const composeTranslation = <
@@ -68,10 +72,14 @@ export const composeTranslation = <
         source.name, target.name, turn.assistantTurn, options.sidecarCodec, source.sidecarRecognition,
       )), options,
     );
+    const readError = target.readError ?? irErrorPayloadFromBody;
     return {
       type: 'trip',
       target: targetPayload,
-      error: source.error,
+      error: (status, headers, body) => {
+        const error = readError(body);
+        return error === undefined ? undefined : source.writeError(status, headers, error);
+      },
       events: frames => {
         const coordinator = createRoundTripCoordinator(source.name, target.name, options.sidecarCodec);
         return source.writeEvents(payload, target.readEvents(frames, context, coordinator.reader), coordinator.writer);

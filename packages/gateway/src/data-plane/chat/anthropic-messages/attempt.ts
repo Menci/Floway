@@ -1,4 +1,4 @@
-import { anthropicErrorEnvelopeBody, anthropicErrorResult, anthropicErrorTypeForStatus, inputErrorResult } from './errors.ts';
+import { anthropicErrorEnvelopeBody, anthropicErrorTypeForStatus, inputErrorResult } from './errors.ts';
 import { anthropicMessagesInterceptors, anthropicMessagesCountTokensInterceptors } from './interceptors/index.ts';
 import type { AnthropicMessagesInvocation } from './interceptors/types.ts';
 import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
@@ -118,21 +118,14 @@ export const anthropicMessagesAttempt = {
       const geminiResult = await geminiGenerateContentAttempt.countTokens({
         payload: target, ctx, candidate, headers: invocation.headers,
       });
-      return reshapeGeminiGenerateContentCountAsAnthropicMessages(geminiResult);
+      return reshapeGeminiGenerateContentCountAsAnthropicMessages(geminiResult, trip.error);
     });
   },
 };
 
-const extractGoogleRpcErrorMessage = (decoded: unknown, fallbackText: string): string => {
-  if (decoded && typeof decoded === 'object' && 'error' in decoded) {
-    const message = (decoded as { error?: { message?: unknown } }).error?.message;
-    if (typeof message === 'string' && message.trim() !== '') return message;
-  }
-  return fallbackText.trim() || 'Upstream token counting request failed.';
-};
-
 const reshapeGeminiGenerateContentCountAsAnthropicMessages = (
   geminiResult: ApiErrorResult | PlainResult,
+  translateError: (status: number, headers: Headers, body: Uint8Array) => { readonly status: number; readonly headers: Headers; readonly body: unknown } | undefined,
 ): ApiErrorResult | PlainResult => {
   const { status, headers } = geminiResult.http;
   if (geminiResult.type === 'plain' && geminiResult.body === null && (status === 204 || status === 205 || status === 304)) {
@@ -140,26 +133,34 @@ const reshapeGeminiGenerateContentCountAsAnthropicMessages = (
   }
   const text = decodeResponseBody(geminiResult.body);
   const http = { status, headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, headers) };
-  let decoded: unknown;
-  try { decoded = JSON.parse(text); } catch {}
   if (geminiResult.type === 'api-error' || status !== 200) {
+    const rawBody = geminiResult.body instanceof Uint8Array
+      ? geminiResult.body
+      : new TextEncoder().encode(text);
+    const translated = translateError(status, headers, rawBody);
+    if (translated !== undefined) {
+      const translatedHttp = {
+        status: translated.status,
+        headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, translated.headers),
+      };
+      const body = new TextEncoder().encode(JSON.stringify(translated.body));
+      return geminiResult.type === 'api-error'
+        ? { ...geminiResult, http: translatedHttp, body }
+        : plainResult(translatedHttp, body, geminiResult.upstreamId);
+    }
     const body = anthropicErrorEnvelopeBody(
       anthropicErrorTypeForStatus(status),
-      extractGoogleRpcErrorMessage(decoded, text),
+      text.trim() || 'Upstream token counting request failed.',
     );
     return geminiResult.type === 'api-error'
       ? { ...geminiResult, http, body }
       : plainResult(http, body, geminiResult.upstreamId);
   }
+  let decoded: unknown;
+  try { decoded = JSON.parse(text); } catch {}
   const totalTokens = decoded && typeof decoded === 'object' ? (decoded as { totalTokens?: unknown }).totalTokens : undefined;
   if (typeof totalTokens !== 'number' || !Number.isFinite(totalTokens)) {
-    return anthropicErrorResult(
-      502,
-      'api_error',
-      'Invalid upstream token counting response.',
-      undefined,
-      internalDebugErrorFields(toInternalDebugError(new Error('Invalid upstream token counting response.'))),
-    );
+    return anthropicMessagesInternalPlainResult(502, new Error('Invalid upstream token counting response.'));
   }
   return plainResult(
     http,
@@ -167,6 +168,11 @@ const reshapeGeminiGenerateContentCountAsAnthropicMessages = (
     geminiResult.upstreamId,
   );
 };
+
+const anthropicMessagesInternalPlainResult = (status: number, error: Error): PlainResult => plainResult(
+  { status, headers: new Headers({ 'content-type': 'application/json' }) },
+  anthropicErrorEnvelopeBody('api_error', error.message, internalDebugErrorFields(toInternalDebugError(error))),
+);
 
 const dispatchAnthropicMessages = async (
   invocation: AnthropicMessagesInvocation,
@@ -209,7 +215,6 @@ const dispatchAnthropicMessages = async (
       invocation.payload,
       p => routeAnthropicMessagesViaGeminiGenerateContent(p, {
         sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
-        fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       }),
       ({ model: _model, ...body }) => geminiGenerateContentAttempt.generate({
         payload: body, ctx, candidate, headers: invocation.headers,

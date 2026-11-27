@@ -98,7 +98,6 @@ export type IROutputAudioPart = {
 type IROutputAudio = {
   readonly data?: string; // ChatCompletions, Responses, GenerateContent
   readonly transcript?: string; // ChatCompletions, Responses, GenerateContent
-  // No current upstream reader produces it; reserved for a GenerateContent upstream.
   readonly media_type?: string; // GenerateContent
 };
 
@@ -130,7 +129,6 @@ type IROutputSourcePageRange = {
 // ChatCompletions, Responses, GenerateContent
 type IROutputLogprobGroup = IROutputChoiceLogprobs | IROutputTextPartLogprobs;
 
-// Reserved for a GenerateContent upstream: the current upstream readers only produce text-part logprobs.
 // ChatCompletions, GenerateContent
 type IROutputChoiceLogprobs = {
   readonly scope: 'choice'; // ChatCompletions, GenerateContent

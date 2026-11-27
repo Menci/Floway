@@ -15,7 +15,7 @@ export interface IRInputSettings {
   readonly output_format?: IRInputOutputFormat; // All
   readonly metadata?: Readonly<Record<string, string>> | null; // ChatCompletions, Responses, Messages
   readonly store?: boolean | null; // ChatCompletions, Responses
-  readonly service_tier?: string | null; // ChatCompletions, Responses, Messages
+  readonly service_tier?: string | null; // All
   readonly parallel_tool_calls?: boolean | null; // ChatCompletions, Responses, Messages
   // Effort and numeric budget are independent source controls.
   readonly reasoning_effort?: string; // All

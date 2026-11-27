@@ -339,7 +339,11 @@ test('translates Anthropic Messages count_tokens to Gemini countTokens, preserve
   expect(rateLimited.http.headers.get('retry-after')).toBe('12');
   expect(JSON.parse(decodeResponseBody(rateLimited.body))).toMatchObject({
     type: 'error',
-    error: { type: 'rate_limit_error', message: 'Quota exceeded' },
+    error: {
+      type: 'rate_limit_error',
+      message: 'Quota exceeded',
+      provider_specific_fields: { code: 429, status: 'RESOURCE_EXHAUSTED' },
+    },
   });
 
   const malformed = await anthropicMessagesAttempt.countTokens({
@@ -358,7 +362,7 @@ test('translates Anthropic Messages count_tokens to Gemini countTokens, preserve
     headers: new Headers(),
     anthropicBeta: [],
   });
-  expect(malformed.type).toBe('api-error');
+  expect(malformed.type).toBe('plain');
   expect(malformed.http.status).toBe(502);
   expect(JSON.parse(decodeResponseBody(malformed.body))).toMatchObject({
     type: 'error',

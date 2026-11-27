@@ -122,10 +122,10 @@ test('routes OpenAI Responses to a Gemini-only candidate, strips model from wire
   expect(capturedBody).toMatchObject({
     systemInstruction: { parts: [{ text: 'Follow Codex protocol.' }] },
     generationConfig: {
-      maxOutputTokens: 32768,
       thinkingConfig: { thinkingLevel: 'MEDIUM', includeThoughts: true },
     },
   });
+  expect(capturedBody?.generationConfig?.maxOutputTokens).toBeUndefined();
 
   expect(result.type).toBe('events');
   if (result.type !== 'events') throw new Error('Expected streaming events result');

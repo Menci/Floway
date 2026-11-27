@@ -1,4 +1,4 @@
-import { restateOpenAIChatCompletionsError } from './as-source/error-body.ts';
+import { writeOpenAIChatCompletionsError } from './as-source/error-body.ts';
 import { writeOpenAIChatCompletionsEvents } from './as-source/events.ts';
 import { readOpenAIChatCompletionsRequest } from './as-source/input-to.ts';
 import { collectOpenAIChatCompletionsReplayContents, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from './as-source/round-trip.ts';
@@ -16,7 +16,7 @@ export const openaiChatCompletionsSourceProtocol: SourceProtocol<
     verify: verifyOpenAIChatCompletionsTurnDigest,
     collectCandidates: collectOpenAIChatCompletionsReplayContents,
   },
-  error: restateOpenAIChatCompletionsError,
+  writeError: writeOpenAIChatCompletionsError,
   writeEvents: (payload, records, roundTrip) => writeOpenAIChatCompletionsEvents(records, {
     continuousUsageStats: payload.stream_options?.include_usage === true && payload.stream_options?.continuous_usage_stats === true,
     roundTrip,

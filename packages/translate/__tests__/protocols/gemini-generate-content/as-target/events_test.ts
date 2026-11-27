@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
 import type { ToolNameContext } from '../../../../src/composition/request/tool-names.ts';
+import { IRAbsent } from '../../../../src/ir/output/absent.ts';
 import type { IRRecord } from '../../../../src/ir/output/records.ts';
 import { consumeIRRecords } from '../../../../src/ir/output/stream.ts';
 import type { IROutput } from '../../../../src/ir/output/types.ts';
@@ -24,11 +25,13 @@ const runReader = async (
   state: IROutput;
   turns: Map<number, GeminiGenerateContentInputAssistantTurn>;
   fieldStates: Map<number, unknown>;
+  idlessCallItemIndices: Map<number, readonly number[] | undefined>;
   builder: ReturnType<typeof createReferenceBuilder>;
 }> => {
   const builder = createReferenceBuilder();
   const turns = new Map<number, GeminiGenerateContentInputAssistantTurn>();
   const fieldStates = new Map<number, unknown>();
+  const idlessCallItemIndices = new Map<number, readonly number[] | undefined>();
   const records: IRRecord[] = [];
   let finalState: IROutput | undefined;
 
@@ -37,9 +40,10 @@ const runReader = async (
       ...options,
       roundTrip: {
         builder,
-        onAssistantTurn: (choice, turn, fieldState) => {
+        onAssistantTurn: (choice, turn, fieldState, idlessIndices) => {
           turns.set(choice, turn);
           fieldStates.set(choice, fieldState);
+          idlessCallItemIndices.set(choice, idlessIndices);
         },
       },
     }),
@@ -49,7 +53,7 @@ const runReader = async (
   }
 
   if (finalState === undefined) throw new Error('Expected at least one output IR record');
-  return { records, state: finalState, turns, fieldStates, builder };
+  return { records, state: finalState, turns, fieldStates, idlessCallItemIndices, builder };
 };
 
 test('streams merged plain text deltas (including empty mergeable chunks), Unicode, grounding citations after trailing signature carriers, logprobs, and usage', async () => {
@@ -180,8 +184,8 @@ test('drops late grounding citations safely with a warning when a prior message 
   }
 });
 
-test('preserves thought parts, thoughtSignature, short syntheticCallIds, and thin-reference safety when functionCall.args is omitted', async () => {
-  const { records, state, turns, fieldStates, builder } = await runReader(iterate([
+test('preserves thought parts, thoughtSignature, IRAbsent id-less calls, and thin-reference safety when functionCall.args is omitted', async () => {
+  const { records, state, turns, fieldStates, idlessCallItemIndices, builder } = await runReader(iterate([
     eventFrame({
       modelVersion: 'gemini-2.5-pro',
       candidates: [{
@@ -226,11 +230,10 @@ test('preserves thought parts, thoughtSignature, short syntheticCallIds, and thi
   if (weatherCall?.type !== 'function_call' || pingCall?.type !== 'function_call') {
     throw new Error('Expected function_call items');
   }
-  if (typeof weatherCall.call_id !== 'string') throw new Error('Expected string call_id');
-  expect(weatherCall.call_id).toMatch(/^gc_[0-9a-f]{16}_0_2$/);
-  expect(weatherCall.call_id.length).toBeLessThanOrEqual(40);
-  expect(pingCall.call_id).toMatch(/^gc_[0-9a-f]{16}_0_3$/);
+  expect(weatherCall.call_id).toBe(IRAbsent);
+  expect(pingCall.call_id).toBe(IRAbsent);
   expect(pingCall.arguments).toBe('{}');
+  expect(idlessCallItemIndices.get(0)).toEqual([1, 2]);
   expect(state.choices[0]?.items).toEqual([
     { type: 'reasoning', summary: ['First step. Second step.'] },
     weatherCall,
@@ -249,10 +252,7 @@ test('preserves thought parts, thoughtSignature, short syntheticCallIds, and thi
   if (nativeTurn === undefined) throw new Error('Expected native turn');
   expect('id' in (nativeTurn[0].parts![2].functionCall!)).toBe(false);
   expect('args' in (nativeTurn[0].parts![3].functionCall!)).toBe(false);
-  expect(nativeTurn[0].syntheticCallIds).toEqual({
-    2: weatherCall.call_id,
-    3: pingCall.call_id,
-  });
+  expect('syntheticCallIds' in nativeTurn[0]).toBe(false);
 
   const fieldState = fieldStates.get(0) as [{ parts: ReadFieldStates[] }];
   await expect(referenceAssistantTurn<'geminiGenerateContent'>(
@@ -264,7 +264,7 @@ test('preserves thought parts, thoughtSignature, short syntheticCallIds, and thi
 });
 
 test('restores grouped tool namespaces and unwraps customToolNames calls', async () => {
-  const { state, turns } = await runReader(
+  const { state, idlessCallItemIndices } = await runReader(
     iterate([
       eventFrame({
         modelVersion: 'gemini-2.5-flash',
@@ -291,7 +291,7 @@ test('restores grouped tool namespaces and unwraps customToolNames calls', async
     { type: 'function_call', call_id: 'call_explicit_1', namespace: 'web', name: 'search', arguments: '{"query":"floway"}' },
     { type: 'custom_tool_call', call_id: 'call_custom_1', name: 'apply_patch', input: '*** Begin Patch' },
   ]);
-  expect(turns.get(0)?.[0]?.syntheticCallIds).toBeUndefined();
+  expect(idlessCallItemIndices.get(0)).toBeUndefined();
 });
 
 test('maps MAX_TOKENS, safety refusal_details, promptFeedback.blockReason, inlineData media, and failed output reasons', async () => {
@@ -460,7 +460,7 @@ test('handles omitted Proto3 startIndex, non-terminal finishReason chunks, empty
     content: [
       {
         type: 'text',
-        text: 'Hello world',
+        text: 'Hello world!',
         annotations: [
           {
             type: 'source_citation',
@@ -476,18 +476,14 @@ test('handles omitted Proto3 startIndex, non-terminal finishReason chunks, empty
             source_label: 'Two',
             output_text_range: { start: 6, end_exclusive: 11 },
           },
+          {
+            type: 'source_citation',
+            source_kind: 'url',
+            source: 'https://example.com/3',
+            source_label: 'Three',
+            output_text_range: { start: 11, end_exclusive: 12 },
+          },
         ],
-      },
-      {
-        type: 'text',
-        text: '!',
-        annotations: [{
-          type: 'source_citation',
-          source_kind: 'url',
-          source: 'https://example.com/3',
-          source_label: 'Three',
-          output_text_range: { start: 0, end_exclusive: 1 },
-        }],
       },
     ],
   }]);
@@ -502,4 +498,127 @@ test('handles omitted Proto3 startIndex, non-terminal finishReason chunks, empty
     category: 'SAFETY',
     explanation: 'Blocked due to policy details.',
   });
+});
+
+test('keeps consecutive visible text across thoughtSignature chunks in one IR text part with accurate grounding ranges', async () => {
+  const { state, turns } = await runReader(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{
+        index: 0,
+        content: { role: 'model', parts: [{ text: 'Paris is ' }] },
+      }],
+    }),
+    eventFrame({
+      modelVersion: 'gemini-2.5-pro',
+      candidates: [{
+        index: 0,
+        content: { role: 'model', parts: [{ text: 'in France.', thoughtSignature: 'sig_tail' }] },
+        groundingMetadata: {
+          groundingChunks: [
+            { web: { uri: 'https://example.com/paris', title: 'Paris' } },
+            { web: { uri: 'https://example.com/france', title: 'France' } },
+          ],
+          groundingSupports: [
+            { segment: { partIndex: 0, startIndex: 0, endIndex: 5 }, groundingChunkIndices: [0] },
+            { segment: { partIndex: 1, startIndex: 3, endIndex: 9 }, groundingChunkIndices: [1] },
+          ],
+        },
+        finishReason: 'STOP',
+      }],
+    }),
+  ]));
+
+  expect(state.choices[0]?.items).toEqual([{
+    type: 'message',
+    content: [{
+      type: 'text',
+      text: 'Paris is in France.',
+      annotations: [
+        {
+          type: 'source_citation',
+          source_kind: 'url',
+          source: 'https://example.com/paris',
+          source_label: 'Paris',
+          output_text_range: { start: 0, end_exclusive: 5 },
+        },
+        {
+          type: 'source_citation',
+          source_kind: 'url',
+          source: 'https://example.com/france',
+          source_label: 'France',
+          output_text_range: { start: 12, end_exclusive: 18 },
+        },
+      ],
+    }],
+  }]);
+  expect(turns.get(0)).toEqual([{
+    role: 'model',
+    parts: [
+      { text: 'Paris is ' },
+      { text: 'in France.', thoughtSignature: 'sig_tail' },
+    ],
+  }]);
+});
+
+test('treats non-image/non-audio inlineData as Output IR no-op, opens choices lazily, and accumulates streaming logprobs into one choice group', async () => {
+  const beforeCandidateError = await runReader(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-flash',
+      usageMetadata: { promptTokenCount: 4 },
+    }),
+    eventFrame({
+      error: { code: 503, message: 'Unavailable', status: 'UNAVAILABLE' },
+    }),
+  ]));
+  expect(beforeCandidateError.state.choices).toEqual([]);
+
+  const { state, turns, fieldStates } = await runReader(iterate([
+    eventFrame({
+      modelVersion: 'gemini-2.5-flash',
+      candidates: [{
+        index: 2,
+        content: {
+          role: 'model',
+          parts: [
+            { inlineData: { mimeType: 'application/pdf', data: 'JVBERi0=' } },
+            { inlineData: { mimeType: 'image/png', data: 'aW1n' } },
+          ],
+        },
+        logprobsResult: {
+          chosenCandidates: [{ token: 'A', logProbability: -0.2 }],
+        },
+      }],
+    }),
+    eventFrame({
+      modelVersion: 'gemini-2.5-flash',
+      candidates: [{
+        index: 2,
+        logprobsResult: {
+          chosenCandidates: [{ token: 'B', logProbability: -0.4 }],
+        },
+        finishReason: 'STOP',
+      }],
+    }),
+  ]));
+
+  expect(state.choices).toHaveLength(1);
+  expect(state.choices[0]?.items).toEqual([{
+    type: 'message',
+    content: [{ type: 'image', image: { media_type: 'image/png', data: 'aW1n' } }],
+  }]);
+  expect(state.choices[0]?.logprobs).toEqual([{
+    scope: 'choice',
+    tokens: [
+      { token: 'A', logprob: -0.2 },
+      { token: 'B', logprob: -0.4 },
+    ],
+  }]);
+  expect(turns.get(0)?.[0]?.parts).toEqual([
+    { inlineData: { mimeType: 'application/pdf', data: 'JVBERi0=' } },
+    { inlineData: { mimeType: 'image/png', data: 'aW1n' } },
+  ]);
+  const states = fieldStates.get(0) as [{ parts: unknown[] }];
+  expect(states[0].parts[0]).toBeUndefined();
+  expect(states[0].parts[1]).toBeUndefined();
 });

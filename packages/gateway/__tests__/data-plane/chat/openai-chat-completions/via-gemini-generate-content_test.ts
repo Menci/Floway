@@ -118,11 +118,10 @@ test('routes OpenAI Chat Completions to a Gemini-only candidate, strips model fr
 
   expect(capturedBody).toBeDefined();
   expect('model' in capturedBody!).toBe(false);
-  expect(capturedBody).toMatchObject({
+  expect(capturedBody).toEqual({
     systemInstruction: { parts: [{ text: 'Be concise.' }] },
     contents: [{ role: 'user', parts: [{ text: 'Say hello' }] }],
     generationConfig: {
-      maxOutputTokens: 65536,
       thinkingConfig: { thinkingLevel: 'HIGH', includeThoughts: true },
     },
   });

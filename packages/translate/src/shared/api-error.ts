@@ -7,11 +7,7 @@ const recordOf = (value: unknown): Readonly<Record<string, unknown>> | undefined
 
 const stringOf = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
 
-/**
- * Recognize structured upstream error envelopes for cross-protocol rendering. Undefined includes
- * malformed JSON, invalid UTF-8 and unrecognized bodies, preserving the original response untouched.
- */
-export const irErrorPayloadFromBody = (body: Uint8Array): IRErrorPayload | undefined => {
+export const parseErrorBodyJSON = (body: Uint8Array): unknown => {
   let text: string;
   try {
     text = new TextDecoder('utf-8', { fatal: true }).decode(body);
@@ -19,45 +15,23 @@ export const irErrorPayloadFromBody = (body: Uint8Array): IRErrorPayload | undef
     if (!(error instanceof TypeError)) throw error;
     return undefined;
   }
-  let parsed: unknown;
   try {
-    parsed = parseJSONWithRawNumbers(text);
+    return parseJSONWithRawNumbers(text);
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
     return undefined;
   }
-  // Google :streamGenerateContent HTTP errors can arrive as a single-element JSON array `[{ error: ... }]`.
-  const envelopeRecord = recordOf(Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : parsed);
+};
+
+/**
+ * Recognize structured upstream error envelopes for cross-protocol rendering. Undefined includes
+ * malformed JSON, invalid UTF-8 and unrecognized bodies, preserving the original response untouched.
+ */
+export const irErrorPayloadFromBody = (body: Uint8Array): IRErrorPayload | undefined => {
+  const envelopeRecord = recordOf(parseErrorBodyJSON(body));
   if (envelopeRecord === undefined) return undefined;
   const { source, details } = errorEnvelopeOf(envelopeRecord.type === 'error' ? errorEventPayloadOf(envelopeRecord) : envelopeRecord);
   return errorPayloadOf(source, details);
-};
-
-// Google RPC `google.rpc.Status` uses numeric HTTP `code` and canonical `status` enum names without a `type` string.
-// https://github.com/googleapis/googleapis/blob/bc7e3baa28fbb223fa93782e13782e130260fab8205bfc/google/rpc/code.proto
-const googleRpcErrorType = (status: string): string | undefined => {
-  switch (status) {
-  case 'INVALID_ARGUMENT':
-  case 'FAILED_PRECONDITION':
-  case 'OUT_OF_RANGE':
-    return 'invalid_request_error';
-  case 'UNAUTHENTICATED':
-    return 'authentication_error';
-  case 'PERMISSION_DENIED':
-    return 'permission_error';
-  case 'NOT_FOUND':
-    return 'not_found_error';
-  case 'RESOURCE_EXHAUSTED':
-    return 'rate_limit_error';
-  case 'UNAVAILABLE':
-    return 'overloaded_error';
-  case 'INTERNAL':
-  case 'DEADLINE_EXCEEDED':
-  case 'UNKNOWN':
-    return 'api_error';
-  default:
-    return undefined;
-  }
 };
 
 /** Restatement requires a message; preserve every unrepresented field in diagnostic details. */
@@ -67,13 +41,12 @@ export const errorPayloadOf = (
 ): IRErrorPayload | undefined => {
   const message = stringOf(error.message) ?? stringOf(error.msg);
   if (message === undefined) return undefined;
-  const googleStatus = typeof error.code === 'number' ? stringOf(error.status) : undefined;
-  const type = stringOf(error.type) ?? (googleStatus === undefined ? undefined : googleRpcErrorType(googleStatus));
+  const type = stringOf(error.type);
   const code = error.code === null ? null : stringOf(error.code) ?? stringOf(error.status);
   const param = error.param === null ? null : stringOf(error.param);
   const represented = new Set([
     typeof error.message === 'string' ? 'message' : 'msg',
-    ...(stringOf(error.type) === undefined ? [] : ['type']),
+    ...(type === undefined ? [] : ['type']),
     ...(code === undefined ? [] : [error.code === null || typeof error.code === 'string' ? 'code' : 'status']),
     ...(param === undefined ? [] : ['param']),
   ]);
@@ -87,7 +60,7 @@ export const errorPayloadOf = (
   };
 };
 
-const errorEnvelopeOf = (envelope: Readonly<Record<string, unknown>>) => {
+export const errorEnvelopeOf = (envelope: Readonly<Record<string, unknown>>) => {
   const nested = recordOf(envelope.error);
   const transportFields = envelope.type === 'error' ? ['type', 'sequence_number'] : [];
   if (nested !== undefined) return {
@@ -110,7 +83,7 @@ const withEnvelopeDetails = (payload: IRErrorPayload, details: readonly Readonly
   };
 };
 
-const errorEventPayloadOf = (event: Readonly<Record<string, unknown>>) => {
+export const errorEventPayloadOf = (event: Readonly<Record<string, unknown>>) => {
   const { type: _type, sequence_number: _sequenceNumber, ...payload } = event;
   return payload;
 };
@@ -122,10 +95,6 @@ export const errorPayloadFromEvent = (event: Readonly<Record<string, unknown>>):
 // Canonical wire payloads retain identity when their envelope adds no metadata.
 export const errorPayloadFromWire = (wire: unknown): IRErrorPayload => {
   const { source, details } = errorEnvelopeOf(recordOf(wire) ?? {});
-  if (typeof source.code === 'number') {
-    const payload = errorPayloadOf(source, details);
-    if (payload !== undefined) return payload;
-  }
   if (hasErrorMessage(source)) return withEnvelopeDetails(source, details);
   const aliasMessage = stringOf(source.msg);
   if (aliasMessage !== undefined) {
@@ -160,7 +129,7 @@ const sameJSONValue = (left: unknown, right: unknown): boolean => {
 
 // Inner fields precede outer fields, and each upstream container precedes its loose fields.
 // Reserve every original key before suffix allocation so generated names cannot take explicit names.
-const extensionOf = (
+export const extensionOf = (
   error: Readonly<Record<string, unknown>>,
   representedFields: ReadonlySet<string>,
   envelopeDetails: readonly Readonly<Record<string, unknown>>[] = [],
