@@ -1,3 +1,4 @@
+import { readAnthropicMessagesErrorBody } from './as-target/error.ts';
 import { readAnthropicMessagesEvents } from './as-target/events.ts';
 import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
@@ -36,6 +37,7 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
     };
   },
   readEvents: (frames, context, roundTripReader) => readAnthropicMessagesEvents(frames, { ...context, roundTrip: roundTripReader }),
+  readError: readAnthropicMessagesErrorBody,
 };
 
 interface AnthropicMessagesTargetContext extends ToolNameContext {

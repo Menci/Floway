@@ -1,5 +1,5 @@
 import type { GeminiGenerateContentInputAssistantTurnState } from './assistant-turn.ts';
-import { geminiGenerateContentErrorPayloadFromWire } from './error.ts';
+import { geminiGenerateContentErrorFromEvent } from './error.ts';
 import { usageToIR } from './usage.ts';
 import type { ToolNameContext } from '../../../composition/request/tool-names.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
@@ -525,7 +525,7 @@ export const readGeminiGenerateContentEvents = async function* (
     }
     const event = frame.event;
     if (isGeminiGenerateContentErrorEvent(event)) {
-      ir.event({ type: 'error', error: geminiGenerateContentErrorPayloadFromWire(event) });
+      ir.event({ type: 'error', error: geminiGenerateContentErrorFromEvent(event) });
       yield* ir.drain();
       return;
     }

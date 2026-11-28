@@ -1,9 +1,12 @@
+import type { HttpErrorResponse } from '../../../composition/index.ts';
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
 import {
-  errorPayloadFromWire,
-  irErrorPayloadFromBody,
-  type ErrorPayloadClassification,
+  extractStandardIRError,
+  mergeErrorExtensions,
+  parseJSONErrorBody,
+  unwrapErrorEnvelope,
 } from '../../../shared/api-error.ts';
+import { isPlainJSONObject } from '../../../shared/json/object.ts';
 import { geminiGenerateContentStatusForHttpStatus } from '@floway-dev/protocols/gemini-generate-content';
 
 // Google's HTTP/JSON error representation of `google.rpc.Status` uses numeric HTTP `code`
@@ -41,28 +44,55 @@ const googleRpcErrorType = (status: string): string | undefined => {
   }
 };
 
+const stringOf = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
+
 // Keep numeric `code` and canonical RPC `status` under their wire names inside
-// `provider_specific_fields` while mapping `status` to canonical `type`, avoiding
-// a second `code` key that collides on sources without a top-level `code` field.
-const classifyGoogleRpcError = (error: Readonly<Record<string, unknown>>): ErrorPayloadClassification | undefined => {
-  const status = typeof error.status === 'string' ? error.status : undefined;
-  const httpStatus = typeof error.code === 'number' ? geminiGenerateContentStatusForHttpStatus(error.code) : undefined;
-  const defaultType = (status === undefined ? undefined : googleRpcErrorType(status))
+// `provider_specific_fields` while mapping `status` to canonical `type`.
+const googleRpcErrorToIR = (
+  source: Readonly<Record<string, unknown>>,
+  envelopeDetails: readonly Readonly<Record<string, unknown>>[],
+  requireMessage: boolean,
+): IRErrorPayload | undefined => {
+  const message = stringOf(source.message) ?? stringOf(source.msg);
+  if (requireMessage && message === undefined) return undefined;
+
+  const status = stringOf(source.status);
+  const httpStatus = typeof source.code === 'number' ? geminiGenerateContentStatusForHttpStatus(source.code) : undefined;
+  const inferredType = (status === undefined ? undefined : googleRpcErrorType(status))
     ?? (httpStatus === undefined ? undefined : googleRpcErrorType(httpStatus));
-  if (typeof error.code !== 'number' && defaultType === undefined) return undefined;
+
+  if (typeof source.code !== 'number' && inferredType === undefined) {
+    return extractStandardIRError(source, envelopeDetails, { requireMessage });
+  }
+
+  const explicitType = stringOf(source.type);
+  const type = explicitType ?? inferredType;
+  const param = source.param === null ? null : stringOf(source.param);
+  const represented = new Set([
+    ...(message === undefined ? [] : [typeof source.message === 'string' ? 'message' : 'msg']),
+    ...(explicitType === undefined ? [] : ['type']),
+    ...(param === undefined ? [] : ['param']),
+  ]);
+  const extra = mergeErrorExtensions(source, represented, envelopeDetails);
   return {
-    ...(defaultType === undefined ? {} : { defaultType }),
-    omitStatusAsCode: true,
+    message: message ?? '',
+    ...(type === undefined ? {} : { type }),
+    ...(param === undefined ? {} : { param }),
+    ...(extra === undefined ? {} : { provider_specific_fields: extra }),
   };
 };
 
-// Non-SSE `:streamGenerateContent` responses stream a JSON array, so HTTP errors arrive as `[{ error: ... }]`.
-// https://ai.google.dev/api/generate-content#method:-models.streamgeneratecontent
-const unwrapSingleElementArray = (parsed: unknown): unknown =>
-  Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : parsed;
+export const readGeminiGenerateContentErrorBody = ({ body }: HttpErrorResponse): IRErrorPayload | undefined => {
+  const parsed = parseJSONErrorBody(body);
+  // Non-SSE `:streamGenerateContent` responses stream a JSON array, so HTTP errors arrive as `[{ error: ... }]`.
+  // https://ai.google.dev/api/generate-content#method:-models.streamgeneratecontent
+  const unwrapped = Array.isArray(parsed) && parsed.length === 1 ? parsed[0] : parsed;
+  if (!isPlainJSONObject(unwrapped)) return undefined;
+  const { source, envelopeDetails } = unwrapErrorEnvelope(unwrapped);
+  return googleRpcErrorToIR(source, envelopeDetails, true);
+};
 
-export const readGeminiGenerateContentErrorBody = (body: Uint8Array): IRErrorPayload | undefined =>
-  irErrorPayloadFromBody(body, { unwrap: unwrapSingleElementArray, classify: classifyGoogleRpcError });
-
-export const geminiGenerateContentErrorPayloadFromWire = (wire: unknown): IRErrorPayload =>
-  errorPayloadFromWire(wire, { classify: classifyGoogleRpcError });
+export const geminiGenerateContentErrorFromEvent = (event: unknown): IRErrorPayload => {
+  const { source, envelopeDetails } = unwrapErrorEnvelope(isPlainJSONObject(event) ? event : {});
+  return googleRpcErrorToIR(source, envelopeDetails, false)!;
+};

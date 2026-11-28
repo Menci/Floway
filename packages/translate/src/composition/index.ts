@@ -10,10 +10,16 @@ import type { SidecarRecognition } from '../round-trip/resolve.ts';
 import { roundTripAssistantTurn } from '../round-trip/resolve.ts';
 import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
 import type { RoundTripWriter } from '../round-trip/writer.ts';
-import { irErrorPayloadFromBody, restateError } from '../shared/api-error.ts';
+import { restateError } from '../shared/api-error.ts';
 import { TranslateInputException } from '../shared/input-error.ts';
 import type { TranslateOptions, Translator } from '../types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+
+export interface HttpErrorResponse {
+  readonly status: number;
+  readonly headers: Headers;
+  readonly body: Uint8Array;
+}
 
 export interface SourceProtocol<Name extends AssistantTurnProtocol, Payload, Event> {
   readonly name: Name;
@@ -54,8 +60,8 @@ export interface TargetProtocol<Name extends AssistantTurnProtocol, Payload, Eve
     context: Context,
     roundTripReader: RoundTripReader<Name>,
   ) => AsyncIterable<IRRecord>;
-  /** Overrides `irErrorPayloadFromBody` for non-streaming HTTP error bodies when this target uses protocol-specific envelopes or fields. */
-  readonly readError?: (body: Uint8Array) => IRErrorPayload | undefined;
+  /** Parses an upstream non-2xx HTTP error response into `IRErrorPayload`, or returns `undefined` to preserve the raw response. */
+  readonly readError: (response: HttpErrorResponse) => IRErrorPayload | undefined;
 }
 
 export const composeTranslation = <
@@ -72,12 +78,11 @@ export const composeTranslation = <
         source.name, target.name, turn.assistantTurn, options.sidecarCodec, source.sidecarRecognition,
       )), options,
     );
-    const readError = target.readError ?? irErrorPayloadFromBody;
     return {
       type: 'trip',
       target: targetPayload,
       error: (status, headers, body) => {
-        const error = readError(body);
+        const error = target.readError({ status, headers, body });
         if (error === undefined) return undefined;
         const restated = source.writeError(error, status);
         return restateError(restated.status ?? status, headers, restated.body);

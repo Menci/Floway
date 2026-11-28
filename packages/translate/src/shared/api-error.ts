@@ -1,30 +1,20 @@
+import { isPlainJSONObject } from './json/object.ts';
 import { rawJSON } from './json/raw-json.ts';
 import type { IRErrorPayload } from '../ir/output/error.ts';
 import { parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 
-const recordOf = (value: unknown): Readonly<Record<string, unknown>> | undefined =>
-  typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : undefined;
-
 const stringOf = (value: unknown): string | undefined => typeof value === 'string' ? value : undefined;
 
-export interface ErrorPayloadClassification {
-  readonly defaultType?: string;
-  readonly omitStatusAsCode?: boolean;
-}
-
-interface ErrorPayloadOptions {
-  readonly unwrap?: (parsed: unknown) => unknown;
-  readonly classify?: (error: Readonly<Record<string, unknown>>) => ErrorPayloadClassification | undefined;
-}
+const hasErrorMessage = (
+  value: Readonly<Record<string, unknown>>,
+): value is Readonly<Record<string, unknown>> & { readonly message: string } =>
+  stringOf(value.message) !== undefined;
 
 /**
- * Recognize structured upstream error envelopes for cross-protocol rendering. Undefined includes
- * malformed JSON, invalid UTF-8 and unrecognized bodies, preserving the original response untouched.
+ * Decode a UTF-8 JSON error body with raw numeric preservation.
+ * Returns `undefined` for invalid UTF-8 or non-JSON text so callers preserve the original body untouched.
  */
-export const irErrorPayloadFromBody = (
-  body: Uint8Array,
-  options?: ErrorPayloadOptions,
-): IRErrorPayload | undefined => {
+export const parseJSONErrorBody = (body: Uint8Array): unknown | undefined => {
   let text: string;
   try {
     text = new TextDecoder('utf-8', { fatal: true }).decode(body);
@@ -32,39 +22,61 @@ export const irErrorPayloadFromBody = (
     if (!(error instanceof TypeError)) throw error;
     return undefined;
   }
-  let parsed: unknown;
   try {
-    parsed = parseJSONWithRawNumbers(text);
+    return parseJSONWithRawNumbers(text);
   } catch (error) {
     if (!(error instanceof SyntaxError)) throw error;
     return undefined;
   }
-  const envelopeRecord = recordOf(options?.unwrap === undefined ? parsed : options.unwrap(parsed));
-  if (envelopeRecord === undefined) return undefined;
-  const { source, details } = errorEnvelopeOf(envelopeRecord.type === 'error' ? errorEventPayloadOf(envelopeRecord) : envelopeRecord);
-  if (stringOf(source.message) === undefined && stringOf(source.msg) === undefined) return undefined;
-  return errorPayloadOf(source, details, options?.classify?.(source));
 };
 
-const errorPayloadOf = (
-  error: Readonly<Record<string, unknown>>,
+/**
+ * Unwrap an optional `{ error: { ... } }` container while keeping remaining outer envelope fields
+ * as diagnostic extensions. Protocol-specific transport discriminants are listed by the caller.
+ */
+export const unwrapErrorEnvelope = (
+  envelope: Readonly<Record<string, unknown>>,
+  transportFields: readonly string[] = [],
+): {
+  readonly source: Readonly<Record<string, unknown>>;
+  readonly envelopeDetails: readonly Readonly<Record<string, unknown>>[];
+} => {
+  const nested = isPlainJSONObject(envelope.error) ? envelope.error : undefined;
+  if (nested !== undefined) {
+    return {
+      source: nested,
+      envelopeDetails: extensionNamespacesOf(envelope, new Set(['error', ...transportFields])),
+    };
+  }
+  if (transportFields.length === 0) return { source: envelope, envelopeDetails: [] };
+  const dropped = new Set(transportFields);
+  return {
+    source: Object.fromEntries(Object.entries(envelope).filter(([key]) => !dropped.has(key))),
+    envelopeDetails: [],
+  };
+};
+
+/**
+ * Extract canonical `{ message, type, code, param }` fields from an error record,
+ * preserving every unrepresented field and outer envelope detail in `provider_specific_fields`.
+ */
+export const extractStandardIRError = (
+  source: Readonly<Record<string, unknown>>,
   envelopeDetails: readonly Readonly<Record<string, unknown>>[] = [],
-  classification?: ErrorPayloadClassification,
-): IRErrorPayload => {
-  const message = stringOf(error.message) ?? stringOf(error.msg);
-  const explicitType = stringOf(error.type);
-  const type = explicitType ?? classification?.defaultType;
-  const code = error.code === null
-    ? null
-    : stringOf(error.code) ?? (classification?.omitStatusAsCode === true ? undefined : stringOf(error.status));
-  const param = error.param === null ? null : stringOf(error.param);
+  options?: { readonly requireMessage?: boolean },
+): IRErrorPayload | undefined => {
+  const message = stringOf(source.message) ?? stringOf(source.msg);
+  if (options?.requireMessage === true && message === undefined) return undefined;
+  const type = stringOf(source.type);
+  const code = source.code === null ? null : stringOf(source.code);
+  const param = source.param === null ? null : stringOf(source.param);
   const represented = new Set([
-    ...(message === undefined ? [] : [typeof error.message === 'string' ? 'message' : 'msg']),
-    ...(explicitType === undefined ? [] : ['type']),
-    ...(code === undefined ? [] : [error.code === null || typeof error.code === 'string' ? 'code' : 'status']),
+    ...(message === undefined ? [] : [typeof source.message === 'string' ? 'message' : 'msg']),
+    ...(type === undefined ? [] : ['type']),
+    ...(code === undefined ? [] : ['code']),
     ...(param === undefined ? [] : ['param']),
   ]);
-  const extra = extensionOf(error, represented, envelopeDetails);
+  const extra = mergeErrorExtensions(source, represented, envelopeDetails);
   return {
     message: message ?? '',
     ...(type === undefined ? {} : { type }),
@@ -74,20 +86,13 @@ const errorPayloadOf = (
   };
 };
 
-const errorEnvelopeOf = (envelope: Readonly<Record<string, unknown>>) => {
-  const nested = recordOf(envelope.error);
-  const transportFields = envelope.type === 'error' ? ['type', 'sequence_number'] : [];
-  if (nested !== undefined) return {
-    source: nested,
-    details: extensionNamespacesOf(envelope, new Set(['error', ...transportFields])),
-  };
-  return { source: envelope, details: [] };
-};
-
 // After merging, loose fields live only in the container so source projection cannot add them again.
-const withEnvelopeDetails = (payload: IRErrorPayload, details: readonly Readonly<Record<string, unknown>>[]): IRErrorPayload => {
-  if (details.length === 0) return payload;
-  const extension = extensionOf(payload, new Set(['message', 'type', 'code', 'param']), details);
+const withEnvelopeDetails = (
+  payload: IRErrorPayload,
+  envelopeDetails: readonly Readonly<Record<string, unknown>>[],
+): IRErrorPayload => {
+  if (envelopeDetails.length === 0) return payload;
+  const extension = mergeErrorExtensions(payload, new Set(['message', 'type', 'code', 'param']), envelopeDetails);
   return {
     message: payload.message,
     ...(payload.type === undefined ? {} : { type: payload.type }),
@@ -97,38 +102,29 @@ const withEnvelopeDetails = (payload: IRErrorPayload, details: readonly Readonly
   };
 };
 
-const errorEventPayloadOf = (event: Readonly<Record<string, unknown>>) => {
-  const { type: _type, sequence_number: _sequenceNumber, ...payload } = event;
-  return payload;
-};
-
-export const errorPayloadFromEvent = (event: Readonly<Record<string, unknown>>): IRErrorPayload =>
-  errorPayloadFromWire(errorEventPayloadOf(event));
-
-/** Target adapters own wire shaping; source writers own extension-field projection. */
-// Canonical wire payloads retain identity when their envelope adds no metadata.
-export const errorPayloadFromWire = (
-  wire: unknown,
-  options?: Required<Pick<ErrorPayloadOptions, 'classify'>>,
+/**
+ * Normalize a wire error payload from protocols whose canonical fields already match `IRErrorPayload`.
+ * Retains object identity when `message` is present and the outer envelope adds no metadata.
+ */
+export const irErrorFromStandardWire = (
+  source: Readonly<Record<string, unknown>>,
+  envelopeDetails: readonly Readonly<Record<string, unknown>>[] = [],
 ): IRErrorPayload => {
-  const { source, details } = errorEnvelopeOf(recordOf(wire) ?? {});
-  const classification = options?.classify(source);
-  if (classification !== undefined) return errorPayloadOf(source, details, classification);
-  if (hasErrorMessage(source)) return withEnvelopeDetails(source, details);
+  if (hasErrorMessage(source)) return withEnvelopeDetails(source, envelopeDetails);
   const aliasMessage = stringOf(source.msg);
   if (aliasMessage !== undefined) {
     const { msg: _msg, ...fields } = source;
-    return withEnvelopeDetails({ ...fields, message: aliasMessage }, details);
+    return withEnvelopeDetails({ ...fields, message: aliasMessage }, envelopeDetails);
   }
-  // Failures without message text still need an error frame; preserve any structured fields alongside an empty message.
-  return errorPayloadOf(source, details);
+  // Failures without message text still need an error frame; preserve structured fields alongside an empty message.
+  return extractStandardIRError(source, envelopeDetails)!;
 };
 
-const hasErrorMessage = (value: Readonly<Record<string, unknown>>): value is Readonly<Record<string, unknown>> & { readonly message: string } =>
-  stringOf(value.message) !== undefined;
-
-const extensionNamespacesOf = (error: Readonly<Record<string, unknown>>, representedFields: ReadonlySet<string>) => {
-  const own = recordOf(error.provider_specific_fields);
+const extensionNamespacesOf = (
+  error: Readonly<Record<string, unknown>>,
+  representedFields: ReadonlySet<string>,
+) => {
+  const own = isPlainJSONObject(error.provider_specific_fields) ? error.provider_specific_fields : undefined;
   const rest = Object.fromEntries(Object.entries(error).filter(([key]) => !representedFields.has(key) && key !== 'provider_specific_fields'));
   return [...(own === undefined ? [] : [own]), ...(Object.keys(rest).length === 0 ? [] : [rest])];
 };
@@ -137,16 +133,14 @@ const sameJSONValue = (left: unknown, right: unknown): boolean => {
   if (left === right) return true;
   if (rawJSON.isRawJSON(left) || rawJSON.isRawJSON(right)) return JSON.stringify(left) === JSON.stringify(right);
   if (Array.isArray(left)) return Array.isArray(right) && left.length === right.length && left.every((value, index) => sameJSONValue(value, right[index]));
-  const leftObject = recordOf(left);
-  const rightObject = recordOf(right);
-  if (leftObject === undefined || rightObject === undefined) return false;
-  const keys = Object.keys(leftObject);
-  return keys.length === Object.keys(rightObject).length && keys.every(key => Object.hasOwn(rightObject, key) && sameJSONValue(leftObject[key], rightObject[key]));
+  if (!isPlainJSONObject(left) || !isPlainJSONObject(right)) return false;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every(key => Object.hasOwn(right, key) && sameJSONValue(left[key], right[key]));
 };
 
 // Inner fields precede outer fields, and each upstream container precedes its loose fields.
 // Reserve every original key before suffix allocation so generated names cannot take explicit names.
-const extensionOf = (
+export const mergeErrorExtensions = (
   error: Readonly<Record<string, unknown>>,
   representedFields: ReadonlySet<string>,
   envelopeDetails: readonly Readonly<Record<string, unknown>>[] = [],
@@ -177,7 +171,7 @@ const extensionOf = (
 
 /** Each source writer lists fields represented in its envelope; all remaining values stay in diagnostic extensions. */
 export const errorDetailsOf = (error: IRErrorPayload, representedFields: readonly string[]): Readonly<Record<string, unknown>> | undefined =>
-  extensionOf(error, new Set(representedFields));
+  mergeErrorExtensions(error, new Set(representedFields));
 
 /**
  * Return a JSON envelope without transport encoding. Preserve semantic upstream headers while

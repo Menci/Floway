@@ -1,3 +1,4 @@
+import { readOpenAIChatCompletionsErrorBody } from './as-target/error.ts';
 import { readOpenAIChatCompletionsEvents } from './as-target/events.ts';
 import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
@@ -78,4 +79,5 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
   },
   readEvents: (frames, context, roundTripReader) =>
     readOpenAIChatCompletionsEvents(frames, { ...context, roundTrip: roundTripReader }),
+  readError: readOpenAIChatCompletionsErrorBody,
 };

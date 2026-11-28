@@ -1,4 +1,5 @@
 import type { AnthropicMessagesInputAssistantTurnState } from './assistant-turn.ts';
+import { anthropicMessagesErrorFromEvent } from './error.ts';
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
 import type { ToolNameContext } from '../../../composition/request/tool-names.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle } from '../../../ir/output/builder.ts';
@@ -274,7 +275,7 @@ export const readAnthropicMessagesEvents = async function* (
       break;
     }
     case 'error':
-      ir.event({ type: 'error', error: e.error });
+      ir.event({ type: 'error', error: anthropicMessagesErrorFromEvent(e) });
       yield* ir.drain();
       return;
     case 'ping':

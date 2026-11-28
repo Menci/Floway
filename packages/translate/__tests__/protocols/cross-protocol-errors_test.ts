@@ -125,6 +125,23 @@ test.each([
   expect(await collect(responsesTrip.events(iterate([eventFrame(chatEvent(error))])))).toEqual([eventFrame({ ...expected, sequence_number: 0 })]);
 });
 
+test('Anthropic error envelopes drop the transport discriminant and keep outer request_id in both phases', async () => {
+  const trip = await requireTrip(routeOpenAIResponsesViaAnthropicMessages(responses, { ...options(), fallbackMaxOutputTokens: 16 }));
+  const envelope = {
+    type: 'error' as const,
+    error: { type: 'overloaded_error', message: 'Overloaded' },
+    request_id: 'req_anth_1',
+  };
+  const expected = {
+    type: 'error',
+    message: 'Overloaded',
+    provider_specific_fields: { type: 'overloaded_error', request_id: 'req_anth_1' },
+  };
+  expect(trip.error(529, new Headers(), new TextEncoder().encode(JSON.stringify(envelope)))?.body).toEqual(expected);
+  const frames = await collect(trip.events(iterate([eventFrame(envelope)])));
+  expect(frames).toEqual([eventFrame({ ...expected, sequence_number: 0 })]);
+});
+
 test('Responses flat errors remove transport discriminants before restatement', async () => {
   const trip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));
   const error = { type: 'error' as const, sequence_number: 17, message: 'failed', code: null, param: null };
