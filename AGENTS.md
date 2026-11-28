@@ -63,6 +63,7 @@
 | Package | `packages/gateway` | Composes gateway services. |
 | Package | `packages/http` | Provides HTTP transport primitives. |
 | Package | `packages/interceptor` | Intercepts gateway traffic. |
+| Package | `packages/pipeline` | Runs typed stage pipelines. |
 | Package | `packages/platform` | Defines portable runtime contracts. |
 | Package | `packages/protocols` | Defines protocol contracts. |
 | Package | `packages/proxy` | Routes traffic through configured proxies. |
