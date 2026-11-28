@@ -1,6 +1,7 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { geminiGenerateContentTargetProtocol } from '../../../../src/protocols/gemini-generate-content/as-target.ts';
+import { ContentReference } from '../../../../src/round-trip/reference/types.ts';
 import { decodeRoundTripSidecar } from '../../../../src/round-trip/sidecar.ts';
 import { TranslateInputException } from '../../../../src/shared/input-error.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
@@ -987,4 +988,102 @@ test('envelopes root combinator tool schemas on GenerateContent, unwraps calls, 
       thoughtSignature: 'skip_thought_signature_validator',
     }],
   });
+});
+
+test('restores wrapped GenerateContent custom tool calls from nested text references and keeps malformed wrappers freeform', async () => {
+  const codec = createTestSidecarCodec('generate-content-custom-tool-ref');
+  const tools: OpenAIResponsesRequestPayloadEx['tools'] = [{ type: 'custom', name: 'update', format: { type: 'text' } }];
+  const input = '\\"\n😀'.repeat(64);
+  const trip1 = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-3-flash-preview',
+    stream: true,
+    tools,
+    input: 'Apply update.',
+  }, { sidecarCodec: codec }));
+
+  const result1 = await collectOpenAIResponsesProtocolEventsToResult(trip1.events(iterate([
+    eventFrame({
+      modelVersion: 'gemini-3-flash-preview',
+      candidates: [{
+        index: 0,
+        content: {
+          role: 'model',
+          parts: [{
+            functionCall: { name: 'update', args: { input } },
+            thoughtSignature: 'sig_custom',
+          }],
+        },
+        finishReason: 'STOP',
+      }],
+    }),
+  ])));
+  const call1 = result1.output.find(item => item.type === 'custom_tool_call');
+  if (call1 === undefined) throw new Error('Expected a custom tool call');
+  expect(call1.input).toBe(input);
+  const carrier = result1.output.find(item => item.type === 'reasoning')?.encrypted_content;
+  if (typeof carrier !== 'string') throw new Error('Expected an assistant-turn sidecar');
+  const sidecar = await decodeRoundTripSidecar(codec, 'openaiResponses', carrier);
+  if (sidecar?.target !== 'geminiGenerateContent') throw new Error('Expected a GenerateContent sidecar');
+  expect(sidecar.referencedContentHashes).toHaveLength(1);
+  expect(sidecar.targetTurn).toEqual([{
+    role: 'model',
+    parts: [{
+      functionCall: { name: 'update', args: { input: new ContentReference('text', [0]) } },
+      thoughtSignature: 'sig_custom',
+    }],
+  }]);
+
+  const trip2 = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+    model: 'gemini-3-flash-preview',
+    stream: true,
+    tools,
+    input: [
+      { type: 'message', role: 'user', content: 'Apply update.' },
+      ...toOpenAIResponsesInputItems(result1.output),
+      { type: 'custom_tool_call_output', call_id: call1.call_id, output: 'ok' },
+    ],
+  }, { sidecarCodec: codec }));
+  expect(trip2.target.contents[1]).toEqual({
+    role: 'model',
+    parts: [{
+      functionCall: { name: 'update', args: { input } },
+      thoughtSignature: 'sig_custom',
+    }],
+  });
+
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    const malformed = { patch: 'diff' };
+    const malformedResult = await collectOpenAIResponsesProtocolEventsToResult(trip1.events(iterate([
+      eventFrame({
+        modelVersion: 'gemini-3-flash-preview',
+        candidates: [{
+          index: 0,
+          content: { role: 'model', parts: [{ functionCall: { name: 'update', args: malformed } }] },
+          finishReason: 'STOP',
+        }],
+      }),
+    ])));
+    expect(malformedResult.output.find(item => item.type === 'custom_tool_call')?.input).toBe(JSON.stringify(malformed));
+    const malformedCarrier = malformedResult.output.find(item => item.type === 'reasoning')?.encrypted_content;
+    if (typeof malformedCarrier !== 'string') throw new Error('Expected an assistant-turn sidecar');
+    const malformedSidecar = await decodeRoundTripSidecar(codec, 'openaiResponses', malformedCarrier);
+    expect(malformedSidecar?.referencedContentHashes).toBeUndefined();
+
+    warn.mockClear();
+    const emptyResult = await collectOpenAIResponsesProtocolEventsToResult(trip1.events(iterate([
+      eventFrame({
+        modelVersion: 'gemini-3-flash-preview',
+        candidates: [{
+          index: 0,
+          content: { role: 'model', parts: [{ functionCall: { name: 'update', args: {} } }] },
+          finishReason: 'STOP',
+        }],
+      }),
+    ])));
+    expect(emptyResult.output.find(item => item.type === 'custom_tool_call')?.input).toBe('');
+    expect(warn).not.toHaveBeenCalled();
+  } finally {
+    warn.mockRestore();
+  }
 });

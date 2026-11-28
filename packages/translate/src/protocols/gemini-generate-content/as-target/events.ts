@@ -414,11 +414,21 @@ export const readGeminiGenerateContentEvents = async function* (
         throw new TypeError('Gemini GenerateContent functionCall requires a non-empty name');
       }
       const callId = typeof call.id === 'string' && call.id !== '' ? call.id : IRAbsent;
-      const argsJson = JSON.stringify(requireJSONObject(call.args ?? {}));
+      const argsObject = requireJSONObject(call.args ?? {});
+      const argsJson = JSON.stringify(argsObject);
       const naming = options.originalToolNames?.get(call.name) ?? { name: call.name };
       if (options.customToolNames?.has(call.name) === true) {
         const item = ir.item(choice.irIndex, { type: 'custom_tool_call', call_id: callId, ...naming, input: '' });
-        item.append('input', unwrapCustomToolInput(argsJson));
+        const unwrapped = Object.keys(argsObject).length === 0 ? '' : unwrapCustomToolInput(argsJson);
+        if (unwrapped !== '') {
+          if (isPlainJSONObject(call.args) && unwrapped === call.args.input) {
+            const textField = createReadFieldState('text');
+            choice.partsFieldState[partIndex] = { functionCall: { args: { input: textField } } };
+            appendTrackedField(item, 'input', unwrapped, textField);
+          } else {
+            item.append('input', unwrapped);
+          }
+        }
         item.end('completed');
       } else {
         const item = ir.item(choice.irIndex, { type: 'function_call', call_id: callId, ...naming, arguments: '' });

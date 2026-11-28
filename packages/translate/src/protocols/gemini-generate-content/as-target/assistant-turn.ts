@@ -11,7 +11,8 @@ type GenerateContentPartRule = {
 
 type ReferenceableFunctionCallArgs<Reference> =
   | ReferenceableValue<NonNullable<GeminiGenerateContentFunctionCall['args']>, JSONRule, Reference>
-  | ToolArgumentsEnvelope<ReferenceableValue<IRJSONObject, JSONRule, Reference>>;
+  | ToolArgumentsEnvelope<ReferenceableValue<IRJSONObject, JSONRule, Reference>>
+  | { input: ReferenceableValue<string, TextRule, Reference> };
 
 type ReferenceableGenerateContentPart<Part, Reference> = Part extends { functionCall: GeminiGenerateContentFunctionCall }
   ? Omit<Part, 'functionCall'> & {
@@ -21,7 +22,7 @@ type ReferenceableGenerateContentPart<Part, Reference> = Part extends { function
 
 type GenerateContentPartState<States extends ReferenceStateLeaves> =
   | ReferenceState<GeminiGenerateContentPart, GenerateContentPartRule, States>
-  | { functionCall: { args: States['json'] | ToolArgumentsEnvelope<States['json']> } };
+  | { functionCall: { args: States['json'] | ToolArgumentsEnvelope<States['json']> | { input: States['text'] } } };
 
 export type GeminiGenerateContentInputAssistantTurn = Array<
   Omit<GeminiGenerateContentContent, 'role' | 'parts'> & {
