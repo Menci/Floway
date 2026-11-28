@@ -2,6 +2,7 @@ import type { IRInputAssistantItemWithCallIds, IRInputTurnWithCallIds, IRInputCl
 import { requireStreaming } from '../../../ir/input/streaming.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputOutputFormat, IRInputCacheControl, IRInputDocument, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { requireKnownCustomToolFormat } from '../../../shared/custom-tool.ts';
+import { isDataURL } from '../../../shared/data-url.ts';
 import { DOCUMENT_CLOSE_TAG, documentImage, documentOpening } from '../../../shared/document.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
@@ -20,7 +21,7 @@ const inputContent = (media: IRInputMedia, detail?: string | null): OpenAIRespon
   case 'file':
     return { type: 'input_image', file_id: media.file_id, ...(detail == null ? {} : { detail }) };
   case 'data':
-    return { type: 'input_image', image_url: media.data.startsWith('data:') ? media.data : `data:application/octet-stream;base64,${media.data}`, ...(detail == null ? {} : { detail }) };
+    return { type: 'input_image', image_url: isDataURL(media.data) ? media.data : `data:application/octet-stream;base64,${media.data}`, ...(detail == null ? {} : { detail }) };
   case 'base64':
     return { type: 'input_image', image_url: `data:${media.media_type ?? 'application/octet-stream'};base64,${media.data}`, ...(detail == null ? {} : { detail }) };
   }

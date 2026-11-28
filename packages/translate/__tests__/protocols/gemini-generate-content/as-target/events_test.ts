@@ -256,10 +256,12 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
             groundingChunks: [
               { web: { uri: 'https://example.com/tokyo', title: 'Tokyo' } },
               { web: { uri: 'https://example.com/clamped', title: 'Clamped' } },
+              { web: { uri: 'https://example.com/rangeless', title: 'Rangeless' } },
             ],
             groundingSupports: [
               { segment: { startIndex: 17, endIndex: 31 }, groundingChunkIndices: [0] },
               { segment: { startIndex: 17, endIndex: 40 }, groundingChunkIndices: [1] },
+              { segment: { startIndex: 5, endIndex: 5 }, groundingChunkIndices: [2] },
             ],
           },
           finishReason: 'STOP',
@@ -288,7 +290,70 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
               source_label: 'Clamped',
               output_text_range: { start: 8, end_exclusive: 22 },
             },
+            {
+              type: 'source_citation',
+              source_kind: 'url',
+              source: 'https://example.com/rangeless',
+              source_label: 'Rangeless',
+            },
           ],
+        },
+      ],
+    });
+
+    warn.mockClear();
+    const closedRangeless = await runReader(iterate([
+      eventFrame({
+        modelVersion: 'gemini-3-flash-preview',
+        candidates: [{
+          index: 0,
+          content: {
+            role: 'model',
+            parts: [
+              { text: 'First.' },
+              { executableCode: { language: 'PYTHON', code: '1' } },
+              { text: 'Second.' },
+            ],
+          },
+          groundingMetadata: {
+            groundingChunks: [{ web: { uri: 'https://example.com/second', title: 'Second' } }],
+            groundingSupports: [{ segment: {}, groundingChunkIndices: [0] }],
+          },
+        }],
+      }),
+      eventFrame({
+        modelVersion: 'gemini-3-flash-preview',
+        candidates: [{
+          index: 0,
+          content: { role: 'model', parts: [{ thought: true, thoughtSignature: 'sig_close' }] },
+          groundingMetadata: {
+            groundingChunks: [
+              { web: { uri: 'https://example.com/second', title: 'Second' } },
+              { retrievedContext: {} },
+            ],
+            groundingSupports: [
+              { segment: {}, groundingChunkIndices: [0] },
+              { segment: { partIndex: 0 }, groundingChunkIndices: [1] },
+            ],
+          },
+          finishReason: 'STOP',
+        }],
+      }),
+    ]));
+    expect(warn).not.toHaveBeenCalled();
+    expect(closedRangeless.state.choices[0]?.items[0]).toEqual({
+      type: 'message',
+      content: [
+        { type: 'text', text: 'First.' },
+        {
+          type: 'text',
+          text: 'Second.',
+          annotations: [{
+            type: 'source_citation',
+            source_kind: 'url',
+            source: 'https://example.com/second',
+            source_label: 'Second',
+          }],
         },
       ],
     });

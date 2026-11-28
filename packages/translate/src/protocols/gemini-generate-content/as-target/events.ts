@@ -114,13 +114,10 @@ const resolveGroundingTarget = (
   if (choice.textRuns.length === 0) return undefined;
   if (choice.textRuns.length === 1) return { run: choice.textRuns[0], baseByte: 0 };
 
-  if (segmentSpec?.endIndex === undefined) {
-    return { run: choice.activeTextRun ?? choice.textRuns[0], baseByte: 0 };
-  }
-  const endByte = segmentSpec.endIndex;
-  const startByte = segmentSpec.startIndex ?? 0;
-  if (!Number.isInteger(startByte) || !Number.isInteger(endByte) || startByte < 0 || endByte <= startByte) {
-    return { run: choice.textRuns[0], baseByte: 0 };
+  const endByte = segmentSpec?.endIndex;
+  const startByte = segmentSpec?.startIndex ?? 0;
+  if (endByte === undefined || !Number.isInteger(startByte) || !Number.isInteger(endByte) || startByte < 0 || endByte <= startByte) {
+    return { run: choice.textRuns.at(-1)!, baseByte: 0 };
   }
   let offset = 0;
   for (const run of choice.textRuns) {
@@ -179,16 +176,13 @@ const utf8ByteRangeToUTF16 = (
 
 const groundingChunkToCitation = (
   chunk: GeminiGenerateContentGroundingChunk,
-  range: TextRange | undefined,
 ): IROutputSourceCitation | undefined => {
-  const rangeField = range === undefined ? {} : { output_text_range: range };
   if (typeof chunk.web?.uri === 'string' && chunk.web.uri !== '') {
     return {
       type: 'source_citation',
       source_kind: 'url',
       source: chunk.web.uri,
       ...(chunk.web.title === undefined ? {} : { source_label: chunk.web.title }),
-      ...rangeField,
     };
   }
   const retrieved = chunk.retrievedContext;
@@ -210,7 +204,6 @@ const groundingChunkToCitation = (
     ...(pageNumber === undefined
       ? {}
       : { source_page_range: { start_one_based: pageNumber, end_one_based_exclusive: pageNumber + 1 } }),
-    ...rangeField,
   } as IROutputSourceCitation;
 };
 
@@ -222,33 +215,35 @@ const applyGroundingMetadata = (choice: GenerateContentChoiceState, metadata: Ge
     const target = resolveGroundingTarget(choice, support.segment);
     if (target === undefined) continue;
     const { run, baseByte } = target;
-    const warnClosedPart = (): void => {
+    let range: TextRange | undefined;
+    let rangeComputed = false;
+    for (const chunkIndex of support.groundingChunkIndices ?? []) {
+      const chunk = chunks[chunkIndex];
+      if (chunk === undefined) continue;
+      const baseCitation = groundingChunkToCitation(chunk);
+      if (baseCitation === undefined) continue;
+      if (run.part.isOpen || run.citationKeys.size > 0) {
+        if (!rangeComputed) {
+          range = utf8ByteRangeToUTF16(choice.irIndex, run, baseByte, support.segment?.startIndex, support.segment?.endIndex);
+          rangeComputed = true;
+        }
+        const citation = range === undefined ? baseCitation : { ...baseCitation, output_text_range: range };
+        // Keep `annotations` append-only across cumulative snapshots so streaming
+        // consumers (such as Responses) never skip or duplicate earlier entries.
+        const key = JSON.stringify(citation);
+        if (run.citationKeys.has(key)) continue;
+        if (run.part.isOpen) {
+          run.citationKeys.add(key);
+          run.citations.push(citation);
+          touched.add(run);
+          continue;
+        }
+      }
       console.warn('Dropping Gemini GenerateContent grounding citation for closed text part', {
         choice: choice.irIndex,
         partIndex: support.segment?.partIndex ?? 0,
       });
-    };
-    if (!run.part.isOpen && run.citationKeys.size === 0) {
-      warnClosedPart();
-      continue;
-    }
-    const range = utf8ByteRangeToUTF16(choice.irIndex, run, baseByte, support.segment?.startIndex, support.segment?.endIndex);
-    for (const chunkIndex of support.groundingChunkIndices ?? []) {
-      const chunk = chunks[chunkIndex];
-      if (chunk === undefined) continue;
-      const citation = groundingChunkToCitation(chunk, range);
-      if (citation === undefined) continue;
-      // Keep `annotations` append-only across cumulative snapshots so streaming
-      // consumers (such as Responses) never skip or duplicate earlier entries.
-      const key = JSON.stringify(citation);
-      if (run.citationKeys.has(key)) continue;
-      if (!run.part.isOpen) {
-        warnClosedPart();
-        break;
-      }
-      run.citationKeys.add(key);
-      run.citations.push(citation);
-      touched.add(run);
+      break;
     }
   }
   for (const run of touched) {

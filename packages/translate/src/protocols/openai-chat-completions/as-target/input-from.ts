@@ -2,6 +2,7 @@ import type { IRInputAssistantItemWithCallIds, IRInputClientItemWithCallIds, IRI
 import { requireStreaming } from '../../../ir/input/streaming.ts';
 import type { IRInputRequestHeader, IRInputSettings, IRInputTool, IRInputToolChoice, IRInputDocument, IRInputMedia, IRInputToolResultContentPart, IRInputClientItem } from '../../../ir/input/types.ts';
 import { buildCustomToolInputSchema } from '../../../shared/custom-tool.ts';
+import { isDataURL } from '../../../shared/data-url.ts';
 import { DOCUMENT_CLOSE_TAG, documentImage, documentOpening } from '../../../shared/document.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
@@ -29,7 +30,7 @@ const imageUrlPart = (media: IRInputMedia, detail?: string | null): OpenAIChatCo
   type: 'image_url',
   image_url: {
     url: media.source_kind === 'url' ? media.url
-      : media.source_kind === 'data' ? media.data.startsWith('data:') ? media.data : `data:application/octet-stream;base64,${media.data}`
+      : media.source_kind === 'data' ? isDataURL(media.data) ? media.data : `data:application/octet-stream;base64,${media.data}`
         : media.source_kind === 'base64' ? dataUrl(media, true)
           : (() => { throw new TranslateInputException('Cannot translate file_id-only image content to OpenAI Chat Completions.'); })(),
     ...(detail == null ? {} : { detail }),

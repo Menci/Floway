@@ -5,6 +5,8 @@ import {
   routeOpenAIChatCompletionsViaOpenAIResponses,
   routeOpenAIResponsesViaOpenAIChatCompletions,
 } from '../../../src/index.ts';
+import { openaiChatCompletionsTargetProtocol } from '../../../src/protocols/openai-chat-completions/as-target.ts';
+import { openaiResponsesTargetProtocol } from '../../../src/protocols/openai-responses/as-target.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 
 const options = { sidecarCodec: createTestSidecarCodec(), fallbackMaxOutputTokens: 16 };
@@ -40,4 +42,23 @@ test.each([
       type: 'image', source: { type: 'base64', media_type: mediaType, data }, cache_control: { type: 'ephemeral' },
     }],
   }]);
+});
+
+test('OpenAI targets treat uppercase DATA: scheme on data-sourced images as data URLs', () => {
+  const dataUrl = 'DATA:image/png;base64,AAAA';
+  const header = { settings: { model: 'm', stream: true } };
+  const turns = [{
+    kind: 'client' as const,
+    items: [{
+      type: 'message' as const,
+      role: 'user' as const,
+      content: [{ type: 'image' as const, image: { source_kind: 'data' as const, data: dataUrl } }],
+    }],
+  }];
+  expect(openaiResponsesTargetProtocol.write(header, turns, options).payload.input).toEqual([
+    { type: 'message', role: 'user', content: [{ type: 'input_image', image_url: dataUrl }] },
+  ]);
+  expect(openaiChatCompletionsTargetProtocol.write(header, turns, options).payload.messages).toEqual([
+    { role: 'user', content: [{ type: 'image_url', image_url: { url: dataUrl } }] },
+  ]);
 });
