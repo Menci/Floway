@@ -11,6 +11,7 @@ import { collect, iterate } from '../shared/iterables.ts';
 import { PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
+  routeAnthropicMessagesViaGeminiGenerateContent,
   routeAnthropicMessagesViaOpenAIChatCompletions,
   routeAnthropicMessagesViaOpenAIResponses,
   routeGeminiGenerateContentViaAnthropicMessages,
@@ -124,6 +125,23 @@ test.each([
   expect(await collect(responsesTrip.events(iterate([eventFrame(chatEvent(error))])))).toEqual([eventFrame({ ...expected, sequence_number: 0 })]);
 });
 
+test('Anthropic error envelopes drop the transport discriminant and keep outer request_id in both phases', async () => {
+  const trip = await requireTrip(routeOpenAIResponsesViaAnthropicMessages(responses, { ...options(), fallbackMaxOutputTokens: 16 }));
+  const envelope = {
+    type: 'error' as const,
+    error: { type: 'overloaded_error', message: 'Overloaded' },
+    request_id: 'req_anth_1',
+  };
+  const expected = {
+    type: 'error',
+    message: 'Overloaded',
+    provider_specific_fields: { type: 'overloaded_error', request_id: 'req_anth_1' },
+  };
+  expect(trip.error(529, new Headers(), new TextEncoder().encode(JSON.stringify(envelope)))?.body).toEqual(expected);
+  const frames = await collect(trip.events(iterate([eventFrame(envelope)])));
+  expect(frames).toEqual([eventFrame({ ...expected, sequence_number: 0 })]);
+});
+
 test('Responses flat errors remove transport discriminants before restatement', async () => {
   const trip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));
   const error = { type: 'error' as const, sequence_number: 17, message: 'failed', code: null, param: null };
@@ -148,6 +166,36 @@ test('native target errors retain canonical object identity', async () => {
     const record = records.find(value => value.type === 'error');
     expect(record?.error).toBe(failure);
   }
+});
+
+test('maps Google RPC status errors across HTTP and stream phases onto client protocol error shapes', async () => {
+  const googleError = {
+    error: {
+      code: 429,
+      message: 'Quota exceeded.',
+      status: 'RESOURCE_EXHAUSTED',
+      details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '5s' }],
+    },
+  };
+  const encoded = new TextEncoder().encode(JSON.stringify(googleError));
+
+  const messagesTrip = await requireTrip(routeAnthropicMessagesViaGeminiGenerateContent(messages, options()));
+  const messagesHttp = messagesTrip.error(429, new Headers(), encoded);
+  expect(messagesHttp?.status).toBe(429);
+  expect(messagesHttp?.body).toEqual({
+    type: 'error',
+    error: {
+      type: 'rate_limit_error',
+      message: 'Quota exceeded.',
+      provider_specific_fields: {
+        code: 429,
+        status: 'RESOURCE_EXHAUSTED',
+        details: googleError.error.details,
+      },
+    },
+  });
+  const messagesStream = await collect(messagesTrip.events(iterate([eventFrame(googleError)])));
+  expect(messagesStream).toEqual([eventFrame(messagesHttp?.body)]);
 });
 
 test.each([

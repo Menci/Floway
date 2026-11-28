@@ -3,9 +3,8 @@ import { generateAnthropicId, type AnthropicMessagesStreamEventEx } from '@flowa
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/upstream';
 
-// Anthropic Messages error envelope used to render pre-stream
-// `ChatServeFailure`s. These are gateway-synthesized rather than received
-// from any upstream — `source: 'gateway'` so the dump labels them as such.
+// Anthropic Messages error envelope used to render pre-stream `ChatServeFailure`s.
+// These are gateway-synthesized (`source: 'gateway'`) so dumps label them as such.
 // Byte-shape matches Anthropic-direct: `{type:'error', error:{type, message},
 // request_id}` with `request_id` at the top level (alongside `error`, not
 // nested inside it) and key order load-bearing for byte-faithfulness.

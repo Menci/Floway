@@ -37,3 +37,12 @@ test('empty thoughts do not enter IR or split visible text', () => {
     ],
   }]);
 });
+
+test('serviceTier maps standard to IR service_tier default', () => {
+  const reading = readGeminiGenerateContentRequest({
+    model: 'm',
+    contents: [],
+    serviceTier: 'standard',
+  });
+  assertEquals(reading.request.settings.service_tier, 'default');
+});

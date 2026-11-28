@@ -1,4 +1,4 @@
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { openaiChatCompletionsAttempt } from '../../../../src/data-plane/chat/openai-chat-completions/attempt.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
@@ -6,7 +6,8 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsPayloadEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type UpstreamOpenAIResponsesResult, type UpstreamStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/upstream';
@@ -65,6 +66,7 @@ const makeCandidate = (overrides: {
   callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>>;
   callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>>;
   callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamOpenAIResponsesResult>;
+  callGeminiGenerateContent?: (model: unknown, body: GeminiGenerateContentPayload, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>>;
   enabledFlags?: ReadonlySet<FlagId>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
@@ -73,6 +75,7 @@ const makeCandidate = (overrides: {
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessages: overrides.callAnthropicMessages,
     callOpenAIResponses: overrides.callOpenAIResponses,
+    callGeminiGenerateContent: overrides.callGeminiGenerateContent,
   });
   return {
     upstream: {
@@ -208,4 +211,41 @@ test('generate preserves translated instructions before rewriting inline system 
   assertEquals(input[0], { type: 'message', role: 'developer', content: 'base instructions' });
   assertEquals(input[1], { type: 'message', role: 'user', content: 'hello' });
   assertEquals(input[2], { type: 'message', role: 'developer', content: 'inline instructions' });
+});
+
+test('generate translates through GenerateContent and strips model', async () => {
+  installRepo();
+  let capturedBody: GeminiGenerateContentPayload | undefined;
+  const result = await openaiChatCompletionsAttempt.generate({
+    payload: makePayload({ reasoning_effort: 'high', messages: [{ role: 'system', content: 'Be concise.' }, { role: 'user', content: 'Say hello' }] }),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({
+      endpoints: { geminiGenerateContent: {} },
+      callGeminiGenerateContent: async (_model, body) => {
+        capturedBody = body;
+        return {
+          ok: true,
+          modelKey: 'k',
+          http: { status: 200, headers: new Headers() },
+          events: makeProtocolFrames<GeminiGenerateContentStreamEvent>([{
+            responseId: 'gem_chat_1',
+            modelVersion: 'test-model',
+            candidates: [{
+              index: 0,
+              content: { role: 'model', parts: [{ thought: true, text: 'Reason.' }, { text: 'Hello!' }] },
+              finishReason: 'STOP',
+            }],
+          }]),
+        };
+      },
+    }),
+    headers: new Headers(),
+  });
+  expect(capturedBody).toBeDefined();
+  expect('model' in capturedBody!).toBe(false);
+  expect(result.type).toBe('events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  const assembled = await collectOpenAIChatCompletionsProtocolEventsToResult(result.events);
+  expect(assembled.choices[0]?.message.content).toBe('Hello!');
+  expect(assembled.choices[0]?.message.reasoning_text).toBe('Reason.');
 });

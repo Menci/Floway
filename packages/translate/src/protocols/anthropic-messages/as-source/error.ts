@@ -28,10 +28,10 @@ export const anthropicMessagesErrorFromIR = (error: IRErrorPayload): AnthropicMe
   messagesError(error, isContextExceededError(error));
 
 /** Classify overflow once so its compatibility message and our chosen 400 mapping stay consistent. */
-export const anthropicMessagesErrorEnvelope = (error: IRErrorPayload): { readonly body: unknown; readonly status: number | undefined } => {
+export const anthropicMessagesErrorEnvelope = (error: IRErrorPayload): { readonly body: unknown; readonly status?: number } => {
   const contextExceeded = isContextExceededError(error);
   return {
     body: { type: 'error', error: messagesError(error, contextExceeded) },
-    status: contextExceeded ? 400 : undefined,
+    ...(contextExceeded ? { status: 400 } : {}),
   };
 };

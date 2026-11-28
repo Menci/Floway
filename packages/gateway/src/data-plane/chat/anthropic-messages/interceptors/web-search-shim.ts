@@ -866,23 +866,18 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
   }
 };
 
-const anthropicMessagesWebSearchInvalidRequestBody = (message: string) => ({
-  type: 'error',
-  error: {
-    type: 'invalid_request_error',
-    message,
-  },
-});
-
 const buildSyntheticInvalidRequestUpstreamError = (message: string) => ({
   type: 'api-error' as const,
   source: 'gateway' as const,
   http: { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
-  body: new TextEncoder().encode(JSON.stringify(anthropicMessagesWebSearchInvalidRequestBody(message))),
+  body: new TextEncoder().encode(JSON.stringify({
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message,
+    },
+  })),
 });
-
-const buildInvalidRequestResponse = (message: string): Response =>
-  Response.json(anthropicMessagesWebSearchInvalidRequestBody(message), { status: 400 });
 
 const resolveActiveAnthropicMessagesWebSearchBackend = async (apiKeyId: string): Promise<{ type: 'ok'; backend: ActiveAnthropicMessagesWebSearchBackend } | ReturnType<typeof internalErrorResult>> => {
   const webSearchConfig = await loadWebSearchConfig();
@@ -940,7 +935,7 @@ const prepareAnthropicMessagesWebSearchInvocation = (ctx: AnthropicMessagesInvoc
  * `web_search_tool_result` / `web_search_result_location` shape.
  *
  * The shim is unconditional for non-native Anthropic Messages targets (OpenAI Responses /
- * OpenAI Chat Completions cannot carry Anthropic server tools), and gated by the
+ * OpenAI Chat Completions / Gemini GenerateContent cannot carry Anthropic server tools), and gated by the
  * `anthropic-messages-web-search-shim` flag for native Anthropic Messages targets (the upstream
  * may or may not be able to serve web_search natively).
  */
@@ -965,6 +960,6 @@ export const withAnthropicMessagesWebSearchShim: AnthropicMessagesInterceptor = 
 // tool and replay-history request shape that generation sends upstream.
 export const withAnthropicMessagesWebSearchRequestPrepared: AnthropicMessagesCountTokensInterceptor = async (ctx, _gatewayCtx, run) => {
   const prepared = prepareAnthropicMessagesWebSearchInvocation(ctx);
-  if (prepared.type === 'invalid-request') return buildInvalidRequestResponse(prepared.message);
+  if (prepared.type === 'invalid-request') return buildSyntheticInvalidRequestUpstreamError(prepared.message);
   return await run();
 };

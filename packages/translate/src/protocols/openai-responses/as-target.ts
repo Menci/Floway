@@ -1,3 +1,4 @@
+import { readOpenAIResponsesErrorBody } from './as-target/error.ts';
 import { readOpenAIResponsesEvents } from './as-target/events.ts';
 import { openaiResponsesPayloadFromSegments } from './as-target/segmented-request.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
@@ -26,4 +27,5 @@ export const openaiResponsesTargetProtocol: TargetProtocol<
     context: undefined,
   }),
   readEvents: (frames, _context, roundTripReader) => readOpenAIResponsesEvents(frames, { roundTrip: roundTripReader }),
+  readError: readOpenAIResponsesErrorBody,
 };

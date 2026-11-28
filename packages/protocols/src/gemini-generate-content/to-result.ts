@@ -1,12 +1,25 @@
-import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from './index.ts';
-import { reassembleGeminiGenerateContentEvents } from './reassemble.ts';
+import type {
+  GeminiGenerateContentErrorResponse,
+  GeminiGenerateContentStreamEvent,
+} from './index.ts';
+import { isGeminiGenerateContentTerminalFinishReason, reassembleGeminiGenerateContentEvents } from './reassemble.ts';
 import type { ProtocolFrame } from '../common/index.ts';
 
 export const GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE = 'Gemini generateContent stream ended without a terminal event.';
 
 export const isGeminiGenerateContentErrorEvent = (event: GeminiGenerateContentStreamEvent): event is GeminiGenerateContentErrorResponse => 'error' in event;
 
-export const isGeminiGenerateContentTerminalEvent = (event: GeminiGenerateContentStreamEvent): boolean => isGeminiGenerateContentErrorEvent(event) || ('promptFeedback' in event && event.promptFeedback?.blockReason !== undefined);
+// Protobuf default enum zero values (`BLOCK_REASON_UNSPECIFIED` in REST proto,
+// `BLOCKED_REASON_UNSPECIFIED` in `@google/genai`) and empty strings are non-blocking.
+// https://github.com/googleapis/googleapis/blob/e7513c828b8db536fa12fc5493d541f323aedf90/google/ai/generativelanguage/v1beta/generative_service.proto#L596-L618
+// https://ai.google.dev/api/generate-content#BlockReason
+export const isGeminiGenerateContentPromptBlockReason = (
+  reason: string | null | undefined,
+): reason is string =>
+  typeof reason === 'string' && reason !== '' && reason !== 'BLOCK_REASON_UNSPECIFIED' && reason !== 'BLOCKED_REASON_UNSPECIFIED';
+
+export const isGeminiGenerateContentTerminalEvent = (event: GeminiGenerateContentStreamEvent): boolean =>
+  isGeminiGenerateContentErrorEvent(event) || ('promptFeedback' in event && isGeminiGenerateContentPromptBlockReason(event.promptFeedback?.blockReason));
 
 export const createGeminiGenerateContentCandidateCompletion = () => {
   const observed = new Set<number>();
@@ -20,7 +33,7 @@ export const createGeminiGenerateContentCandidateCompletion = () => {
         // https://github.com/googleapis/googleapis/blob/e7513c828b8db536fa12fc5493d541f323aedf90/google/ai/generativelanguage/v1beta/generative_service.proto#L686-L762
         const index = candidate.index ?? 0;
         observed.add(index);
-        if (candidate.finishReason !== undefined) finished.add(index);
+        if (isGeminiGenerateContentTerminalFinishReason(candidate.finishReason)) finished.add(index);
       }
     },
     isComplete: (): boolean => observed.size > 0 && [...observed].every(index => finished.has(index)),
@@ -30,7 +43,7 @@ export const createGeminiGenerateContentCandidateCompletion = () => {
 const geminiGenerateContentEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>): AsyncGenerator<GeminiGenerateContentStreamEvent> {
   const completion = createGeminiGenerateContentCandidateCompletion();
   for await (const frame of frames) {
-    if (frame.type === 'done') return;
+    if (frame.type === 'done') break;
 
     yield frame.event;
     if (isGeminiGenerateContentTerminalEvent(frame.event)) return;

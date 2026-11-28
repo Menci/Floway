@@ -4,6 +4,7 @@ import type { OpenAIChatCompletionsInvocation } from './interceptors/types.ts';
 import { billableUsageFromOpenAIChatCompletionsEvent } from './usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
+import { geminiGenerateContentAttempt } from '../gemini-generate-content/attempt.ts';
 import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import { applyRulesToUpstreamOpenAIChatCompletions } from '../shared/alias-rules.ts';
 import { captureFromDump, executeTranslation } from '../shared/execute-translation.ts';
@@ -14,12 +15,15 @@ import { upstreamStreamResultToExecuteResult } from '../shared/upstream-stream-r
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
+import {
+  routeOpenAIChatCompletionsViaAnthropicMessages,
+  routeOpenAIChatCompletionsViaGeminiGenerateContent,
+  routeOpenAIChatCompletionsViaOpenAIResponses,
+  type TranslateInputError,
+} from '@floway-dev/translate';
 import { type ModelCandidate, type ExecuteResult } from '@floway-dev/upstream';
 
-// `/v1/chat/completions` generate prefers a native OpenAI Chat Completions target,
-// then the translated Anthropic Messages path, then the translated OpenAI Responses path.
-export const openaiChatCompletionsTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
+export const openaiChatCompletionsTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses', 'geminiGenerateContent']);
 
 export interface OpenAIChatCompletionsAttemptArgs {
   readonly payload: OpenAIChatCompletionsPayloadEx;
@@ -63,11 +67,13 @@ const dispatchOpenAIChatCompletions = async (
     );
     return await upstreamStreamResultToExecuteResult(upstreamResult, candidate, 'openaiChatCompletions', ctx, billableUsageFromOpenAIChatCompletionsEvent);
   }
-  if (targetApi === 'anthropicMessages') {
+  const sidecarCodec = ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn);
+  switch (targetApi) {
+  case 'anthropicMessages':
     return await executeTranslation(
       invocation.payload,
       p => routeOpenAIChatCompletionsViaAnthropicMessages(p, {
-        sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
+        sidecarCodec,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       }),
       translated => anthropicMessagesAttempt.generate({
@@ -75,16 +81,27 @@ const dispatchOpenAIChatCompletions = async (
       }),
       captureFromDump(ctx.dump, targetApi),
     );
-  }
-  if (targetApi === 'openaiResponses') {
+  case 'openaiResponses':
     return await executeTranslation(
       invocation.payload,
-      p => routeOpenAIChatCompletionsViaOpenAIResponses(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeOpenAIChatCompletionsViaOpenAIResponses(p, { sidecarCodec }),
       translated => openaiResponsesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),
       captureFromDump(ctx.dump, targetApi),
     );
+  case 'geminiGenerateContent':
+    return await executeTranslation(
+      invocation.payload,
+      p => routeOpenAIChatCompletionsViaGeminiGenerateContent(p, { sidecarCodec }),
+      ({ model: _model, ...body }) => geminiGenerateContentAttempt.generate({
+        payload: body, ctx, candidate, headers: invocation.headers,
+      }),
+      captureFromDump(ctx.dump, targetApi),
+    );
+  default: {
+    const exhaustive: never = targetApi;
+    throw new Error(`openaiChatCompletionsAttempt.generate: unexpected targetApi '${exhaustive as string}'`);
   }
-  throw new Error(`openaiChatCompletionsAttempt.generate: unexpected targetApi '${targetApi as string}'`);
+  }
 };

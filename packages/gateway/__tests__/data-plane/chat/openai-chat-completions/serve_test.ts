@@ -114,9 +114,9 @@ const collectEvents = async <TEvent>(events: AsyncIterable<ProtocolFrame<TEvent>
 test('generate filters out candidates that do not expose any chat-completions-target endpoint', async () => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn();
-  // `openaiCompletions:{}` is not in the openaiChatCompletionsTarget preference list
-  // (`openai-chat-completions` > `messages` > `responses`), so the picker rejects
-  // this candidate.
+  // `openaiCompletions: {}` is not in `openaiChatCompletionsTarget`'s preference list
+  // (`openaiChatCompletions` > `anthropicMessages` > `openaiResponses` > `geminiGenerateContent`),
+  // so the picker rejects this candidate.
   queueResolution([makeCandidate({ upstream: 'up_m', endpoints: { openaiCompletions: {} }, callOpenAIChatCompletions })]);
 
   const result = await openaiChatCompletionsServe.generate({

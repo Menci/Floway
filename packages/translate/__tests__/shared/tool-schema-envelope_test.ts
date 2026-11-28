@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
-import { envelopeAnthropicMessagesRootToolSchemas, envelopeRootToolSchema, hasRootToolSchemaCombinator, unwrapToolArguments } from '../../../../src/protocols/anthropic-messages/as-target/tool-schema-envelope.ts';
-import { TranslateInputException } from '../../../../src/shared/input-error.ts';
+import { TranslateInputException } from '../../src/shared/input-error.ts';
+import { envelopeRootToolSchema, envelopeRootToolSchemas, hasRootToolSchemaCombinator, unwrapToolArguments } from '../../src/shared/tool-schema-envelope.ts';
 
 test.each(['oneOf', 'anyOf', 'allOf'] as const)('envelopes a root %s and retargets local references', combinator => {
   const schema = { type: 'object', [combinator]: [{ $ref: '#/$defs/value' }], $defs: { value: { type: 'string' } } };
@@ -77,7 +77,7 @@ test.each([
   { arguments: '{"value":1e400}', wrapped: '{"arguments":{"value":1e400}}' },
   { arguments: 'not json', wrapped: '{"arguments":{"raw_arguments":"not json"}}' },
 ])('wraps and unwraps history arguments $arguments', ({ arguments: argumentsJson, wrapped }) => {
-  const result = envelopeAnthropicMessagesRootToolSchemas({
+  const result = envelopeRootToolSchemas({
     settings: { model: 'm', stream: true },
     tools: [{ type: 'function', name: 'update', parameters: { oneOf: [{ type: 'object' }] } }],
   }, [{ kind: 'assistant', items: [{ type: 'function_call', call_id: 'call', name: 'update', ...(argumentsJson === undefined ? {} : { arguments: argumentsJson }) }] }]);

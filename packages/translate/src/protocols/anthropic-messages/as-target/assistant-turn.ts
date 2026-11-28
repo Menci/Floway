@@ -1,6 +1,6 @@
-import type { ToolArgumentsEnvelope } from './tool-schema-envelope.ts';
 import type { IRJSONObject } from '../../../ir/common/json.ts';
 import type { ReferenceState, ReferenceStateLeaves, ReferenceableValue, TextRule, JSONRule } from '../../../round-trip/reference/types.ts';
+import type { ToolArgumentsEnvelope } from '../../../shared/tool-schema-envelope.ts';
 import type { AnthropicMessagesAssistantContentBlock } from '@floway-dev/protocols/anthropic-messages';
 
 type AnthropicMessagesTextBlockRule<Block> = Block extends { type: 'text' }

@@ -5,6 +5,7 @@ import type { IRInputTurn } from '../../src/ir/input/types.ts';
 import { anthropicMessagesSourceProtocol } from '../../src/protocols/anthropic-messages/as-source.ts';
 import { anthropicMessagesTargetProtocol } from '../../src/protocols/anthropic-messages/as-target.ts';
 import { geminiGenerateContentSourceProtocol } from '../../src/protocols/gemini-generate-content/as-source.ts';
+import { geminiGenerateContentTargetProtocol } from '../../src/protocols/gemini-generate-content/as-target.ts';
 import { openaiChatCompletionsSourceProtocol } from '../../src/protocols/openai-chat-completions/as-source.ts';
 import { openaiChatCompletionsTargetProtocol } from '../../src/protocols/openai-chat-completions/as-target.ts';
 import { openaiResponsesSourceProtocol } from '../../src/protocols/openai-responses/as-source.ts';
@@ -22,11 +23,14 @@ import type { OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/open
 
 export const pairs = {
   messagesToChat: [anthropicMessagesSourceProtocol, openaiChatCompletionsTargetProtocol],
+  messagesToGemini: [anthropicMessagesSourceProtocol, geminiGenerateContentTargetProtocol],
   messagesToResponses: [anthropicMessagesSourceProtocol, openaiResponsesTargetProtocol],
   chatToMessages: [openaiChatCompletionsSourceProtocol, anthropicMessagesTargetProtocol],
+  chatToGemini: [openaiChatCompletionsSourceProtocol, geminiGenerateContentTargetProtocol],
   chatToResponses: [openaiChatCompletionsSourceProtocol, openaiResponsesTargetProtocol],
   responsesToMessages: [openaiResponsesSourceProtocol, anthropicMessagesTargetProtocol],
   responsesToChat: [openaiResponsesSourceProtocol, openaiChatCompletionsTargetProtocol],
+  responsesToGemini: [openaiResponsesSourceProtocol, geminiGenerateContentTargetProtocol],
   geminiToMessages: [geminiGenerateContentSourceProtocol, anthropicMessagesTargetProtocol],
   geminiToChat: [geminiGenerateContentSourceProtocol, openaiChatCompletionsTargetProtocol],
   geminiToResponses: [geminiGenerateContentSourceProtocol, openaiResponsesTargetProtocol],

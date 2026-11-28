@@ -1,3 +1,4 @@
+import { readOpenAIChatCompletionsErrorBody } from './as-target/error.ts';
 import { readOpenAIChatCompletionsEvents } from './as-target/events.ts';
 import { openaiChatCompletionsPayloadFromSegments } from './as-target/segmented-request.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
@@ -62,8 +63,8 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
   write: (request, turns) => {
     const legacyResults = new Map<IRInputToolResultItemWithCallId, string>();
     const assigned = assignCallIds(turns, callsOf, {
-      onMatch: (result, call) => {
-        if (call.legacy) legacyResults.set(result, call.name);
+      onMatch: (result, match) => {
+        if (match.restored?.legacy) legacyResults.set(result, match.name);
       },
     });
     const flattened = allocateToolNames(request, assigned);
@@ -78,4 +79,5 @@ export const openaiChatCompletionsTargetProtocol: TargetProtocol<
   },
   readEvents: (frames, context, roundTripReader) =>
     readOpenAIChatCompletionsEvents(frames, { ...context, roundTrip: roundTripReader }),
+  readError: readOpenAIChatCompletionsErrorBody,
 };

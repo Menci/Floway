@@ -139,8 +139,8 @@ const collectEvents = async (events: AsyncIterable<ProtocolFrame<OpenAIResponses
 test('generate filters out candidates whose endpoints do not satisfy the responses preference and renders model-unsupported as a 400', async () => {
   installRepo();
   const callOpenAIResponses = vi.fn();
-  // openaiResponsesTarget prefers responses > messages > openai-chat-completions; an
-  // endpoints-only `openaiCompletions` candidate matches none and is filtered out.
+  // openaiResponsesTarget prefers responses > messages > openai-chat-completions > gemini-generate-content;
+  // an endpoints-only `openaiCompletions` candidate matches none and is filtered out.
   queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiCompletions: {} }, callOpenAIResponses })]);
 
   const result = await openaiResponsesServe.generate({

@@ -127,3 +127,29 @@ test('passes thought parts through when includeThoughts is opted in', async () =
 
   assertEquals(await collect(res.events), upstream);
 });
+
+test('passes thought parts through on native geminiGenerateContent target even without includeThoughts', async () => {
+  const upstream: GeminiGenerateContentStreamEvent[] = [
+    {
+      candidates: [{
+        index: 0,
+        content: {
+          role: 'model',
+          parts: [
+            { thought: true, text: 'reasoning...', thoughtSignature: 'sig_1' },
+            { text: 'final answer' },
+          ],
+        },
+        finishReason: 'STOP',
+      }],
+    },
+  ];
+  const res = await suppressThoughtParts(
+    { ...invocation({ contents: [] }), targetApi: 'geminiGenerateContent' },
+    stubCtx,
+    streamingResult(upstream),
+  );
+  if (res.type !== 'events') throw new Error('expected events');
+
+  assertEquals(await collect(res.events), upstream);
+});

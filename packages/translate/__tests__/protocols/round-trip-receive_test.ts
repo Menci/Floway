@@ -15,7 +15,18 @@ import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-m
 import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
-import { routeAnthropicMessagesViaOpenAIChatCompletions, routeAnthropicMessagesViaOpenAIResponses, routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses, routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
+import {
+  routeAnthropicMessagesViaOpenAIChatCompletions,
+  routeAnthropicMessagesViaOpenAIResponses,
+  routeGeminiGenerateContentViaAnthropicMessages,
+  routeGeminiGenerateContentViaOpenAIChatCompletions,
+  routeGeminiGenerateContentViaOpenAIResponses,
+  routeOpenAIChatCompletionsViaAnthropicMessages,
+  routeOpenAIChatCompletionsViaGeminiGenerateContent,
+  routeOpenAIChatCompletionsViaOpenAIResponses,
+  routeOpenAIResponsesViaAnthropicMessages,
+  routeOpenAIResponsesViaOpenAIChatCompletions,
+} from '@floway-dev/translate';
 
 const context = { sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: undefined };
 const chat = (carrier: string, text = 'answer'): OpenAIChatCompletionsPayloadEx => {
@@ -34,16 +45,18 @@ const turnDigest = async (source: AssistantTurnProtocol) => source === 'openaiCh
       ? await computeOpenAIResponsesTurnDigest([{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'answer' }] }])
       : await computeGeminiGenerateContentTurnDigest([{ role: 'model', parts: [{ text: 'answer' }] }]);
 
-type NativeProtocol = 'anthropicMessages' | 'openaiChatCompletions' | 'openaiResponses';
-const nativeTurn = (target: NativeProtocol, text = 'restored'): InputAssistantTurnFor<NativeProtocol> => target === 'openaiChatCompletions'
+const nativeTurn = (target: AssistantTurnProtocol, text = 'restored'): InputAssistantTurnFor<AssistantTurnProtocol> => target === 'openaiChatCompletions'
   ? { role: 'assistant', content: text }
   : target === 'anthropicMessages'
     ? { role: 'assistant', content: [{ type: 'text', text, citations: [] }] }
-    : [{ type: 'message', role: 'assistant', content: text }];
+    : target === 'openaiResponses'
+      ? [{ type: 'message', role: 'assistant', content: text }]
+      : [{ role: 'model', parts: [{ text }] }];
 
 const cases = [
   { source: 'openaiChatCompletions', target: 'anthropicMessages', run: (carrier: string) => routeOpenAIChatCompletionsViaAnthropicMessages(chat(carrier), context) },
   { source: 'openaiChatCompletions', target: 'openaiResponses', run: (carrier: string) => routeOpenAIChatCompletionsViaOpenAIResponses(chat(carrier), context) },
+  { source: 'openaiChatCompletions', target: 'geminiGenerateContent', run: (carrier: string) => routeOpenAIChatCompletionsViaGeminiGenerateContent(chat(carrier), context) },
   { source: 'anthropicMessages', target: 'openaiChatCompletions', run: (carrier: string) => routeAnthropicMessagesViaOpenAIChatCompletions(messages(carrier), context) },
   { source: 'anthropicMessages', target: 'openaiResponses', run: (carrier: string) => routeAnthropicMessagesViaOpenAIResponses(messages(carrier), context) },
   { source: 'openaiResponses', target: 'anthropicMessages', run: (carrier: string) => routeOpenAIResponsesViaAnthropicMessages(responses(carrier), context) },
@@ -52,29 +65,36 @@ const cases = [
   { source: 'geminiGenerateContent', target: 'openaiChatCompletions', run: (carrier: string) => routeGeminiGenerateContentViaOpenAIChatCompletions(gemini(carrier), context) },
   { source: 'geminiGenerateContent', target: 'openaiResponses', run: (carrier: string) => routeGeminiGenerateContentViaOpenAIResponses(gemini(carrier), context) },
 ] as const;
-// Reference hydration does not depend on the protocol pair, so one source spanning every target covers it.
-const geminiCases = cases.filter(({ source }) => source === 'geminiGenerateContent');
+// Reference hydration does not depend on the source/target pair, so one case per target protocol covers all four targets.
+const hydrationCases = [
+  ...cases.filter(({ source }) => source === 'geminiGenerateContent'),
+  cases.find(({ source, target }) => source === 'openaiChatCompletions' && target === 'geminiGenerateContent')!,
+];
 
 test.each(cases)('receives recognized $source history via $target', async ({ source, target, run }) => {
   const native = nativeTurn(target);
   const carrier = await encodeRoundTripSidecar(createTestSidecarCodec(), { v: 1, source, target, targetTurn: native, sourceTurnDigest: await turnDigest(source) });
   const trip = expectTrip(await run(carrier));
-  expect('input' in trip.target ? trip.target.input : trip.target.messages).toEqual(target === 'openaiResponses' ? native : [native]);
+  expect('input' in trip.target ? trip.target.input : 'contents' in trip.target ? trip.target.contents : trip.target.messages)
+    .toEqual(target === 'openaiResponses' || target === 'geminiGenerateContent' ? native : [native]);
 });
 
-test.each(geminiCases)('hydrates $source text references before restoring $target history', async ({ source, target, run }) => {
+test.each(hydrationCases)('hydrates $source text references before restoring $target history', async ({ source, target, run }) => {
   const reference = new ContentReference('text', [[0, 0, 3]]);
-  const targetTurn: ReferenceableInputAssistantTurnFor<NativeProtocol, ContentReference> = target === 'openaiChatCompletions'
+  const targetTurn: ReferenceableInputAssistantTurnFor<AssistantTurnProtocol, ContentReference> = target === 'openaiChatCompletions'
     ? { role: 'assistant', content: reference }
     : target === 'anthropicMessages'
       ? { role: 'assistant', content: [{ type: 'text', text: reference, citations: [] }] }
-      : [{ type: 'message', role: 'assistant', content: reference }];
+      : target === 'openaiResponses'
+        ? [{ type: 'message', role: 'assistant', content: reference }]
+        : [{ role: 'model', parts: [{ text: reference }] }];
   const carrier = await encodeRoundTripSidecar(createTestSidecarCodec(), {
     v: 1, source, target, targetTurn, referencedContentHashes: [await hashRoundTripContent('answer')], sourceTurnDigest: await turnDigest(source),
   });
   const trip = expectTrip(await run(carrier));
   const native = nativeTurn(target, 'ans');
-  expect('input' in trip.target ? trip.target.input : trip.target.messages).toEqual(target === 'openaiResponses' ? native : [native]);
+  expect('input' in trip.target ? trip.target.input : 'contents' in trip.target ? trip.target.contents : trip.target.messages)
+    .toEqual(target === 'openaiResponses' || target === 'geminiGenerateContent' ? native : [native]);
 });
 
 test('hydrates a native JSON field from a replayed GenerateContent argument candidate', async () => {

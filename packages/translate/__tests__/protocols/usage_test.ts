@@ -1,22 +1,24 @@
 import { expect, test } from 'vitest';
 
 import { fixtureFrames } from './fixtures.ts';
-import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIResponsesEvents } from './helpers.ts';
+import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readGeminiGenerateContentEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { usageToIR as messagesUsageToIR } from '../../src/protocols/anthropic-messages/as-target/usage.ts';
+import { usageToIR as generateContentUsageToIR } from '../../src/protocols/gemini-generate-content/as-target/usage.ts';
 import { usageToIR as chatUsageToIR } from '../../src/protocols/openai-chat-completions/as-target/usage.ts';
 import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';
 import { collectIR } from '../ir/output/helpers.ts';
 import { iterate } from '../shared/iterables.ts';
-import { eventFrame } from '@floway-dev/protocols/common';
+import { eventFrame, FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
 
 const initialUsage = { input_tokens: 17, output_tokens: 2, total_tokens: 19, input_tokens_details: { cached_tokens: 3, cache_write_tokens: 4 } };
 const sources = [
-  ['ChatCompletions', readOpenAIChatCompletionsEvents, { id: 'resp_usage', model: 'served', created: 1, choices: [], service_tier: 'priority', usage: { prompt_tokens: 17, completion_tokens: 2, total_tokens: 19, prompt_tokens_details: { cached_tokens: 3, cache_write_tokens: 4 } } }, 'priority'],
-  ['Responses', readOpenAIResponsesEvents, { type: 'response.created', response: { id: 'resp_usage', model: 'served', created_at: 1, status: 'in_progress', output: [], service_tier: 'fast', usage: initialUsage } }, 'fast'],
-  ['Messages', readAnthropicMessagesEvents, { type: 'message_start', message: { id: 'msg_usage', model: 'served', usage: { input_tokens: 10, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4, speed: 'fast' } } }, 'fast'],
+  ['ChatCompletions', readOpenAIChatCompletionsEvents, { id: 'resp_usage', model: 'served', created: 1, choices: [], service_tier: 'priority', usage: { prompt_tokens: 17, completion_tokens: 2, total_tokens: 19, prompt_tokens_details: { cached_tokens: 3, cache_write_tokens: 4 } } }, 'priority', initialUsage],
+  ['Responses', readOpenAIResponsesEvents, { type: 'response.created', response: { id: 'resp_usage', model: 'served', created_at: 1, status: 'in_progress', output: [], service_tier: 'fast', usage: initialUsage } }, 'fast', initialUsage],
+  ['Messages', readAnthropicMessagesEvents, { type: 'message_start', message: { id: 'msg_usage', model: 'served', usage: { input_tokens: 10, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4, speed: 'fast' } } }, 'fast', initialUsage],
+  ['GenerateContent', readGeminiGenerateContentEvents, { responseId: 'resp_usage', modelVersion: 'served', usageMetadata: { promptTokenCount: 17, cachedContentTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 19, serviceTier: FAST_SERVICE_TIER } }, 'priority', { input_tokens: 17, output_tokens: 2, total_tokens: 19, input_tokens_details: { cached_tokens: 3 } }],
 ] as const;
 
-test.each(sources)('Responses via %s exposes known initial accounting before pulling another upstream frame', async (_name, reader, event, tier) => {
+test.each(sources)('Responses via %s exposes known initial accounting before pulling another upstream frame', async (_name, reader, event, tier, expectedUsage) => {
   let pulledNext = false;
   const upstream = async function* () {
     yield eventFrame(event as any);
@@ -27,7 +29,7 @@ test.each(sources)('Responses via %s exposes known initial accounting before pul
   try {
     for (const type of ['response.created', 'response.in_progress']) {
       const frame = (await stream.next()).value;
-      expect(frame).toMatchObject({ type: 'event', event: { type, response: { model: 'served', service_tier: tier, usage: initialUsage } } });
+      expect(frame).toMatchObject({ type: 'event', event: { type, response: { model: 'served', service_tier: tier, usage: expectedUsage } } });
       expect(pulledNext).toBe(false);
     }
   } finally {
@@ -58,8 +60,13 @@ test.each([
   ['ChatCompletions prompt_tokens', chatUsageToIR, { completion_tokens: 1, total_tokens: 1 }, { output_tokens_inclusive: 1, total_tokens: 1 }],
   ['Responses total_tokens', responsesUsageToIR, { input_tokens: 1, output_tokens: 1 }, { input_tokens_inclusive: 1, output_tokens_inclusive: 1 }],
   ['Messages output_tokens', (usage: Record<string, any>) => messagesUsageToIR(usage, {}), { input_tokens: 1 }, { input_tokens_inclusive: 1 }],
+  ['GenerateContent candidatesTokenCount', generateContentUsageToIR, { promptTokenCount: 1 }, { input_tokens_inclusive: 1 }],
 ] as const)('%s is omitted when the upstream does not report it', (_name, convert, usage, expected) => {
   expect(convert(usage)).toEqual(expected);
+});
+
+test('GenerateContent rejects cached input tokens exceeding promptTokenCount', () => {
+  expect(() => generateContentUsageToIR({ promptTokenCount: 4, cachedContentTokenCount: 5 })).toThrow(RangeError);
 });
 
 test.each([

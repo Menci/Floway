@@ -1,4 +1,4 @@
-import { restateOpenAIResponsesError } from './as-source/error-body.ts';
+import { openaiResponsesErrorEventOf } from './as-source/error.ts';
 import { writeOpenAIResponsesEvents } from './as-source/events.ts';
 import { readOpenAIResponsesRequest } from './as-source/input-to.ts';
 import { createRandomOpenAIResponsesResponseId } from './as-source/response-id.ts';
@@ -17,7 +17,7 @@ export const openaiResponsesSourceProtocol: SourceProtocol<
     verify: verifyOpenAIResponsesTurnDigest,
     collectCandidates: collectOpenAIResponsesReplayContents,
   },
-  error: restateOpenAIResponsesError,
+  writeError: error => ({ body: openaiResponsesErrorEventOf(error) }),
   writeEvents: (payload, records, roundTrip) => {
     const responseId = createRandomOpenAIResponsesResponseId();
     // The response objects echo the client's own declarations, which only the

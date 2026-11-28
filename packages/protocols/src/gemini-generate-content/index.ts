@@ -76,7 +76,7 @@ export interface GeminiGenerateContentGenerationConfig {
   audioTranscriptionConfig?: { languageCodes?: string[]; adaptationPhrases?: string[]; customVocabulary?: string[]; wordTimestamp?: boolean; diarization?: boolean; mode?: string; languageHints?: { languageCodes: string[] }; languageAuto?: Record<string, never> };
   responseFormat?: { text?: { mimeType?: string; schema?: unknown }; image?: { mimeType?: string; delivery?: string; aspectRatio?: string; imageSize?: string }; audio?: { mimeType?: string; sampleRate?: number; bitRate?: number; delivery?: string } };
 }
-export interface GeminiGenerateContentThinkingConfig { thinkingBudget?: number; thinkingLevel?: 'THINKING_LEVEL_UNSPECIFIED' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH' | (string & {}); includeThoughts?: boolean }
+export interface GeminiGenerateContentThinkingConfig { thinkingBudget?: number; thinkingLevel?: 'THINKING_LEVEL_UNSPECIFIED' | 'MINIMAL' | 'LOW' | 'MEDIUM' | 'HIGH' | 'XHIGH' | (string & {}); includeThoughts?: boolean }
 export interface GeminiGenerateContentFunctionCallingConfig { mode?: 'MODE_UNSPECIFIED' | 'AUTO' | 'NONE' | 'ANY' | 'VALIDATED' | (string & {}); allowedFunctionNames?: string[] }
 export interface GeminiGenerateContentToolConfig { functionCallingConfig?: GeminiGenerateContentFunctionCallingConfig; retrievalConfig?: { latLng?: { latitude?: number; longitude?: number }; languageCode?: string }; includeServerSideToolInvocations?: boolean }
 export interface GeminiGenerateContentToolGroup {
@@ -129,18 +129,18 @@ export interface GeminiGenerateContentUsageMetadata {
 }
 export interface GeminiGenerateContentResult {
   candidates?: GeminiGenerateContentCandidate[]; usageMetadata?: GeminiGenerateContentUsageMetadata; modelVersion?: string; responseId?: string; turnToken?: string;
-  promptFeedback?: { blockReason?: string; safetyRatings?: GeminiGenerateContentSafetyRating[] };
+  promptFeedback?: { blockReason?: string; blockReasonMessage?: string; safetyRatings?: GeminiGenerateContentSafetyRating[] };
   modelStatus?: { retirementTime?: string; message?: string; modelStage?: string };
 }
 export interface GeminiGenerateContentErrorResponse { error: { code: number; message: string; status: string; details?: Record<string, unknown>[] } }
 export type GeminiGenerateContentStreamEvent = GeminiGenerateContentResult | GeminiGenerateContentErrorResponse;
 
 export { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from './field-keys.ts';
-export { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent, collectGeminiGenerateContentProtocolEventsToResult } from './to-result.ts';
-export { createGeminiGenerateContentEventAccumulator, reassembleGeminiGenerateContentEvents, type GeminiGenerateContentEventAccumulator } from './reassemble.ts';
+export { GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentPromptBlockReason, isGeminiGenerateContentTerminalEvent, collectGeminiGenerateContentProtocolEventsToResult } from './to-result.ts';
+export { appendGeminiGenerateContentPart, createGeminiGenerateContentEventAccumulator, isGeminiGenerateContentTerminalFinishReason, mergeGeminiGenerateContentLogprobsResult, reassembleGeminiGenerateContentEvents, type GeminiGenerateContentEventAccumulator } from './reassemble.ts';
 export { geminiGenerateContentProtocolFrameToSSEFrame } from './to-sse.ts';
 export { parseGeminiGenerateContentStream, type ParseGeminiGenerateContentStreamOptions } from './stream.ts';
 
-export { geminiGenerateContentPartKind, type GeminiGenerateContentPartKind } from './part.ts';
+export { geminiGenerateContentPartKind, hasGeminiGenerateContentPartData, type GeminiGenerateContentPartKind } from './part.ts';
 export { geminiGenerateContentStatusForHttpStatus } from './error-status.ts';
 export { billableUsageFromGeminiGenerateContentEvent, billableUsageFromGeminiGenerateContentUsage } from './usage.ts';

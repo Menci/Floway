@@ -31,6 +31,7 @@ import type {
 } from '@floway-dev/protocols/anthropic-messages';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
 import { assertEquals, assertExists, stubModelCandidate } from '@floway-dev/test-utils';
+import { decodeResponseBody, plainResult } from '@floway-dev/upstream';
 
 const testTelemetryModelIdentity = {
   model: 'test-model',
@@ -390,10 +391,10 @@ test('generation and count_tokens prepare identical web-search request payloads'
   const countResponse = await withAnthropicMessagesWebSearchRequestPrepared(
     countInvocation,
     mockChatGatewayCtx(),
-    () => Promise.resolve(new Response(null, { status: 204 })),
+    () => Promise.resolve(plainResult({ status: 204, headers: new Headers() }, null)),
   );
 
-  assertEquals(countResponse.status, 204);
+  assertEquals(countResponse.http.status, 204);
   assertEquals(countInvocation.payload, generationInvocation.payload);
   const rewrittenTool = generationInvocation.payload.tools?.[0] as AnthropicMessagesClientTool;
   assertEquals(rewrittenTool.name, 'web_search');
@@ -412,8 +413,10 @@ test('count_tokens returns a native error response for invalid web-search tools'
     () => Promise.reject(new Error('run should not be called')),
   );
 
-  assertEquals(response.status, 400);
-  expect(await response.json()).toMatchObject({ type: 'error', error: { type: 'invalid_request_error' } });
+  assertEquals(response.type, 'api-error');
+  if (response.type !== 'api-error') throw new Error('unreachable');
+  assertEquals(response.http.status, 400);
+  expect(JSON.parse(decodeResponseBody(response.body))).toMatchObject({ type: 'error', error: { type: 'invalid_request_error' } });
 });
 
 const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<AnthropicMessagesStreamEventEx>[]> => {

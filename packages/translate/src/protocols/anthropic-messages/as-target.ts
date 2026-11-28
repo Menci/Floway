@@ -1,12 +1,13 @@
+import { readAnthropicMessagesErrorBody } from './as-target/error.ts';
 import { readAnthropicMessagesEvents } from './as-target/events.ts';
 import { anthropicMessagesPayloadFromSegments } from './as-target/segmented-request.ts';
-import { envelopeAnthropicMessagesRootToolSchemas } from './as-target/tool-schema-envelope.ts';
 import type { TargetProtocol } from '../../composition/index.ts';
 import type { RestoredAssistantTurn } from '../../composition/reading.ts';
 import { assignCallIds, type PendingCall } from '../../composition/request/call-ids.ts';
 import { allocateToolNames, type ToolNameContext } from '../../composition/request/tool-names.ts';
 import type { IRInputRequestHeader, IRInputTurn } from '../../ir/input/types.ts';
 import type { InputAssistantTurnFor } from '../../round-trip/input-assistant-turn.ts';
+import { envelopeRootToolSchemas } from '../../shared/tool-schema-envelope.ts';
 import type { TranslateOptions } from '../../types.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 
@@ -25,7 +26,7 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
     // declaration and call is stated under the flat spelling it computes.
     const assigned = assignCallIds(turns, callsOf);
     const flattened = allocateToolNames(request, assigned);
-    const enveloped = envelopeAnthropicMessagesRootToolSchemas(flattened.request, flattened.turns);
+    const enveloped = envelopeRootToolSchemas(flattened.request, flattened.turns);
     return {
       payload: anthropicMessagesPayloadFromSegments(enveloped.request, enveloped.turns, {
         fallbackMaxOutputTokens: options.fallbackMaxOutputTokens,
@@ -36,6 +37,7 @@ export const anthropicMessagesTargetProtocol: TargetProtocol<
     };
   },
   readEvents: (frames, context, roundTripReader) => readAnthropicMessagesEvents(frames, { ...context, roundTrip: roundTripReader }),
+  readError: readAnthropicMessagesErrorBody,
 };
 
 interface AnthropicMessagesTargetContext extends ToolNameContext {

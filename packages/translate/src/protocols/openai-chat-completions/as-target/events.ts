@@ -1,4 +1,5 @@
 import { toOpenAIChatCompletionsInputAssistantTurn, type OpenAIChatCompletionsOutputAssistantTurnState } from './assistant-turn.ts';
+import { openaiChatCompletionsErrorFromEvent } from './error.ts';
 import { usageToIR } from './usage.ts';
 import type { ToolNameContext } from '../../../composition/request/tool-names.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
@@ -513,7 +514,7 @@ export const readOpenAIChatCompletionsEvents = async function* (
   for await (const frame of frames) {
     if (frame.type === 'done') { yield* finish(); return; }
     const chunk: ChatChunk = frame.event;
-    if (chunk.error !== undefined) { ir.event({ type: 'error', error: chunk.error }); yield* ir.drain(); return; }
+    if (chunk.error !== undefined) { ir.event({ type: 'error', error: openaiChatCompletionsErrorFromEvent(chunk.error) }); yield* ir.drain(); return; }
     const model = typeof chunk.model === 'string' && chunk.model !== '' ? chunk.model : undefined;
     if (model !== undefined) {
       ir.assign(['model'], model);

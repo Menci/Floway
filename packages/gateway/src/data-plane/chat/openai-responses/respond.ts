@@ -105,6 +105,8 @@ const ERROR_HTTP_STATUS = new Map<string, number>([
   ['insufficient_quota', 429],
   ['server_error', 500],
   ['internal_error', 500],
+  ['api_error', 500],
+  ['overloaded_error', 503],
 ]);
 
 // OpenAI SDKs classify API failures by these HTTP categories.

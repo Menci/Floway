@@ -179,8 +179,8 @@ test('generate routes a native Anthropic Messages candidate end to end', async (
 test('generate filters out candidates whose endpoints do not satisfy the messages-generate preference and renders model-unsupported as a 400', async () => {
   installRepo();
   const callAnthropicMessages = vi.fn();
-  // anthropicMessagesGenerateTarget prefers messages > responses > openai-chat-completions; an
-  // endpoints-only `openaiCompletions` candidate matches none and is filtered out.
+  // anthropicMessagesGenerateTarget prefers messages > responses > openai-chat-completions > gemini-generate-content;
+  // an endpoints-only `openaiCompletions` candidate matches none and is filtered out.
   queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiCompletions: {} }, callAnthropicMessages })]);
 
   const result = await anthropicMessagesServe.generate({

@@ -3,6 +3,7 @@ import { anthropicMessagesInterceptors, anthropicMessagesCountTokensInterceptors
 import type { AnthropicMessagesInvocation } from './interceptors/types.ts';
 import { createAnthropicMessagesBillableUsageReader } from './usage.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
+import { geminiGenerateContentAttempt } from '../gemini-generate-content/attempt.ts';
 import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt.ts';
 import { openaiResponsesAttempt } from '../openai-responses/attempt.ts';
 import { applyRulesToUpstreamAnthropicMessages } from '../shared/alias-rules.ts';
@@ -11,20 +12,28 @@ import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
 import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
+import { reshapeTranslatedCountTokens } from '../shared/translated-count-tokens.ts';
 import { upstreamStreamResultToExecuteResult } from '../shared/upstream-stream-result.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { routeAnthropicMessagesViaOpenAIChatCompletions, routeAnthropicMessagesViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
-import type { ModelCandidate, ExecuteResult, AnthropicMessagesUpstreamCallOptions, PlainResult } from '@floway-dev/upstream';
+import {
+  routeAnthropicMessagesViaGeminiGenerateContent,
+  routeAnthropicMessagesViaOpenAIChatCompletions,
+  routeAnthropicMessagesViaOpenAIResponses,
+  type TranslateInputError,
+} from '@floway-dev/translate';
+import {
+  type ModelCandidate,
+  type ApiErrorResult,
+  type ExecuteResult,
+  type AnthropicMessagesUpstreamCallOptions,
+  type InternalErrorResult,
+  type PlainResult,
+} from '@floway-dev/upstream';
 
-// `/v1/messages` generate prefers a native Anthropic Messages target, then the
-// translated OpenAI Responses path, then the translated OpenAI Chat Completions path.
-export const anthropicMessagesGenerateTarget = chatTargetPicker(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions']);
-
-// `count_tokens` has no translation path — only a native Anthropic Messages target
-// satisfies the operation.
-export const anthropicMessagesCountTokensTarget = chatTargetPicker(['anthropicMessages']);
+export const anthropicMessagesGenerateTarget = chatTargetPicker(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions', 'geminiGenerateContent']);
+export const anthropicMessagesCountTokensTarget = chatTargetPicker(['anthropicMessages', 'geminiGenerateContent']);
 
 export interface AnthropicMessagesAttemptArgs {
   readonly payload: AnthropicMessagesPayload;
@@ -64,14 +73,11 @@ export const anthropicMessagesAttempt = {
     });
   },
 
-  countTokens: async (args: AnthropicMessagesAttemptArgs): Promise<PlainResult> => {
+  countTokens: async (args: AnthropicMessagesAttemptArgs): Promise<ApiErrorResult | InternalErrorResult | PlainResult> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders, anthropicBeta } = args;
     const payload = { ...sourcePayload, model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
     headers.delete('anthropic-beta');
-    // `pick` here is contractually total — serve filtered with
-    // `anthropicMessagesCountTokensTarget.canServe`, so a non-anthropic-messages candidate is
-    // a contract breach.
     const targetApi = anthropicMessagesCountTokensTarget.pick(candidate.model.endpoints);
     const invocation: AnthropicMessagesInvocation = {
       payload,
@@ -80,18 +86,36 @@ export const anthropicMessagesAttempt = {
       headers,
       anthropicBeta,
     };
-    const response = await runInterceptors(invocation, ctx, anthropicMessagesCountTokensInterceptors, async () => {
-      if (candidate.rules !== undefined) applyRulesToUpstreamAnthropicMessages(invocation.payload, candidate.rules);
-      const { model: _model, ...body } = invocation.payload;
-      const { http: response } = await candidate.upstream.instance.callAnthropicMessagesCountTokens(
-        candidate.model,
-        body,
-        ctx.abortSignal,
-        buildAnthropicMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, invocation.anthropicBeta),
+    return await runInterceptors(invocation, ctx, anthropicMessagesCountTokensInterceptors, async () => {
+      if (targetApi === 'anthropicMessages') {
+        if (candidate.rules !== undefined) applyRulesToUpstreamAnthropicMessages(invocation.payload, candidate.rules);
+        const { model: _model, ...body } = invocation.payload;
+        const { http: response } = await candidate.upstream.instance.callAnthropicMessagesCountTokens(
+          candidate.model,
+          body,
+          ctx.abortSignal,
+          buildAnthropicMessagesUpstreamCallOptions(candidate, ctx, invocation.headers, invocation.anthropicBeta),
+        );
+        return await plainResultFromResponse(response, candidate.upstream.upstreamId);
+      }
+      const trip = await routeAnthropicMessagesViaGeminiGenerateContent(
+        { ...invocation.payload, stream: true },
+        { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) },
       );
-      return response;
+      if (trip.type === 'input-error') return inputErrorResult(trip, ctx.attempt.telemetry);
+      const { model: _model, ...target } = trip.target;
+      const capture = captureFromDump(ctx.dump, targetApi);
+      const generateContentResult = await geminiGenerateContentAttempt.countTokens({
+        payload: target, ctx, candidate, headers: invocation.headers,
+      });
+      return reshapeTranslatedCountTokens(generateContentResult, {
+        translateError: trip.error,
+        extractCount: decoded => decoded.totalTokens,
+        encodeCount: input_tokens => ({ input_tokens }),
+        performance: ctx.attempt.telemetry,
+        capture,
+      });
     });
-    return await plainResultFromResponse(response, candidate.upstream.upstreamId);
   },
 };
 
@@ -111,25 +135,38 @@ const dispatchAnthropicMessages = async (
     );
     return await upstreamStreamResultToExecuteResult(upstreamResult, candidate, targetApi, ctx, createAnthropicMessagesBillableUsageReader());
   }
-  if (targetApi === 'openaiResponses') {
+  const sidecarCodec = ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn);
+  switch (targetApi) {
+  case 'openaiResponses':
     return await executeTranslation(
       invocation.payload,
-      p => routeAnthropicMessagesViaOpenAIResponses(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeAnthropicMessagesViaOpenAIResponses(p, { sidecarCodec }),
       translated => openaiResponsesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),
       captureFromDump(ctx.dump, targetApi),
     );
-  }
-  if (targetApi === 'openaiChatCompletions') {
+  case 'openaiChatCompletions':
     return await executeTranslation(
       invocation.payload,
-      p => routeAnthropicMessagesViaOpenAIChatCompletions(p, { sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) }),
+      p => routeAnthropicMessagesViaOpenAIChatCompletions(p, { sidecarCodec }),
       translated => openaiChatCompletionsAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,
       }),
       captureFromDump(ctx.dump, targetApi),
     );
+  case 'geminiGenerateContent':
+    return await executeTranslation(
+      invocation.payload,
+      p => routeAnthropicMessagesViaGeminiGenerateContent(p, { sidecarCodec }),
+      ({ model: _model, ...body }) => geminiGenerateContentAttempt.generate({
+        payload: body, ctx, candidate, headers: invocation.headers,
+      }),
+      captureFromDump(ctx.dump, targetApi),
+    );
+  default: {
+    const exhaustive: never = targetApi;
+    throw new Error(`anthropicMessagesAttempt.generate: unexpected targetApi '${exhaustive as string}'`);
   }
-  throw new Error(`anthropicMessagesAttempt.generate: unexpected targetApi '${targetApi as string}'`);
+  }
 };

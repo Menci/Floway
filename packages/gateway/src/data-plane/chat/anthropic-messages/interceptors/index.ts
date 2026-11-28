@@ -21,10 +21,10 @@ import { withAnthropicMessagesWebSearchRequestPrepared, withAnthropicMessagesWeb
 //     not of the candidate.
 //   - withAnthropicMessagesWebSearchShim: registered next so its request preparation,
 //     replay rewrite, and intercept loop wrap the rest of the generation chain.
-//     Unconditional for translated targets (OpenAI Responses / OpenAI Chat Completions cannot
-//     carry Anthropic server tools); gated by `anthropic-messages-web-search-shim` for
-//     native Anthropic Messages targets. count_tokens runs the same request preparation
-//     without the stream-response wrapper.
+//     Unconditional for translated targets (OpenAI Responses / OpenAI Chat Completions /
+//     Gemini GenerateContent cannot carry Anthropic server tools); gated by
+//     `anthropic-messages-web-search-shim` for native Anthropic Messages targets.
+//     count_tokens runs the same request preparation without the stream-response wrapper.
 //   - stripBillingAttribution: gated by `strip-billing-attribution` (default
 //     on for copilot/azure/custom, off for claude-code). On candidates
 //     where it runs, it scrubs Claude Code's `x-anthropic-billing-header` /
@@ -42,10 +42,10 @@ import { withAnthropicMessagesWebSearchRequestPrepared, withAnthropicMessagesWeb
 //     models that support the role rewrite only content-bearing system groups
 //     outside the placement rules documented by the API.
 //
-// The remaining three entries mutate only the request payload and are shared
+// The remaining four entries mutate only the request payload and are shared
 // with count_tokens in the same order. Token counting therefore observes the
-// same gateway-level billing-attribution, reasoning, and role shape as
-// generation.
+// same gateway-level billing-attribution, reasoning, tool-choice, and role
+// shape as generation.
 const anthropicMessagesPayloadInterceptors: readonly AnthropicMessagesPayloadInterceptor[] = [
   stripBillingAttribution,
   withReasoningDisabledOnForcedToolChoice,

@@ -1,15 +1,16 @@
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { anthropicMessagesAttempt } from '../../../../src/data-plane/chat/anthropic-messages/attempt.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
-import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type UpstreamCallResult, type UpstreamOpenAIResponsesResult, type UpstreamStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/upstream';
+import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type UpstreamCallResult, type UpstreamOpenAIResponsesResult, type UpstreamStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/upstream';
 import type { FlagId } from '@floway-dev/upstream/flags';
 
 const API_KEY_ID = 'key_messages_attempt_test';
@@ -53,10 +54,13 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
+  inboundHeaderAllowlist?: readonly string[];
   callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<UpstreamStreamResult<AnthropicMessagesStreamEventEx>>;
   callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamOpenAIResponsesResult>;
   callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<OpenAIChatCompletionsStreamEvent>>;
   callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<UpstreamCallResult>;
+  callGeminiGenerateContent?: (model: unknown, body: GeminiGenerateContentPayload, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>>;
+  callGeminiGenerateContentCountTokens?: (model: unknown, body: GeminiGenerateContentPayload, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<UpstreamCallResult>;
   enabledFlags?: ReadonlySet<FlagId>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
@@ -66,10 +70,12 @@ const makeCandidate = (overrides: {
     callOpenAIResponses: overrides.callOpenAIResponses,
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
+    callGeminiGenerateContent: overrides.callGeminiGenerateContent,
+    callGeminiGenerateContentCountTokens: overrides.callGeminiGenerateContentCountTokens,
   });
   return {
     upstream: {
-      upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
+      upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [...(overrides.inboundHeaderAllowlist ?? [])],
       instance,
     },
     model: stubUpstreamModel({ endpoints, enabledFlags: new Set<FlagId>(overrides.enabledFlags ?? []) }),
@@ -213,4 +219,124 @@ test('countTokens applies generation request transforms before provider dispatch
     thinking: { type: 'disabled' },
     tool_choice: { type: 'tool', name: 'lookup' },
   }]);
+});
+
+test('generate translates through GenerateContent, strips model, and forwards raw non-JSON HTTP errors untouched', async () => {
+  installRepo();
+  let capturedBody: GeminiGenerateContentPayload | undefined;
+  const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => {
+    capturedBody = body;
+    return {
+      ok: true,
+      modelKey: 'k',
+      http: { status: 200, headers: new Headers() },
+      events: makeProtocolFrames<GeminiGenerateContentStreamEvent>([{
+        responseId: 'gem_msg_gw',
+        modelVersion: 'test-model',
+        candidates: [{
+          index: 0,
+          content: { role: 'model', parts: [{ thought: true, text: 'Reason.' }, { text: 'Answer.' }] },
+          finishReason: 'STOP',
+        }],
+      }]),
+    };
+  });
+
+  const payload = makePayload({ system: 'Be helpful.', thinking: { type: 'enabled', budget_tokens: 512 } });
+  const result = await anthropicMessagesAttempt.generate({
+    payload,
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent }),
+    headers: new Headers(),
+    anthropicBeta: [],
+  });
+  expect(capturedBody).toBeDefined();
+  expect('model' in capturedBody!).toBe(false);
+  expect(result.type).toBe('events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  const assembled = await collectAnthropicMessagesProtocolEventsToResult(result.events);
+  expect(assembled.stop_reason).toBe('end_turn');
+  expect(assembled.content).toEqual(expect.arrayContaining([
+    expect.objectContaining({ type: 'thinking', thinking: 'Reason.' }),
+    expect.objectContaining({ type: 'text', text: 'Answer.' }),
+  ]));
+
+  const htmlError = await anthropicMessagesAttempt.generate({
+    payload,
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({
+      endpoints: { geminiGenerateContent: {} },
+      callGeminiGenerateContent: async () => ({
+        ok: false,
+        modelKey: 'k',
+        http: new Response('<html>504 Gateway Timeout</html>', {
+          status: 504,
+          headers: new Headers({ 'content-type': 'text/html' }),
+        }),
+      }),
+    }),
+    headers: new Headers(),
+    anthropicBeta: [],
+  });
+  expect(htmlError.type).toBe('api-error');
+  if (htmlError.type !== 'api-error') throw new Error('unreachable');
+  expect(htmlError.http.status).toBe(504);
+  expect(htmlError.http.headers.get('content-type')).toBe('text/html');
+  expect(decodeResponseBody(htmlError.body)).toBe('<html>504 Gateway Timeout</html>');
+});
+
+test('countTokens translates through GenerateContent, runs request interceptors, and maps invalid input to api-error', async () => {
+  installRepo();
+  let capturedBody: GeminiGenerateContentPayload | undefined;
+  let capturedHeaders: Headers | undefined;
+  const ok = await anthropicMessagesAttempt.countTokens({
+    payload: makePayload({ system: 'x-anthropic-billing-header: token\ncch=deadbeef1234;\nCount rules.' }),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({
+      endpoints: { geminiGenerateContent: {} },
+      enabledFlags: new Set<FlagId>(['strip-billing-attribution']),
+      inboundHeaderAllowlist: ['anthropic-beta', 'x-client-tag'],
+      callGeminiGenerateContentCountTokens: async (_model, body, _signal, opts) => {
+        capturedBody = body;
+        capturedHeaders = opts?.headers;
+        return {
+          http: new Response(JSON.stringify({ totalTokens: 73 }), {
+            status: 200,
+            headers: new Headers({ 'content-type': 'application/json', 'x-trace-id': 'gem-count-1' }),
+          }),
+          modelKey: 'k',
+        };
+      },
+    }),
+    headers: new Headers({ 'anthropic-beta': 'claude-code-20250219', 'x-client-tag': 'keep' }),
+    anthropicBeta: ['claude-code-20250219'],
+  });
+  expect(ok.type).toBe('plain');
+  if (ok.type !== 'plain') throw new Error('unreachable');
+  expect(ok.http.headers.get('x-trace-id')).toBe('gem-count-1');
+  expect(JSON.parse(decodeResponseBody(ok.body))).toEqual({ input_tokens: 73 });
+  expect(capturedHeaders?.has('anthropic-beta')).toBe(false);
+  expect(capturedHeaders?.get('x-client-tag')).toBe('keep');
+  expect(capturedBody).toEqual({
+    systemInstruction: { parts: [{ text: 'Count rules.' }] },
+    contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+    generationConfig: { maxOutputTokens: 32 },
+  });
+
+  const inputError = await anthropicMessagesAttempt.countTokens({
+    payload: makePayload({
+      messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'file', file_id: 'file_123' } }] }],
+    }),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ endpoints: { geminiGenerateContent: {} } }),
+    headers: new Headers(),
+    anthropicBeta: [],
+  });
+  expect(inputError.type).toBe('api-error');
+  if (inputError.type !== 'api-error') throw new Error('unreachable');
+  expect(inputError.http.status).toBe(400);
+  expect(JSON.parse(decodeResponseBody(inputError.body))).toMatchObject({
+    type: 'error',
+    error: { type: 'invalid_request_error' },
+  });
 });

@@ -1,13 +1,46 @@
 import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from './field-keys.ts';
-import type { GeminiGenerateContentCandidate, GeminiGenerateContentContent, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from './index.ts';
+import type { GeminiGenerateContentCandidate, GeminiGenerateContentContent, GeminiGenerateContentFinishReason, GeminiGenerateContentPart, GeminiGenerateContentResult, GeminiGenerateContentStreamEvent } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
-const isMergeableTextPart = (part: GeminiGenerateContentPart): boolean => part.text !== undefined && Object.keys(part).every(key => key === 'text' || key === 'thought' && part.thought === false);
-const appendPart = (parts: GeminiGenerateContentPart[], part: GeminiGenerateContentPart): void => {
+// Relays (e.g. New-API) and Vertex chunks can emit empty or unspecified finishReason values on non-terminal frames.
+// https://github.com/googleapis/googleapis/blob/e7513c828b8db536fa12fc5493d541f323aedf90/google/ai/generativelanguage/v1beta/generative_service.proto#L686-L762
+export const isGeminiGenerateContentTerminalFinishReason = (
+  reason: GeminiGenerateContentFinishReason | null | undefined,
+): reason is GeminiGenerateContentFinishReason =>
+  typeof reason === 'string' && reason !== '' && reason !== 'FINISH_REASON_UNSPECIFIED';
+
+const isMergeableTextPart = (part: GeminiGenerateContentPart): boolean =>
+  typeof part.text === 'string' && Object.keys(part).every(key => key === 'text' || key === 'thought' && part.thought === false);
+
+export const appendGeminiGenerateContentPart = (parts: GeminiGenerateContentPart[], part: GeminiGenerateContentPart): number => {
   const previous = parts.at(-1);
   if (previous && isMergeableTextPart(previous) && isMergeableTextPart(part)) previous.text = `${previous.text}${part.text}`;
   else parts.push({ ...part });
+  return parts.length - 1;
 };
+
+type GeminiGenerateContentLogprobsResult = NonNullable<GeminiGenerateContentCandidate['logprobsResult']>;
+
+// Streaming `logprobsResult` chunks carry per-chunk token deltas and partial sums.
+// https://github.com/googleapis/python-genai/blob/bbdca2a0d4aff88e4643ee431d7a01bed6e333b6/google/genai/tests/models/test_gc_continuation_token.py#L737-L864
+export const mergeGeminiGenerateContentLogprobsResult = (
+  earlier: GeminiGenerateContentLogprobsResult | undefined,
+  later: GeminiGenerateContentLogprobsResult | undefined,
+): GeminiGenerateContentLogprobsResult | undefined => {
+  if (later === undefined) return earlier;
+  return {
+    ...(earlier?.chosenCandidates === undefined && later.chosenCandidates === undefined
+      ? {}
+      : { chosenCandidates: [...(earlier?.chosenCandidates ?? []), ...(later.chosenCandidates ?? [])] }),
+    ...(earlier?.topCandidates === undefined && later.topCandidates === undefined
+      ? {}
+      : { topCandidates: [...(earlier?.topCandidates ?? []), ...(later.topCandidates ?? [])] }),
+    ...(earlier?.logProbabilitySum === undefined && later.logProbabilitySum === undefined
+      ? {}
+      : { logProbabilitySum: (earlier?.logProbabilitySum ?? 0) + (later.logProbabilitySum ?? 0) }),
+  };
+};
+
 interface CandidateAccumulator {
   candidate: GeminiGenerateContentCandidate;
   content?: GeminiGenerateContentContent & { parts: GeminiGenerateContentPart[] };
@@ -38,11 +71,16 @@ export const createGeminiGenerateContentEventAccumulator = (): GeminiGenerateCon
       if (incoming.content !== undefined) {
         const content = state.content ??= { parts: [] };
         if (incoming.content.role !== undefined) content.role = incoming.content.role;
-        for (const part of incoming.content.parts ?? []) appendPart(content.parts, part);
+        for (const part of incoming.content.parts ?? []) appendGeminiGenerateContentPart(content.parts, part);
         state.candidate.content = content;
       }
-      const { content: _content, ...fields } = incoming;
+      const { content: _content, finishReason, logprobsResult, ...fields } = incoming;
       Object.assign(state.candidate, fields);
+      const mergedLogprobs = mergeGeminiGenerateContentLogprobsResult(state.candidate.logprobsResult, logprobsResult);
+      if (mergedLogprobs !== undefined) state.candidate.logprobsResult = mergedLogprobs;
+      if (finishReason !== undefined && (isGeminiGenerateContentTerminalFinishReason(finishReason) || !isGeminiGenerateContentTerminalFinishReason(state.candidate.finishReason))) {
+        state.candidate.finishReason = finishReason;
+      }
       captureExtras(incoming as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, state.extras);
     }
     const { candidates: _candidates, ...fields } = event;

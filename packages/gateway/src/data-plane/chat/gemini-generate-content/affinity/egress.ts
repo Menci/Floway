@@ -1,7 +1,7 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { captureExtras, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentCandidate as WireCandidate, GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentResult as WireResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from '@floway-dev/protocols/gemini-generate-content';
+import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS, mergeGeminiGenerateContentLogprobsResult } from '@floway-dev/protocols/gemini-generate-content';
 
 interface GeminiGenerateContentCandidateWithParts extends WireCandidate { index: number; content: GeminiGenerateContentContent & { parts: GeminiGenerateContentPart[] } }
 interface GeminiGenerateContentResult extends Omit<WireResult, 'candidates'> { candidates?: Array<WireCandidate & { index: number }> }
@@ -411,6 +411,8 @@ const mergeCandidateExtras = (
     if (!GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS.has(key as keyof GeminiGenerateContentCandidateWithParts)) delete (target as unknown as Record<string, unknown>)[key];
   }
   Object.assign(target, extras);
+  const mergedLogprobs = mergeGeminiGenerateContentLogprobsResult(earlier.logprobsResult, later.logprobsResult);
+  if (mergedLogprobs !== undefined) target.logprobsResult = mergedLogprobs;
 };
 
 const transferCandidateMetadata = (current: GeminiGenerateContentCandidateWithParts, next: GeminiGenerateContentCandidateWithParts): void => {

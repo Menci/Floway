@@ -17,7 +17,8 @@ import { parseJSONObjectUnlessTruncated } from '../../../shared/json/completion.
 import { isCompleteJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { GeminiGenerateContentInputAssistantTurnState, GeminiGenerateContentInputAssistantTurn } from '../as-target/assistant-turn.ts';
-import { eventFrame, FAST_SERVICE_TIER, type EventFrame } from '@floway-dev/protocols/common';
+import { generateContentServiceTierFromIR } from '../service-tier.ts';
+import { eventFrame, type EventFrame } from '@floway-dev/protocols/common';
 import {
   type GeminiGenerateContentCandidate,
   type GeminiGenerateContentGroundingChunk,
@@ -68,8 +69,7 @@ export const writeGeminiGenerateContentEvents = async function* (
   const pendingText = new Map<number, PendingTextQueue>();
   const sourceLengths = new Map<string, number>();
   const nativeAccumulator = createGeminiGenerateContentEventAccumulator();
-  type GeminiContentState = NonNullable<GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates>[number]>;
-  type PartsState = NonNullable<GeminiContentState['parts']>;
+  type PartsState = NonNullable<GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates>[number]['parts']>;
   const partStates = new Map<number, PartsState>();
 
   const partsState = (choice: number): PartsState => {
@@ -419,7 +419,7 @@ export const writeGeminiGenerateContentEvents = async function* (
       const nativeCandidate = nativeAccumulator.candidate(record.choice);
       const targetTurn: GeminiGenerateContentInputAssistantTurn = [{ role: 'model', parts: nativeCandidate?.content?.parts ?? [] }];
       const stateParts = partsState(record.choice);
-      stateParts.length = targetTurn[0].parts?.length ?? 0;
+      stateParts.length = targetTurn[0].parts.length;
       const assistantState: GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates> = [{ parts: stateParts }];
       const sourceTurnDigest = await computeGeminiGenerateContentTurnDigest(targetTurn);
       const data = await options.roundTrip.encodeSidecar(record.choice, sourceTurnDigest, targetTurn, assistantState, collectGeminiGenerateContentTextPlacements(targetTurn));
@@ -428,7 +428,7 @@ export const writeGeminiGenerateContentEvents = async function* (
     }
 
     if (record.type === 'finish' && state.usage !== undefined) {
-      const serviceTier = state.service_tier === 'fast' ? FAST_SERVICE_TIER : state.service_tier === 'default' ? 'standard' : state.service_tier;
+      const serviceTier = generateContentServiceTierFromIR(state.service_tier);
       yield emit({ usageMetadata: { ...usageFromIR(state.usage), ...(serviceTier === undefined ? {} : { serviceTier }) } });
     }
   }

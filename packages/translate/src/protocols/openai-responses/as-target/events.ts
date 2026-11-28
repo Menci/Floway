@@ -1,11 +1,11 @@
 import { toOpenAIResponsesInputAssistantTurn, type OpenAIResponsesItemState, type OpenAIResponsesOutputAssistantTurnState } from './assistant-turn.ts';
+import { openaiResponsesErrorFromEvent, openaiResponsesErrorFromFailed } from './error.ts';
 import { usageToIR } from './usage.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRelativePath, type IRWriteHandle } from '../../../ir/output/builder.ts';
 import type { IRRecord } from '../../../ir/output/records.ts';
 import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, invalidateReadField, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
-import { errorPayloadFromEvent, errorPayloadFromWire } from '../../../shared/api-error.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -554,13 +554,13 @@ export const readOpenAIResponsesEvents = async function* (
     if (frame.type === 'done') throw new Error('Responses done arrived without a terminal response');
     const e = frame.event;
     if (e.type === 'error') {
-      ir.event({ type: 'error', error: errorPayloadFromEvent(e) });
+      ir.event({ type: 'error', error: openaiResponsesErrorFromEvent(e) });
       yield* ir.drain();
       return;
     }
     if (e.type === 'response.failed' && e.response.error?.code !== 'bio_policy' && e.response.error?.code !== 'cyber_policy') {
       // `error` is nullable on a Response, so a failure may carry no description.
-      ir.event({ type: 'error', error: errorPayloadFromWire(e.response.error ?? { message: 'Response failed due to unknown error.' }) });
+      ir.event({ type: 'error', error: openaiResponsesErrorFromFailed(e.response.error ?? { message: 'Response failed due to unknown error.' }) });
       yield* ir.drain();
       return;
     }

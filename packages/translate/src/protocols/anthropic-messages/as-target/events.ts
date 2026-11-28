@@ -1,5 +1,5 @@
 import type { AnthropicMessagesInputAssistantTurnState } from './assistant-turn.ts';
-import { unwrapToolArguments } from './tool-schema-envelope.ts';
+import { anthropicMessagesErrorFromEvent } from './error.ts';
 import { type AnthropicMessagesInputCounts, usageToIR } from './usage.ts';
 import type { ToolNameContext } from '../../../composition/request/tool-names.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle } from '../../../ir/output/builder.ts';
@@ -9,6 +9,7 @@ import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { requireJSONObject } from '../../../shared/json/object.ts';
+import { unwrapToolArguments } from '../../../shared/tool-schema-envelope.ts';
 import {
   type AnthropicMessagesAssistantContentBlock,
   type AnthropicMessagesStreamEventEx,
@@ -289,7 +290,7 @@ export const readAnthropicMessagesEvents = async function* (
       break;
     }
     case 'error':
-      ir.event({ type: 'error', error: e.error });
+      ir.event({ type: 'error', error: anthropicMessagesErrorFromEvent(e) });
       yield* ir.drain();
       return;
     case 'ping':

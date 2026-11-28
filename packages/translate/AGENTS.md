@@ -48,6 +48,7 @@ Protocol-native request normalization and Part data classification belong to
 - `protocols/anthropic-messages/as-source/` — interprets Messages requests and emits Messages SSE.
 - `protocols/anthropic-messages/as-target/` — maps requests to Messages and consumes Messages SSE.
 - `protocols/gemini-generate-content/as-source/` — interprets GenerateContent parts and schemas and emits GenerateContent SSE.
+- `protocols/gemini-generate-content/as-target/` — maps requests to GenerateContent and consumes GenerateContent SSE.
 - `protocols/openai-chat-completions/as-source/` — interprets ChatCompletions requests and emits ChatCompletions SSE.
 - `protocols/openai-chat-completions/as-target/` — maps requests to ChatCompletions and consumes ChatCompletions SSE.
 - `protocols/openai-responses/as-source/` — interprets Responses requests, restores event identities, and emits Responses SSE.
@@ -55,7 +56,7 @@ Protocol-native request normalization and Part data classification belong to
 - `composition/index.ts` — pairs one source protocol with one target protocol into a trip; the generic composition boundary.
 - `protocols/<protocol>/as-source.ts` — states that protocol as the side a request comes from.
 - `protocols/<protocol>/as-target.ts` — states that protocol as the side a request goes to.
-- `shared/` — cross-route coordinates, error classification, JSON handling, token validation, and callable wrapper formats.
+- `shared/` — cross-route coordinates, data URLs, error classification, JSON handling, token validation, and callable wrapper formats.
 
 ## Rules
 
