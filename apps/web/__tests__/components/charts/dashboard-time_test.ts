@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { dashboardBucketFrames, dashboardFixedBucketFrames, dashboardFixedRangeQuery, dashboardGranularity, dashboardInterval, dashboardRangeQuery } from '../../../src/components/charts/dashboard-time';
+import { dashboardBucketFrames, dashboardFixedBucketFrames, dashboardFixedRangeQuery, dashboardGranularity, dashboardInterval, dashboardRangeIsCurrent, dashboardRangeQuery, parseDashboardRange, serializeDashboardRange, type DashboardResetRange } from '../../../src/components/charts/dashboard-time';
 import { calendarDate } from '../../../src/lib/calendar-date';
 import { createTelemetryBucket } from '@floway-dev/protocols/browser';
 
@@ -37,6 +37,25 @@ test('custom aggregation adapts to inclusive calendar-day density', () => {
   expect(dashboardGranularity(range(180), 0)).toBe('4d');
   expect(dashboardGranularity(range(365), 0)).toBe('8d');
   for (const days of [1, 2, 3, 4, 5, 8, 9, 12, 13, 16, 17, 24, 25, 48, 49, 96, 97, 180, 365, 20_000]) expect(dashboardBucketFrames(range(days), 0).length).toBeLessThanOrEqual(48);
+});
+
+test('reset cycles round-trip and use adjacent hour buckets', () => {
+  vi.stubEnv('TZ', 'UTC');
+  const previous: DashboardResetRange = {
+    kind: 'reset-cycle', upstreamId: 'up-1', metric: { name: 'quota.utilization', labels: { quota: 'five_hour' } },
+    start: Date.UTC(2026, 9, 10, 8, 15), end: Date.UTC(2026, 9, 10, 13, 15),
+  };
+  const current = { ...previous, start: previous.end!, end: null };
+  const now = Date.UTC(2026, 9, 10, 14, 30);
+  for (const range of [previous, current]) {
+    const search = new URLSearchParams();
+    serializeDashboardRange(search, range);
+    expect(parseDashboardRange(search)).toEqual(range);
+  }
+  expect(dashboardFixedBucketFrames(previous, now).map(frame => frame.key)).toEqual(['2026-10-10T08', '2026-10-10T09', '2026-10-10T10', '2026-10-10T11', '2026-10-10T12']);
+  expect(dashboardFixedBucketFrames(current, now).map(frame => frame.key)).toEqual(['2026-10-10T13', '2026-10-10T14']);
+  expect(dashboardRangeIsCurrent(previous, now)).toBe(false);
+  expect(dashboardRangeIsCurrent(current, now)).toBe(true);
 });
 
 test('multi-day buckets start at the selected date and clip the last bucket', () => {

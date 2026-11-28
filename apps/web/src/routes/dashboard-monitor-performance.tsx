@@ -36,9 +36,11 @@ import {
 } from '../components/performance/overview';
 import { buildPerformanceChart } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
+import { CycleQuota } from '../components/telemetry/cycle-quota';
 import { TelemetryFilterFields, TelemetryGroupByField, type TelemetryDimension } from '../components/telemetry/dimension-controls';
 import { TelemetryDisplayOptionsMenu } from '../components/telemetry/display-options-menu';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
+import { loadWithResetCycles, singleTelemetryUpstream, type ResetCycleQuota } from '../components/telemetry/reset-cycles';
 import { TelemetryTimeRange } from '../components/telemetry/time-range';
 import { useTelemetryPolling } from '../components/telemetry/use-poll';
 import { ChoiceGroup } from '../components/ui/choice-group';
@@ -69,6 +71,7 @@ interface LoaderData {
   dataset?: PerformanceDataset | undefined;
   state: PerformanceUrlState;
   regionAvailable: boolean | null;
+  cycleQuota: ResetCycleQuota | null;
 }
 
 type RankingRead = {
@@ -87,12 +90,13 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     userDimensionAvailable: true,
   });
   const loadedAt = Date.now();
-  const requestedState = { ...parsed, ...scoped };
   const performanceLoader = createPerformanceLoader();
-  const [initialOverview, runtime] = await Promise.all([
-    performanceLoader.load(requestedState, requestedState.groupBy, loadedAt),
-    callApi(() => api.api['runtime-info'].$get()),
+  const [loaded, runtime] = await Promise.all([
+    loadWithResetCycles(singleTelemetryUpstream(scoped.filters.upstream, 'performance'), parsed.range, loadedAt, request.signal,
+      range => performanceLoader.load({ ...scoped, range }, scoped.groupBy, loadedAt)),
+    callApi(() => api.api['runtime-info'].$get({}, { init: { signal: request.signal } })),
   ]);
+  const requestedState = { ...parsed, ...scoped, range: loaded.range };
   const regionAvailable = runtime.error ? null : runtime.data.kind === 'cloudflare';
   const normalization = regionAvailable === null
     ? { changed: false, state: requestedState }
@@ -101,16 +105,17 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     ...normalization.state,
     breakdown: regionAvailable === null ? normalization.state.breakdown : normalizePerformanceBreakdownForRuntime(normalization.state.breakdown, regionAvailable),
   };
-  const overview = !normalization.changed
-    ? initialOverview
-    : await performanceLoader.load(normalization.state, normalization.state.groupBy, loadedAt);
+  const overview = normalization.changed && loaded.data !== null
+    ? await performanceLoader.load(normalization.state, normalization.state.groupBy, loadedAt)
+    : loaded.data;
   return {
     currentUserId: String(user.id),
-    error: overview.error ?? runtime.error ?? null,
+    error: overview?.error ?? runtime.error ?? loaded.error,
     loadedAt,
-    overview: overview.data === undefined ? null : performanceOverviewForDisplay(overview.data),
-    dataset: overview.data,
+    overview: overview?.data === undefined ? null : performanceOverviewForDisplay(overview.data),
+    dataset: overview?.data,
     regionAvailable,
+    cycleQuota: loaded.cycleQuota,
     state,
   };
 }
@@ -143,6 +148,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
     [dataset, loaderData.dataset, loaderData.overview],
   );
   const scope = dataset?.snapshot.scope;
+  const [cycleQuota, setCycleQuota] = useState(loaderData.cycleQuota);
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const [ranking, setRanking] = useState<RankingRead>();
   const [rankingFailure, setRankingFailure] = useState<RankingRead & { error: GlobalError }>();
@@ -159,71 +165,64 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   // A background poll must not clear a failure the operator has not read.
   const reload = useCallback(async (signal: AbortSignal, { background, requestedAt }: { background: boolean; requestedAt: number }) => {
     if (!background) setError(null);
-    const window = { query, requestedAt };
-    pageWindow.current = window;
+    let window: typeof pageWindow.current;
+    const load = (activeQuery: PerformanceQuery) => {
+      window = { query: activeQuery, requestedAt };
+      pageWindow.current = window;
+      return performanceLoader.load(activeQuery, activeQuery.groupBy, requestedAt);
+    };
     const failed = (error?: GlobalError) => {
-      if (pageWindow.current === window) pageWindow.current = undefined;
+      if (window !== undefined && pageWindow.current === window) pageWindow.current = undefined;
       if (error !== undefined) setError(error);
       return false;
     };
-    if (regionAvailable !== null) {
-      const result = await performanceLoader.load(query, query.groupBy, requestedAt);
-      if (signal.aborted) return failed();
-      if (result.error) return failed(result.error);
-      setDataset(result.data);
-      return true;
-    }
 
-    const discovery = pendingRegionAvailableRef.current === null
-      ? await Promise.all([
-          performanceLoader.load(query, query.groupBy, requestedAt),
-          callApi(() => api.api['runtime-info'].$get({}, { init: { signal } })),
-        ]).then(([overviewResult, runtimeResult]) => ({ overviewResult, runtimeResult }))
-      : null;
+    const pendingRegion = pendingRegionAvailableRef.current;
+    let activeQuery = query;
+    const [loaded, runtime] = await Promise.all([
+      loadWithResetCycles(singleTelemetryUpstream(query.filters.upstream, 'performance'), query.range, requestedAt, signal,
+        range => {
+          if (range !== query.range) activeQuery = { ...query, range };
+          if (signal.aborted || pendingRegion !== null) return Promise.resolve(undefined);
+          return load(activeQuery);
+        }),
+      regionAvailable === null && pendingRegion === null
+        ? callApi(() => api.api['runtime-info'].$get({}, { init: { signal } }))
+        : null,
+    ]);
     if (signal.aborted) return failed();
-    let nextRegionAvailable: boolean;
-    if (pendingRegionAvailableRef.current === null) {
-      if (discovery === null) throw new Error('Runtime capability discovery was not started');
-      if (discovery.runtimeResult.error) {
-        return failed(discovery.overviewResult.error ?? discovery.runtimeResult.error);
+    if (loaded.data === null) return failed(loaded.error);
+
+    let result = loaded.data;
+    if (regionAvailable === null) {
+      if (runtime?.error) return failed(result?.error ?? runtime.error);
+      const nextRegion = runtime === null ? pendingRegion : runtime.data.kind === 'cloudflare';
+      if (nextRegion === null) throw new Error('Runtime capability discovery was not started');
+      pendingRegionAvailableRef.current = nextRegion;
+      const normalization = normalizePerformanceDimensionsForRuntime({
+        ...activeQuery,
+        hidden: [] as string[],
+      }, nextRegion);
+      if (normalization.changed) {
+        const { filters, groupBy } = normalization.state;
+        activeQuery = { ...activeQuery, filters, groupBy };
       }
-      nextRegionAvailable = discovery.runtimeResult.data.kind === 'cloudflare';
-      pendingRegionAvailableRef.current = nextRegionAvailable;
-    } else {
-      nextRegionAvailable = pendingRegionAvailableRef.current;
-    }
-    const normalization = normalizePerformanceDimensionsForRuntime({
-      ...query,
-      hidden: [] as string[],
-    }, nextRegionAvailable);
-    const committedQuery = normalization.changed
-      ? {
-          filters: normalization.state.filters,
-          groupBy: normalization.state.groupBy,
-          range: query.range,
-        }
-      : query;
-    let result;
-    if (normalization.changed) {
-      result = await performanceLoader.load(committedQuery, committedQuery.groupBy, requestedAt);
-    } else {
-      if (discovery === null) throw new Error('Overview was not loaded with runtime capability discovery');
-      result = discovery.overviewResult;
-    }
-    if (signal.aborted) return failed();
-    if (result.error) {
-      if (!normalization.changed) {
+      if (normalization.changed || result === undefined) result = await load(activeQuery);
+      if (signal.aborted) return failed();
+      if (!result.error || !normalization.changed) {
         pendingRegionAvailableRef.current = null;
-        setRegionAvailable(nextRegionAvailable);
+        setRegionAvailable(nextRegion);
       }
-      return failed(result.error);
+      if (!result.error) {
+        setBreakdownGroup(current => normalizePerformanceBreakdownForRuntime(current, nextRegion));
+        setPendingBreakdown(current => current === undefined ? undefined : normalizePerformanceBreakdownForRuntime(current, nextRegion));
+      }
     }
-    pendingRegionAvailableRef.current = null;
-    setRegionAvailable(nextRegionAvailable);
-    setBreakdownGroup(current => normalizePerformanceBreakdownForRuntime(current, nextRegionAvailable));
-    setPendingBreakdown(current => current === undefined ? undefined : normalizePerformanceBreakdownForRuntime(current, nextRegionAvailable));
+    if (result === undefined) throw new Error('Performance overview was not requested');
+    if (result.error) return failed(result.error);
     setDataset(result.data);
-    return normalization.changed ? committedQuery : true;
+    setCycleQuota(loaded.cycleQuota);
+    return activeQuery === query ? true : activeQuery;
   }, [query, regionAvailable, performanceLoader]);
 
   const onQueryCommit = useCallback((previous: typeof query, next: typeof query) => {
@@ -406,6 +405,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       if (activeBreakdown === undefined) throw new RangeError('Performance overview has no available breakdown dimension');
       return <>
         <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
+          <CycleQuota loadedAt={loadedAt} range={loadedQuery.range} quota={cycleQuota} />
           <div className="flex items-end gap-3 min-w-0 flex-wrap">
             <TelemetryGroupByField
               disabled={refreshing}
@@ -422,16 +422,15 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
               groupByLabel={t('monitoring.performance.groupBy.label')}
               onGroupByChange={changeGroupBy}
             />
-            <div className="ml-auto flex-none">
-              <TelemetryTimeRange
-                addressOf={range => addressOf({ range })}
-                ariaLabel={t('monitoring.performance.range.label')}
-                loadedAt={loadedAt}
-                onChange={changeRange}
-                onEditingChange={setEditingRange}
-                range={loadedQuery.range}
-              />
-            </div>
+            <TelemetryTimeRange
+              addressOf={range => addressOf({ range })}
+              ariaLabel={t('monitoring.performance.range.label')}
+              loadedAt={loadedAt}
+              onChange={changeRange}
+              onEditingChange={setEditingRange}
+              range={loadedQuery.range}
+              resetUpstreamId={singleTelemetryUpstream(loadedQuery.filters.upstream, 'performance')}
+            />
           </div>
           <div className="flex items-end gap-3 min-w-0 flex-wrap">
             <TelemetryFilterFields

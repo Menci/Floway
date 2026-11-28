@@ -9,6 +9,7 @@ import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import { i18n } from '../../src/i18n';
 import DashboardMonitorPerformance from '../../src/routes/dashboard-monitor-performance';
 import { useAuthStore } from '../../src/stores/auth-store';
+import { resetHistory } from '../components/telemetry/reset-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
 import { primeDefaultSession } from '../test-session';
@@ -67,6 +68,7 @@ const renderPage = (search: string, data = overview, dataset?: PerformanceDatase
         overview: data,
         dataset,
         regionAvailable: true,
+        cycleQuota: null,
         state,
       }}
       matches={[] as never}
@@ -87,6 +89,48 @@ const chartTitle = (metric: { ttft: string } | { tail: number }) => i18n.t('moni
 });
 
 describe('Performance table state', () => {
+  it('commits the cycle query for one upstream and leaves that cycle when clearing the scope', async () => {
+    const history = resetHistory(loadedAt);
+    const requests: URL[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
+      requests.push(url);
+      if (url.pathname === '/api/upstream-reset-cycles') return Response.json({
+        ...history,
+        ...(url.searchParams.has('cycle_start') && {
+          cycle: { start: history.metrics[0]!.starts[1], end: history.metrics[0]!.starts[0], quota: { amount: 42, unit: 'count' } },
+        }),
+      });
+      if (url.pathname === '/api/performance/overview') return Response.json({
+        reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'), cursor: url.searchParams.get('start'),
+        buckets: [], edges: { ttft_ms: [], tpot_us: [] }, scope: { actorId: 1, ownedKeyIds: [], visibility: 'all' },
+        metadataVisibility: { complete: true, userIds: [], upstreamIds: [] }, users: [], upstreams: [], keys: [],
+      });
+      throw new Error(`Unexpected request to ${url.pathname}`);
+    }));
+    const { router } = renderPage('fu=up-1');
+    expect(screen.queryByText('Cycle quota: 42')).toBeNull();
+    fireEvent.click(await screen.findByRole('radio', { name: 'By Reset Cycle' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Older cycle' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await waitFor(() => expect(urlSearch(router).get('r')).toBe('reset-cycle'));
+    expect(screen.getByText('Cycle quota: 42')).toBeTruthy();
+    expect(requests.find(url => url.pathname === '/api/upstream-reset-cycles' && url.searchParams.has('cycle_start'))?.searchParams.get('cycle_start')).toBe(String(history.metrics[0]!.starts[1]));
+    const readings = requests.find(url => url.pathname === '/api/performance/overview');
+    expect(readings?.searchParams.get('format')).toBe('buckets');
+    expect(readings?.searchParams.get('filter_upstream')).toBe('up-1');
+    expect(readings?.searchParams.get('start')).toBe('2026-08-05T04');
+    expect(readings?.searchParams.get('end')).toBe('2026-08-05T09');
+
+    requests.length = 0;
+    fireEvent.click(screen.getByRole('combobox', { name: 'Upstream' }));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'All upstreams' }));
+    await waitFor(() => expect(screen.queryByRole('radio', { name: 'By Reset Cycle' })).toBeNull());
+    await waitFor(() => expect(urlSearch(router).has('r')).toBe(false));
+    expect(screen.queryByText('Cycle quota: 42')).toBeNull();
+    expect(requests.map(url => url.pathname)).toEqual(['/api/performance/overview']);
+  });
+
   it('keeps the active tab and table until the new ranking loads in the in-progress page window', async () => {
     const clock = vi.spyOn(Date, 'now').mockReturnValue(loadedAt + 3_600_000);
     const queries: URLSearchParams[] = [];

@@ -22,3 +22,6 @@ export const createUpstream = (record: UpstreamRecord): Upstream =>
 
 export const flagDefaultsForKind = (kind: UpstreamKind): FlagDefaults =>
   upstreamsByKind[kind].defaultFlags;
+
+export const metricDisplayResolverForKind = (kind: UpstreamKind) =>
+  upstreamsByKind[kind].resolveUpstreamMetricDisplay;

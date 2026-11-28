@@ -1574,6 +1574,25 @@ const en = {
           custom: 'Custom',
           choose: 'Choose date range',
         },
+        resetCycle: {
+          filter: 'By Reset Cycle',
+          choose: 'Choose reset cycle',
+          window: 'Quota window',
+          older: 'Older cycle',
+          newer: 'Newer cycle',
+          current: 'Current cycle',
+          previous: 'Previous cycle',
+          historical: 'Historical cycle',
+          chartHours: 'Usage and performance charts show whole hours ({{start}} – {{end}}). Cycles in the same hour can share data.',
+          ago: '{{count, number}} cycles ago',
+          waiting: 'No quota resets observed yet',
+          apply: 'Apply',
+          quota: {
+            reported: 'Cycle quota: {{amount}}',
+            credits: '{{count, number}} credits',
+            reportedHint: 'Allowance reported by the upstream at the start of the selected cycle.',
+          },
+        },
       },
       charts: {
         displayOptions: {

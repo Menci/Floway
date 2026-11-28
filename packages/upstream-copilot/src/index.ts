@@ -1,10 +1,12 @@
 import { COPILOT_DEFAULT_FLAGS } from './defaults.ts';
+import { resolveUpstreamMetricDisplay } from './upstream-metrics.ts';
 import { createCopilotUpstream } from './upstream.ts';
 import type { UpstreamModule } from '@floway-dev/upstream';
 
 export const copilotUpstreamModule: UpstreamModule = {
   create: createCopilotUpstream,
   defaultFlags: COPILOT_DEFAULT_FLAGS,
+  resolveUpstreamMetricDisplay,
 };
 
 export {

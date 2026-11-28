@@ -71,3 +71,36 @@ it('stores canonical flat metric label objects in SQLite', async () => {
     await expect(repo.set(point(61_000, 20, { name: 'invalid', labels } as never))).rejects.toThrow();
   }
 });
+
+describe('SQL upstream metric resets', () => {
+  it('finds every observed refill after depletion, independent of adjacent and future samples', async () => {
+    const repo = (new SqlRepo(await createSqliteTestDb())).upstreamMetrics;
+    const identity = { name: 'quota.utilization', labels: { quota: 'five_hour' } };
+    const other = { name: 'quota.remaining_percent', labels: { window: 'weekly' } };
+    const before = 600_000;
+    for (const [minute, value] of [[0, 0], [1, 10], [2, 0], [3, 0], [4, 70], [5, 5], [6, 0], [7, 40], [8, 0], [9, 20], [10, 0]] as const) {
+      await repo.record(point(minute * 60_000, value, identity));
+    }
+    await repo.record(point(61_000, 25, other));
+    await repo.record(point(541_000, 100, other));
+    await repo.record({ ...point(540_000, 0, identity), upstreamId: 'up-2' });
+    await repo.record(point(before, 25, { name: 'future', labels: {} }));
+    expect(await repo.listIdentities('up-1', before)).toEqual([other, identity]);
+    expect(await repo.queryResetStarts('up-1', identity, { direction: 'used', full: 0 }, before)).toEqual([
+      { timestamp: 480_000, value: 0 }, { timestamp: 360_000, value: 0 }, { timestamp: 120_000, value: 0 },
+    ]);
+    expect(await repo.queryResetStarts('up-1', other, { direction: 'remaining', full: 100 }, before)).toEqual([{ timestamp: 541_000, value: 100 }]);
+  });
+
+  it('requires a contemporaneous positive allowance and an actual refill for absolute balances', async () => {
+    const repo = (new SqlRepo(await createSqliteTestDb())).upstreamMetrics;
+    const balance = { name: 'quota.remaining', labels: { quota: 'premium_interactions' } };
+    const allowance = { name: 'quota.entitlement', labels: balance.labels };
+    for (const [index, [remaining, full]] of ([[40, 100], [40, 40], [20, null], [100, 100], [70, 100], [100, 100], [0, 0]] as const).entries()) {
+      const time = index * 60_000;
+      await repo.record(point(time, remaining, balance));
+      if (full !== null) await repo.record(point(time, full, allowance));
+    }
+    expect(await repo.queryResetStarts('up-1', balance, { direction: 'remaining', full: allowance }, 600_000)).toEqual([{ timestamp: 300_000, value: 100 }]);
+  });
+});

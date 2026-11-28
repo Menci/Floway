@@ -1,10 +1,12 @@
 import { CLAUDE_CODE_DEFAULT_FLAGS } from './defaults.ts';
+import { resolveUpstreamMetricDisplay } from './upstream-metrics.ts';
 import { createClaudeCodeUpstream } from './upstream.ts';
 import type { UpstreamModule } from '@floway-dev/upstream';
 
 export const claudeCodeUpstreamModule: UpstreamModule = {
   create: createClaudeCodeUpstream,
   defaultFlags: CLAUDE_CODE_DEFAULT_FLAGS,
+  resolveUpstreamMetricDisplay,
 };
 
 export * from './config.ts';

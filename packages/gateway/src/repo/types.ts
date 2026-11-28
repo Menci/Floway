@@ -3,7 +3,7 @@ import type { AccessPrincipal, AccessRecord, AccessRecordInput } from '../access
 import type { WebSearchConfig, WebSearchBackendName } from '../shared/web-search-backends.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector, UserPreferences } from '@floway-dev/protocols/common';
-import type { PerformanceTelemetryContext, UpstreamModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamMetricIdentity, UpstreamModelConfig, UpstreamModelSource, UpstreamKind, UpstreamRecord } from '@floway-dev/upstream';
+import type { PerformanceTelemetryContext, UpstreamModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamMetricIdentity, UpstreamMetricResetThreshold, UpstreamModelConfig, UpstreamModelSource, UpstreamKind, UpstreamRecord } from '@floway-dev/upstream';
 
 export interface UpstreamModelsCacheError {
   message: string;
@@ -414,6 +414,7 @@ export interface UsageRepo {
   // snapshot; later writes that share the row keep it unchanged.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]>;
+  // Null if any recorded consumption in these UTC hours is missing its cost.
   queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult[]>;
   listAll(): Promise<UsageRecord[]>;
   // Replacement upsert: quantities and unit prices are overwritten from the record.
@@ -770,6 +771,9 @@ export interface UpstreamMetricsRepo {
   // The latest sample of each series in every `step`-wide bucket counted from
   // `start`, which is Prometheus's range-query semantics for gauges.
   query(upstreamId: string, start: number, end: number, step: number): Promise<UpstreamMetricRecord[]>;
+  listIdentities(upstreamId: string, before: number): Promise<UpstreamMetricIdentity[]>;
+  queryResetStarts(upstreamId: string, identity: UpstreamMetricIdentity, threshold: UpstreamMetricResetThreshold, before: number,
+    options?: { from?: number | undefined; order?: 'asc' | 'desc'; limit?: number }): Promise<Array<Pick<UpstreamMetricRecord, 'timestamp' | 'value'>>>;
 }
 
 export interface Repo {

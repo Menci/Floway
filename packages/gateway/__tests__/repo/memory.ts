@@ -2216,6 +2216,25 @@ export class InMemoryRepo implements Repo {
       }
       return [...latest.values()].toSorted((a, b) => a.timestamp - b.timestamp);
     },
+    listIdentities: async (upstreamId, before) => [...new Map(this.upstreamMetricRecords
+      .filter(row => row.upstreamId === upstreamId && row.timestamp < before)
+      .map(({ name, labels }) => [upstreamMetricIdentityKey({ name, labels }), { name, labels }] as const))
+      .entries()].toSorted(([a], [b]) => a.localeCompare(b)).map(([, identity]) => identity),
+    queryResetStarts: async (upstreamId, identity, threshold, before, { from = -Infinity, order = 'desc', limit = Infinity } = {}) => {
+      const series = (key: string) => this.upstreamMetricRecords.filter(row =>
+        row.upstreamId === upstreamId && row.timestamp < before && upstreamMetricIdentityKey(row) === key);
+      const allowance = typeof threshold.full === 'number' ? null : new Map(series(upstreamMetricIdentityKey(threshold.full))
+        .filter(row => row.value > 0).map(row => [row.timestamp, row.value]));
+      const samples = series(upstreamMetricIdentityKey(identity)).toSorted((a, b) => a.timestamp - b.timestamp)
+        .map(row => ({ ...row, full: typeof threshold.full === 'number' ? threshold.full : allowance?.get(row.timestamp) }));
+      const starts = samples.flatMap((sample, index) => {
+        const previous = samples[index - 1];
+        return sample.timestamp >= from && sample.value === sample.full && previous?.full !== undefined
+          && (threshold.direction === 'used' ? previous.value > previous.full : previous.value < previous.full)
+          && (allowance === null || sample.value > previous.value) ? [{ timestamp: sample.timestamp, value: sample.value }] : [];
+      });
+      return (order === 'asc' ? starts : starts.reverse()).slice(0, limit);
+    },
   };
   apiKeys: ApiKeyRepo;
   users: MemoryUsersRepo;

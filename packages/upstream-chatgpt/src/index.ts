@@ -1,10 +1,12 @@
 import { CHATGPT_DEFAULT_FLAGS } from './defaults.ts';
+import { resolveUpstreamMetricDisplay } from './upstream-metrics.ts';
 import { createChatGPTUpstream } from './upstream.ts';
 import type { UpstreamModule } from '@floway-dev/upstream';
 
 export const chatgptUpstreamModule: UpstreamModule = {
   create: createChatGPTUpstream,
   defaultFlags: CHATGPT_DEFAULT_FLAGS,
+  resolveUpstreamMetricDisplay,
 };
 
 export * from './access-token.ts';

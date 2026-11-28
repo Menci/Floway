@@ -3,11 +3,14 @@ import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
+import { resetRangeAt } from '../../src/components/telemetry/reset-cycles';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import { createUsageOverviewLoader } from '../../src/components/usage/data';
+import { serializeUsageUrlState } from '../../src/components/usage/url-state';
 import { i18n } from '../../src/i18n';
 import DashboardMonitorUsage, { clientLoader } from '../../src/routes/dashboard-monitor-usage';
 import { useAuthStore } from '../../src/stores/auth-store';
+import { resetHistory } from '../components/telemetry/reset-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
 import { primeDefaultSession } from '../test-session';
@@ -29,6 +32,8 @@ const loaderData = {
   currentUserId: '1',
   error: null,
   loadedAt,
+  range: 'today' as const,
+  cycleQuota: null,
   search: { records: [], keys: [] },
   state: {
     filters: { model: [], upstream: [], userId: [], keyId: [] },
@@ -122,6 +127,50 @@ describe('usage dimension controls', () => {
 
     await clientLoader({ request: new Request('http://localhost/dashboard/monitor/usage') } as never);
     expect(requestedView).toBe('self-by-key');
+  });
+
+  it('restores a historical cycle only for the single upstream named by the usage filter', async () => {
+    useAuthStore.getState().primeFromLogin({
+      token: 'operator-session',
+      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { ...defaultUserPreferences } },
+    });
+    const history = resetHistory(loadedAt);
+    const range = resetRangeAt(history.upstreamId, history.metrics[0]!, 2)!;
+    const requests: URL[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
+      requests.push(url);
+      if (url.pathname === '/api/upstream-reset-cycles') return Response.json({
+        ...history, cycle: { start: range.start, end: range.end },
+      });
+      if (url.pathname === '/api/token-usage/overview') return Response.json({
+        cursor: 'first', reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'),
+        buckets: [], scope: { actorId: 1, ownedKeyIds: [], visibility: 'all' },
+        metadataVisibility: { complete: true, userIds: [1], upstreamIds: ['up-1'] },
+        users: [{ id: 1, username: 'admin' }], upstreams: loaderData.upstreams, keys: [],
+      });
+      if (url.pathname === '/api/search-usage') return Response.json({ view: 'self-by-key', records: [], keys: [] });
+      throw new Error(`Unexpected request to ${url.pathname}`);
+    }));
+    const load = (upstream: string[]) => {
+      const search = serializeUsageUrlState({ ...loaderData.state, range, filters: { ...loaderData.state.filters, upstream } });
+      return clientLoader({ request: new Request(`http://localhost/dashboard/monitor/usage?${search}`) } as never);
+    };
+    const selected = await load(['upstream:up-1']);
+    expect(selected.state.range).toEqual(range);
+    expect(requests.find(url => url.pathname === '/api/upstream-reset-cycles')?.searchParams.get('upstream_id')).toBe('up-1');
+    const overview = requests.find(url => url.pathname === '/api/token-usage/overview');
+    expect(overview?.searchParams.get('start')).toBe('2026-08-04T23');
+    expect(overview?.searchParams.get('end')).toBe('2026-08-05T04');
+    expect(requests.some(url => url.pathname === '/api/search-usage')).toBe(false);
+    const { unmount } = renderPage(selected);
+    expect(screen.getByRole('radio', { name: 'By Reset Cycle' }).getAttribute('aria-checked')).toBe('true');
+    unmount();
+
+    requests.length = 0;
+    const multiple = await load(['upstream:up-1', 'upstream:up-2']);
+    expect(multiple.state.range).toBe('today');
+    expect(requests.some(url => url.pathname === '/api/upstream-reset-cycles')).toBe(false);
   });
 
   it('retries a failed grouping when the operator selects it again', async () => {
