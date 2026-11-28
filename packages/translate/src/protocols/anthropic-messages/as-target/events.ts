@@ -213,8 +213,23 @@ export const readAnthropicMessagesEvents = async function* (
       blocks.delete(e.index);
       if (block.item !== undefined) {
         if (block.tool === 'custom') {
-          const input = unwrapCustomToolInput(block.wrappedInput);
-          if (input !== '') block.item.append('input', input);
+          const nativeBlock = nativeAccumulator.contentBlock(e.index);
+          if (nativeBlock?.type !== 'tool_use') throw new TypeError('Expected a Messages tool_use block');
+          const nativeObject = requireJSONObject(nativeBlock.input);
+          const nativeInput = nativeObject.input;
+          const wrapped = block.wrappedInput === ''
+            ? Object.keys(nativeObject).length === 0 ? '' : JSON.stringify(nativeObject)
+            : block.wrappedInput;
+          const input = unwrapCustomToolInput(wrapped);
+          if (input !== '') {
+            if (input === nativeInput) {
+              const field = createReadFieldState('text');
+              block.fieldState = { input: { input: field } };
+              block.item.append('input', input, [appendReadField(options.roundTrip.builder, field, input)]);
+            } else {
+              block.item.append('input', input);
+            }
+          }
         } else if (block.tool === 'enveloped' || (block.tool === 'function' && block.jsonField === undefined)) {
           let input = block.wrappedInput;
           if (input === '') {
