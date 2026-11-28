@@ -215,9 +215,13 @@ export const readAnthropicMessagesEvents = async function* (
         if (block.tool === 'custom') {
           const nativeBlock = nativeAccumulator.contentBlock(e.index);
           if (nativeBlock?.type !== 'tool_use') throw new TypeError('Expected a Messages tool_use block');
-          const nativeInput = requireJSONObject(nativeBlock.input).input;
-          const input = block.wrappedInput === '' ? nativeInput : unwrapCustomToolInput(block.wrappedInput);
-          if (typeof input === 'string' && input !== '') {
+          const nativeObject = requireJSONObject(nativeBlock.input);
+          const nativeInput = nativeObject.input;
+          const wrapped = block.wrappedInput === ''
+            ? Object.keys(nativeObject).length === 0 ? '' : JSON.stringify(nativeObject)
+            : block.wrappedInput;
+          const input = unwrapCustomToolInput(wrapped);
+          if (input !== '') {
             if (input === nativeInput) {
               const field = createReadFieldState('text');
               block.fieldState = { input: { input: field } };
