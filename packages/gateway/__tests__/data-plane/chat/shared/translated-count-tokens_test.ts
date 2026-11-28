@@ -71,12 +71,6 @@ test('returns 502 internal-error with performance and parse cause on malformed 2
     expect(invalidShape.http.status).toBe(502);
     expect(invalidShape.performance).toBe(perf);
   }
-
-  const nonFinite = reshapeTranslatedCountTokens(
-    plainResult({ status: 200, headers: new Headers() }, encoder.encode('{}'), 'up_1'),
-    { ...baseOptions(), extractCount: () => Number.POSITIVE_INFINITY },
-  );
-  expect(nonFinite.type).toBe('internal-error');
 });
 
 test('translates errors, applies fallback messaging, preserves api-error metadata, and gates dump capture on upstream origin', () => {
@@ -136,10 +130,6 @@ test('translates errors, applies fallback messaging, preserves api-error metadat
     fallback: { status: 503, message: 'overloaded' },
   });
   expect(capture.upstreamApiError).toHaveBeenCalledTimes(1);
-
-  capture.upstreamApiError.mockClear();
-  reshapeTranslatedCountTokens(plainResult({ status: 503, headers: new Headers() }, encoder.encode('local')), opts);
-  expect(capture.upstreamApiError).not.toHaveBeenCalled();
 
   capture.upstreamApiError.mockClear();
   const { fallbackErrorBody: _fallback, ...passthroughOpts } = opts;

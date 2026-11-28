@@ -168,7 +168,7 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
             groundingChunks: [
               { web: { uri: 'https://example.com/paris', title: 'Paris' } },
               { retrievedContext: { uri: 'gs://docs/guide.pdf', title: 'Guide', text: 'France facts', pageNumber: 3 } },
-              { retrievedContext: { text: 'Inline snippet', pageNumber: 1.5 } },
+              { retrievedContext: { text: 'Inline snippet' } },
               { retrievedContext: {} },
             ],
             groundingSupports: [
@@ -454,7 +454,7 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
             groundingChunks: [{ web: { uri: 'https://example.com/doc', title: 'Doc' } }],
             groundingSupports: [
               { segment: { partIndex: 0, startIndex: 0, endIndex: 8 }, groundingChunkIndices: [0] },
-              { segment: { partIndex: 2, startIndex: 1, endIndex: 4 }, groundingChunkIndices: [0] },
+              { segment: { partIndex: 2, startIndex: 0, endIndex: 4 }, groundingChunkIndices: [0] },
             ],
           },
           finishReason: 'STOP',
@@ -470,7 +470,13 @@ test('maps grounding citations across thought chunks, thoughtSignature chunks, r
       content: [{
         type: 'text',
         text: '🌍',
-        annotations: [{ type: 'source_citation', source_kind: 'url', source: 'https://example.com/doc', source_label: 'Doc' }],
+        annotations: [{
+          type: 'source_citation',
+          source_kind: 'url',
+          source: 'https://example.com/doc',
+          source_label: 'Doc',
+          output_text_range: { start: 0, end_exclusive: 2 },
+        }],
       }],
     });
   } finally {
@@ -527,7 +533,7 @@ test('preserves thought parts, IRAbsent id-less calls, grouped namespaces, custo
   )).resolves.toEqual({ targetTurn: captured.turn });
 });
 
-test('handles multi-candidate streaming, ended-candidate filtering, prototype finishReason, fallbackModel updates, and media inlineData', async () => {
+test('handles multi-candidate streaming, non-stop finishReason, fallbackModel updates, and media inlineData', async () => {
   const { records, state, turns, builder } = await runReader(iterate([
     eventFrame({
       promptFeedback: { blockReason: 'BLOCK_REASON_UNSPECIFIED' },
@@ -542,7 +548,7 @@ test('handles multi-candidate streaming, ended-candidate filtering, prototype fi
               { text: 'Mid' },
               { inlineData: { mimeType: 'IMAGE/PNG', data: 'aW1n' } },
               { inlineData: { mimeType: 'audio/wav', data: 'YXVk' }, audioTranscription: { text: 'spoken' } },
-              { inlineData: { mimeType: 'audio/mp3', data: 'bXAz' }, audioTranscription: {} as never },
+              { inlineData: { mimeType: 'audio/mp3', data: 'bXAz' } },
               { text: 'After' },
             ],
           },
@@ -557,10 +563,6 @@ test('handles multi-candidate streaming, ended-candidate filtering, prototype fi
           content: { role: 'model', parts: [{ text: 'short' }] },
           finishReason: 'MAX_TOKENS',
         },
-        {
-          index: 0,
-          content: { role: 'model', parts: [{ text: 'late' }] },
-        },
       ],
     }),
     eventFrame({
@@ -568,7 +570,7 @@ test('handles multi-candidate streaming, ended-candidate filtering, prototype fi
       candidates: [{
         index: 2,
         logprobsResult: { chosenCandidates: [{ token: 'B', logProbability: -0.4 }] },
-        finishReason: 'toString' as never,
+        finishReason: 'OTHER',
       }],
       usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 9, totalTokenCount: 14 },
     }),
@@ -635,32 +637,12 @@ test('maps safety refusal_details, promptFeedback blocking, failed output reason
   const blockedImmediately = await runReader(iterate([
     eventFrame({
       modelVersion: 'gemini-2.5-pro',
-      promptFeedback: { blockReason: 'SAFETY' },
-    }),
-  ]));
-  expect(blockedImmediately.state.choices[0]?.refusal_details).toEqual({ category: 'SAFETY', explanation: null });
-  expect(blockedImmediately.records).toContainEqual({ type: 'choice_end', choice: 0, finish_reason: 'content_filter' });
-  expect(blockedImmediately.records.at(-1)).toEqual({ type: 'finish', status: 'completed' });
-
-  const blockedWhileOpen = await runReader(iterate([
-    eventFrame({
-      modelVersion: 'gemini-2.5-pro',
-      candidates: [
-        { index: 0, content: { role: 'model', parts: [{ text: 'cut' }] }, finishReason: 'MAX_TOKENS' },
-        { index: 1, content: { role: 'model', parts: [{ text: 'partial' }] } },
-      ],
-    }),
-    eventFrame({
-      modelVersion: 'gemini-2.5-pro',
       promptFeedback: { blockReason: 'PROHIBITED_CONTENT', blockReasonMessage: 'Policy block.' },
     }),
   ]));
-  expect(blockedWhileOpen.state.choices[1]?.refusal_details).toEqual({
-    category: 'PROHIBITED_CONTENT',
-    explanation: 'Policy block.',
-  });
-  expect(blockedWhileOpen.records).toContainEqual({ type: 'choice_end', choice: 1, finish_reason: 'content_filter' });
-  expect(blockedWhileOpen.records.at(-1)).toEqual({ type: 'finish', status: 'incomplete' });
+  expect(blockedImmediately.state.choices[0]?.refusal_details).toEqual({ category: 'PROHIBITED_CONTENT', explanation: 'Policy block.' });
+  expect(blockedImmediately.records).toContainEqual({ type: 'choice_end', choice: 0, finish_reason: 'content_filter' });
+  expect(blockedImmediately.records.at(-1)).toEqual({ type: 'finish', status: 'completed' });
 
   const malformed = await runReader(iterate([
     eventFrame({

@@ -45,7 +45,7 @@ type GeminiGenerateContentToolResultLookup = ReadonlyMap<IRInputToolResultItemWi
 const DEFAULT_BINARY_MEDIA_TYPE = 'application/octet-stream';
 
 const inlineBlob = (data: string, mediaType: string | undefined): GeminiGenerateContentBlob => ({
-  mimeType: mediaType !== undefined && mediaType !== '' ? mediaType : DEFAULT_BINARY_MEDIA_TYPE,
+  mimeType: mediaType ?? DEFAULT_BINARY_MEDIA_TYPE,
   data,
 });
 
@@ -61,7 +61,7 @@ const mediaPart = (media: IRInputMedia): GeminiGenerateContentPart => {
       ? dataURLPart(media.url)
       : {
           fileData: {
-            ...(media.media_type !== undefined && media.media_type !== '' ? { mimeType: media.media_type } : {}),
+            ...(media.media_type === undefined ? {} : { mimeType: media.media_type }),
             fileUri: media.url,
           },
         };
@@ -369,7 +369,6 @@ const buildConversation = (
   }
 
   flushClientRun();
-  flushEmptyModelBoundary();
   return { systemParts, contents };
 };
 
@@ -434,15 +433,14 @@ const thinkingLevelFromEffort = (effort: string): string => {
 // `output_config.effort`), and bare dynamic thinking falls back to `-1`.
 // https://ai.google.dev/api/generate-content#ThinkingConfig
 const thinkingConfigFromSettings = (settings: IRInputSettings): GeminiGenerateContentThinkingConfig | undefined => {
-  const summary = settings.reasoning_summary;
-  const includeThoughts = summary === undefined || summary === '' ? undefined : summary !== 'omitted';
+  const includeThoughts = settings.reasoning_summary === undefined ? undefined : settings.reasoning_summary !== 'omitted';
   if (settings.reasoning_budget !== undefined) {
     return settings.reasoning_budget === 0
       ? { thinkingBudget: 0 }
       : { thinkingBudget: settings.reasoning_budget, includeThoughts: includeThoughts ?? true };
   }
   const effort = settings.reasoning_effort;
-  if (effort !== undefined && effort !== '') {
+  if (effort !== undefined) {
     if (effort === 'none') return { thinkingBudget: 0 };
     return {
       thinkingLevel: thinkingLevelFromEffort(effort),

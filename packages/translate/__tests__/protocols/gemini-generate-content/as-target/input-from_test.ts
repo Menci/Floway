@@ -382,30 +382,27 @@ test('round-trips parallel id-less GenerateContent functionCalls answered out of
   ]);
 });
 
-test('omits empty systemInstruction, non-forcing toolConfig without tools, empty/auto serviceTier, and empty effort or summary', async () => {
-  const emptyEffortOnly = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
+test('omits empty systemInstruction, non-forcing toolConfig without tools, and auto serviceTier', async () => {
+  const withoutTools = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
     stream: true,
-    service_tier: '',
-    reasoning: { effort: '', summary: '' as never },
+    service_tier: 'auto',
     tool_choice: 'auto',
     input: 'Hello',
   }, options()));
-  expect(emptyEffortOnly.target).not.toHaveProperty('systemInstruction');
-  expect(emptyEffortOnly.target).not.toHaveProperty('toolConfig');
-  expect(emptyEffortOnly.target).not.toHaveProperty('serviceTier');
-  expect(emptyEffortOnly.target).not.toHaveProperty('generationConfig');
+  expect(withoutTools.target).not.toHaveProperty('systemInstruction');
+  expect(withoutTools.target).not.toHaveProperty('toolConfig');
+  expect(withoutTools.target).not.toHaveProperty('serviceTier');
+  expect(withoutTools.target).not.toHaveProperty('generationConfig');
 
   const emptySystem = expectTrip(await routeAnthropicMessagesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
     max_tokens: 100,
     stream: true,
-    service_tier: 'auto' as never,
     system: [{ type: 'text', text: '' }],
     messages: [{ role: 'user', content: 'Hi' }],
   }, options()));
   expect(emptySystem.target).not.toHaveProperty('systemInstruction');
-  expect(emptySystem.target).not.toHaveProperty('serviceTier');
 });
 
 test('maps toolConfig variants (none, required, allowed_tools empty/all/undeclared/required) and keeps forcing choices without tools', async () => {

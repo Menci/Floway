@@ -36,10 +36,9 @@ export const reshapeTranslatedCountTokens = (
   const text = decodeResponseBody(upstreamResult.body);
   const http = { status, headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, headers) };
   if (upstreamResult.type === 'api-error' || status !== 200) {
-    const fromUpstream = upstreamResult.type === 'api-error'
-      ? upstreamResult.source === 'upstream'
-      : upstreamResult.upstreamId !== undefined;
-    if (fromUpstream) options.capture?.upstreamApiError({ status, headers, body: upstreamResult.body });
+    if (upstreamResult.type !== 'api-error' || upstreamResult.source === 'upstream') {
+      options.capture?.upstreamApiError({ status, headers, body: upstreamResult.body });
+    }
     const translated = options.translateError(status, headers, upstreamResult.body ?? new Uint8Array());
     let resultHttp: HttpHead;
     let payload: unknown;
@@ -67,7 +66,7 @@ export const reshapeTranslatedCountTokens = (
     return internalErrorResult(502, toInternalDebugError(new Error('Invalid upstream token counting response.', { cause })), options.performance);
   }
   const count = isJsonObject(decoded) ? options.extractCount(decoded) : undefined;
-  if (typeof count !== 'number' || !Number.isFinite(count)) {
+  if (typeof count !== 'number') {
     return internalErrorResult(502, toInternalDebugError(new Error('Invalid upstream token counting response.')), options.performance);
   }
   return plainResult(

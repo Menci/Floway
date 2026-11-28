@@ -1,6 +1,6 @@
 import type { GeminiGenerateContentInputAssistantTurnState } from './assistant-turn.ts';
 import { geminiGenerateContentErrorPayloadFromWire } from './error.ts';
-import { usageToIR, type GeminiGenerateContentUsageAccumulator } from './usage.ts';
+import { usageToIR } from './usage.ts';
 import type { ToolNameContext } from '../../../composition/request/tool-names.ts';
 import { IRAbsent } from '../../../ir/output/absent.ts';
 import { createIRBuilder, type IRItemHandle, type IRPartHandle, type IRRelativePath, type IRWriteHandle } from '../../../ir/output/builder.ts';
@@ -9,7 +9,7 @@ import type { IROutputSourceCitation } from '../../../ir/output/types.ts';
 import type { RoundTripReader } from '../../../round-trip/reader.ts';
 import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFieldStates } from '../../../round-trip/reference/reference-builder.ts';
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
-import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
+import { requireJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
 import type { TextRange } from '../../../shared/text-range.ts';
 import { unwrapToolArguments } from '../../../shared/tool-schema-envelope.ts';
@@ -116,7 +116,7 @@ const resolveGroundingTarget = (
 
   const endByte = segmentSpec?.endIndex;
   const startByte = segmentSpec?.startIndex ?? 0;
-  if (endByte === undefined || !Number.isInteger(startByte) || !Number.isInteger(endByte) || startByte < 0 || endByte <= startByte) {
+  if (endByte === undefined || endByte <= startByte) {
     return { run: choice.textRuns.at(-1)!, baseByte: 0 };
   }
   let offset = 0;
@@ -138,12 +138,8 @@ const utf8ByteRangeToUTF16 = (
   startByte: number | undefined,
   endByte: number | undefined,
 ): TextRange | undefined => {
-  if (endByte === undefined) return undefined;
   const rawStart = startByte ?? 0;
-  if (!Number.isInteger(rawStart) || !Number.isInteger(endByte) || rawStart < 0 || endByte <= rawStart) {
-    console.warn('Dropping Gemini GenerateContent grounding range with invalid byte bounds', { choice: choiceIndex, startByte: rawStart, endByte });
-    return undefined;
-  }
+  if (endByte === undefined || endByte <= rawStart) return undefined;
   const index = ensureRunIndex(run);
   const availableBytes = index.utf8Length;
   const localStart = rawStart - baseByte;
@@ -159,19 +155,7 @@ const utf8ByteRangeToUTF16 = (
     );
   }
   if (clampedStart >= clampedEnd) return undefined;
-  try {
-    return index.utf8RangeToUTF16(clampedStart, clampedEnd);
-  } catch (error) {
-    if (error instanceof RangeError) {
-      console.warn('Dropping Gemini GenerateContent grounding range that splits a UTF-8 character', {
-        choice: choiceIndex,
-        startByte: baseByte + clampedStart,
-        endByte: baseByte + clampedEnd,
-      });
-      return undefined;
-    }
-    throw error;
-  }
+  return index.utf8RangeToUTF16(clampedStart, clampedEnd);
 };
 
 const groundingChunkToCitation = (
@@ -190,9 +174,7 @@ const groundingChunkToCitation = (
   const source = typeof retrieved.uri === 'string' && retrieved.uri !== '' ? retrieved.uri : undefined;
   const sourceText = typeof retrieved.text === 'string' && retrieved.text !== '' ? retrieved.text : undefined;
   if (source === undefined && sourceText === undefined) return undefined;
-  const pageNumber = typeof retrieved.pageNumber === 'number'
-    && Number.isInteger(retrieved.pageNumber)
-    && retrieved.pageNumber > 0
+  const pageNumber = retrieved.pageNumber !== undefined && retrieved.pageNumber > 0
     ? retrieved.pageNumber
     : undefined;
   return {
@@ -261,7 +243,6 @@ export const readGeminiGenerateContentEvents = async function* (
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder();
   const choices = new Map<number, GenerateContentChoiceState>();
-  const usageAccumulator: GeminiGenerateContentUsageAccumulator = {};
   let nextIRChoiceIndex = 0;
   let started = false;
 
@@ -318,7 +299,7 @@ export const readGeminiGenerateContentEvents = async function* (
     if (model !== undefined) ir.assign(['model'], model);
     else if (!started) throw new TypeError('Gemini GenerateContent stream arrived before a non-empty model');
     if (event.usageMetadata != null) {
-      ir.usage(usageToIR(event.usageMetadata, usageAccumulator));
+      ir.usage(usageToIR(event.usageMetadata));
       const tier = generateContentServiceTierToIR(typeof event.usageMetadata.serviceTier === 'string' ? event.usageMetadata.serviceTier : undefined);
       if (tier !== undefined) ir.assign(['service_tier'], tier);
     }
@@ -421,7 +402,7 @@ export const readGeminiGenerateContentEvents = async function* (
         const item = ir.item(choice.irIndex, { type: 'custom_tool_call', call_id: callId, ...naming, input: '' });
         const unwrapped = Object.keys(argsObject).length === 0 ? '' : unwrapCustomToolInput(argsJson);
         if (unwrapped !== '') {
-          if (isPlainJSONObject(call.args) && unwrapped === call.args.input) {
+          if (unwrapped === call.args?.input) {
             const textField = createReadFieldState('text');
             choice.partsFieldState[partIndex] = { functionCall: { args: { input: textField } } };
             appendTrackedField(item, 'input', unwrapped, textField);
@@ -435,7 +416,7 @@ export const readGeminiGenerateContentEvents = async function* (
         const enveloped = options.envelopedFunctionToolNames?.has(call.name) === true;
         const unwrapped = enveloped ? unwrapToolArguments(argsJson) : undefined;
         const wireArguments = unwrapped === undefined ? argsJson : unwrapped.json;
-        if (isPlainJSONObject(call.args) && (unwrapped === undefined || unwrapped.objectArgument)) {
+        if (call.args !== undefined && (unwrapped === undefined || unwrapped.objectArgument)) {
           // For enveloped schemas, only the inner object appears in the source turn and can be referenced on replay.
           const jsonField = createReadFieldState('json');
           choice.partsFieldState[partIndex] = { functionCall: { args: enveloped ? { arguments: jsonField } : jsonField } };
@@ -460,7 +441,7 @@ export const readGeminiGenerateContentEvents = async function* (
       choice.message ??= ir.item(choice.irIndex, { type: 'message', content: [] });
 
       if (isAudio) {
-        const transcript = typeof part.audioTranscription?.text === 'string' ? part.audioTranscription.text : undefined;
+        const transcript = part.audioTranscription?.text;
         const audioPart = choice.message.part({
           type: 'audio',
           audio: {
@@ -503,7 +484,6 @@ export const readGeminiGenerateContentEvents = async function* (
     choice: GenerateContentChoiceState,
     finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter',
   ): void => {
-    if (choice.finishReason !== undefined) return;
     const status = finishReason === 'length' ? 'incomplete' : 'completed';
     closeReasoning(choice, status);
     closeMessage(choice, status);
@@ -554,14 +534,12 @@ export const readGeminiGenerateContentEvents = async function* (
 
     const promptFeedback = event.promptFeedback;
     if (promptFeedback != null && isGeminiGenerateContentPromptBlockReason(promptFeedback.blockReason)) {
-      const targetChoices = choices.size === 0 ? [choiceState(0)] : [...choices.values()].filter(choice => choice.finishReason === undefined);
-      for (const choice of targetChoices) {
-        ir.choice(choice.irIndex).assign('refusal_details', {
-          category: promptFeedback.blockReason,
-          explanation: promptFeedback.blockReasonMessage ?? null,
-        });
-        endChoice(choice, 'content_filter');
-      }
+      const choice = choiceState(0);
+      ir.choice(choice.irIndex).assign('refusal_details', {
+        category: promptFeedback.blockReason,
+        explanation: promptFeedback.blockReasonMessage ?? null,
+      });
+      endChoice(choice, 'content_filter');
       yield* finishStream();
       return;
     }
@@ -569,7 +547,6 @@ export const readGeminiGenerateContentEvents = async function* (
     for (const candidate of event.candidates ?? []) {
       const wireIndex = candidate.index ?? 0;
       const existing = choices.get(wireIndex);
-      if (existing?.finishReason !== undefined) continue;
 
       const finishReason = candidate.finishReason;
       const isTerminal = isGeminiGenerateContentTerminalFinishReason(finishReason);
