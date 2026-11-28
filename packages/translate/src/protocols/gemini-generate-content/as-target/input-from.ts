@@ -124,9 +124,10 @@ interface BuiltToolResult {
   readonly order: number;
 }
 
-// Keep `functionResponse` parts contiguous and intact: inline images/files fit inside
-// `functionResponse.parts`, whereas documents and URL references are lifted intact after
-// the contiguous `functionResponse` run so `<document>` envelopes stay unbroken.
+// Keep `functionResponse` parts contiguous in their own user turn: inline
+// images/files fit inside `functionResponse.parts`, whereas documents and URL
+// references are lifted intact into the following user turn so `<document>`
+// envelopes stay unbroken.
 const buildToolResult = (
   item: IRInputToolResultItemWithCallId,
   matchedToolResults: GeminiGenerateContentToolResultLookup,
@@ -279,17 +280,16 @@ const assistantParts = (
   return parts;
 };
 
-const appendContentParts = (
+const appendModelContent = (
   contents: NormalizedContent[],
-  role: 'user' | 'model',
   parts: readonly GeminiGenerateContentPart[],
 ): void => {
   const last = contents.at(-1);
-  if (last?.role === role) {
+  if (last?.role === 'model') {
     last.parts.push(...parts);
     return;
   }
-  contents.push({ role, parts: [...parts] });
+  contents.push({ role: 'model', parts: [...parts] });
 };
 
 const buildConversation = (
@@ -308,13 +308,13 @@ const buildConversation = (
     pendingEmptyModelBoundary = false;
     // Non-sidecar reasoning-only or empty model turns have no wireable content;
     // emit an empty text part so surrounding user turns do not merge.
-    appendContentParts(contents, 'model', [{ text: '' }]);
+    appendModelContent(contents, [{ text: '' }]);
   };
 
   const appendModelParts = (parts: readonly GeminiGenerateContentPart[]): void => {
     if (parts.length > 0) {
       pendingEmptyModelBoundary = false;
-      appendContentParts(contents, 'model', parts);
+      appendModelContent(contents, parts);
     } else if (contents.at(-1)?.role !== 'model') {
       pendingEmptyModelBoundary = true;
     }
@@ -324,14 +324,20 @@ const buildConversation = (
     if (pendingToolResults.length === 0 && pendingUserParts.length === 0) return;
     flushEmptyModelBoundary();
     const ordered = pendingToolResults.toSorted((a, b) => a.order - b.order);
-    const parts: GeminiGenerateContentPart[] = [
-      ...ordered.map(entry => entry.responsePart),
+    const responseParts = ordered.map(entry => entry.responsePart);
+    const trailingParts = [
       ...ordered.flatMap(entry => entry.liftedParts),
       ...pendingUserParts,
     ];
     pendingToolResults = [];
     pendingUserParts = [];
-    appendContentParts(contents, 'user', parts);
+    // Gemini 3.5+/3.8+ rejects trailing user turns that mix `functionResponse`
+    // with sibling text/media parts ("Requests ending with a model turn are not
+    // supported."). Emit tool responses in their own user turn and any lifted
+    // attachments or following user parts in a separate user turn.
+    // https://github.com/farion1231/cc-switch/issues/8988
+    if (responseParts.length > 0) contents.push({ role: 'user', parts: responseParts });
+    if (trailingParts.length > 0) contents.push({ role: 'user', parts: trailingParts });
   };
 
   for (const piece of turns) {

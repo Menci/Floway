@@ -195,9 +195,9 @@ test('translates OpenAI Responses namespaces, custom tools, allowed_tools subset
       parts: [
         { functionResponse: { id: 'call_ns_read', name: 'fs_read', response: { content: 'ok' } } },
         { functionResponse: { id: 'call_ns_patch', name: 'fs_patch', response: { applied: true } } },
-        { text: 'Mid-turn developer note' },
       ],
     },
+    { role: 'user', parts: [{ text: 'Mid-turn developer note' }] },
   ]);
 
   const summaryOmittedWithEffort = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
@@ -376,9 +376,9 @@ test('round-trips parallel id-less GenerateContent functionCalls answered out of
       parts: [
         { functionResponse: { name: 'code_patch', response: { applied: true } } },
         { functionResponse: { name: 'read', response: { ok: true } } },
-        { text: 'Also verify lint' },
       ],
     },
+    { role: 'user', parts: [{ text: 'Also verify lint' }] },
   ]);
 });
 
@@ -645,31 +645,38 @@ test('keeps tool_result documents and URL attachments intact after contiguous fu
     ],
   }, options()));
 
-  expect(trip.target.contents[2]).toEqual({
-    role: 'user',
-    parts: [
-      {
-        functionResponse: {
-          id: 'toolu_pdf',
-          name: 'fetch_pdf',
-          response: { output: 'Attachments are attached in the following user content.' },
+  expect(trip.target.contents.slice(2)).toEqual([
+    {
+      role: 'user',
+      parts: [
+        {
+          functionResponse: {
+            id: 'toolu_pdf',
+            name: 'fetch_pdf',
+            response: { output: 'Attachments are attached in the following user content.' },
+          },
         },
-      },
-      {
-        functionResponse: {
-          id: 'toolu_status',
-          name: 'status',
-          response: { output: 'ok' },
+        {
+          functionResponse: {
+            id: 'toolu_status',
+            name: 'status',
+            response: { output: 'ok' },
+          },
         },
-      },
-      { text: 'Attachments from tool call toolu_pdf:' },
-      { text: '<document>\n<title>Spec</title>' },
-      { text: 'Page 1' },
-      { fileData: { fileUri: 'https://example.com/page1.png' } },
-      { text: '</document>' },
-      { fileData: { fileUri: 'https://example.com/extra.png' } },
-    ],
-  });
+      ],
+    },
+    {
+      role: 'user',
+      parts: [
+        { text: 'Attachments from tool call toolu_pdf:' },
+        { text: '<document>\n<title>Spec</title>' },
+        { text: 'Page 1' },
+        { fileData: { fileUri: 'https://example.com/page1.png' } },
+        { text: '</document>' },
+        { fileData: { fileUri: 'https://example.com/extra.png' } },
+      ],
+    },
+  ]);
 
   const untypedMedia = expectTrip(await routeOpenAIResponsesViaGeminiGenerateContent({
     model: 'gemini-2.5-pro',
@@ -772,6 +779,11 @@ test('covers assistant custom_tool_call/refusal, empty boundaries, single-kind l
       role: 'user',
       parts: [
         { functionResponse: { name: 'idless', response: { error: 'Image output is attached in the following user content.' } } },
+      ],
+    },
+    {
+      role: 'user',
+      parts: [
         { text: 'Image output from tool call idless:' },
         { fileData: { fileUri: 'https://example.com/err.png' } },
         { text: 'Mid-conversation instruction' },
@@ -802,19 +814,26 @@ test('covers assistant custom_tool_call/refusal, empty boundaries, single-kind l
     },
   ]);
   expect(singleKindLifts.generationConfig).toEqual({ thinkingConfig: { thinkingBudget: 0 } });
-  expect(singleKindLifts.contents[1]).toEqual({
-    role: 'user',
-    parts: [
-      { functionResponse: { id: 'c_file', name: 'fetch_file', response: { output: 'File output is attached in the following user content.' } } },
-      { functionResponse: { id: 'c_doc', name: 'fetch_doc', response: { output: 'Document output is attached in the following user content.' } } },
-      { text: 'File output from tool call c_file:' },
-      { fileData: { fileUri: 'https://example.com/a.bin' } },
-      { text: 'Document output from tool call c_doc:' },
-      { text: '<document>' },
-      { text: 'Body' },
-      { text: '</document>' },
-    ],
-  });
+  expect(singleKindLifts.contents.slice(1)).toEqual([
+    {
+      role: 'user',
+      parts: [
+        { functionResponse: { id: 'c_file', name: 'fetch_file', response: { output: 'File output is attached in the following user content.' } } },
+        { functionResponse: { id: 'c_doc', name: 'fetch_doc', response: { output: 'Document output is attached in the following user content.' } } },
+      ],
+    },
+    {
+      role: 'user',
+      parts: [
+        { text: 'File output from tool call c_file:' },
+        { fileData: { fileUri: 'https://example.com/a.bin' } },
+        { text: 'Document output from tool call c_doc:' },
+        { text: '<document>' },
+        { text: 'Body' },
+        { text: '</document>' },
+      ],
+    },
+  ]);
 
   const openEffort = write({
     settings: { model: 'gemini-2.5-pro', stream: true, reasoning_effort: 'custom_level' as never },
