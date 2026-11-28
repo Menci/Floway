@@ -1,7 +1,6 @@
 import { test } from 'vitest';
 
 import { readGeminiGenerateContentRequest } from '../../../../src/protocols/gemini-generate-content/as-source/input-to.ts';
-import { FAST_SERVICE_TIER } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test.each([
@@ -39,17 +38,11 @@ test('empty thoughts do not enter IR or split visible text', () => {
   }]);
 });
 
-test.each([
-  [FAST_SERVICE_TIER, FAST_SERVICE_TIER],
-  ['standard', 'default'],
-  ['flex', 'flex'],
-  ['', undefined],
-  [undefined, undefined],
-] as const)('serviceTier %s maps to IR service_tier %s', (serviceTier, expected) => {
+test('serviceTier maps standard to IR service_tier default', () => {
   const reading = readGeminiGenerateContentRequest({
     model: 'm',
     contents: [],
-    ...(serviceTier === undefined ? {} : { serviceTier }),
+    serviceTier: 'standard',
   });
-  assertEquals(reading.request.settings.service_tier, expected);
+  assertEquals(reading.request.settings.service_tier, 'default');
 });

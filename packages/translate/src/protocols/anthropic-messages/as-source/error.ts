@@ -1,5 +1,5 @@
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
-import { errorDetailsOf, restateError } from '../../../shared/api-error.ts';
+import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesErrorEventEx } from '@floway-dev/protocols/anthropic-messages';
 
@@ -28,15 +28,10 @@ export const anthropicMessagesErrorFromIR = (error: IRErrorPayload): AnthropicMe
   messagesError(error, isContextExceededError(error));
 
 /** Classify overflow once so its compatibility message and our chosen 400 mapping stay consistent. */
-export const anthropicMessagesErrorEnvelope = (error: IRErrorPayload): { readonly body: unknown; readonly status: number | undefined } => {
+export const anthropicMessagesErrorEnvelope = (error: IRErrorPayload): { readonly body: unknown; readonly status?: number } => {
   const contextExceeded = isContextExceededError(error);
   return {
     body: { type: 'error', error: messagesError(error, contextExceeded) },
-    status: contextExceeded ? 400 : undefined,
+    ...(contextExceeded ? { status: 400 } : {}),
   };
-};
-
-export const writeAnthropicMessagesError = (upstreamStatus: number, headers: Headers, error: IRErrorPayload) => {
-  const { body, status } = anthropicMessagesErrorEnvelope(error);
-  return restateError(status ?? upstreamStatus, headers, body);
 };

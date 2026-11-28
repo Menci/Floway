@@ -1,4 +1,4 @@
-import { writeAnthropicMessagesError } from './as-source/error.ts';
+import { anthropicMessagesErrorEnvelope } from './as-source/error.ts';
 import { writeAnthropicMessagesEvents } from './as-source/events.ts';
 import { readAnthropicMessagesRequest } from './as-source/input-to.ts';
 import { collectAnthropicMessagesReplayContents, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from './as-source/round-trip.ts';
@@ -16,6 +16,6 @@ export const anthropicMessagesSourceProtocol: SourceProtocol<
     verify: verifyAnthropicMessagesTurnDigest,
     collectCandidates: collectAnthropicMessagesReplayContents,
   },
-  writeError: writeAnthropicMessagesError,
+  writeError: anthropicMessagesErrorEnvelope,
   writeEvents: (_payload, records, roundTrip) => writeAnthropicMessagesEvents(records, { roundTrip }),
 };

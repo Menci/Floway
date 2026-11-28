@@ -254,7 +254,6 @@ test('generate normalizes terminal native failures after candidate exhaustion an
     }),
   });
 
-  // Exhausted failure is normalized to Google RPC JSON with status 500.
   queueResolution([makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent: fail504 })]);
   const failed = await geminiGenerateContentServe.generate({
     payload: makePayload(),
@@ -268,7 +267,6 @@ test('generate normalizes terminal native failures after candidate exhaustion an
     error: { code: 500, message: '<html>504 Gateway Timeout</html>', status: 'INTERNAL' },
   });
 
-  // Failover advances past raw failure to a healthy second candidate.
   queueResolution([
     makeCandidate({ upstream: 'up_1', endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent: fail504 }),
     makeCandidate({

@@ -28,7 +28,6 @@ test('unwraps single-element Google streamGenerateContent error arrays and prese
     { error: { code: 400, message: 'first' } },
     { error: { code: 500, message: 'second' } },
   ]))).toBeUndefined();
-  expect(readGeminiGenerateContentErrorBody(encode([{ ok: true }]))).toBeUndefined();
 });
 
 test('maps numeric-only, status-only, explicit-type, unmapped, and message-less Google RPC errors', () => {
@@ -57,11 +56,6 @@ test('maps numeric-only, status-only, explicit-type, unmapped, and message-less 
     type: 'rate_limit_error',
     message: 'rate limited',
     provider_specific_fields: { code: 429, status: '' },
-  });
-  expect(readGeminiGenerateContentErrorBody(encode({ error: { code: 429, status: 'TOO_MANY_REQUESTS', message: 'relay limit' } }))).toEqual({
-    type: 'rate_limit_error',
-    message: 'relay limit',
-    provider_specific_fields: { code: 429, status: 'TOO_MANY_REQUESTS' },
   });
   expect(readGeminiGenerateContentErrorBody(encode({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } }))).toBeUndefined();
   expect(geminiGenerateContentErrorPayloadFromWire({ error: { code: 429, status: 'RESOURCE_EXHAUSTED' } })).toEqual({

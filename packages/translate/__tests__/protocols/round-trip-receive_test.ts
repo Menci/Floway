@@ -16,7 +16,6 @@ import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import {
-  routeAnthropicMessagesViaGeminiGenerateContent,
   routeAnthropicMessagesViaOpenAIChatCompletions,
   routeAnthropicMessagesViaOpenAIResponses,
   routeGeminiGenerateContentViaAnthropicMessages,
@@ -26,7 +25,6 @@ import {
   routeOpenAIChatCompletionsViaGeminiGenerateContent,
   routeOpenAIChatCompletionsViaOpenAIResponses,
   routeOpenAIResponsesViaAnthropicMessages,
-  routeOpenAIResponsesViaGeminiGenerateContent,
   routeOpenAIResponsesViaOpenAIChatCompletions,
 } from '@floway-dev/translate';
 
@@ -61,10 +59,8 @@ const cases = [
   { source: 'openaiChatCompletions', target: 'geminiGenerateContent', run: (carrier: string) => routeOpenAIChatCompletionsViaGeminiGenerateContent(chat(carrier), context) },
   { source: 'anthropicMessages', target: 'openaiChatCompletions', run: (carrier: string) => routeAnthropicMessagesViaOpenAIChatCompletions(messages(carrier), context) },
   { source: 'anthropicMessages', target: 'openaiResponses', run: (carrier: string) => routeAnthropicMessagesViaOpenAIResponses(messages(carrier), context) },
-  { source: 'anthropicMessages', target: 'geminiGenerateContent', run: (carrier: string) => routeAnthropicMessagesViaGeminiGenerateContent(messages(carrier), context) },
   { source: 'openaiResponses', target: 'anthropicMessages', run: (carrier: string) => routeOpenAIResponsesViaAnthropicMessages(responses(carrier), context) },
   { source: 'openaiResponses', target: 'openaiChatCompletions', run: (carrier: string) => routeOpenAIResponsesViaOpenAIChatCompletions(responses(carrier), context) },
-  { source: 'openaiResponses', target: 'geminiGenerateContent', run: (carrier: string) => routeOpenAIResponsesViaGeminiGenerateContent(responses(carrier), context) },
   { source: 'geminiGenerateContent', target: 'anthropicMessages', run: (carrier: string) => routeGeminiGenerateContentViaAnthropicMessages(gemini(carrier), context) },
   { source: 'geminiGenerateContent', target: 'openaiChatCompletions', run: (carrier: string) => routeGeminiGenerateContentViaOpenAIChatCompletions(gemini(carrier), context) },
   { source: 'geminiGenerateContent', target: 'openaiResponses', run: (carrier: string) => routeGeminiGenerateContentViaOpenAIResponses(gemini(carrier), context) },

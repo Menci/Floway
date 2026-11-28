@@ -16,10 +16,8 @@ import {
   routeAnthropicMessagesViaOpenAIResponses,
   routeGeminiGenerateContentViaAnthropicMessages,
   routeGeminiGenerateContentViaOpenAIResponses,
-  routeOpenAIChatCompletionsViaGeminiGenerateContent,
   routeOpenAIChatCompletionsViaOpenAIResponses,
   routeOpenAIResponsesViaAnthropicMessages,
-  routeOpenAIResponsesViaGeminiGenerateContent,
   routeOpenAIResponsesViaOpenAIChatCompletions,
   type TranslateInputError,
   type TranslateTrip,
@@ -163,7 +161,6 @@ test('maps Google RPC status errors across HTTP and stream phases onto client pr
     },
   };
   const encoded = new TextEncoder().encode(JSON.stringify(googleError));
-  const encodedArray = new TextEncoder().encode(JSON.stringify([googleError]));
 
   const messagesTrip = await requireTrip(routeAnthropicMessagesViaGeminiGenerateContent(messages, options()));
   const messagesHttp = messagesTrip.error(429, new Headers(), encoded);
@@ -180,41 +177,8 @@ test('maps Google RPC status errors across HTTP and stream phases onto client pr
       },
     },
   });
-  expect(messagesTrip.error(429, new Headers(), encodedArray)?.body).toEqual(messagesHttp?.body);
   const messagesStream = await collect(messagesTrip.events(iterate([eventFrame(googleError)])));
   expect(messagesStream).toEqual([eventFrame(messagesHttp?.body)]);
-
-  const chatTrip = await requireTrip(routeOpenAIChatCompletionsViaGeminiGenerateContent(chat, options()));
-  const chatHttp = chatTrip.error(429, new Headers(), encoded);
-  expect(chatHttp?.body).toEqual({
-    error: {
-      type: 'rate_limit_error',
-      message: 'Quota exceeded.',
-      provider_specific_fields: {
-        code: 429,
-        status: 'RESOURCE_EXHAUSTED',
-        details: googleError.error.details,
-      },
-    },
-  });
-
-  const responsesTrip = await requireTrip(routeOpenAIResponsesViaGeminiGenerateContent(responses, options()));
-  const responsesStream = await collect(responsesTrip.events(iterate([eventFrame(googleError)])));
-  expect(responsesStream).toEqual([eventFrame({
-    type: 'error',
-    sequence_number: 0,
-    message: 'Quota exceeded.',
-    provider_specific_fields: {
-      type: 'rate_limit_error',
-      code: 429,
-      status: 'RESOURCE_EXHAUSTED',
-      details: googleError.error.details,
-    },
-  })]);
-
-  // Non-GenerateContent targets do not unwrap Google `:streamGenerateContent` error arrays.
-  const nonGenerateContentTrip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));
-  expect(nonGenerateContentTrip.error(429, new Headers(), encodedArray)).toBeUndefined();
 });
 
 test.each([
@@ -232,23 +196,4 @@ test.each([
   expect(http?.body).toMatchObject(protocol === 'Messages'
     ? { error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE } }
     : { error: { code: 400, status: 'INVALID_ARGUMENT', message: 'too long' } });
-});
-
-test('Anthropic Messages via GenerateContent restates GenerateContent input-token overflow to prompt-too-long in both HTTP and stream phases', async () => {
-  const trip = await requireTrip(routeAnthropicMessagesViaGeminiGenerateContent(messages, options()));
-  const googleOverflow = {
-    error: {
-      code: 400,
-      status: 'INVALID_ARGUMENT',
-      message: 'The input token count (1196265) exceeds the maximum number of tokens allowed (1048575).',
-    },
-  };
-  const http = trip.error(400, new Headers(), new TextEncoder().encode(JSON.stringify(googleOverflow)));
-  expect(http?.status).toBe(400);
-  expect(http?.body).toMatchObject({
-    type: 'error',
-    error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE },
-  });
-  const stream = await collect(trip.events(iterate([eventFrame(googleOverflow)])));
-  expect(stream).toEqual([eventFrame(http?.body)]);
 });

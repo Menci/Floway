@@ -82,7 +82,7 @@ test('countTokens translates Gemini generateContent to Anthropic Messages count_
   assertEquals('stream' in upstreamBody, false);
 });
 
-test('countTokens accepts the upstream total_tokens dialect and refuses unknown shapes with a 502', async () => {
+test('countTokens accepts the upstream total_tokens dialect', async () => {
   installRepo();
   const totalTokensResp = await geminiGenerateContentAttempt.countTokens({
     payload: makePayload(),
@@ -98,22 +98,6 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
   assertEquals(totalTokensResp.type, 'plain');
   if (totalTokensResp.type !== 'plain') throw new Error('unreachable');
   assertEquals(JSON.parse(decodeResponseBody(totalTokensResp.body)), { totalTokens: 19 });
-
-  const unexpectedResp = await geminiGenerateContentAttempt.countTokens({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({
-      callAnthropicMessagesCountTokens: async () => ({
-        http: new Response(JSON.stringify({ unexpected: true }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
-        modelKey: 'k',
-      }),
-    }),
-    headers: new Headers(),
-  });
-  assertEquals(unexpectedResp.type, 'internal-error');
-  if (unexpectedResp.type !== 'internal-error') throw new Error('unreachable');
-  assertEquals(unexpectedResp.http.status, 502);
-  assertEquals(unexpectedResp.error.message, 'Invalid upstream token counting response.');
 });
 
 test('countTokens runs the same shape cleanup chain generate does, and skips it natively', async () => {

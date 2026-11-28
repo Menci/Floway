@@ -12,9 +12,6 @@ export type AnthropicMessagesInterceptor = Interceptor<
   ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>>
 >;
 
-// count_tokens returns an upstream-shaped HTTP body, an API error, or a
-// gateway internal error. Shared entries must remain pure header/payload
-// mutators; post-run stream inspection is not portable to this result type.
 export type AnthropicMessagesCountTokensInterceptor = Interceptor<
   AnthropicMessagesInvocation,
   GatewayCtx,

@@ -10,16 +10,16 @@ import type { SidecarRecognition } from '../round-trip/resolve.ts';
 import { roundTripAssistantTurn } from '../round-trip/resolve.ts';
 import type { SourceAssistantTurnFor } from '../round-trip/source-assistant-turn.ts';
 import type { RoundTripWriter } from '../round-trip/writer.ts';
-import { irErrorPayloadFromBody } from '../shared/api-error.ts';
+import { irErrorPayloadFromBody, restateError } from '../shared/api-error.ts';
 import { TranslateInputException } from '../shared/input-error.ts';
-import type { ApiErrorTranslator, TranslateOptions, Translator } from '../types.ts';
+import type { TranslateOptions, Translator } from '../types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 export interface SourceProtocol<Name extends AssistantTurnProtocol, Payload, Event> {
   readonly name: Name;
   readonly read: (payload: Payload) => SourceReading<SourceAssistantTurnFor<Name>>;
   readonly sidecarRecognition: SidecarRecognition<SourceAssistantTurnFor<Name>>;
-  readonly writeError: (status: number, headers: Headers, error: IRErrorPayload) => NonNullable<ReturnType<ApiErrorTranslator>>;
+  readonly writeError: (error: IRErrorPayload, status: number) => { readonly body: unknown; readonly status?: number };
   /**
    * States the returned stream to this protocol's client.
    *
@@ -54,7 +54,7 @@ export interface TargetProtocol<Name extends AssistantTurnProtocol, Payload, Eve
     context: Context,
     roundTripReader: RoundTripReader<Name>,
   ) => AsyncIterable<IRRecord>;
-  /** Parses this target's non-streaming HTTP error body into IR when it carries protocol-specific envelopes or fields. */
+  /** Overrides `irErrorPayloadFromBody` for non-streaming HTTP error bodies when this target uses protocol-specific envelopes or fields. */
   readonly readError?: (body: Uint8Array) => IRErrorPayload | undefined;
 }
 
@@ -78,7 +78,9 @@ export const composeTranslation = <
       target: targetPayload,
       error: (status, headers, body) => {
         const error = readError(body);
-        return error === undefined ? undefined : source.writeError(status, headers, error);
+        if (error === undefined) return undefined;
+        const restated = source.writeError(error, status);
+        return restateError(restated.status ?? status, headers, restated.body);
       },
       events: frames => {
         const coordinator = createRoundTripCoordinator(source.name, target.name, options.sidecarCodec);

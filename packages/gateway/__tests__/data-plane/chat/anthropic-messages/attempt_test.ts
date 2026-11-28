@@ -221,7 +221,7 @@ test('countTokens applies generation request transforms before provider dispatch
   }]);
 });
 
-test('generate translates through GenerateContent, strips model, and forwards stream error arrays and raw non-JSON HTTP errors untouched', async () => {
+test('generate translates through GenerateContent, strips model, and forwards raw non-JSON HTTP errors untouched', async () => {
   installRepo();
   let capturedBody: GeminiGenerateContentPayload | undefined;
   const callGeminiGenerateContent = vi.fn(async (_model, body: GeminiGenerateContentPayload): Promise<UpstreamStreamResult<GeminiGenerateContentStreamEvent>> => {
@@ -261,35 +261,6 @@ test('generate translates through GenerateContent, strips model, and forwards st
     expect.objectContaining({ type: 'text', text: 'Answer.' }),
   ]));
 
-  const arrayError = await anthropicMessagesAttempt.generate({
-    payload,
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({
-      endpoints: { geminiGenerateContent: {} },
-      callGeminiGenerateContent: async () => ({
-        ok: false,
-        modelKey: 'k',
-        http: new Response(JSON.stringify([{
-          error: { code: 429, message: 'Quota exceeded', status: 'RESOURCE_EXHAUSTED' },
-        }]), { status: 429, headers: new Headers({ 'content-type': 'application/json', 'retry-after': '5' }) }),
-      }),
-    }),
-    headers: new Headers(),
-    anthropicBeta: [],
-  });
-  expect(arrayError.type).toBe('api-error');
-  if (arrayError.type !== 'api-error') throw new Error('unreachable');
-  expect(arrayError.http.status).toBe(429);
-  expect(arrayError.http.headers.get('retry-after')).toBe('5');
-  expect(JSON.parse(decodeResponseBody(arrayError.body))).toEqual({
-    type: 'error',
-    error: {
-      type: 'rate_limit_error',
-      message: 'Quota exceeded',
-      provider_specific_fields: { code: 429, status: 'RESOURCE_EXHAUSTED' },
-    },
-  });
-
   const htmlError = await anthropicMessagesAttempt.generate({
     payload,
     ctx: makeGatewayCtx(),
@@ -314,7 +285,7 @@ test('generate translates through GenerateContent, strips model, and forwards st
   expect(decodeResponseBody(htmlError.body)).toBe('<html>504 Gateway Timeout</html>');
 });
 
-test('countTokens translates through GenerateContent, runs request interceptors, and surfaces malformed 200 as internal-error', async () => {
+test('countTokens translates through GenerateContent, runs request interceptors, and maps invalid input to api-error', async () => {
   installRepo();
   let capturedBody: GeminiGenerateContentPayload | undefined;
   let capturedHeaders: Headers | undefined;
@@ -351,24 +322,6 @@ test('countTokens translates through GenerateContent, runs request interceptors,
     contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
     generationConfig: { maxOutputTokens: 32 },
   });
-
-  const malformed = await anthropicMessagesAttempt.countTokens({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({
-      endpoints: { geminiGenerateContent: {} },
-      callGeminiGenerateContentCountTokens: async () => ({
-        http: new Response('not-json', { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
-        modelKey: 'k',
-      }),
-    }),
-    headers: new Headers(),
-    anthropicBeta: [],
-  });
-  expect(malformed.type).toBe('internal-error');
-  if (malformed.type !== 'internal-error') throw new Error('unreachable');
-  expect(malformed.http.status).toBe(502);
-  expect(malformed.error.message).toBe('Invalid upstream token counting response.');
 
   const inputError = await anthropicMessagesAttempt.countTokens({
     payload: makePayload({

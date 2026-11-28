@@ -87,7 +87,7 @@ export const geminiGenerateContentAttempt = {
       });
       return reshapeTranslatedCountTokens(anthropicMessagesResult, {
         translateError: trip.error,
-        fallbackErrorBody: (status, message) => new TextEncoder().encode(JSON.stringify(geminiGenerateContentRpcErrorPayload(status, message))),
+        fallbackErrorBody: geminiGenerateContentRpcErrorPayload,
         // Anthropic emits `{ input_tokens }`; Copilot's translated count emits `{ total_tokens }`.
         extractCount: decoded => (typeof decoded.input_tokens === 'number' ? decoded.input_tokens : decoded.total_tokens),
         encodeCount: totalTokens => ({ totalTokens }),

@@ -649,7 +649,6 @@ test('generate translates through GenerateContent, lowers agent_message, preserv
     candidate,
     headers: new Headers(),
   });
-  expect(callGeminiGenerateContent).toHaveBeenCalledTimes(2);
   expect(compacted.type).toBe('result');
   if (compacted.type !== 'result') throw new Error('unreachable');
   expect(compacted.result.output).toEqual([

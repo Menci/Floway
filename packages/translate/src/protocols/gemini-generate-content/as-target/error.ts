@@ -6,7 +6,9 @@ import {
 } from '../../../shared/api-error.ts';
 import { geminiGenerateContentStatusForHttpStatus } from '@floway-dev/protocols/gemini-generate-content';
 
-// Google RPC `google.rpc.Status` uses numeric HTTP `code` and canonical `status` enum names without a `type` string.
+// Google's HTTP/JSON error representation of `google.rpc.Status` uses numeric HTTP `code`
+// and canonical `google.rpc.Code` `status` enum names without a `type` string.
+// https://cloud.google.com/apis/design/errors#http11json-representation
 // https://github.com/googleapis/googleapis/blob/bc7e3baa28fbb223fa93782e130260fab8205bfc/google/rpc/code.proto
 const googleRpcErrorType = (status: string): string | undefined => {
   switch (status) {

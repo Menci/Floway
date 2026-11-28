@@ -69,8 +69,7 @@ export const writeGeminiGenerateContentEvents = async function* (
   const pendingText = new Map<number, PendingTextQueue>();
   const sourceLengths = new Map<string, number>();
   const nativeAccumulator = createGeminiGenerateContentEventAccumulator();
-  type GeminiContentState = NonNullable<GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates>[number]>;
-  type PartsState = NonNullable<GeminiContentState['parts']>;
+  type PartsState = NonNullable<GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates>[number]['parts']>;
   const partStates = new Map<number, PartsState>();
 
   const partsState = (choice: number): PartsState => {
@@ -420,7 +419,7 @@ export const writeGeminiGenerateContentEvents = async function* (
       const nativeCandidate = nativeAccumulator.candidate(record.choice);
       const targetTurn: GeminiGenerateContentInputAssistantTurn = [{ role: 'model', parts: nativeCandidate?.content?.parts ?? [] }];
       const stateParts = partsState(record.choice);
-      stateParts.length = targetTurn[0].parts?.length ?? 0;
+      stateParts.length = targetTurn[0].parts.length;
       const assistantState: GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates> = [{ parts: stateParts }];
       const sourceTurnDigest = await computeGeminiGenerateContentTurnDigest(targetTurn);
       const data = await options.roundTrip.encodeSidecar(record.choice, sourceTurnDigest, targetTurn, assistantState, collectGeminiGenerateContentTextPlacements(targetTurn));

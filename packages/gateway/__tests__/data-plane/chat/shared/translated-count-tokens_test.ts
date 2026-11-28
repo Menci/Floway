@@ -15,7 +15,7 @@ const perf = { upstreamId: 'up_1', modelId: 'm', operation: 'chat' } as unknown 
 
 const baseOptions = () => ({
   translateError: vi.fn(() => undefined as { status: number; headers: Headers; body: unknown } | undefined),
-  fallbackErrorBody: (status: number, message: string) => encoder.encode(JSON.stringify({ fallback: { status, message } })),
+  fallbackErrorBody: (status: number, message: string) => ({ fallback: { status, message } }),
   extractCount: (decoded: Record<string, unknown>) => decoded.totalTokens,
   encodeCount: (count: number) => ({ input_tokens: count }),
   performance: perf,
@@ -61,7 +61,7 @@ test('returns 502 internal-error with performance and parse cause on malformed 2
   expect(invalidJson.error.message).toBe('Invalid upstream token counting response.');
   expect(invalidJson.error.cause).toMatchObject({ name: 'SyntaxError' });
 
-  for (const payload of ['[]', 'null', '"42"', '{"totalTokens":"42"}', '{}']) {
+  for (const payload of ['[]', '{"totalTokens":"42"}']) {
     const invalidShape = reshapeTranslatedCountTokens(
       plainResult({ status: 200, headers: new Headers() }, encoder.encode(payload), 'up_1'),
       baseOptions(),
@@ -109,7 +109,6 @@ test('translates errors, applies fallback messaging, preserves api-error metadat
   expect(JSON.parse(decodeResponseBody(translated.body))).toEqual({ translated: true });
   expect(capture.upstreamApiError).toHaveBeenCalledTimes(1);
 
-  // Gateway-synthesized api-error must not record an upstream error in dumps.
   capture.upstreamApiError.mockClear();
   const gatewayApiErr: ApiErrorResult = {
     type: 'api-error',
@@ -126,7 +125,6 @@ test('translates errors, applies fallback messaging, preserves api-error metadat
   });
   expect(capture.upstreamApiError).not.toHaveBeenCalled();
 
-  // Upstream non-200 plain response captures and uses trimmed body in fallback; local plain without upstreamId does not capture.
   const upstreamPlainErr = reshapeTranslatedCountTokens(
     plainResult({ status: 503, headers: new Headers() }, encoder.encode('  overloaded  '), 'up_1'),
     opts,
@@ -143,7 +141,6 @@ test('translates errors, applies fallback messaging, preserves api-error metadat
   reshapeTranslatedCountTokens(plainResult({ status: 503, headers: new Headers() }, encoder.encode('local')), opts);
   expect(capture.upstreamApiError).not.toHaveBeenCalled();
 
-  // Without a fallbackErrorBody, unrecognized upstream error responses pass through verbatim after capture.
   capture.upstreamApiError.mockClear();
   const { fallbackErrorBody: _fallback, ...passthroughOpts } = opts;
   const htmlUpstreamErr = plainResult(

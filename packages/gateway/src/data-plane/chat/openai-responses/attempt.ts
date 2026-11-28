@@ -29,8 +29,8 @@ import {
 } from '@floway-dev/translate';
 import { type ModelCandidate, eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type UpstreamOpenAIResponsesResult, type OpenAIResponsesAction } from '@floway-dev/upstream';
 
-// The same picker covers compact: every non-Responses target is reachable via
-// the shim, which pivots compact→generate inside the chain.
+// Covers both generate and compact: every non-Responses target is reachable
+// via the compact shim, which pivots compact→generate inside the chain.
 export const openaiResponsesTarget = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions', 'geminiGenerateContent']);
 
 interface OpenAIResponsesAttemptBaseArgs {

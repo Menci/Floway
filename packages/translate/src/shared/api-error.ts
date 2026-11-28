@@ -12,36 +12,10 @@ export interface ErrorPayloadClassification {
   readonly omitStatusAsCode?: boolean;
 }
 
-export interface ErrorPayloadOptions {
+interface ErrorPayloadOptions {
   readonly unwrap?: (parsed: unknown) => unknown;
   readonly classify?: (error: Readonly<Record<string, unknown>>) => ErrorPayloadClassification | undefined;
 }
-
-const parseErrorBodyJSON = (body: Uint8Array): unknown => {
-  let text: string;
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(body);
-  } catch (error) {
-    if (!(error instanceof TypeError)) throw error;
-    return undefined;
-  }
-  try {
-    return parseJSONWithRawNumbers(text);
-  } catch (error) {
-    if (!(error instanceof SyntaxError)) throw error;
-    return undefined;
-  }
-};
-
-const readErrorBodyEnvelope = (
-  body: Uint8Array,
-  unwrap?: (parsed: unknown) => unknown,
-): { readonly source: Readonly<Record<string, unknown>>; readonly details: readonly Readonly<Record<string, unknown>>[] } | undefined => {
-  const parsed = parseErrorBodyJSON(body);
-  const envelopeRecord = recordOf(unwrap === undefined ? parsed : unwrap(parsed));
-  if (envelopeRecord === undefined) return undefined;
-  return errorEnvelopeOf(envelopeRecord.type === 'error' ? errorEventPayloadOf(envelopeRecord) : envelopeRecord);
-};
 
 /**
  * Recognize structured upstream error envelopes for cross-protocol rendering. Undefined includes
@@ -51,20 +25,33 @@ export const irErrorPayloadFromBody = (
   body: Uint8Array,
   options?: ErrorPayloadOptions,
 ): IRErrorPayload | undefined => {
-  const envelope = readErrorBodyEnvelope(body, options?.unwrap);
-  if (envelope === undefined) return undefined;
-  return errorPayloadOf(envelope.source, envelope.details, options?.classify?.(envelope.source));
+  let text: string;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(body);
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = parseJSONWithRawNumbers(text);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return undefined;
+  }
+  const envelopeRecord = recordOf(options?.unwrap === undefined ? parsed : options.unwrap(parsed));
+  if (envelopeRecord === undefined) return undefined;
+  const { source, details } = errorEnvelopeOf(envelopeRecord.type === 'error' ? errorEventPayloadOf(envelopeRecord) : envelopeRecord);
+  if (stringOf(source.message) === undefined && stringOf(source.msg) === undefined) return undefined;
+  return errorPayloadOf(source, details, options?.classify?.(source));
 };
 
-/** Restatement requires a message; preserve every unrepresented field in diagnostic details. */
-export const errorPayloadOf = (
+const errorPayloadOf = (
   error: Readonly<Record<string, unknown>>,
   envelopeDetails: readonly Readonly<Record<string, unknown>>[] = [],
   classification?: ErrorPayloadClassification,
-  requireMessage = true,
-): IRErrorPayload | undefined => {
+): IRErrorPayload => {
   const message = stringOf(error.message) ?? stringOf(error.msg);
-  if (message === undefined && requireMessage) return undefined;
   const explicitType = stringOf(error.type);
   const type = explicitType ?? classification?.defaultType;
   const code = error.code === null
@@ -122,11 +109,11 @@ export const errorPayloadFromEvent = (event: Readonly<Record<string, unknown>>):
 // Canonical wire payloads retain identity when their envelope adds no metadata.
 export const errorPayloadFromWire = (
   wire: unknown,
-  options?: Pick<ErrorPayloadOptions, 'classify'>,
+  options?: Required<Pick<ErrorPayloadOptions, 'classify'>>,
 ): IRErrorPayload => {
   const { source, details } = errorEnvelopeOf(recordOf(wire) ?? {});
-  const classification = options?.classify?.(source);
-  if (classification !== undefined) return errorPayloadOf(source, details, classification, false)!;
+  const classification = options?.classify(source);
+  if (classification !== undefined) return errorPayloadOf(source, details, classification);
   if (hasErrorMessage(source)) return withEnvelopeDetails(source, details);
   const aliasMessage = stringOf(source.msg);
   if (aliasMessage !== undefined) {
@@ -134,7 +121,7 @@ export const errorPayloadFromWire = (
     return withEnvelopeDetails({ ...fields, message: aliasMessage }, details);
   }
   // Failures without message text still need an error frame; preserve any structured fields alongside an empty message.
-  return errorPayloadOf(source, details, undefined, false)!;
+  return errorPayloadOf(source, details);
 };
 
 const hasErrorMessage = (value: Readonly<Record<string, unknown>>): value is Readonly<Record<string, unknown>> & { readonly message: string } =>

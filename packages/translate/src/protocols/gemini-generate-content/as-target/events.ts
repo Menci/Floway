@@ -11,6 +11,7 @@ import { appendReadField, createReadFieldState, type ReadFieldState, type ReadFi
 import { unwrapCustomToolInput } from '../../../shared/custom-tool.ts';
 import { isPlainJSONObject, requireJSONObject } from '../../../shared/json/object.ts';
 import { TextCoordinateIndex } from '../../../shared/text-coordinate-index.ts';
+import type { TextRange } from '../../../shared/text-range.ts';
 import { unwrapToolArguments } from '../../../shared/tool-schema-envelope.ts';
 import { generateContentServiceTierToIR } from '../service-tier.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -28,10 +29,8 @@ import {
   type GeminiGenerateContentPart,
   type GeminiGenerateContentResult,
   type GeminiGenerateContentStreamEvent,
-  type GeminiGenerateContentUsageMetadata,
 } from '@floway-dev/protocols/gemini-generate-content';
 
-// GenerateContent finish reasons indicating safety or policy filtering.
 // https://ai.google.dev/api/generate-content#FinishReason
 const CONTENT_FILTER_FINISH_REASONS: ReadonlySet<string> = new Set([
   'SAFETY',
@@ -44,7 +43,7 @@ const CONTENT_FILTER_FINISH_REASONS: ReadonlySet<string> = new Set([
   'IMAGE_RECITATION',
 ]);
 
-// GenerateContent finish reasons meaning the model's own output was unusable.
+// GenerateContent finish reasons indicating unusable model output or a missing request thought signature.
 // Surface them as a stream error so an agent loop observes the failure.
 // https://ai.google.dev/api/generate-content#FinishReason
 const FAILED_OUTPUT_FINISH_REASONS: ReadonlySet<string> = new Set([
@@ -65,7 +64,7 @@ const mapFinishReason = (
   return 'stop';
 };
 
-type PartsFieldState = NonNullable<NonNullable<GeminiGenerateContentInputAssistantTurnState<ReadFieldStates>[number]>['parts']>;
+type PartsFieldState = NonNullable<GeminiGenerateContentInputAssistantTurnState<ReadFieldStates>[number]['parts']>;
 
 interface TextRun {
   readonly part: IRPartHandle;
@@ -89,7 +88,6 @@ interface GenerateContentChoiceState {
   hasToolCalls: boolean;
   logprobTokenCount: number;
   finishReason?: 'stop' | 'length' | 'tool_calls' | 'content_filter';
-  ended: boolean;
 }
 
 const ensureRunIndex = (run: TextRun): TextCoordinateIndex => {
@@ -116,11 +114,11 @@ const resolveGroundingTarget = (
   if (choice.textRuns.length === 0) return undefined;
   if (choice.textRuns.length === 1) return { run: choice.textRuns[0], baseByte: 0 };
 
-  const endByte = segmentSpec?.endIndex;
-  if (endByte === undefined) {
+  if (segmentSpec?.endIndex === undefined) {
     return { run: choice.activeTextRun ?? choice.textRuns[0], baseByte: 0 };
   }
-  const startByte = segmentSpec?.startIndex ?? 0;
+  const endByte = segmentSpec.endIndex;
+  const startByte = segmentSpec.startIndex ?? 0;
   if (!Number.isInteger(startByte) || !Number.isInteger(endByte) || startByte < 0 || endByte <= startByte) {
     return { run: choice.textRuns[0], baseByte: 0 };
   }
@@ -134,15 +132,15 @@ const resolveGroundingTarget = (
   return { run: last, baseByte: offset - ensureRunIndex(last).utf8Length };
 };
 
-// Proto3 JSON omits default zero values like `startIndex: 0` and `partIndex: 0`.
-// https://protobuf.dev/programming-guides/json/#field-presence
+// Proto3 JSON omits default zero values like `startIndex: 0`.
+// https://protobuf.dev/programming-guides/json/#presence
 const utf8ByteRangeToUTF16 = (
   choiceIndex: number,
   run: TextRun,
   baseByte: number,
   startByte: number | undefined,
   endByte: number | undefined,
-): { start: number; end_exclusive: number } | undefined => {
+): TextRange | undefined => {
   if (endByte === undefined) return undefined;
   const rawStart = startByte ?? 0;
   if (!Number.isInteger(rawStart) || !Number.isInteger(endByte) || rawStart < 0 || endByte <= rawStart) {
@@ -181,7 +179,7 @@ const utf8ByteRangeToUTF16 = (
 
 const groundingChunkToCitation = (
   chunk: GeminiGenerateContentGroundingChunk,
-  range: { start: number; end_exclusive: number } | undefined,
+  range: TextRange | undefined,
 ): IROutputSourceCitation | undefined => {
   const rangeField = range === undefined ? {} : { output_text_range: range };
   if (typeof chunk.web?.uri === 'string' && chunk.web.uri !== '') {
@@ -198,17 +196,64 @@ const groundingChunkToCitation = (
   const source = typeof retrieved.uri === 'string' && retrieved.uri !== '' ? retrieved.uri : undefined;
   const sourceText = typeof retrieved.text === 'string' && retrieved.text !== '' ? retrieved.text : undefined;
   if (source === undefined && sourceText === undefined) return undefined;
+  const pageNumber = typeof retrieved.pageNumber === 'number'
+    && Number.isInteger(retrieved.pageNumber)
+    && retrieved.pageNumber > 0
+    ? retrieved.pageNumber
+    : undefined;
   return {
     type: 'source_citation',
     source_kind: 'document',
     ...(source === undefined ? {} : { source }),
     ...(retrieved.title === undefined ? {} : { source_label: retrieved.title }),
     ...(sourceText === undefined ? {} : { source_text: sourceText }),
-    ...(Number.isInteger(retrieved.pageNumber) && (retrieved.pageNumber as number) > 0
-      ? { source_page_range: { start_one_based: retrieved.pageNumber as number, end_one_based_exclusive: (retrieved.pageNumber as number) + 1 } }
-      : {}),
+    ...(pageNumber === undefined
+      ? {}
+      : { source_page_range: { start_one_based: pageNumber, end_one_based_exclusive: pageNumber + 1 } }),
     ...rangeField,
   } as IROutputSourceCitation;
+};
+
+const applyGroundingMetadata = (choice: GenerateContentChoiceState, metadata: GeminiGenerateContentGroundingMetadata): void => {
+  const chunks = metadata.groundingChunks ?? [];
+  if (chunks.length === 0) return;
+  const touched = new Set<TextRun>();
+  for (const support of metadata.groundingSupports ?? []) {
+    const target = resolveGroundingTarget(choice, support.segment);
+    if (target === undefined) continue;
+    const { run, baseByte } = target;
+    const warnClosedPart = (): void => {
+      console.warn('Dropping Gemini GenerateContent grounding citation for closed text part', {
+        choice: choice.irIndex,
+        partIndex: support.segment?.partIndex ?? 0,
+      });
+    };
+    if (!run.part.isOpen && run.citationKeys.size === 0) {
+      warnClosedPart();
+      continue;
+    }
+    const range = utf8ByteRangeToUTF16(choice.irIndex, run, baseByte, support.segment?.startIndex, support.segment?.endIndex);
+    for (const chunkIndex of support.groundingChunkIndices ?? []) {
+      const chunk = chunks[chunkIndex];
+      if (chunk === undefined) continue;
+      const citation = groundingChunkToCitation(chunk, range);
+      if (citation === undefined) continue;
+      // Keep `annotations` append-only across cumulative snapshots so streaming
+      // consumers (such as Responses) never skip or duplicate earlier entries.
+      const key = JSON.stringify(citation);
+      if (run.citationKeys.has(key)) continue;
+      if (!run.part.isOpen) {
+        warnClosedPart();
+        break;
+      }
+      run.citationKeys.add(key);
+      run.citations.push(citation);
+      touched.add(run);
+    }
+  }
+  for (const run of touched) {
+    run.part.assign('annotations', [...run.citations]);
+  }
 };
 
 export const readGeminiGenerateContentEvents = async function* (
@@ -220,12 +265,10 @@ export const readGeminiGenerateContentEvents = async function* (
   },
 ): AsyncGenerator<IRRecord> {
   const ir = createIRBuilder();
-  const namingOf = (wireName: string) => options.originalToolNames?.get(wireName) ?? { name: wireName };
   const choices = new Map<number, GenerateContentChoiceState>();
   const usageAccumulator: GeminiGenerateContentUsageAccumulator = {};
   let nextIRChoiceIndex = 0;
   let started = false;
-  let hasModel = false;
 
   const choiceState = (wireIndex: number): GenerateContentChoiceState => {
     let state = choices.get(wireIndex);
@@ -239,18 +282,17 @@ export const readGeminiGenerateContentEvents = async function* (
         inThought: false,
         hasToolCalls: false,
         logprobTokenCount: 0,
-        ended: false,
       };
       choices.set(wireIndex, state);
     }
     return state;
   };
 
-  const appendTextField = (
+  const appendTrackedField = (
     handle: IRWriteHandle,
     field: IRRelativePath,
     text: string,
-    state: ReadFieldState<'text'>,
+    state: ReadFieldState,
   ): void => {
     const pieceId = appendReadField(options.roundTrip.builder, state, text);
     handle.append(field, text, [pieceId]);
@@ -275,21 +317,16 @@ export const readGeminiGenerateContentEvents = async function* (
     choice.reasoning = undefined;
   };
 
-  const assignUsage = (usage: GeminiGenerateContentUsageMetadata): void => {
-    ir.usage(usageToIR(usage, usageAccumulator));
-    const tier = generateContentServiceTierToIR(typeof usage.serviceTier === 'string' ? usage.serviceTier : undefined);
-    if (tier !== undefined) ir.assign(['service_tier'], tier);
-  };
-
-  const ensureStarted = (event: GeminiGenerateContentResult): void => {
+  const applyEventMetadata = (event: GeminiGenerateContentResult): void => {
     const incomingModel = typeof event.modelVersion === 'string' && event.modelVersion !== '' ? event.modelVersion : undefined;
-    const model = incomingModel ?? (!hasModel && typeof options.fallbackModel === 'string' && options.fallbackModel !== '' ? options.fallbackModel : undefined);
-    if (model !== undefined) {
-      hasModel = true;
-      ir.assign(['model'], model);
+    const model = incomingModel ?? (!started && typeof options.fallbackModel === 'string' && options.fallbackModel !== '' ? options.fallbackModel : undefined);
+    if (model !== undefined) ir.assign(['model'], model);
+    else if (!started) throw new TypeError('Gemini GenerateContent stream arrived before a non-empty model');
+    if (event.usageMetadata != null) {
+      ir.usage(usageToIR(event.usageMetadata, usageAccumulator));
+      const tier = generateContentServiceTierToIR(typeof event.usageMetadata.serviceTier === 'string' ? event.usageMetadata.serviceTier : undefined);
+      if (tier !== undefined) ir.assign(['service_tier'], tier);
     }
-    if (!started && !hasModel) throw new TypeError('Gemini GenerateContent stream arrived before a non-empty model');
-    if (event.usageMetadata != null) assignUsage(event.usageMetadata);
     if (started) return;
     ir.event({
       type: 'start',
@@ -298,53 +335,14 @@ export const readGeminiGenerateContentEvents = async function* (
     started = true;
   };
 
-  const applyGroundingMetadata = (choiceIndex: number, choice: GenerateContentChoiceState, metadata: GeminiGenerateContentGroundingMetadata): void => {
-    const chunks = metadata.groundingChunks ?? [];
-    if (chunks.length === 0) return;
-    const touched = new Set<TextRun>();
-    for (const support of metadata.groundingSupports ?? []) {
-      const target = resolveGroundingTarget(choice, support.segment);
-      if (target === undefined) continue;
-      const { run, baseByte } = target;
-      const warnClosedPart = (): void => {
-        console.warn('Dropping Gemini GenerateContent grounding citation for closed text part', {
-          choice: choiceIndex,
-          partIndex: support.segment?.partIndex ?? 0,
-        });
-      };
-      if (!run.part.isOpen && run.citationKeys.size === 0) {
-        warnClosedPart();
-        continue;
-      }
-      const range = utf8ByteRangeToUTF16(choiceIndex, run, baseByte, support.segment?.startIndex, support.segment?.endIndex);
-      for (const chunkIndex of support.groundingChunkIndices ?? []) {
-        const chunk = chunks[chunkIndex];
-        if (chunk === undefined) continue;
-        const citation = groundingChunkToCitation(chunk, range);
-        if (citation === undefined) continue;
-        // Keep `annotations` append-only across cumulative snapshots so streaming
-        // consumers (such as Responses) never skip or duplicate earlier entries.
-        const key = JSON.stringify(citation);
-        if (run.citationKeys.has(key)) continue;
-        if (!run.part.isOpen) {
-          warnClosedPart();
-          break;
-        }
-        run.citationKeys.add(key);
-        run.citations.push(citation);
-        touched.add(run);
-      }
-    }
-    for (const run of touched) {
-      run.part.assign('annotations', [...run.citations]);
-    }
-  };
-
-  const applyLogprobs = (choiceIndex: number, choice: GenerateContentChoiceState, candidate: GeminiGenerateContentCandidate): void => {
-    const chosen = candidate.logprobsResult?.chosenCandidates;
+  const applyLogprobs = (
+    choice: GenerateContentChoiceState,
+    logprobsResult: NonNullable<GeminiGenerateContentCandidate['logprobsResult']>,
+  ): void => {
+    const chosen = logprobsResult.chosenCandidates;
     if (chosen === undefined || chosen.length === 0) return;
-    const top = candidate.logprobsResult?.topCandidates ?? [];
-    const handle = ir.choice(choiceIndex);
+    const top = logprobsResult.topCandidates ?? [];
+    const handle = ir.choice(choice.irIndex);
     for (let i = 0; i < chosen.length; i++) {
       const entry = chosen[i];
       if (typeof entry.token !== 'string' || typeof entry.logProbability !== 'number') continue;
@@ -364,7 +362,7 @@ export const readGeminiGenerateContentEvents = async function* (
     }
   };
 
-  const readPart = (choiceIndex: number, choice: GenerateContentChoiceState, part: GeminiGenerateContentPart): void => {
+  const readPart = (choice: GenerateContentChoiceState, part: GeminiGenerateContentPart): void => {
     const partIndex = appendGeminiGenerateContentPart(choice.nativeParts, part);
 
     if (part.thought === true) {
@@ -375,10 +373,10 @@ export const readGeminiGenerateContentEvents = async function* (
       }
       if (typeof part.text === 'string' && part.text !== '') {
         closeMessage(choice);
-        choice.reasoning ??= ir.item(choiceIndex, { type: 'reasoning', summary: [''] });
+        choice.reasoning ??= ir.item(choice.irIndex, { type: 'reasoning', summary: [''] });
         const textField = createReadFieldState('text');
         choice.partsFieldState[partIndex] = { text: textField };
-        appendTextField(choice.reasoning, ['summary', 0], part.text, textField);
+        appendTrackedField(choice.reasoning, ['summary', 0], part.text, textField);
       }
       return;
     }
@@ -386,7 +384,7 @@ export const readGeminiGenerateContentEvents = async function* (
     if (typeof part.text === 'string') {
       if (part.text === '') return;
       closeReasoning(choice);
-      choice.message ??= ir.item(choiceIndex, { type: 'message', content: [] });
+      choice.message ??= ir.item(choice.irIndex, { type: 'message', content: [] });
       let run = choice.activeTextRun;
       if (run === undefined) {
         run = {
@@ -404,7 +402,7 @@ export const readGeminiGenerateContentEvents = async function* (
       const existingTextField = existingState !== undefined && 'text' in existingState ? existingState.text : undefined;
       const textField = existingTextField ?? createReadFieldState('text');
       if (existingTextField === undefined) choice.partsFieldState[partIndex] = { text: textField };
-      appendTextField(run.part, 'text', part.text, textField);
+      appendTrackedField(run.part, 'text', part.text, textField);
       run.text += part.text;
       run.coordinateIndex?.append(part.text);
       return;
@@ -422,34 +420,23 @@ export const readGeminiGenerateContentEvents = async function* (
       }
       const callId = typeof call.id === 'string' && call.id !== '' ? call.id : IRAbsent;
       const argsJson = JSON.stringify(requireJSONObject(call.args ?? {}));
-      const naming = namingOf(call.name);
+      const naming = options.originalToolNames?.get(call.name) ?? { name: call.name };
       if (options.customToolNames?.has(call.name) === true) {
-        const item = ir.item(choiceIndex, { type: 'custom_tool_call', call_id: callId, ...naming, input: '' });
-        const unwrapped = unwrapCustomToolInput(argsJson);
-        if (unwrapped !== '') item.append('input', unwrapped);
-        item.end('completed');
-      } else if (options.envelopedFunctionToolNames?.has(call.name) === true) {
-        const item = ir.item(choiceIndex, { type: 'function_call', call_id: callId, ...naming, arguments: '' });
-        const { json, objectArgument } = unwrapToolArguments(argsJson);
-        if (objectArgument && isPlainJSONObject(call.args)) {
-          // Only the inner object appears in the source turn and can be referenced on replay.
-          const jsonField = createReadFieldState('json');
-          const pieceId = appendReadField(options.roundTrip.builder, jsonField, json);
-          choice.partsFieldState[partIndex] = { functionCall: { args: { arguments: jsonField } } };
-          item.append('arguments', json, [pieceId]);
-        } else {
-          item.append('arguments', json);
-        }
+        const item = ir.item(choice.irIndex, { type: 'custom_tool_call', call_id: callId, ...naming, input: '' });
+        item.append('input', unwrapCustomToolInput(argsJson));
         item.end('completed');
       } else {
-        const item = ir.item(choiceIndex, { type: 'function_call', call_id: callId, ...naming, arguments: '' });
-        if (isPlainJSONObject(call.args)) {
+        const item = ir.item(choice.irIndex, { type: 'function_call', call_id: callId, ...naming, arguments: '' });
+        const enveloped = options.envelopedFunctionToolNames?.has(call.name) === true;
+        const unwrapped = enveloped ? unwrapToolArguments(argsJson) : undefined;
+        const wireArguments = unwrapped === undefined ? argsJson : unwrapped.json;
+        if (isPlainJSONObject(call.args) && (unwrapped === undefined || unwrapped.objectArgument)) {
+          // For enveloped schemas, only the inner object appears in the source turn and can be referenced on replay.
           const jsonField = createReadFieldState('json');
-          const pieceId = appendReadField(options.roundTrip.builder, jsonField, argsJson);
-          choice.partsFieldState[partIndex] = { functionCall: { args: jsonField } };
-          item.append('arguments', argsJson, [pieceId]);
+          choice.partsFieldState[partIndex] = { functionCall: { args: enveloped ? { arguments: jsonField } : jsonField } };
+          appendTrackedField(item, 'arguments', wireArguments, jsonField);
         } else {
-          item.append('arguments', argsJson);
+          item.append('arguments', wireArguments);
         }
         item.end('completed');
       }
@@ -465,7 +452,7 @@ export const readGeminiGenerateContentEvents = async function* (
       const isImage = !isAudio && mimeType.startsWith('image/');
       if (!isAudio && !isImage) return;
       closeReasoning(choice);
-      choice.message ??= ir.item(choiceIndex, { type: 'message', content: [] });
+      choice.message ??= ir.item(choice.irIndex, { type: 'message', content: [] });
 
       if (isAudio) {
         const transcript = typeof part.audioTranscription?.text === 'string' ? part.audioTranscription.text : undefined;
@@ -478,11 +465,11 @@ export const readGeminiGenerateContentEvents = async function* (
           },
         });
         const dataField = part.inlineData.data === '' ? undefined : createReadFieldState('text');
-        if (dataField !== undefined) appendTextField(audioPart, ['audio', 'data'], part.inlineData.data, dataField);
+        if (dataField !== undefined) appendTrackedField(audioPart, ['audio', 'data'], part.inlineData.data, dataField);
         let transcriptField: ReadFieldState<'text'> | undefined;
         if (transcript !== undefined && transcript !== '') {
           transcriptField = createReadFieldState('text');
-          appendTextField(audioPart, ['audio', 'transcript'], transcript, transcriptField);
+          appendTrackedField(audioPart, ['audio', 'transcript'], transcript, transcriptField);
         }
         if (dataField !== undefined || transcriptField !== undefined) {
           choice.partsFieldState[partIndex] = {
@@ -511,7 +498,7 @@ export const readGeminiGenerateContentEvents = async function* (
     choice: GenerateContentChoiceState,
     finishReason: 'stop' | 'length' | 'tool_calls' | 'content_filter',
   ): void => {
-    if (choice.ended) return;
+    if (choice.finishReason !== undefined) return;
     const status = finishReason === 'length' ? 'incomplete' : 'completed';
     closeReasoning(choice, status);
     closeMessage(choice, status);
@@ -523,17 +510,14 @@ export const readGeminiGenerateContentEvents = async function* (
     );
     ir.choice(choice.irIndex).end(finishReason);
     choice.finishReason = finishReason;
-    choice.ended = true;
   };
 
-  const finishStatus = (): 'completed' | 'incomplete' =>
-    [...choices.values()].some(choice => choice.finishReason === 'length') ? 'incomplete' : 'completed';
-
   const finishStream = function* (): Generator<IRRecord> {
-    if (!started || choices.size === 0 || [...choices.values()].some(choice => !choice.ended)) {
+    if (choices.size === 0 || [...choices.values()].some(choice => choice.finishReason === undefined)) {
       throw new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
     }
-    ir.event({ type: 'finish', status: finishStatus() });
+    const status = [...choices.values()].some(choice => choice.finishReason === 'length') ? 'incomplete' : 'completed';
+    ir.event({ type: 'finish', status });
     yield* ir.drain();
   };
 
@@ -561,33 +545,32 @@ export const readGeminiGenerateContentEvents = async function* (
       return;
     }
 
-    ensureStarted(event);
+    applyEventMetadata(event);
 
-    const blockReason = event.promptFeedback?.blockReason;
-    if (isGeminiGenerateContentPromptBlockReason(blockReason)) {
-      const targetChoices = choices.size === 0 ? [choiceState(0)] : [...choices.values()].filter(choice => !choice.ended);
+    const promptFeedback = event.promptFeedback;
+    if (promptFeedback != null && isGeminiGenerateContentPromptBlockReason(promptFeedback.blockReason)) {
+      const targetChoices = choices.size === 0 ? [choiceState(0)] : [...choices.values()].filter(choice => choice.finishReason === undefined);
       for (const choice of targetChoices) {
         ir.choice(choice.irIndex).assign('refusal_details', {
-          category: blockReason,
-          explanation: event.promptFeedback?.blockReasonMessage ?? null,
+          category: promptFeedback.blockReason,
+          explanation: promptFeedback.blockReasonMessage ?? null,
         });
         endChoice(choice, 'content_filter');
       }
-      ir.event({ type: 'finish', status: finishStatus() });
-      yield* ir.drain();
+      yield* finishStream();
       return;
     }
 
     for (const candidate of event.candidates ?? []) {
       const wireIndex = candidate.index ?? 0;
       const existing = choices.get(wireIndex);
-      if (existing?.ended) continue;
+      if (existing?.finishReason !== undefined) continue;
 
       const finishReason = candidate.finishReason;
       const isTerminal = isGeminiGenerateContentTerminalFinishReason(finishReason);
       const isFailed = isTerminal && FAILED_OUTPUT_FINISH_REASONS.has(finishReason);
-      const hasParts = (candidate.content?.parts?.length ?? 0) > 0;
-      if (isFailed && !hasParts && existing === undefined) {
+      const parts = candidate.content?.parts ?? [];
+      if (isFailed && parts.length === 0 && existing === undefined) {
         emitFailedFinishError(finishReason, candidate.finishMessage);
         yield* ir.drain();
         return;
@@ -596,14 +579,14 @@ export const readGeminiGenerateContentEvents = async function* (
       const choice = choiceState(wireIndex);
       ir.choice(choice.irIndex);
 
-      for (const part of candidate.content?.parts ?? []) {
-        readPart(choice.irIndex, choice, part);
+      for (const part of parts) {
+        readPart(choice, part);
       }
       if (candidate.groundingMetadata !== undefined) {
-        applyGroundingMetadata(choice.irIndex, choice, candidate.groundingMetadata);
+        applyGroundingMetadata(choice, candidate.groundingMetadata);
       }
-      if (candidate.logprobsResult !== undefined) {
-        applyLogprobs(choice.irIndex, choice, candidate);
+      if (candidate.logprobsResult != null) {
+        applyLogprobs(choice, candidate.logprobsResult);
       }
       if (isFailed) {
         emitFailedFinishError(finishReason, candidate.finishMessage);

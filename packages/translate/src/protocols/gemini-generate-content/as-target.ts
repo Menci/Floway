@@ -22,7 +22,7 @@ interface RestoredGenerateContentCall extends PendingCall {
 const restoredCallsOf = (
   piece: RestoredAssistantTurn<GeminiGenerateContentInputAssistantTurn>,
 ): readonly RestoredGenerateContentCall[] => {
-  const calls = piece.turn.flatMap(entry => (entry.parts ?? []).flatMap(part => (part.functionCall === undefined ? [] : [part.functionCall])));
+  const calls = piece.turn.flatMap(entry => entry.parts.flatMap(part => (part.functionCall === undefined ? [] : [part.functionCall])));
   if (calls.length !== piece.sourceCallIds.length) {
     throw new Error('Authenticated round-trip call IDs do not match restored Gemini GenerateContent function calls');
   }

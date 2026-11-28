@@ -3,21 +3,11 @@ import { generateAnthropicId, type AnthropicMessagesStreamEventEx } from '@flowa
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/upstream';
 
+// Anthropic Messages error envelope used to render pre-stream `ChatServeFailure`s.
+// These are gateway-synthesized (`source: 'gateway'`) so dumps label them as such.
 // Byte-shape matches Anthropic-direct: `{type:'error', error:{type, message},
 // request_id}` with `request_id` at the top level (alongside `error`, not
 // nested inside it) and key order load-bearing for byte-faithfulness.
-export const anthropicErrorEnvelopeBody = (
-  type: string,
-  message: string,
-  extension?: Record<string, unknown>,
-): Uint8Array => new TextEncoder().encode(JSON.stringify({
-  type: 'error',
-  error: { type, message, ...(extension === undefined ? {} : { provider_specific_fields: extension }) },
-  request_id: generateAnthropicId('req'),
-}));
-
-// Anthropic Messages error envelope used to render pre-stream `ChatServeFailure`s.
-// These are gateway-synthesized (`source: 'gateway'`) so dumps label them as such.
 const anthropicErrorResult = (
   status: number,
   type: string,
@@ -28,7 +18,11 @@ const anthropicErrorResult = (
   type: 'api-error',
   source: 'gateway',
   http: { status, headers: new Headers({ 'content-type': 'application/json' }) },
-  body: anthropicErrorEnvelopeBody(type, message, extension),
+  body: new TextEncoder().encode(JSON.stringify({
+    type: 'error',
+    error: { type, message, ...(extension === undefined ? {} : { provider_specific_fields: extension }) },
+    request_id: generateAnthropicId('req'),
+  })),
   ...(performance ? { performance } : {}),
 });
 

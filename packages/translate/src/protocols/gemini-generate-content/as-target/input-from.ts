@@ -11,7 +11,6 @@ import type {
   IRInputOutputFormat,
   IRInputRequestHeader,
   IRInputSettings,
-  IRInputTextPart,
   IRInputTool,
   IRInputToolChoice,
 } from '../../../ir/input/types.ts';
@@ -41,7 +40,7 @@ export interface GeminiGenerateContentMatchedCall {
   readonly order: number;
 }
 
-export type GeminiGenerateContentToolResultLookup = ReadonlyMap<IRInputToolResultItemWithCallId, GeminiGenerateContentMatchedCall>;
+type GeminiGenerateContentToolResultLookup = ReadonlyMap<IRInputToolResultItemWithCallId, GeminiGenerateContentMatchedCall>;
 
 const DEFAULT_BINARY_MEDIA_TYPE = 'application/octet-stream';
 
@@ -132,10 +131,7 @@ const buildToolResult = (
   item: IRInputToolResultItemWithCallId,
   matchedToolResults: GeminiGenerateContentToolResultLookup,
 ): BuiltToolResult => {
-  const matched = matchedToolResults.get(item);
-  if (matched === undefined) {
-    throw new Error(`Missing Gemini GenerateContent matched call metadata for tool_result '${item.call_id}'.`);
-  }
+  const matched = matchedToolResults.get(item)!;
   const isError = item.is_error === true;
   let response: Record<string, unknown>;
   const inlineParts: GeminiGenerateContentFunctionResponsePart[] = [];
@@ -236,9 +232,6 @@ const SKIP_THOUGHT_SIGNATURE_VALIDATOR = 'skip_thought_signature_validator';
 
 type NormalizedContent = GeminiGenerateContentContent & { role: 'user' | 'model'; parts: GeminiGenerateContentPart[] };
 
-const systemTextParts = (content: readonly IRInputTextPart[]): GeminiGenerateContentPart[] =>
-  content.flatMap(part => (part.text === '' ? [] : [{ text: part.text }]));
-
 const assistantParts = (
   items: readonly IRInputAssistantItemWithCallIds[],
   hasPriorFunctionCall: boolean,
@@ -291,7 +284,6 @@ const appendContentParts = (
   role: 'user' | 'model',
   parts: readonly GeminiGenerateContentPart[],
 ): void => {
-  if (parts.length === 0) return;
   const last = contents.at(-1);
   if (last?.role === role) {
     last.parts.push(...parts);
@@ -346,7 +338,7 @@ const buildConversation = (
     if (piece.kind === 'restored') {
       flushClientRun();
       hoisting = false;
-      appendModelParts(klona(piece.turn.flatMap(entry => entry.parts ?? [])));
+      appendModelParts(klona(piece.turn.flatMap(entry => entry.parts)));
       continue;
     }
     if (piece.kind === 'assistant') {
@@ -367,7 +359,7 @@ const buildConversation = (
       if (item.type === 'instruction' || (item.type === 'message' && item.role !== 'user')) {
         // GenerateContent `contents` only admits `'user'` and `'model'` roles; non-leading
         // system/developer turns lower inline into user text parts.
-        (hoisting ? systemParts : pendingUserParts).push(...systemTextParts(item.content));
+        (hoisting ? systemParts : pendingUserParts).push(...item.content.flatMap(part => (part.text === '' ? [] : [{ text: part.text }])));
         if (item.type === 'instruction') hoisting = false;
         continue;
       }
@@ -396,19 +388,21 @@ const toolFromIR = (tool: IRInputTool): GeminiGenerateContentFunctionDeclaration
 // paired with `ANY` (required) or `VALIDATED` (auto subset) while retaining all declarations.
 // https://github.com/googleapis/googleapis/blob/bc7e3baa28fbb223fa93782e130260fab8205bfc/google/ai/generativelanguage/v1beta/content.proto
 const toolConfigFromIR = (
-  choice: IRInputToolChoice,
+  choice: IRInputToolChoice | undefined,
   tools: readonly IRInputTool[],
-): GeminiGenerateContentToolConfig => {
-  if (choice === 'auto') return { functionCallingConfig: { mode: 'AUTO' } };
-  if (choice === 'none') return { functionCallingConfig: { mode: 'NONE' } };
+): GeminiGenerateContentToolConfig | undefined => {
+  if (choice === undefined) return undefined;
+  if (choice === 'auto') return tools.length === 0 ? undefined : { functionCallingConfig: { mode: 'AUTO' } };
+  if (choice === 'none') return tools.length === 0 ? undefined : { functionCallingConfig: { mode: 'NONE' } };
   if (choice === 'required') return { functionCallingConfig: { mode: 'ANY' } };
   if (choice.type === 'allowed_tools') {
+    if (tools.length === 0 && choice.mode !== 'required') return undefined;
     if (choice.tools.length === 0) {
       if (choice.mode === 'auto') return { functionCallingConfig: { mode: 'NONE' } };
       throw new TranslateInputException('Gemini GenerateContent cannot require a tool call from an empty allowed_tools list.');
     }
     const permitted = new Set(choice.tools.map(selector => `${selector.type}:${selector.name}`));
-    if (tools.length > 0 && permitted.size === tools.length && tools.every(tool => permitted.has(`${tool.type}:${tool.name}`))) {
+    if (permitted.size === tools.length && tools.every(tool => permitted.has(`${tool.type}:${tool.name}`))) {
       return { functionCallingConfig: { mode: choice.mode === 'required' ? 'ANY' : 'AUTO' } };
     }
     return {
@@ -420,10 +414,6 @@ const toolConfigFromIR = (
   }
   return { functionCallingConfig: { mode: 'ANY', allowedFunctionNames: [choice.name] } };
 };
-
-const isForcingToolChoice = (choice: IRInputToolChoice): boolean =>
-  choice === 'required'
-  || (typeof choice === 'object' && (choice.type !== 'allowed_tools' || choice.mode === 'required'));
 
 // Inverse of `geminiGenerateContentReasoningEffortToIR` in `../as-source/input-to.ts`.
 // https://ai.google.dev/api/generate-content#ThinkingLevel
@@ -478,7 +468,7 @@ const outputFormatConfig = (format: IRInputOutputFormat | undefined): Partial<Ge
   return format?.type === 'json_object' ? { responseMimeType: 'application/json' } : {};
 };
 
-const geminiGenerateContentSettingsFromIR = (
+const generationConfigFromIR = (
   settings: IRInputSettings,
 ): GeminiGenerateContentGenerationConfig | undefined => {
   const ceiling = settings.max_output_tokens ?? settings.max_visible_output_tokens;
@@ -521,11 +511,8 @@ export const geminiGenerateContentPayloadFromIR = (
   const tools: GeminiGenerateContentToolGroup[] | undefined = declarations.length === 0
     ? undefined
     : [{ functionDeclarations: declarations }];
-  const choice = request.tool_choice !== undefined && (declaredTools.length > 0 || isForcingToolChoice(request.tool_choice))
-    ? request.tool_choice
-    : undefined;
-  const toolConfig = choice === undefined ? undefined : toolConfigFromIR(choice, declaredTools);
-  const generationConfig = geminiGenerateContentSettingsFromIR(request.settings);
+  const toolConfig = toolConfigFromIR(request.tool_choice, declaredTools);
+  const generationConfig = generationConfigFromIR(request.settings);
   // Omit `auto` since GenerateContent has no matching service tier value.
   const serviceTier = request.settings.service_tier === 'auto' ? undefined : generateContentServiceTierFromIR(request.settings.service_tier);
   const { systemParts, contents } = buildConversation(turns, matchedToolResults);

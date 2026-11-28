@@ -60,7 +60,7 @@ test.each([
   ['ChatCompletions prompt_tokens', chatUsageToIR, { completion_tokens: 1, total_tokens: 1 }, { output_tokens_inclusive: 1, total_tokens: 1 }],
   ['Responses total_tokens', responsesUsageToIR, { input_tokens: 1, output_tokens: 1 }, { input_tokens_inclusive: 1, output_tokens_inclusive: 1 }],
   ['Messages output_tokens', (usage: Record<string, any>) => messagesUsageToIR(usage, {}), { input_tokens: 1 }, { input_tokens_inclusive: 1 }],
-  ['GenerateContent null and omitted fields', (usage: Record<string, any>) => generateContentUsageToIR(usage), { promptTokenCount: 1, thoughtsTokenCount: null as never, cachedContentTokenCount: null as never, promptTokensDetails: [{ modality: 'toString', tokenCount: 5 }] }, { input_tokens_inclusive: 1 }],
+  ['GenerateContent null and omitted fields', (usage: Record<string, any>) => generateContentUsageToIR(usage, {}), { promptTokenCount: 1, thoughtsTokenCount: null as never, cachedContentTokenCount: null as never, promptTokensDetails: [{ modality: 'toString', tokenCount: 5 }] }, { input_tokens_inclusive: 1 }],
 ] as const)('%s is omitted when the upstream does not report it', (_name, convert, usage, expected) => {
   expect(convert(usage)).toEqual(expected);
 });
@@ -92,7 +92,7 @@ test('GenerateContent retains prior usage counts and modality details across par
     reasoning_tokens: 40,
     input_text_tokens: 100,
   });
-  expect(() => generateContentUsageToIR({ promptTokenCount: 4, cachedContentTokenCount: 5 })).toThrow(RangeError);
+  expect(() => generateContentUsageToIR({ promptTokenCount: 4, cachedContentTokenCount: 5 }, {})).toThrow(RangeError);
 });
 
 test.each([

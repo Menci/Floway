@@ -866,19 +866,17 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
   }
 };
 
-const anthropicMessagesWebSearchInvalidRequestBody = (message: string) => ({
-  type: 'error',
-  error: {
-    type: 'invalid_request_error',
-    message,
-  },
-});
-
 const buildSyntheticInvalidRequestUpstreamError = (message: string) => ({
   type: 'api-error' as const,
   source: 'gateway' as const,
   http: { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
-  body: new TextEncoder().encode(JSON.stringify(anthropicMessagesWebSearchInvalidRequestBody(message))),
+  body: new TextEncoder().encode(JSON.stringify({
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message,
+    },
+  })),
 });
 
 const resolveActiveAnthropicMessagesWebSearchBackend = async (apiKeyId: string): Promise<{ type: 'ok'; backend: ActiveAnthropicMessagesWebSearchBackend } | ReturnType<typeof internalErrorResult>> => {

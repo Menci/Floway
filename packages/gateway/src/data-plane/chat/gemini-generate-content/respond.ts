@@ -79,9 +79,6 @@ export const respondGeminiGenerateContent = async (
     }
   })();
   const upstreamCompleted = () => upstreamTerminal === 'completed' || (upstreamTerminal === undefined && completion.isComplete());
-  const eof = () => upstreamCompleted()
-    ? { type: 'completed' as const }
-    : { type: 'premature-eof' as const, error: new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE) };
 
   return serveSse(c, {
     http: result.http,
@@ -95,7 +92,9 @@ export const respondGeminiGenerateContent = async (
         const terminal = geminiSseTerminal(frame.event);
         return terminal === undefined ? { wire } : { wire, end: { type: terminal } };
       },
-      eof,
+      eof: () => upstreamCompleted()
+        ? { type: 'completed' }
+        : { type: 'premature-eof', error: new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE) },
       failure: error => {
         const frame = eventFrame(caughtGeminiGenerateContentErrorEvent(error) ?? geminiGenerateContentInternalRpcErrorPayload(500, error));
         ctx.dump?.frame(frame);

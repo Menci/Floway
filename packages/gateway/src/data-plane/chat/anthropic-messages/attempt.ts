@@ -78,9 +78,6 @@ export const anthropicMessagesAttempt = {
     const payload = { ...sourcePayload, model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
     headers.delete('anthropic-beta');
-    // `pick` here is contractually total — serve filtered with
-    // `anthropicMessagesCountTokensTarget.canServe`, so any other candidate is
-    // a contract breach.
     const targetApi = anthropicMessagesCountTokensTarget.pick(candidate.model.endpoints);
     const invocation: AnthropicMessagesInvocation = {
       payload,

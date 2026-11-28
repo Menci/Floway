@@ -1,5 +1,5 @@
 import type { IRErrorPayload } from '../../../ir/output/error.ts';
-import { errorDetailsOf, restateError } from '../../../shared/api-error.ts';
+import { errorDetailsOf } from '../../../shared/api-error.ts';
 import { isContextExceededError } from '../../../shared/context-window-error.ts';
 import { geminiGenerateContentStatusForHttpStatus, type GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
 
@@ -18,9 +18,4 @@ export const geminiGenerateContentErrorFromIR = (error: IRErrorPayload, httpStat
       : kind === 'invalid_prompt' || kind === 'invalid_request_error' || isContextExceededError(error) ? 400
         : kind === 'overloaded_error' ? 503 : 500;
   return { code, status: geminiGenerateContentStatusForHttpStatus(code) ?? 'UNKNOWN', message: error.message, ...extension };
-};
-
-export const writeGeminiGenerateContentError = (upstreamStatus: number, headers: Headers, error: IRErrorPayload) => {
-  const restated = geminiGenerateContentErrorFromIR(error, upstreamStatus);
-  return restateError(restated.code, headers, { error: restated });
 };

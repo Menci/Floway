@@ -7,7 +7,6 @@ type GenerateContentPartRule = {
   text: TextRule;
   inlineData: { data: TextRule };
   audioTranscription: { text: TextRule };
-  functionCall: { args: JSONRule };
 };
 
 type ReferenceableFunctionCallArgs<Reference> =
@@ -24,11 +23,16 @@ type GenerateContentPartState<States extends ReferenceStateLeaves> =
   | ReferenceState<GeminiGenerateContentPart, GenerateContentPartRule, States>
   | { functionCall: { args: States['json'] | ToolArgumentsEnvelope<States['json']> } };
 
-export type GeminiGenerateContentInputAssistantTurn = Array<Omit<GeminiGenerateContentContent, 'role'> & { role: 'model' }>;
+export type GeminiGenerateContentInputAssistantTurn = Array<
+  Omit<GeminiGenerateContentContent, 'role' | 'parts'> & {
+    role: 'model';
+    parts: GeminiGenerateContentPart[];
+  }
+>;
 export type GeminiGenerateContentReferenceableInputAssistantTurn<Reference> = Array<
   Omit<GeminiGenerateContentContent, 'role' | 'parts'> & {
     role: 'model';
-    parts?: ReferenceableGenerateContentPart<GeminiGenerateContentPart, Reference>[];
+    parts: ReferenceableGenerateContentPart<GeminiGenerateContentPart, Reference>[];
   }
 >;
 export type GeminiGenerateContentInputAssistantTurnState<States extends ReferenceStateLeaves> = Array<{

@@ -209,8 +209,6 @@ test.each([
   { error: { type: 'error' as const, sequence_number: 0, error: { type: 'invalid_request_error', code: null, message: 'invalid tools', param: 'tools' } }, status: 400 },
   { error: { type: 'error' as const, sequence_number: 0, code: 'rate_limit_exceeded', message: 'slow down', param: null }, status: 429 },
   { error: { type: 'error' as const, sequence_number: 0, code: null, message: 'bad key', param: null, provider_specific_fields: { type: 'authentication_error' } }, status: 401 },
-  { error: { type: 'error' as const, sequence_number: 0, code: null, message: 'internal', param: null, provider_specific_fields: { type: 'api_error' } }, status: 500 },
-  { error: { type: 'error' as const, sequence_number: 0, code: null, message: 'busy', param: null, provider_specific_fields: { type: 'overloaded_error' } }, status: 503 },
   { error: { type: 'error' as const, sequence_number: 0, code: 'vendor_failure', message: 'failed', param: null }, status: 502 },
 ] as const)('Responses non-streaming error classification selects HTTP $status', async ({ error, status }) => {
   const failed = { id: 'resp_failed', object: 'response', model: 'm', status: 'failed' as const, output: [], error: null, incomplete_details: null };

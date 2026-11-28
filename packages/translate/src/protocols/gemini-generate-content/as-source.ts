@@ -1,4 +1,4 @@
-import { writeGeminiGenerateContentError } from './as-source/error.ts';
+import { geminiGenerateContentErrorFromIR } from './as-source/error.ts';
 import { writeGeminiGenerateContentEvents } from './as-source/events.ts';
 import { readGeminiGenerateContentRequest } from './as-source/input-to.ts';
 import { collectGeminiGenerateContentReplayContents, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from './as-source/round-trip.ts';
@@ -15,7 +15,10 @@ export const geminiGenerateContentSourceProtocol: SourceProtocol<
     verify: verifyGeminiGenerateContentTurnDigest,
     collectCandidates: collectGeminiGenerateContentReplayContents,
   },
-  writeError: writeGeminiGenerateContentError,
+  writeError: (error, status) => {
+    const restated = geminiGenerateContentErrorFromIR(error, status);
+    return { status: restated.code, body: { error: restated } };
+  },
   writeEvents: (payload, records, roundTrip) => writeGeminiGenerateContentEvents(records, {
     includeThoughts: payload.generationConfig?.thinkingConfig?.includeThoughts === true,
     roundTrip,

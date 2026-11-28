@@ -8,6 +8,7 @@ import {
   plainResult,
   toInternalDebugError,
   type ApiErrorResult,
+  type HttpHead,
   type InternalErrorResult,
   type PerformanceTelemetryContext,
   type PlainResult,
@@ -15,16 +16,13 @@ import {
 
 export interface ReshapeTranslatedCountTokensOptions {
   readonly translateError: TranslateTrip<unknown, unknown, unknown>['error'];
-  readonly fallbackErrorBody?: (status: number, message: string) => Uint8Array;
+  readonly fallbackErrorBody?: (status: number, message: string) => unknown;
   readonly extractCount: (decoded: JsonObject) => unknown;
   readonly encodeCount: (count: number) => unknown;
   readonly performance?: PerformanceTelemetryContext | undefined;
   readonly capture?: TranslationUpstreamCapture | undefined;
 }
 
-// Reshape a translated upstream `countTokens` response into the source protocol's
-// count envelope while preserving status codes, forwarded headers, structured
-// error translation, and pre-translation dump capture.
 export const reshapeTranslatedCountTokens = (
   upstreamResult: ApiErrorResult | InternalErrorResult | PlainResult,
   options: ReshapeTranslatedCountTokensOptions,
@@ -43,18 +41,21 @@ export const reshapeTranslatedCountTokens = (
       : upstreamResult.upstreamId !== undefined;
     if (fromUpstream) options.capture?.upstreamApiError({ status, headers, body: upstreamResult.body });
     const translated = options.translateError(status, headers, upstreamResult.body ?? new Uint8Array());
-    if (translated === undefined) {
-      if (options.fallbackErrorBody === undefined) return upstreamResult;
-      const body = options.fallbackErrorBody(status, text.trim() || 'Upstream token counting request failed.');
-      return upstreamResult.type === 'api-error'
-        ? { ...upstreamResult, http, body }
-        : plainResult(http, body, upstreamResult.upstreamId);
+    let resultHttp: HttpHead;
+    let payload: unknown;
+    if (translated !== undefined) {
+      resultHttp = {
+        status: translated.status,
+        headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, translated.headers),
+      };
+      payload = translated.body;
+    } else if (options.fallbackErrorBody !== undefined) {
+      resultHttp = http;
+      payload = options.fallbackErrorBody(status, text.trim() || 'Upstream token counting request failed.');
+    } else {
+      return upstreamResult;
     }
-    const resultHttp = {
-      status: translated.status,
-      headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, translated.headers),
-    };
-    const body = new TextEncoder().encode(JSON.stringify(translated.body));
+    const body = new TextEncoder().encode(JSON.stringify(payload));
     return upstreamResult.type === 'api-error'
       ? { ...upstreamResult, http: resultHttp, body }
       : plainResult(resultHttp, body, upstreamResult.upstreamId);

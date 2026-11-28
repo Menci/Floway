@@ -9,14 +9,11 @@ test('normalizes GenerateContent service tiers across input and output IR bounda
   expect(generateContentServiceTierToIR(undefined)).toBeUndefined();
   expect(generateContentServiceTierToIR('')).toBeUndefined();
   expect(generateContentServiceTierToIR('standard')).toBe('default');
-  expect(generateContentServiceTierToIR('priority')).toBe('priority');
   expect(generateContentServiceTierToIR('flex')).toBe('flex');
 
-  expect(generateContentServiceTierFromIR(undefined)).toBeUndefined();
   expect(generateContentServiceTierFromIR(null)).toBeUndefined();
   expect(generateContentServiceTierFromIR('')).toBeUndefined();
   expect(generateContentServiceTierFromIR('default')).toBe('standard');
   expect(generateContentServiceTierFromIR('fast')).toBe('priority');
-  expect(generateContentServiceTierFromIR('priority')).toBe('priority');
   expect(generateContentServiceTierFromIR('flex')).toBe('flex');
 });

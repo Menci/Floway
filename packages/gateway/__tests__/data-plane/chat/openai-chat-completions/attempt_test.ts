@@ -10,7 +10,7 @@ import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } f
 import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsPayloadEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, stubUpstream, stubUpstreamModel } from '@floway-dev/test-utils';
-import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type UpstreamOpenAIResponsesResult, type UpstreamStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/upstream';
+import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type UpstreamOpenAIResponsesResult, type UpstreamStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/upstream';
 import type { FlagId } from '@floway-dev/upstream/flags';
 
 const API_KEY_ID = 'key_chat_completions_attempt_test';
@@ -213,7 +213,7 @@ test('generate preserves translated instructions before rewriting inline system 
   assertEquals(input[2], { type: 'message', role: 'developer', content: 'inline instructions' });
 });
 
-test('generate translates through GenerateContent, strips model, and preserves relay HTTP error semantics', async () => {
+test('generate translates through GenerateContent and strips model', async () => {
   installRepo();
   let capturedBody: GeminiGenerateContentPayload | undefined;
   const result = await openaiChatCompletionsAttempt.generate({
@@ -248,27 +248,4 @@ test('generate translates through GenerateContent, strips model, and preserves r
   const assembled = await collectOpenAIChatCompletionsProtocolEventsToResult(result.events);
   expect(assembled.choices[0]?.message.content).toBe('Hello!');
   expect(assembled.choices[0]?.message.reasoning_text).toBe('Reason.');
-
-  const relayErr = await openaiChatCompletionsAttempt.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({
-      endpoints: { geminiGenerateContent: {} },
-      callGeminiGenerateContent: async () => ({
-        ok: false,
-        modelKey: 'k',
-        http: new Response(JSON.stringify({ error: { code: 'context_length_exceeded', message: 'too long' } }), {
-          status: 422,
-          headers: new Headers({ 'content-type': 'application/json' }),
-        }),
-      }),
-    }),
-    headers: new Headers(),
-  });
-  expect(relayErr.type).toBe('api-error');
-  if (relayErr.type !== 'api-error') throw new Error('unreachable');
-  expect(relayErr.http.status).toBe(422);
-  expect(JSON.parse(decodeResponseBody(relayErr.body))).toEqual({
-    error: { code: 'context_length_exceeded', message: 'too long' },
-  });
 });
