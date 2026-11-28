@@ -8,7 +8,7 @@ import { LinkedChartHoverProvider } from '../charts/linked-hover';
 import { CycleQuota } from '../telemetry/cycle-quota';
 import { TelemetryFilterFields } from '../telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy } from '../telemetry/filter-state';
-import { loadWithResetCycles, type ResetCycleHistory } from '../telemetry/reset-cycles';
+import { loadWithResetCycles, type ResetCycleQuota } from '../telemetry/reset-cycles';
 import { TelemetryTimeRange } from '../telemetry/time-range';
 import { PANEL_STACK_CLASS } from '../ui/layout';
 import { PANEL_INSET_CLASS } from '../ui/panel';
@@ -41,14 +41,14 @@ export const loadUpstreamTelemetry = async (query: UpstreamTelemetryQuery, loade
   const [usage, metrics] = loaded.data;
   if (usage.error) return { error: usage.error };
   if (metrics.error) return { error: metrics.error };
-  return { data: { query: { ...query, range: loaded.range }, loadedAt, usage: usage.data, metrics: metrics.data, resetCycles: loaded.resetCycles } };
+  return { data: { query: { ...query, range: loaded.range }, loadedAt, usage: usage.data, metrics: metrics.data, cycleQuota: loaded.cycleQuota } };
 };
 export interface UpstreamTelemetryData {
   query: UpstreamTelemetryQuery;
   loadedAt: number;
   usage: UsageOverviewResponse;
   metrics: NonNullable<Awaited<ReturnType<typeof loadUpstreamMetrics>>['data']>;
-  resetCycles: ResetCycleHistory | null;
+  cycleQuota: ResetCycleQuota | null;
 }
 
 export function UpstreamTelemetryRow({ data, immediateCollapse, record, busy, currentUserId, onQueryChange, onRangeEditingChange }: {
@@ -101,7 +101,7 @@ function UpstreamTelemetryPanel({ data, record, busy, currentUserId, onQueryChan
     };
   }, [data.metrics, preferences.quotaDisplay, record, t]);
   return <LinkedChartHoverProvider><div className={`${PANEL_INSET_CLASS} ${PANEL_STACK_CLASS} min-w-0`} id={`upstream-telemetry-${encodeURIComponent(record.id)}`}>
-    <CycleQuota loadedAt={loadedAt} range={query.range} quota={data.resetCycles?.quota} />
+    <CycleQuota loadedAt={loadedAt} range={query.range} quota={data.cycleQuota} />
     <div className="flex items-end gap-3 min-w-0 flex-wrap">
       <UsageGrouping disabled={busy} dimensions={dimensions} groupBy={query.groupBy} onChange={groupBy => onQueryChange({ ...query, ...changeTelemetryGroupBy(query, groupBy, identityContext) })} />
       <TelemetryFilterFields disabled={busy} dimensions={dimensions} filters={query.filters} groupBy={query.groupBy}

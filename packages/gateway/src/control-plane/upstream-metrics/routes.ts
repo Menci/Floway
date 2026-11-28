@@ -1,4 +1,3 @@
-import { estimateCycleQuota, type CycleQuota } from './cycle-quota.ts';
 import { checkMany } from '../../access-control/check.ts';
 import { metricDisplayResolverForKind } from '../../data-plane/upstreams/registry.ts';
 import { userFromContext, type AuthedContext } from '../../middleware/auth.ts';
@@ -32,7 +31,11 @@ interface ResetCycles {
     starts: number[];
     hasMore?: true;
   }>;
-  quota?: CycleQuota;
+  cycle?: {
+    start: number;
+    end: number | null;
+    quota?: { amount: number; unit: 'usd' | 'count' | 'credits' };
+  };
 }
 
 const RESET_CYCLE_PAGE_SIZE = 24;
@@ -63,18 +66,21 @@ export const upstreamResetCycles = async (c: CtxWithQuery<typeof upstreamResetCy
   const metrics = identities.flatMap(identity => {
     const display = resolve(identity, { quotaDisplay: 'remaining' });
     if (display?.resetThreshold === undefined) return [];
-    const { name, labelKey, labelValues, windowSeconds, resetThreshold } = display;
-    return [{ identity, display: { name, labelKey, ...(labelValues === undefined ? {} : { labelValues }), windowSeconds }, resetThreshold }];
+    return [{ identity, display, resetThreshold: display.resetThreshold }];
   });
 
   if (view === 'history' || cycle_metric === undefined) {
     response.metrics = await Promise.all(metrics.map(async ({ identity, display, resetThreshold }) => {
+      const { name, labelKey, labelValues, windowSeconds } = display;
       const starts = await repo.upstreamMetrics.queryResetStarts(upstream_id, identity, resetThreshold, before, {
         ...(after === undefined ? {} : { from: after + 1, order: 'asc' }),
         limit: RESET_CYCLE_PAGE_SIZE + 1,
       });
-      const page = starts.slice(0, RESET_CYCLE_PAGE_SIZE);
-      return { identity, display, starts: after === undefined ? page : page.reverse(), ...(starts.length > RESET_CYCLE_PAGE_SIZE && { hasMore: true as const }) };
+      const page = starts.slice(0, RESET_CYCLE_PAGE_SIZE).map(({ timestamp }) => timestamp);
+      return {
+        identity, display: { name, labelKey, ...(labelValues === undefined ? {} : { labelValues }), windowSeconds },
+        starts: after === undefined ? page : page.reverse(), ...(starts.length > RESET_CYCLE_PAGE_SIZE && { hasMore: true as const }),
+      };
     }));
     return c.json(response);
   }
@@ -86,10 +92,12 @@ export const upstreamResetCycles = async (c: CtxWithQuery<typeof upstreamResetCy
   const [start, next] = await repo.upstreamMetrics.queryResetStarts(upstream_id, identity, resetThreshold, before, {
     from: cycle_start, order: historical ? 'asc' : 'desc', limit: historical ? 2 : 1,
   });
-  if (start === undefined || (historical && (start !== cycle_start || next === undefined))) return c.json(response);
-  const usedDisplay = resolve(identity, { quotaDisplay: 'used' });
-  if (usedDisplay === null) throw new Error('Missing display for selected quota metric');
-  response.metrics = [{ identity, display, starts: next === undefined ? [start] : [next, start] }];
-  response.quota = await estimateCycleQuota(repo, upstream_id, identity, usedDisplay, { start, next: next ?? null, before });
+  if (start === undefined || (historical && (start.timestamp !== cycle_start || next === undefined))) return c.json(response);
+  response.cycle = { start: start.timestamp, end: next?.timestamp ?? null };
+  if (typeof resetThreshold.full !== 'number') {
+    const { unit, toDisplayValue } = display;
+    if (unit !== 'usd' && unit !== 'count' && unit !== 'credits') throw new TypeError('An absolute quota must have an absolute unit');
+    response.cycle.quota = { amount: toDisplayValue(start.value), unit };
+  }
   return c.json(response);
 };

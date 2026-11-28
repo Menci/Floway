@@ -1,16 +1,23 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { PerformanceOverviewView } from '../../src/components/performance/overview';
+import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import { i18n } from '../../src/i18n';
 import DashboardMonitorPerformance from '../../src/routes/dashboard-monitor-performance';
+import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
+import { primeDefaultSession } from '../test-session';
 
 stubLocalStorage();
 
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => {
+  cleanup();
+  useAuthStore.getState().clear();
+  vi.unstubAllGlobals();
+});
 
 const overview: PerformanceOverviewView = {
   series: [],
@@ -22,16 +29,17 @@ const overview: PerformanceOverviewView = {
 };
 
 const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtimeLocation' = 'model') => {
+  primeDefaultSession();
   const router = createMemoryRouter([{
     path: '/',
-    Component: () => <DashboardMonitorPerformance
+    Component: () => <OutcomeToastProvider><DashboardMonitorPerformance
       loaderData={{
         currentUserId: '1',
         error: null,
         loadedAt: Date.UTC(2026, 7, 5, 12),
         overview,
         regionAvailable,
-        resetCycles: null,
+        cycleQuota: null,
         state: {
           metric: 'ttft',
           percentile: 'p95',
@@ -45,13 +53,14 @@ const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtime
       }}
       matches={[] as never}
       params={{}}
-    />,
+    /></OutcomeToastProvider>,
   }], { initialEntries: ['/'] });
   return renderInApp(<RouterProvider router={router} />);
 };
 
 describe('Performance Region dimensions', () => {
   it('does not turn an unauthorized URL user filter into a dropdown option', () => {
+    primeDefaultSession();
     const state = {
       metric: 'ttft' as const,
       percentile: 'p95' as const,
@@ -64,11 +73,11 @@ describe('Performance Region dimensions', () => {
     };
     const router = createMemoryRouter([{
       path: '/',
-      Component: () => <DashboardMonitorPerformance
-        loaderData={{ currentUserId: '1', error: null, loadedAt: Date.UTC(2026, 7, 5, 12), overview, regionAvailable: false, resetCycles: null, state }}
+      Component: () => <OutcomeToastProvider><DashboardMonitorPerformance
+        loaderData={{ currentUserId: '1', error: null, loadedAt: Date.UTC(2026, 7, 5, 12), overview, regionAvailable: false, cycleQuota: null, state }}
         matches={[] as never}
         params={{}}
-      />,
+      /></OutcomeToastProvider>,
     }], { initialEntries: ['/'] });
     renderInApp(<RouterProvider router={router} />);
 

@@ -108,6 +108,14 @@ export default function DashboardSettings() {
   );
 }
 
+type AppearancePreferences = Pick<UserPreferences, 'quotaDisplay' | 'language' | 'uiTextEditor'>;
+
+const pickAppearancePreferences = ({ quotaDisplay, language, uiTextEditor }: UserPreferences): AppearancePreferences => ({
+  quotaDisplay,
+  language,
+  uiTextEditor,
+});
+
 // SettingsCard rows carry the choice; the save is one action for the group, as
 // WinUI's SettingsPage does, and its outcome is reported through the toast that
 // every other save on this dashboard uses.
@@ -116,7 +124,7 @@ function PreferencesSection() {
   const toasts = useOutcomeToasts();
   const saved = useUserPreferences();
   const replacePreferences = useAuthStore(state => state.replacePreferences);
-  const [draft, setDraft] = useState<UserPreferences>(saved);
+  const [draft, setDraft] = useState<AppearancePreferences>(() => pickAppearancePreferences(saved));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,7 +147,7 @@ function PreferencesSection() {
     }
     const next = result.data.preferences;
     replacePreferences(next);
-    setDraft(next);
+    setDraft(pickAppearancePreferences(next));
     if (syncUiTextEditorPreference(next.uiTextEditor)) return;
     if (next.language !== null) await setLanguage(next.language);
     else await setLanguage(browserLanguage());

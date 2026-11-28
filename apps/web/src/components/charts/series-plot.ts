@@ -1,8 +1,7 @@
 import type { LineChartPoints } from '@fluentui/react-charts';
 import { curveMonotoneX } from 'd3-shape';
 
-import { colorForHue } from './palette';
-import type { ChartSeries } from './series-legends';
+import { seriesColor, type ChartSeries } from './series-legends';
 
 // The stroke every plot in this dashboard draws a series with: 2px, on a
 // monotone curve so a bucket-to-bucket run reads as one movement rather than as
@@ -10,7 +9,7 @@ import type { ChartSeries } from './series-legends';
 // `pointOptions`, so markers here would size points twice.
 export const areaSeries = (entry: ChartSeries, data: LineChartPoints['data']): LineChartPoints => ({
   legend: entry.legend,
-  color: colorForHue(entry.hue),
+  color: seriesColor(entry),
   lineOptions: { strokeWidth: 2, curve: curveMonotoneX },
   data,
 });

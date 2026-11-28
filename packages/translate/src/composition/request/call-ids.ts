@@ -21,12 +21,12 @@ export type IRInputAssistantItemWithCallIds =
 
 export interface PendingCall {
   readonly name: string;
-  readonly callId: string;
+  readonly callId?: string;
 }
 
-export interface AssignCallIdsOptions {
-  readonly resultCallIds?: ReadonlyMap<IRInputToolResultItem, string>;
+export interface AssignCallIdsOptions<Call extends PendingCall = PendingCall> {
   readonly maxGeneratedCallIdLength?: number;
+  readonly onMatch?: (result: IRInputToolResultItemWithCallId, call: Call) => void;
 }
 
 /**
@@ -34,23 +34,33 @@ export interface AssignCallIdsOptions {
  * Explicit result IDs must refer to a call present in the conversation. Restored native
  * turns contribute their pending calls; target writers use the assigned IDs on calls and results.
  */
-export const assignCallIds = <Restored>(
+export const assignCallIds = <Restored, Call extends PendingCall = PendingCall>(
   turns: readonly (IRInputTurn | RestoredAssistantTurn<Restored>)[],
-  restoredCalls: (turn: Restored) => readonly PendingCall[],
-  options: AssignCallIdsOptions = {},
+  restoredCalls: (piece: RestoredAssistantTurn<Restored>) => readonly Call[],
+  options: AssignCallIdsOptions<Call> = {},
 ): readonly (IRInputTurnWithCallIds | RestoredAssistantTurn<Restored>)[] => {
-  const pending: PendingCall[] = [];
+  interface TrackedPendingCall {
+    readonly name: string;
+    readonly callId: string;
+    readonly restored?: Call;
+  }
+  const pending: TrackedPendingCall[] = [];
   let allocated = 0;
   // Every id this conversation states, read before allocating anything: an id
   // this step invents must not collide with one stated later in the same
   // conversation, or two calls would share it.
   const claimed = new Set<string>();
+  const restoredByPiece = new Map<RestoredAssistantTurn<Restored>, readonly Call[]>();
   for (const piece of turns) {
     if (piece.kind === 'restored') {
-      for (const call of restoredCalls(piece.turn)) claimed.add(call.callId);
-    } else if (piece.kind === 'assistant') {
+      const calls = restoredCalls(piece);
+      restoredByPiece.set(piece, calls);
+      for (const call of calls) if (call.callId !== undefined) claimed.add(call.callId);
+    } else {
       for (const item of piece.items) {
-        if ((item.type === 'function_call' || item.type === 'custom_tool_call') && item.call_id !== undefined) claimed.add(item.call_id);
+        if ((item.type === 'function_call' || item.type === 'custom_tool_call' || item.type === 'tool_result') && item.call_id !== undefined) {
+          claimed.add(item.call_id);
+        }
       }
     }
   }
@@ -70,7 +80,7 @@ export const assignCallIds = <Restored>(
   // A stated answer releases the call it names; an unstated one takes the
   // oldest call of its name, or the oldest call at all when the source stated
   // no name either.
-  const answer = (callId: string | undefined, name: string | undefined): PendingCall => {
+  const answer = (callId: string | undefined, name: string | undefined): TrackedPendingCall => {
     const index = callId !== undefined
       ? pending.findIndex(call => call.callId === callId)
       : name === undefined ? 0 : pending.findIndex(call => call.name === name);
@@ -86,13 +96,18 @@ export const assignCallIds = <Restored>(
 
   return turns.map((piece): IRInputTurnWithCallIds | RestoredAssistantTurn<Restored> => {
     if (piece.kind === 'restored') {
-      pending.push(...restoredCalls(piece.turn));
+      for (const call of restoredByPiece.get(piece) ?? []) {
+        pending.push({ name: call.name, callId: call.callId ?? allocate(call.name), restored: call });
+      }
       return piece;
     }
     if (piece.kind === 'client') {
       const items: IRInputClientItemWithCallIds[] = piece.items.map((item): IRInputClientItemWithCallIds => {
         if (item.type !== 'tool_result') return item;
-        return { ...item, call_id: answer(options.resultCallIds?.get(item) ?? item.call_id, item.name).callId };
+        const matched = answer(item.call_id, item.name);
+        const assigned: IRInputToolResultItemWithCallId = { ...item, call_id: matched.callId };
+        if (matched.restored !== undefined) options.onMatch?.(assigned, matched.restored);
+        return assigned;
       });
       return { kind: 'client', items };
     }

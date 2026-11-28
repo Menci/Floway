@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import type { AccessRecord } from '../../../src/api/types';
 import { resolveAccess } from '../../../src/components/access-control/resolution';
 import type { AccessPrincipal, AccessScope } from '@floway-dev/gateway/browser';
+import { defaultUserPreferences } from '@floway-dev/protocols/browser';
 
 const scope: AccessScope = { kind: 'upstream', upstreamId: 'up_a' };
 const row = (id: number, principal: AccessPrincipal, recordScope: AccessScope, values: AccessRecord['values'], sortOrder = id): AccessRecord => ({
@@ -12,8 +13,8 @@ const row = (id: number, principal: AccessPrincipal, recordScope: AccessScope, v
 test('resolveAccess computes values, applicable records, and decisions for users, groups, self, and admins', () => {
   const data = {
     users: [
-      { id: 1, username: 'admin', isAdmin: true, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false }, groupIds: [] },
-      { id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false }, groupIds: [3] },
+      { id: 1, username: 'admin', isAdmin: true, createdAt: '', preferences: { ...defaultUserPreferences }, groupIds: [] },
+      { id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { ...defaultUserPreferences }, groupIds: [3] },
     ],
   };
   const records: AccessRecord[] = [
@@ -52,7 +53,7 @@ test('resolveAccess computes values, applicable records, and decisions for users
 test('resolveAccess matches gateway precedence for personal overrides, group union, model order, and membership scopes', () => {
   const data = {
     users: [
-      { id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false }, groupIds: [3, 4] },
+      { id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { ...defaultUserPreferences }, groupIds: [3, 4] },
     ],
   };
   const modelScope: AccessScope = { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } };

@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
-import { assignCallIds } from '../../../src/composition/request/call-ids.ts';
+import type { RestoredAssistantTurn } from '../../../src/composition/reading.ts';
+import { assignCallIds, type PendingCall } from '../../../src/composition/request/call-ids.ts';
 import type { IRInputTurn } from '../../../src/ir/input/types.ts';
 import { TranslateInputException } from '../../../src/shared/input-error.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
@@ -44,4 +45,25 @@ test('an invented id does not collide with one the conversation states', () => {
   const ids = assignCallIds([call('read'), call('read', 'read_call_1')], () => [])
     .flatMap(turn => turn.kind === 'assistant' ? turn.items.flatMap(item => item.type === 'function_call' ? [item.call_id] : []) : []);
   assertEquals(new Set(ids).size, ids.length);
+  // An orphan result spelling the first candidate must not accidentally match an id-less call.
+  assertThrows(() => assignCallIds([call('read'), result('read', 'read_call_1')], () => []), TranslateInputException);
+});
+
+test('allocates collision-free IDs for id-less restored calls and reports exact restored matches FIFO', () => {
+  interface TaggedCall extends PendingCall {
+    readonly tag: string;
+  }
+  const first: RestoredAssistantTurn<string> = { kind: 'restored', turn: 'first', sourceCallIds: [undefined] };
+  const second: RestoredAssistantTurn<string> = { kind: 'restored', turn: 'second', sourceCallIds: ['dup'] };
+  const third: RestoredAssistantTurn<string> = { kind: 'restored', turn: 'third', sourceCallIds: ['dup'] };
+  const matched: Array<[string, string]> = [];
+  const turns = assignCallIds<string, TaggedCall>(
+    [first, second, third, result('lookup'), result(undefined, 'dup'), result(undefined, 'dup')],
+    piece => piece.turn === 'first'
+      ? [{ name: 'lookup', tag: 'idless' }]
+      : [{ name: 'lookup', callId: 'dup', tag: piece.turn }],
+    { onMatch: (item, matchedCall) => { matched.push([item.call_id, matchedCall.tag]); } },
+  );
+  assertEquals(matched, [['lookup_call_1', 'idless'], ['dup', 'second'], ['dup', 'third']]);
+  assertEquals(lastResult(turns).call_id, 'dup');
 });

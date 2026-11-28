@@ -3,6 +3,7 @@ import type { IRInputRequestHeader, IRInputTurn } from '../ir/input/types.ts';
 export interface RestoredAssistantTurn<Turn> {
   readonly kind: 'restored';
   readonly turn: Turn;
+  readonly sourceCallIds: readonly (string | undefined)[];
 }
 
 /** Native turns authenticate sidecars and bypass lazy IR conversion. */
@@ -12,6 +13,7 @@ export type SourceTurnSlot<AssistantTurn> =
     readonly kind: 'assistant';
     readonly assistantTurn: AssistantTurn;
     readonly toIRInputTurns: () => IRInputTurn[];
+    readonly callIds: () => readonly (string | undefined)[];
   };
 
 /**
@@ -56,7 +58,7 @@ export const resolveReading = async <AssistantTurn, Resolved>(
       append(turn.toIRInputTurns());
       continue;
     }
-    turns.push({ kind: 'restored', turn: result });
+    turns.push({ kind: 'restored', turn: result, sourceCallIds: turn.callIds() });
   }
   return turns;
 };

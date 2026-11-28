@@ -78,19 +78,10 @@ export class SqlUpstreamMetricsRepo implements UpstreamMetricsRepo {
     return results.map(({ name, labelsJson }) => normalizeUpstreamMetricIdentity(name, JSON.parse(labelsJson)));
   }
 
-  async latestSample(upstreamId: string, identity: UpstreamMetricIdentity, start: number, end: number) {
-    const { name, labelsJson } = encodeIdentity(identity);
-    return await this.db.prepare(`
-      SELECT timestamp, value FROM upstream_metrics
-      WHERE upstream_id = ? AND metric_name = ? AND metric_labels = ? AND timestamp >= ? AND timestamp < ?
-      ORDER BY timestamp DESC LIMIT 1
-    `).bind(upstreamId, name, labelsJson, start, end).first<Pick<UpstreamMetricRecord, 'timestamp' | 'value'>>();
-  }
-
   async queryResetStarts(
     upstreamId: string, identity: UpstreamMetricIdentity, threshold: UpstreamMetricResetThreshold, before: number,
     { from = Number.MIN_SAFE_INTEGER, order = 'desc', limit = -1 }: NonNullable<Parameters<UpstreamMetricsRepo['queryResetStarts']>[4]> = {},
-  ): Promise<number[]> {
+  ) {
     const metric = encodeIdentity(identity);
     const allowance = typeof threshold.full === 'number' ? null : encodeIdentity(threshold.full);
     const fullAt = (sample: 'sample' | 'previous') => allowance === null ? '?' : `(SELECT value FROM upstream_metrics allowance
@@ -99,7 +90,7 @@ export class SqlUpstreamMetricsRepo implements UpstreamMetricsRepo {
     const fullBindings = allowance === null ? [threshold.full as number] : [allowance.name, allowance.labelsJson];
     const depleted = threshold.direction === 'used' ? '>' : '<';
     const { results } = await this.db.prepare(`
-      SELECT sample.timestamp FROM upstream_metrics sample
+      SELECT sample.timestamp, sample.value FROM upstream_metrics sample
       WHERE sample.upstream_id = ? AND sample.metric_name = ? AND sample.metric_labels = ?
         AND sample.timestamp >= ? AND sample.timestamp < ?
         AND sample.value = ${fullAt('sample')}
@@ -117,7 +108,7 @@ export class SqlUpstreamMetricsRepo implements UpstreamMetricsRepo {
             ${allowance === null ? '' : 'AND sample.value > previous.value'}
         )
       ORDER BY sample.timestamp ${order === 'asc' ? 'ASC' : 'DESC'} LIMIT ?
-    `).bind(upstreamId, metric.name, metric.labelsJson, from, before, ...fullBindings, ...fullBindings, limit).all<{ timestamp: number }>();
-    return results.map(({ timestamp }) => timestamp);
+    `).bind(upstreamId, metric.name, metric.labelsJson, from, before, ...fullBindings, ...fullBindings, limit).all<Pick<UpstreamMetricRecord, 'timestamp' | 'value'>>();
+    return results;
   }
 }

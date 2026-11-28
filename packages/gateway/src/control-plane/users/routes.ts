@@ -9,7 +9,7 @@ import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { changeOwnPasswordBody, createUserBody, updateOwnPreferencesBody, updateUserBody } from '../schemas.ts';
-import { defaultUserPreferences } from '@floway-dev/protocols/common';
+import { defaultUserPreferences, type UserPreferences } from '@floway-dev/protocols/common';
 
 const parseUserId = (raw: string): number | null => {
   const n = Number(raw);
@@ -157,11 +157,7 @@ export const updateOwnPreferences = async (c: CtxWithJson<typeof updateOwnPrefer
   const repo = getRepo();
   const current = await repo.userPreferences.get(userId);
   const body = c.req.valid('json');
-  const next = {
-    quotaDisplay: body.quotaDisplay ?? current.quotaDisplay,
-    language: body.language === undefined ? current.language : body.language,
-    uiTextEditor: body.uiTextEditor ?? current.uiTextEditor,
-  };
+  const next: UserPreferences = { ...current, ...body };
   await repo.userPreferences.save(userId, next);
   return c.json({ preferences: next });
 };

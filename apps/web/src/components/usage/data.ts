@@ -145,7 +145,7 @@ export const loadUsagePageData = async (
   signal: AbortSignal,
   knownAuditableUserIds?: readonly number[],
 ) => {
-  const { data, range: resolved, resetCycles, error } = await loadWithResetCycles(
+  const { data, range: resolved, cycleQuota, error } = await loadWithResetCycles(
     singleTelemetryUpstream(filters.upstream, 'usage'), range, loadedAt, signal,
     active => loadUsageAndSearch(loadUsageOverview, currentUserId, active, groupBy, filters, loadedAt, signal, knownAuditableUserIds),
   );
@@ -155,6 +155,6 @@ export const loadUsagePageData = async (
     upstreams: data?.upstreams ?? [],
     error: data?.error ?? error,
     range: resolved,
-    resetCycles,
+    cycleQuota,
   };
 };

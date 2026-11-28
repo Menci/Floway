@@ -5,16 +5,18 @@ import { tagContentReferences, untagContentReferences } from './reference/conten
 import type { ContentReference } from './reference/types.ts';
 import type { RoundTripTurnDigest } from './turn-digest.ts';
 
-export const ROUND_TRIP_SIDECAR_VERSION = 2;
-export type RoundTripSidecarVersion = 1 | 2;
+export const ROUND_TRIP_SIDECAR_VERSION = 3;
+const SUPPORTED_SIDECAR_VERSIONS = [1, 2, ROUND_TRIP_SIDECAR_VERSION] as const;
+export type RoundTripSidecarVersion = (typeof SUPPORTED_SIDECAR_VERSIONS)[number];
 
-const isSupportedSidecarVersion = (value: unknown): value is RoundTripSidecarVersion =>
-  value === 1 || value === 2;
+export const isSupportedSidecarVersion = (value: unknown): value is RoundTripSidecarVersion =>
+  SUPPORTED_SIDECAR_VERSIONS.some(supported => supported === value);
 
-// One wire version covers every translation subsystem. A field whose format can
-// change derives its own format version from this `v` (`v: 2` selects the v2
-// turn-digest material while retaining `v: 1` verification) instead of carrying
-// a second version member, so advancing any subsystem advances this single `v`.
+// One wire version covers every translation subsystem. Each subsystem derives
+// its format rules from this `v` (`v >= 2` selects the v2 Chat Completions
+// turn-digest material and `v >= 3` selects the v3 Responses turn-digest
+// material, while retaining older verification) without per-subsystem version
+// members, so advancing any subsystem advances this single `v`.
 export type RoundTripSidecar<Target extends AssistantTurnProtocol> = {
   v: RoundTripSidecarVersion;
   source: AssistantTurnProtocol;

@@ -84,10 +84,14 @@ const stubGateway = (
   const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
   if (url.pathname === '/api/upstreams') return Response.json(pageData.upstreams);
   if (url.pathname === '/api/models') return Response.json({ data: [] });
-  if (url.pathname === '/api/upstream-reset-cycles') return Response.json({
-    ...resetHistory(Date.UTC(2026, 7, 5, 12), url.searchParams.get('upstream_id')!),
-    ...(url.searchParams.has('cycle_metric') && { quota: { kind: 'reported', amount: 300, unit: 'count' } }),
-  });
+  if (url.pathname === '/api/upstream-reset-cycles') {
+    const history = resetHistory(Date.UTC(2026, 7, 5, 12), url.searchParams.get('upstream_id')!);
+    const [end, start] = history.metrics[0]!.starts;
+    return Response.json({
+      ...history,
+      ...(url.searchParams.has('cycle_start') && { cycle: { start, end, quota: { amount: 300, unit: 'count' } } }),
+    });
+  }
   return await handler(url, init?.signal as AbortSignal | undefined);
 }));
 

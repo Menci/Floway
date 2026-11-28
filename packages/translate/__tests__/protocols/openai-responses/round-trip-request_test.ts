@@ -4,7 +4,7 @@ import { readOpenAIResponsesRequest } from '../../../src/protocols/openai-respon
 import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
 import type { OpenAIResponsesSourceAssistantTurn } from '../../../src/protocols/openai-responses/as-source/round-trip.ts';
 import type { SidecarCodec } from '../../../src/round-trip/codec.ts';
-import { encodeRoundTripSidecar } from '../../../src/round-trip/sidecar.ts';
+import { ROUND_TRIP_SIDECAR_VERSION, encodeRoundTripSidecar } from '../../../src/round-trip/sidecar.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
@@ -43,7 +43,7 @@ it('keeps restored Chat history native while translating bare namespace calls', 
     tool_calls: [{ type: 'function' as const, id: 'native', function: { name: 'native_tool', arguments: '{}' } }],
   };
   const sidecar = await encodeRoundTripSidecar(codec, {
-    v: 1,
+    v: ROUND_TRIP_SIDECAR_VERSION,
     source: 'openaiResponses',
     target: 'openaiChatCompletions', targetTurn,
     sourceTurnDigest: await computeOpenAIResponsesTurnDigest(replayedTurn),
@@ -68,7 +68,7 @@ it.each(['openaiChatCompletions', 'anthropicMessages'] as const)('bypasses ordin
     { type: 'function_call', namespace: 'x', name: 'y.f', call_id: 'second', arguments: '{}', status: 'completed' },
   ];
   const sidecar = await encodeRoundTripSidecar(codec, {
-    v: 1,
+    v: ROUND_TRIP_SIDECAR_VERSION,
     source: 'openaiResponses',
     target, targetTurn: native,
     sourceTurnDigest: await computeOpenAIResponsesTurnDigest(calls),

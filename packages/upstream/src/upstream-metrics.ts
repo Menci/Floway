@@ -63,8 +63,6 @@ export interface UpstreamMetricDisplay {
   form: 'line' | 'area';
   /** The stored gauge value (or concurrent allowance) that means 100% remaining. */
   resetThreshold?: UpstreamMetricResetThreshold;
-  /** Recorded usage for the whole upstream belongs to this percentage quota. */
-  quotaCostScope?: 'upstream';
   toDisplayValue: (storedValue: number) => number;
 }
 

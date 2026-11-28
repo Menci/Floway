@@ -102,7 +102,6 @@ import type {
   UsersRepo,
 } from '../../src/repo/types.ts';
 import { serializeStoredState } from '../../src/repo/upstream-json.ts';
-import { sumUsageCostTerms } from '../../src/repo/usage-cost-sql.ts';
 import { usageMetricRows } from '../../src/repo/usage-metrics.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../../src/shared/performance-histogram.ts';
 import { assertWebSearchBackendName, type WebSearchConfig } from '../../src/shared/web-search-backends.ts';
@@ -731,13 +730,6 @@ class MemoryUsageRepo implements UsageRepo {
         .map(r => this.toRecord(r))
         .sort((a, b) => a.hour.localeCompare(b.hour)),
     );
-  }
-
-  queryUpstreamCost(upstreamId: string, start: string, end: string) {
-    const buckets = [...this.store.values()].filter(record => record.upstream === upstreamId && record.hour >= start && record.hour < end);
-    if (buckets.some(record => record.requests > 0 && record.metrics.size === 0)) return Promise.resolve(null);
-    return Promise.resolve(sumUsageCostTerms(buckets.flatMap(bucket =>
-      [...bucket.metrics.values()].map(row => ({ ...row, occurrences: 1 })))));
   }
 
   async queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult[]> {
@@ -2228,12 +2220,6 @@ export class InMemoryRepo implements Repo {
       .filter(row => row.upstreamId === upstreamId && row.timestamp < before)
       .map(({ name, labels }) => [upstreamMetricIdentityKey({ name, labels }), { name, labels }] as const))
       .entries()].toSorted(([a], [b]) => a.localeCompare(b)).map(([, identity]) => identity),
-    latestSample: async (upstreamId, identity, start, end) => {
-      const key = upstreamMetricIdentityKey(identity);
-      const sample = this.upstreamMetricRecords.filter(record => record.upstreamId === upstreamId && upstreamMetricIdentityKey(record) === key
-        && record.timestamp >= start && record.timestamp < end).toSorted((a, b) => b.timestamp - a.timestamp)[0];
-      return sample === undefined ? null : { timestamp: sample.timestamp, value: sample.value };
-    },
     queryResetStarts: async (upstreamId, identity, threshold, before, { from = -Infinity, order = 'desc', limit = Infinity } = {}) => {
       const series = (key: string) => this.upstreamMetricRecords.filter(row =>
         row.upstreamId === upstreamId && row.timestamp < before && upstreamMetricIdentityKey(row) === key);
@@ -2245,7 +2231,7 @@ export class InMemoryRepo implements Repo {
         const previous = samples[index - 1];
         return sample.timestamp >= from && sample.value === sample.full && previous?.full !== undefined
           && (threshold.direction === 'used' ? previous.value > previous.full : previous.value < previous.full)
-          && (allowance === null || sample.value > previous.value) ? [sample.timestamp] : [];
+          && (allowance === null || sample.value > previous.value) ? [{ timestamp: sample.timestamp, value: sample.value }] : [];
       });
       return (order === 'asc' ? starts : starts.reverse()).slice(0, limit);
     },

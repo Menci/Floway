@@ -10,16 +10,20 @@ test('a newly observed reset advances the current cycle but leaves the applied h
   const history = resetHistory(loadedAt);
   const [metric] = history.metrics;
   const nextStart = loadedAt + 60_000;
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({
-    ...history, metrics: [{ ...metric, starts: [nextStart, ...metric!.starts] }],
-  })));
+  const previous = resetRangeAt(history.upstreamId, metric!, 1)!;
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
+    return Response.json({
+      ...history, metrics: [],
+      cycle: url.searchParams.has('current') ? { start: nextStart, end: null } : { start: previous.start, end: previous.end },
+    });
+  }));
   const load = vi.fn(async range => range);
   const signal = new AbortController().signal;
   const current = await loadWithResetCycles(history.upstreamId, resetRangeAt(history.upstreamId, metric!, 0)!, nextStart + 1, signal, load);
   expect(current.range).toMatchObject({ start: nextStart, end: null });
   expect(current.data).toBe(current.range);
 
-  const previous = resetRangeAt(history.upstreamId, metric!, 1)!;
   const historical = await loadWithResetCycles(history.upstreamId, previous, nextStart + 1, signal, load);
   expect(historical.range).toBe(previous);
   expect(historical.data).toBe(previous);

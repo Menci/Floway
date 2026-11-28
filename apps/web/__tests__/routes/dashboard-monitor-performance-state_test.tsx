@@ -1,20 +1,26 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
 import { buildPerformanceQuery, type PerformanceDataset } from '../../src/components/performance/data';
 import { parsePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewView } from '../../src/components/performance/overview';
-import type { ResetCycleHistory } from '../../src/components/telemetry/reset-cycles';
+import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import { i18n } from '../../src/i18n';
 import DashboardMonitorPerformance from '../../src/routes/dashboard-monitor-performance';
+import { useAuthStore } from '../../src/stores/auth-store';
 import { resetHistory } from '../components/telemetry/reset-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
+import { primeDefaultSession } from '../test-session';
 
 stubLocalStorage();
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  cleanup();
+  useAuthStore.getState().clear();
+  vi.unstubAllGlobals();
+});
 
 const loadedAt = Date.UTC(2026, 7, 5, 12);
 const bucket = dashboardBucketFrames('today', loadedAt).at(-2)!.key;
@@ -49,11 +55,12 @@ const overview: PerformanceOverviewView = {
   keys: [],
 };
 
-const renderPage = (search: string, data = overview, dataset?: PerformanceDataset, resetCycles: ResetCycleHistory | null = null) => {
+const renderPage = (search: string, data = overview, dataset?: PerformanceDataset) => {
+  primeDefaultSession();
   const state = parsePerformanceUrlState(new URLSearchParams(search));
   const router = createMemoryRouter([{
     path: '/',
-    Component: () => <DashboardMonitorPerformance
+    Component: () => <OutcomeToastProvider><DashboardMonitorPerformance
       loaderData={{
         currentUserId: '1',
         error: null,
@@ -61,12 +68,12 @@ const renderPage = (search: string, data = overview, dataset?: PerformanceDatase
         overview: data,
         dataset,
         regionAvailable: true,
-        resetCycles,
+        cycleQuota: null,
         state,
       }}
       matches={[] as never}
       params={{}}
-    />,
+    /></OutcomeToastProvider>,
   }], { initialEntries: [`/?${search}`] });
   const view = renderInApp(<RouterProvider router={router} />);
   return { ...view, router };
@@ -88,7 +95,12 @@ describe('Performance table state', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
       requests.push(url);
-      if (url.pathname === '/api/upstream-reset-cycles') return Response.json({ ...history, quota: { kind: 'estimated', usd: '42' } });
+      if (url.pathname === '/api/upstream-reset-cycles') return Response.json({
+        ...history,
+        ...(url.searchParams.has('cycle_start') && {
+          cycle: { start: history.metrics[0]!.starts[1], end: history.metrics[0]!.starts[0], quota: { amount: 42, unit: 'count' } },
+        }),
+      });
       if (url.pathname === '/api/performance/overview') return Response.json({
         reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'), cursor: url.searchParams.get('start'),
         buckets: [], edges: { ttft_ms: [], tpot_us: [] }, scope: { actorId: 1, ownedKeyIds: [], visibility: 'all' },
@@ -96,13 +108,13 @@ describe('Performance table state', () => {
       });
       throw new Error(`Unexpected request to ${url.pathname}`);
     }));
-    const { router } = renderPage('fu=up-1', overview, undefined, history);
-    expect(screen.queryByText('Estimated cycle quota: $42.00')).toBeNull();
+    const { router } = renderPage('fu=up-1');
+    expect(screen.queryByText('Cycle quota: 42')).toBeNull();
     fireEvent.click(await screen.findByRole('radio', { name: 'By Reset Cycle' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Older cycle' }));
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     await waitFor(() => expect(urlSearch(router).get('r')).toBe('reset-cycle'));
-    expect(screen.getByText('Estimated cycle quota: $42.00')).toBeTruthy();
+    expect(screen.getByText('Cycle quota: 42')).toBeTruthy();
     expect(requests.find(url => url.pathname === '/api/upstream-reset-cycles' && url.searchParams.has('cycle_start'))?.searchParams.get('cycle_start')).toBe(String(history.metrics[0]!.starts[1]));
     const readings = requests.find(url => url.pathname === '/api/performance/overview');
     expect(readings?.searchParams.get('format')).toBe('buckets');
@@ -115,7 +127,7 @@ describe('Performance table state', () => {
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'All upstreams' }));
     await waitFor(() => expect(screen.queryByRole('radio', { name: 'By Reset Cycle' })).toBeNull());
     await waitFor(() => expect(urlSearch(router).has('r')).toBe(false));
-    expect(screen.queryByText('Estimated cycle quota: $42.00')).toBeNull();
+    expect(screen.queryByText('Cycle quota: 42')).toBeNull();
     expect(requests.map(url => url.pathname)).toEqual(['/api/performance/overview']);
   });
 

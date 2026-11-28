@@ -1,9 +1,10 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
 import { resetRangeAt } from '../../src/components/telemetry/reset-cycles';
+import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import { createUsageOverviewLoader } from '../../src/components/usage/data';
 import { serializeUsageUrlState } from '../../src/components/usage/url-state';
 import { i18n } from '../../src/i18n';
@@ -12,10 +13,13 @@ import { useAuthStore } from '../../src/stores/auth-store';
 import { resetHistory } from '../components/telemetry/reset-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
+import { primeDefaultSession } from '../test-session';
+import { defaultUserPreferences } from '@floway-dev/protocols/browser';
 
 stubLocalStorage();
 
 afterEach(() => {
+  cleanup();
   useAuthStore.getState().clear();
   vi.unstubAllGlobals();
 });
@@ -29,7 +33,7 @@ const loaderData = {
   error: null,
   loadedAt,
   range: 'today' as const,
-  resetCycles: null,
+  cycleQuota: null,
   search: { records: [], keys: [] },
   state: {
     filters: { model: [], upstream: [], userId: [], keyId: [] },
@@ -58,10 +62,11 @@ const loaderData = {
 };
 
 const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderData']) => {
-  const user = { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } };
+  primeDefaultSession();
+  const user = { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { ...defaultUserPreferences } };
   const router = createMemoryRouter([{
     path: '/',
-    Component: () => <Outlet context={{ user }} />,
+    Component: () => <OutcomeToastProvider><Outlet context={{ user }} /></OutcomeToastProvider>,
     children: [{
       index: true,
       Component: () => <DashboardMonitorUsage loaderData={data} matches={[] as never} params={{}} />,
@@ -99,7 +104,7 @@ describe('usage dimension controls', () => {
   it('keeps self-only Search usage grouped by API key', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'operator-session',
-      user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } },
+      user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { ...defaultUserPreferences } },
     });
     let requestedView: string | null = null;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -127,7 +132,7 @@ describe('usage dimension controls', () => {
   it('restores a historical cycle only for the single upstream named by the usage filter', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'operator-session',
-      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } },
+      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { ...defaultUserPreferences } },
     });
     const history = resetHistory(loadedAt);
     const range = resetRangeAt(history.upstreamId, history.metrics[0]!, 2)!;
@@ -135,7 +140,9 @@ describe('usage dimension controls', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
       requests.push(url);
-      if (url.pathname === '/api/upstream-reset-cycles') return Response.json(history);
+      if (url.pathname === '/api/upstream-reset-cycles') return Response.json({
+        ...history, cycle: { start: range.start, end: range.end },
+      });
       if (url.pathname === '/api/token-usage/overview') return Response.json({
         cursor: 'first', reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'),
         buckets: [], scope: { actorId: 1, ownedKeyIds: [], visibility: 'all' },

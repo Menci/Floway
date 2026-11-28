@@ -86,8 +86,10 @@ describe('SQL upstream metric resets', () => {
     await repo.record({ ...point(540_000, 0, identity), upstreamId: 'up-2' });
     await repo.record(point(before, 25, { name: 'future', labels: {} }));
     expect(await repo.listIdentities('up-1', before)).toEqual([other, identity]);
-    expect(await repo.queryResetStarts('up-1', identity, { direction: 'used', full: 0 }, before)).toEqual([480_000, 360_000, 120_000]);
-    expect(await repo.queryResetStarts('up-1', other, { direction: 'remaining', full: 100 }, before)).toEqual([541_000]);
+    expect(await repo.queryResetStarts('up-1', identity, { direction: 'used', full: 0 }, before)).toEqual([
+      { timestamp: 480_000, value: 0 }, { timestamp: 360_000, value: 0 }, { timestamp: 120_000, value: 0 },
+    ]);
+    expect(await repo.queryResetStarts('up-1', other, { direction: 'remaining', full: 100 }, before)).toEqual([{ timestamp: 541_000, value: 100 }]);
   });
 
   it('requires a contemporaneous positive allowance and an actual refill for absolute balances', async () => {
@@ -99,6 +101,6 @@ describe('SQL upstream metric resets', () => {
       await repo.record(point(time, remaining, balance));
       if (full !== null) await repo.record(point(time, full, allowance));
     }
-    expect(await repo.queryResetStarts('up-1', balance, { direction: 'remaining', full: allowance }, 600_000)).toEqual([300_000]);
+    expect(await repo.queryResetStarts('up-1', balance, { direction: 'remaining', full: allowance }, 600_000)).toEqual([{ timestamp: 300_000, value: 100 }]);
   });
 });

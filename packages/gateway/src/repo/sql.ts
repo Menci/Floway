@@ -62,7 +62,6 @@ import type {
 } from './types.ts';
 import { SqlUpstreamMetricsRepo } from './upstream-metrics-sql.ts';
 import { SqlUpstreamModelsRepo, SqlUpstreamRepo } from './upstream-models-sql.ts';
-import { querySqlUpstreamCost } from './usage-cost-sql.ts';
 import { usageMetricRows } from './usage-metrics.ts';
 import { querySqlUsageOverview } from './usage-overview-sql.ts';
 import {
@@ -870,10 +869,6 @@ class SqlUsageRepo implements UsageRepo {
 
   queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult[]> {
     return querySqlUsageOverview(this.db, opts);
-  }
-
-  queryUpstreamCost(upstreamId: string, start: string, end: string) {
-    return querySqlUpstreamCost(this.db, upstreamId, start, end);
   }
 
   async listAll(): Promise<UsageRecord[]> {

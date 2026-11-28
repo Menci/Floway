@@ -7,7 +7,9 @@ import { computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSide
 import { computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-responses/as-source/conversation-turns.ts';
 import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
+import { hashRoundTripContent } from '../../src/round-trip/hash.ts';
 import type { SidecarOccurrence } from '../../src/round-trip/resolve.ts';
+import { ROUND_TRIP_SIDECAR_VERSION } from '../../src/round-trip/sidecar.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
@@ -75,7 +77,7 @@ const verifyResponsesTurn = (
   turn: Parameters<typeof findOpenAIResponsesSidecarOccurrences>[0],
   sourceTurnDigest: Parameters<typeof verifyOpenAIResponsesTurnDigest>[1],
   data = 'opaque-sidecar',
-  version = 1,
+  version = ROUND_TRIP_SIDECAR_VERSION,
 ) => verifyOpenAIResponsesTurnDigest(fixtureSidecar(findOpenAIResponsesSidecarOccurrences(turn), data).turn, sourceTurnDigest, version);
 
 const verifyMessagesTurn = (
@@ -286,14 +288,38 @@ describe('assistant-turn sidecar protocols', () => {
     for (const { original, changed } of cases) {
       const originalCheck = await computeOpenAIResponsesTurnDigest(original);
       const changedCheck = await computeOpenAIResponsesTurnDigest(changed);
-      expect(await verifyOpenAIResponsesTurnDigest(changed, originalCheck, 1)).toBe(false);
-      expect(await verifyOpenAIResponsesTurnDigest(original, changedCheck, 1)).toBe(false);
+      expect(await verifyOpenAIResponsesTurnDigest(changed, originalCheck, ROUND_TRIP_SIDECAR_VERSION)).toBe(false);
+      expect(await verifyOpenAIResponsesTurnDigest(original, changedCheck, ROUND_TRIP_SIDECAR_VERSION)).toBe(false);
     }
 
     const statusless = [{ type: 'function_call' as const, call_id: 'function', name: 'lookup', arguments: '{}' }];
     const statuslessCheck = await computeOpenAIResponsesTurnDigest(statusless);
-    expect(await verifyOpenAIResponsesTurnDigest(statusless, statuslessCheck, 1)).toBe(true);
-    expect(await verifyOpenAIResponsesTurnDigest(cases[2].original, statuslessCheck, 1)).toBe(false);
+    expect(await verifyOpenAIResponsesTurnDigest(statusless, statuslessCheck, ROUND_TRIP_SIDECAR_VERSION)).toBe(true);
+    expect(await verifyOpenAIResponsesTurnDigest(cases[2].original, statuslessCheck, ROUND_TRIP_SIDECAR_VERSION)).toBe(false);
+  });
+
+  it('locks Responses function_call and custom_tool_call relative order in v3 while retaining v1/v2 verification', async () => {
+    const fnCall: Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' }> = {
+      type: 'function_call', call_id: 'fc-1', name: 'lookup', arguments: '{}', status: 'completed',
+    };
+    const customCall: Extract<OpenAIResponsesOutputItemEx, { type: 'custom_tool_call' }> = {
+      type: 'custom_tool_call', call_id: 'ctc-1', name: 'format', input: 'text', status: 'completed',
+    };
+    const message: Extract<OpenAIResponsesOutputItemEx, { type: 'message' }> = {
+      type: 'message', id: 'msg-1', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'ok', annotations: [] }],
+    };
+    const v3Digest = await computeOpenAIResponsesTurnDigest([message, fnCall, customCall]);
+    expect(await verifyOpenAIResponsesTurnDigest([fnCall, customCall, message], v3Digest, 3)).toBe(true);
+    expect(await verifyOpenAIResponsesTurnDigest([message, customCall, fnCall], v3Digest, 3)).toBe(false);
+    // v1/v2 digests bucketed function_call and custom_tool_call separately and must continue verifying.
+    const v1Material = [
+      ['custom_tool_call', [{ type: 'custom_tool_call', status: 'completed', call_id: 'ctc-1', name: 'format', input: 'text' }]],
+      ['function_call', [{ type: 'function_call', status: 'completed', call_id: 'fc-1', name: 'lookup', arguments: '{}' }]],
+    ];
+    const v1Digest = await hashRoundTripContent(JSON.stringify(v1Material));
+    expect(await verifyOpenAIResponsesTurnDigest([fnCall, customCall], v1Digest, 1)).toBe(true);
+    expect(await verifyOpenAIResponsesTurnDigest([customCall, fnCall], v1Digest, 2)).toBe(true);
+    expect(await verifyOpenAIResponsesTurnDigest([fnCall, customCall], v1Digest, 3)).toBe(false);
   });
 
   it('merges adjacent Messages roles and checks each block type in order', async () => {

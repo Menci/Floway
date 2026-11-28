@@ -329,6 +329,11 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
   };
 };
 
+const openaiChatCompletionsCallIds = (turn: OpenAIChatCompletionsSourceAssistantTurn): readonly (string | undefined)[] => [
+  ...(turn.function_call == null ? [] : [undefined]),
+  ...(turn.tool_calls?.map(call => call.id) ?? []),
+];
+
 export const readOpenAIChatCompletionsRequest = (payload: OpenAIChatCompletionsPayloadEx): SourceReading<OpenAIChatCompletionsSourceAssistantTurn> => {
   const context = openaiChatCompletionsInputContext(payload);
   let messageIndex = 0;
@@ -342,6 +347,7 @@ export const readOpenAIChatCompletionsRequest = (payload: OpenAIChatCompletionsP
             kind: 'assistant' as const,
             assistantTurn: turn.items[0],
             toIRInputTurns: () => [openaiChatCompletionsTurnToIR(turn, context, at)],
+            callIds: () => openaiChatCompletionsCallIds(turn.items[0]),
           }
         : { kind: 'client' as const, toIRInputTurns: () => [openaiChatCompletionsTurnToIR(turn, context, at)] };
     }),

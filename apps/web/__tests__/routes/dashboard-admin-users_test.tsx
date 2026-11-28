@@ -7,12 +7,13 @@ import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import { i18n } from '../../src/i18n';
 import DashboardAdminUsers, { shouldRevalidate } from '../../src/routes/dashboard-admin-users';
 import { renderInApp } from '../render';
+import { defaultUserPreferences } from '@floway-dev/protocols/browser';
 
 const groups: ControlPlaneGroup[] = [
   { id: 1, name: 'Platform', hue: 210, createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
   { id: 2, name: 'Research', hue: 150, createdAt: '2026-10-01T00:00:00Z', deletedAt: null },
 ];
-const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, createdAt: '2026-10-01T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } };
+const user: ControlPlaneUser = { id: 1, username: 'frank', isAdmin: true, createdAt: '2026-10-01T00:00:00Z', preferences: { ...defaultUserPreferences } };
 const memberships = [
   { groupId: 1, userId: 1, createdAt: '2026-10-10T09:30:00Z' },
   { groupId: 2, userId: 1, createdAt: '2026-10-12T10:00:00Z' },

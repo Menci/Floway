@@ -10,6 +10,7 @@ import { dashboardChartBuckets, isResetRange, sameDashboardRange } from '../comp
 import { SEARCH_BACKEND_LABEL_KEYS } from '../components/search/backend';
 import { CycleQuota } from '../components/telemetry/cycle-quota';
 import { TelemetryFilterFields } from '../components/telemetry/dimension-controls';
+import { TelemetryDisplayOptionsMenu } from '../components/telemetry/display-options-menu';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { singleTelemetryUpstream } from '../components/telemetry/reset-cycles';
 import { TelemetryTimeRange } from '../components/telemetry/time-range';
@@ -32,6 +33,7 @@ import { parseUsageUrlState, serializeUsageUrlState, type UsageUrlState } from '
 import { formatCount } from '../lib/format-number';
 import { useEntryRewrite } from '../lib/page-navigation';
 import { useLocale } from '../lib/use-locale';
+import { useUserPreferences } from '../lib/use-preferences';
 
 type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & {
   currentUserId: string;
@@ -75,13 +77,14 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [usage, setUsage] = useState(loaderData.usage);
   const [search, setSearch] = useState(loaderData.search);
   const [upstreams, setUpstreams] = useState(loaderData.upstreams);
-  const [resetCycles, setResetCycles] = useState(loaderData.resetCycles);
+  const [cycleQuota, setCycleQuota] = useState(loaderData.cycleQuota);
   const [metric, setMetric] = useState<UsageMetric>(initialState.metric);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [hiddenSearch, setHiddenSearch] = useState<Set<string>>(() => new Set(initialState.hiddenSearch));
   const [error, setError] = useState<GlobalError | null>(loaderData.error);
   const auditableUserIdsRef = useRef(loaderData.usage?.auditableUserIds ?? [Number(loaderData.currentUserId)]);
   const locale = useLocale();
+  const { foldSmallSeries } = useUserPreferences();
   const identityContext = {
     currentUserId: loaderData.currentUserId,
     fallbackGroup: 'model' as const,
@@ -100,7 +103,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     auditableUserIdsRef.current = next.usage.auditableUserIds;
     setSearch(next.search);
     setUpstreams(next.upstreams);
-    setResetCycles(next.resetCycles);
+    setCycleQuota(next.cycleQuota);
     setError(next.error);
     return next.range === query.range ? true : { ...query, range: next.range };
   }, [loaderData.loadOverview, loaderData.currentUserId, query]);
@@ -133,12 +136,19 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     currentUserId: loaderData.currentUserId, t,
   }), [loaderData.currentUserId, t, upstreams, usage]);
   const searchChart = useMemo(
-    () => search && buildSearchChart({ search, range: loadedQuery.range, buckets }),
-    [buckets, loadedQuery.range, search],
+    () => search && buildSearchChart({
+      search,
+      range: loadedQuery.range,
+      buckets,
+      foldSmallSeries,
+      hidden: hiddenSearch,
+      otherLabel: t('monitoring.charts.series.other'),
+    }),
+    [buckets, foldSmallSeries, hiddenSearch, loadedQuery.range, search, t],
   );
   // Recorded search traffic stays visible after the operator turns search off.
   // A failed fetch does not establish that there was no search traffic.
-  const showSearch = !isResetRange(loadedQuery.range) && (searchChart === null || searchChart.entries.length > 0);
+  const showSearch = !isResetRange(loadedQuery.range) && (searchChart === null || searchChart.entries.length > 0 || (searchChart.other?.members.length ?? 0) > 0);
 
   const changeGroupBy = (next: UsageGroupBy) => {
     if (next === query.groupBy) return;
@@ -168,7 +178,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
 
     <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
-      <CycleQuota loadedAt={loadedAt} range={loadedQuery.range} quota={resetCycles?.quota} />
+      <CycleQuota loadedAt={loadedAt} range={loadedQuery.range} quota={cycleQuota} />
       <div className="flex items-end gap-3 min-w-0 flex-wrap">
         {availableDimensions && <UsageGrouping disabled={refreshing} dimensions={availableDimensions} groupBy={loadedQuery.groupBy} onChange={changeGroupBy} />}
         <TelemetryTimeRange
@@ -199,10 +209,12 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     {showSearch && <Panel className="min-w-0">
       {searchChart === null ? <EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine> : (
         <UsageChartSection
+          actions={<TelemetryDisplayOptionsMenu showMergeModelVariants={false} />}
           chart={searchChart}
           detailsLabel={t('monitoring.usage.charts.search')}
           hidden={hiddenSearch}
           onHiddenChange={setHiddenSearch}
+          other={searchChart.other}
           title={t('monitoring.usage.charts.searchWithBackend', {
             backend: searchChart.backends
               .map(id => SEARCH_BACKEND_LABEL_KEYS[id] === undefined ? id : t(SEARCH_BACKEND_LABEL_KEYS[id]))

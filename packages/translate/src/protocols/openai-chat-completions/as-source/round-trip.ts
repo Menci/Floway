@@ -111,10 +111,8 @@ export const collectOpenAIChatCompletionsReplayContents = (turn: OpenAIChatCompl
   return candidates;
 };
 
-export const verifyOpenAIChatCompletionsTurnDigest = createTurnDigestVerifier({
-  1: chatTurnDigestMaterialV1,
-  2: chatTurnDigestMaterialV2,
-});
+export const verifyOpenAIChatCompletionsTurnDigest = createTurnDigestVerifier((turn: OpenAIChatCompletionsSourceAssistantTurn, version) =>
+  version === 1 ? chatTurnDigestMaterialV1(turn) : chatTurnDigestMaterialV2(turn));
 
 // Our carrier uses indexed OpenRouter reasoning_details.
 // https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#reasoning-details-api-shape
