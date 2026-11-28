@@ -4,13 +4,13 @@ import type { Route } from './+types/dashboard-providers-upstreams-new';
 import { requireDashboardAdmin } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
 import { api, callApi } from '../api/client';
+import { pickIdentityHue } from '../components/ui/status-badge';
 import {
   loadEditorAux,
   upstreamDefaultName,
 } from '../components/upstream-editor/data';
 import { UpstreamEditorPage } from '../components/upstream-editor/page';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
-import { pickDistinctHue } from '../lib/hue';
 import { ALL_UPSTREAM_KINDS } from '@floway-dev/upstream/browser';
 
 export const handle = dashboardWorkspaceHandle;
@@ -36,7 +36,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
     // A blueprint carries no hue: the badge only has to be told apart from the
     // ones already on screen, which is a fact the dashboard holds and the
     // server does not.
-    hue: pickDistinctHue(upstreamsResult.data.map(upstream => upstream.hue)),
+    hue: pickIdentityHue(upstreamsResult.data.map(upstream => upstream.hue)),
   };
   return { ...aux, editLevel: 'full' as const, mode: 'create' as const, record, discovered: null };
 }

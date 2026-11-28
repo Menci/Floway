@@ -489,7 +489,7 @@ function ModelsWorkspace({ detailSection, discovered, editableModels, modelSelec
             onClick={() => copy(modelsError.message, 'models-error')}
           />
         </div>
-        {modelsError.upstreamResponse !== null && <pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-[var(--winui-control-corner-radius)] border border-solid border-fui-stroke1 bg-fui-bg2 p-3 font-mono text-xs">
+        {modelsError.upstreamResponse !== null && <pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-[var(--winui-control-corner-radius)] border border-solid border-fui-stroke1 bg-fui-bg2 p-3 font-mono mono-size-xs">
           {`HTTP ${modelsError.upstreamResponse.status}\n${modelsError.upstreamResponse.headers.map(([name, value]) => `${name}: ${value}`).join('\n')}\n\n${modelErrorExcerpt(modelsError.upstreamResponse.body, MODEL_ERROR_EDITOR_LENGTH)}`}
         </pre>}
       </div>

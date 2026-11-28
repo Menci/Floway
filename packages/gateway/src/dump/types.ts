@@ -14,6 +14,7 @@ import type { z } from 'zod';
 import type {
   dumpCaptureSchema,
   dumpErrorSchema,
+  dumpKeyRefSchema,
   dumpMetadataSchema,
   dumpStreamEventSchema,
   dumpUpstreamRefSchema,
@@ -23,6 +24,11 @@ export type DumpRecordId = string;
 export type DumpCapture = z.infer<typeof dumpCaptureSchema>;
 
 export type DumpUpstreamRef = z.infer<typeof dumpUpstreamRefSchema>;
+
+// Which API key captured a record, so one merged log can label every row with
+// its source. `suffix` is the key's display tail; the raw key never leaves the
+// owning row.
+export type DumpKeyRef = z.infer<typeof dumpKeyRefSchema>;
 
 // What went wrong on a failed turn. Either a categorized api-error envelope
 // (real upstream non-2xx or a gateway-synthesized envelope — `kind` matches

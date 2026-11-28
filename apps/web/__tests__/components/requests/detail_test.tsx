@@ -10,13 +10,19 @@ import type { DumpRecord } from '@floway-dev/gateway/browser';
 vi.mock('../../../src/components/ui/body-editor', () => ({ default: ({ text, toolbarStart }: { text: string; toolbarStart?: ReactNode }) => <>{toolbarStart}<pre data-testid="body-content">{text}</pre></> }));
 
 const record: DumpRecord = {
-  meta: { id: 'detail', method: 'POST', path: '/v1/chat/completions', startedAt: 0, completedAt: 1, status: 200, upstream: null, model: 'm', inputTokens: null, outputTokens: null, requestBytes: 0, responseBytes: 0, durationMs: 1, error: null },
+  meta: { id: 'detail', method: 'POST', path: '/v1/chat/completions', startedAt: 0, completedAt: 1, status: 200, key: { id: 'key-a', name: 'Key A', suffix: 'key-a' }, upstream: null, model: 'm', inputTokens: null, outputTokens: null, requestBytes: 0, responseBytes: 0, durationMs: 1, error: null },
   request: { method: 'POST', path: '/v1/chat/completions', headers: [], body: { encoding: 'utf8', data: '{"client":"large request"}' } },
   response: { status: 200, headers: [], body: { type: 'stream', events: [] } },
   capture: { exchanges: [{ upstreamId: 'u', request: { url: 'https://upstream.test', method: 'POST', headers: [], body: { encoding: 'utf8', data: '{"upstream":"translated request"}' } }, response: { status: 200, headers: [], body: { encoding: 'utf8', data: 'data: {broken\n' }, complete: false, error: null }, error: null }], response: { body: { encoding: 'utf8', data: 'data: downstream\n' }, complete: true, error: null } },
 };
 
 describe('request detail navigation', () => {
+  it('names the key that captured the record', () => {
+    renderInApp(<RequestDetailPanel record={record} recordId="detail" error={null} collected={null} upstreamCollected={null} retainLastRecord={false} />);
+    // The other match is the tooltip carrying the same name for its description.
+    expect(screen.getByText('Key A (key-a)', { selector: '.fui-Text' })).toBeTruthy();
+  });
+
   it('opens each body directly and preserves malformed raw response text', async () => {
     renderInApp(<RequestDetailPanel record={record} recordId="detail" error={null} collected={{ result: { content: 'parsed response' }, truncated: true, error: null }} upstreamCollected={null} retainLastRecord={false} />);
     expect((await screen.findByTestId('body-content')).textContent).toContain('parsed response');

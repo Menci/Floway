@@ -30,7 +30,9 @@ const encodeJson = <T>(value: T, context: string, schema: z.ZodType<T>): string 
 };
 
 export const encodePersistedDumpMetadata = (metadata: DumpMetadata, context: string): string => {
-  const { upstream: _upstream, ...persisted } = metadata;
+  // Both fields are read-time joins: the upstream's current identity and the
+  // owning key. Persisting them would freeze a rename.
+  const { upstream: _upstream, key: _key, ...persisted } = metadata;
   return encodeJson(persisted, context, persistedDumpMetadataSchema);
 };
 

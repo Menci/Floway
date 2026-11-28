@@ -1,5 +1,5 @@
 import { DismissRegular } from '@fluentui/react-icons';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
@@ -43,6 +43,7 @@ interface LoaderData {
   recordError: string | null;
   records: DumpMetadata[];
   recordsError: string | null;
+  /** `null` is the merged all-keys log. */
   selectedKeyId: string | null;
 }
 
@@ -52,18 +53,32 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   const keys = keysResult.data?.filter(key => key.dump_retention_seconds !== null) ?? null;
   const url = new URL(request.url);
   const requestedKeyId = url.searchParams.get('key');
-  const selectedKeyId = keys === null
-    ? null
-    : keys.some(key => key.id === requestedKeyId) ? requestedKeyId : keys[0]?.id ?? null;
+  // No key named means the merged log: the page's default is every key the
+  // operator has enabled, and a named key that no longer exists falls back to
+  // that same view rather than mislabeling a page as one key's.
+  const selectedKeyId = url.searchParams.get('scope') !== 'all'
+    && requestedKeyId !== null
+    && keys?.some(key => key.id === requestedKeyId)
+    ? requestedKeyId
+    : null;
   const recordId = url.searchParams.get('record');
-  if (!selectedKeyId) {
-    return { collected: null, upstreamCollected: null, error: keysResult.error?.message ?? null, keys, record: null, recordError: null, records: [], recordsError: null, selectedKeyId };
+  const q = url.searchParams.get('q') ?? '';
+  const failuresQuery = url.searchParams.get('failures') === 'true' ? 'true' : 'false';
+  if (selectedKeyId === null && (keys === null || keys.length === 0)) {
+    return {
+      collected: null, upstreamCollected: null, error: keysResult.error?.message ?? null, keys,
+      record: null, recordError: null, records: [], recordsError: null, selectedKeyId: null,
+    };
   }
   const [recordsResult, recordResult] = await Promise.all([
-    callApi(() => api.api.dump.keys[':keyId'].records.$get({ param: { keyId: selectedKeyId }, query: { limit: '100', q: url.searchParams.get('q') ?? '', failures: url.searchParams.get('failures') === 'true' ? 'true' : 'false' } })),
-    recordId
-      ? callApi(() => api.api.dump.keys[':keyId'].records[':recordId'].$get({ param: { keyId: selectedKeyId, recordId } }))
-      : Promise.resolve(null),
+    selectedKeyId === null
+      ? callApi(() => api.api.dump.records.$get({ query: { limit: '100', q, failures: failuresQuery } }))
+      : callApi(() => api.api.dump.keys[':keyId'].records.$get({ param: { keyId: selectedKeyId }, query: { limit: '100', q, failures: failuresQuery } })),
+    recordId === null
+      ? Promise.resolve(null)
+      : selectedKeyId === null
+        ? callApi(() => api.api.dump.records[':recordId'].$get({ param: { recordId } }))
+        : callApi(() => api.api.dump.keys[':keyId'].records[':recordId'].$get({ param: { keyId: selectedKeyId, recordId } })),
   ]);
   const record = recordResult?.data ?? null;
   const collectKind = record ? detectCollectKind(record.meta.path) : null;
@@ -90,9 +105,10 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
 
 // The page holds its selection in the URL, so the list rows read their address
 // from the same builder the selection is written with.
-const selectionSearch = (keyId: string, recordId?: string | null): URLSearchParams => {
+const selectionSearch = (keyId: string | null, recordId?: string | null): URLSearchParams => {
   const search = new URLSearchParams();
-  search.set('key', keyId);
+  if (keyId === null) search.set('scope', 'all');
+  else search.set('key', keyId);
   if (recordId) search.set('record', recordId);
   return search;
 };
@@ -111,37 +127,39 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
   const narrow = useMediaQuery('(max-width: 1200px)');
   const selectedRecordId = searchParams.get('record');
   const selectedKeyId = loaderData.selectedKeyId;
+  const allKeys = selectedKeyId === null;
+  const keyIds = useMemo(() => keys?.map(key => key.id) ?? [], [keys]);
   const q = searchParams.get('q') ?? '';
   const failures = searchParams.get('failures') === 'true';
-  const subscription = useDumpSubscription(selectedKeyId, loaderData.records, q, failures);
+  const subscription = useDumpSubscription({ keyId: selectedKeyId, keyIds }, loaderData.records, q, failures);
   const changeFilter = (query: string, onlyFailures: boolean) => {
-    if (!selectedKeyId) return;
     const next = selectionSearch(selectedKeyId);
     if (query) next.set('q', query);
     if (onlyFailures) next.set('failures', 'true');
     setSearchParams(next, rewrite);
   };
   const recordSearch = (recordId?: string | null) => {
-    const next = selectionSearch(selectedKeyId!, recordId);
+    const next = selectionSearch(selectedKeyId, recordId);
     if (q) next.set('q', q);
     if (failures) next.set('failures', 'true');
     return next;
   };
 
-  const updateSelection = useCallback((keyId: string, recordId?: string | null) => {
+  // The key is one more filter over the log, so moving between keys keeps the
+  // search and the failure filter the counts beside each key were read under.
+  const updateSelection = useCallback((keyId: string | null, recordId?: string | null) => {
     const next = selectionSearch(keyId, recordId);
-    if (keyId === selectedKeyId) {
-      if (q) next.set('q', q);
-      if (failures) next.set('failures', 'true');
-    }
+    if (q) next.set('q', q);
+    if (failures) next.set('failures', 'true');
     setSearchParams(next, rewrite);
-  }, [failures, q, rewrite, selectedKeyId, setSearchParams]);
+  }, [failures, q, rewrite, setSearchParams]);
 
   const reloadKeys = useCallback((signal: AbortSignal) => refreshRequestKeys({
+    allKeys,
     currentKeys: keys,
     load: keySignal => callApi(() => api.api.keys.$get(undefined, { init: { signal: keySignal } })),
     onNavigate: nextSelectedKeyId => {
-      const next = nextSelectedKeyId === null ? new URLSearchParams() : selectionSearch(nextSelectedKeyId);
+      const next = selectionSearch(nextSelectedKeyId);
       void navigate(`/dashboard/monitor/requests${next.size ? `?${next}` : ''}`, rewrite);
     },
     onUpdate: (nextKeys, error) => setReplacement(current => ({
@@ -152,7 +170,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
     })),
     selectedKeyId: loaderData.selectedKeyId,
     signal,
-  }), [keys, loaderData, navigate, rewrite]);
+  }), [allKeys, keys, loaderData, navigate, rewrite]);
 
   const { poll } = useRefresh(reloadKeys);
   usePollWhileVisible(poll);
@@ -181,10 +199,10 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
             title={t('requests.noKeys')}
           />
         </Panel>
-      ) : selectedKeyId ? narrow ? <>
+      ) : narrow ? <>
         <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
           <RequestListPanel
-            key={selectedKeyId}
+            key={selectedKeyId ?? 'all'}
             q={q} failures={failures} onFilterChange={changeFilter}
             addressOfRecord={recordId => `?${recordSearch(recordId)}`}
             apiKeys={keys}
@@ -224,7 +242,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
           </Panel>
           <Panel className="!block overflow-hidden min-w-0 h-full" padding="flush">
             <RequestListPanel
-              key={selectedKeyId}
+              key={selectedKeyId ?? 'all'}
               q={q} failures={failures} onFilterChange={changeFilter}
               addressOfRecord={recordId => `?${recordSearch(recordId)}`}
               apiKeys={keys}
@@ -240,7 +258,7 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
             />
           </Panel>
         </div>
-      ) : null}
+      )}
     </section>
   );
 }

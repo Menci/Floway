@@ -25,7 +25,17 @@ export interface DumpStore {
   // current rolling retention even before queued physical deletion runs.
   list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]>;
 
+  // The same newest-first page merged across every key in `keyIds`, for the
+  // dashboard's all-keys log. Ids are global ULIDs, so one `before` cursor
+  // pages the merged stream rather than each key separately.
+  listAll(keyIds: readonly string[], opts: DumpListOptions): Promise<DumpMetadata[]>;
+
   get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null>;
+
+  // Detail lookup for the merged log, where the record's key is not known
+  // before the read. Returns null unless the record belongs to one of
+  // `keyIds` and that key still has retention.
+  getAny(keyIds: readonly string[], recordId: DumpRecordId): Promise<StoredDumpRecord | null>;
 
   deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number>;
   findOldestCreatedAt(keyId: string): Promise<number | null>;

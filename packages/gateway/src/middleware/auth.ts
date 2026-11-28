@@ -30,11 +30,11 @@ export const authMiddleware = async (c: AuthedContext, next: Next) => {
   if (AUTH_VALIDATE_PATHS.has(path) && c.req.method === 'POST') return await next();
 
   // Browsers cannot attach custom headers to EventSource, so the dump SSE
-  // stream — the only browser-driven SSE endpoint — accepts the session
-  // token as a query string instead. Path/method are pinned to the single
-  // endpoint that needs it to keep the URL-leak surface narrow.
+  // streams — the only browser-driven SSE endpoints — accept the session
+  // token as a query string instead. Path/method are pinned to the endpoints
+  // that need it to keep the URL-leak surface narrow.
   const isDumpStreamGet = c.req.method === 'GET'
-    && /^\/api\/dump\/keys\/[^/]+\/stream$/.test(path);
+    && /^\/api\/dump\/(?:keys\/[^/]+\/)?stream$/.test(path);
   const sessionToken = c.req.header('x-floway-session')
     ?? (isDumpStreamGet ? c.req.query('session') : undefined);
   if (sessionToken) {

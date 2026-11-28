@@ -3,9 +3,17 @@ import { converter, formatHex, modeOklch, modeRgb, useMode as registerMode } fro
 registerMode(modeRgb);
 registerMode(modeOklch);
 const toRgb = converter('rgb');
+const toOklch = converter('oklch');
 
 export const oklchToHex = (lightness: number, chroma: number, hue: number): string =>
   formatHex(toRgb({ mode: 'oklch', l: lightness, c: chroma, h: hue }));
+
+/** The OKLCH hue `hex` sits at, on the circle `pickDistinctHue` divides. */
+export const hexHue = (hex: string): number => {
+  const hue = toOklch(hex)?.h;
+  if (hue === undefined) throw new TypeError(`No hue in ${hex}`);
+  return hue;
+};
 
 // How much chroma a hue can carry before it reads heavier than its neighbours.
 // Red takes the most and cyan the least, which is why a flat chroma leaves half
@@ -57,13 +65,15 @@ export const HUE_RAIL_GRADIENT = `linear-gradient(to right, ${
 })`;
 
 /**
- * A hue for a new upstream: the middle of the widest arc left unclaimed by the
- * hues already in use, so the badge is as far from every existing one as the
- * circle allows. Ties are broken at random, and an empty console draws a
- * uniformly random hue rather than always starting at the same place.
+ * A hue for a new badge: the middle of the widest arc left unclaimed by the
+ * hues already in use and by the `avoid` hues it must not be mistaken for, so
+ * the badge is as far from every one of them as the circle allows. Ties are
+ * broken at random. A console with no hue in use draws at random rather than
+ * always starting at the same place: from the whole circle, or with hues to
+ * avoid, from the middle half of the widest arc they leave.
  */
-export const pickDistinctHue = (existing: readonly number[]): number => {
-  const claimed = [...new Set(existing)].sort((a, b) => a - b);
+export const pickDistinctHue = (existing: readonly number[], avoid: readonly number[]): number => {
+  const claimed = [...new Set([...existing, ...avoid])].sort((a, b) => a - b);
   if (claimed.length === 0) return Math.floor(Math.random() * 360);
   // Each hue's gap runs to the next one, and the last wraps to the first.
   const gaps = claimed.map((hue, index) => ({
@@ -73,5 +83,6 @@ export const pickDistinctHue = (existing: readonly number[]): number => {
   const widest = Math.max(...gaps.map(gap => gap.width));
   const candidates = gaps.filter(gap => gap.width === widest);
   const chosen = candidates[Math.floor(Math.random() * candidates.length)]!;
-  return Math.round(chosen.hue + chosen.width / 2) % 360;
+  const offset = existing.length === 0 ? chosen.width * (0.25 + Math.random() * 0.5) : chosen.width / 2;
+  return Math.round(chosen.hue + offset) % 360;
 };

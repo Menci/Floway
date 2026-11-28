@@ -80,7 +80,7 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
               {t('proxies.backoff.reset')}
             </Button>
           </div>
-          {row.last_error && <Text block className="font-mono" size={200}>{row.last_error}</Text>}
+          {row.last_error && <Text block className="font-mono mono-size-xs" size={200}>{row.last_error}</Text>}
         </li>;
       })}
     </ul>

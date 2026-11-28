@@ -28,6 +28,7 @@ const record: DumpMetadata = {
   method: 'POST',
   path: '/v1/chat/completions',
   status: 200,
+  key: { id: 'key-1', name: 'Default Key', suffix: '1234' },
   model: 'gpt-4o',
   inputTokens: 10,
   outputTokens: 20,
@@ -40,12 +41,12 @@ const record: DumpMetadata = {
   upstream: null,
 };
 
-const renderList = (failures: boolean) => renderInApp(<MemoryRouter>
+const renderList = () => renderInApp(<MemoryRouter>
   <RequestListPanel
     addressOfRecord={id => `?record=${id}`}
     apiKeys={[apiKey]}
     error={null}
-    failures={failures}
+    failures={false}
     hasOlder={false}
     onDismissError={vi.fn()}
     onFilterChange={vi.fn()}
@@ -59,40 +60,52 @@ const renderList = (failures: boolean) => renderInApp(<MemoryRouter>
   />
 </MemoryRouter>);
 
+const rowExport = () => screen.queryByRole('checkbox', { name: i18n.t('requests.selectExport') });
+const selectToggle = () => screen.getByRole('button', { name: i18n.t('requests.select') });
+
+describe('RequestListPanel export selection', () => {
+  it('shows no checkboxes until the list is put into selection', () => {
+    renderList();
+    expect(rowExport()).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: i18n.t('requests.selectLoaded') })).toBeNull();
+
+    fireEvent.click(selectToggle());
+
+    expect(rowExport()).not.toBeNull();
+    expect(screen.getByRole('checkbox', { name: i18n.t('requests.selectLoaded') })).toBeTruthy();
+  });
+
+  it('drops the selection it made once the list leaves selection', () => {
+    renderList();
+    fireEvent.click(selectToggle());
+    fireEvent.click(rowExport()!);
+    expect(screen.getByRole('button', { name: i18n.t('requests.exportSelection', { count: '1' }) })).toBeTruthy();
+
+    fireEvent.click(selectToggle());
+    expect(rowExport()).toBeNull();
+    fireEvent.click(selectToggle());
+    expect((rowExport() as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByRole('button', { name: i18n.t('requests.exportSelection', { count: '1' }) })).toBeNull();
+  });
+
+  it('gives each row its sizes beside its timings', () => {
+    renderList();
+    expect(screen.getByText('100 B')).toBeTruthy();
+  });
+
+  it('keeps the placeholder short and lists what the search matches in its name', () => {
+    renderList();
+    const field = screen.getByRole('textbox', { name: i18n.t('requests.search') });
+    expect(field.getAttribute('placeholder')).toBe(i18n.t('requests.searchShort'));
+  });
+});
+
 describe('RequestListPanel at a phone width', () => {
   stubMatchMedia(query => query === '(max-width: 680px)');
 
-  it('folds the toolbar and the export checkboxes behind the filters toggle', () => {
-    renderList(false);
-    const failuresOnly = () => screen.queryByRole('checkbox', { name: i18n.t('requests.failuresOnly') });
-    const rowExport = () => screen.queryByRole('checkbox', { name: i18n.t('requests.selectExport') });
-
-    expect(screen.getByRole('textbox', { name: i18n.t('requests.search') })).toBeTruthy();
-    expect(failuresOnly()).toBeNull();
-    expect(rowExport()).toBeNull();
-    // The sizes give their room to the error or token count.
+  it('keeps two lines and gives the sizes and timings to the record\'s details', () => {
+    renderList();
     expect(screen.queryByText('100 B')).toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('requests.tools') }));
-
-    expect(failuresOnly()).not.toBeNull();
-    expect(rowExport()).not.toBeNull();
-  });
-
-  it('keeps a selection and its export control in view once the toolbar folds again', () => {
-    renderList(false);
-    const toggle = screen.getByRole('button', { name: i18n.t('requests.tools') });
-    fireEvent.click(toggle);
-    fireEvent.click(screen.getByRole('checkbox', { name: i18n.t('requests.selectExport') }));
-    fireEvent.click(toggle);
-
-    expect(screen.getByRole('checkbox', { name: i18n.t('requests.selectExport') })).toBeTruthy();
-    expect(screen.getByRole('button', { name: i18n.t('requests.exportSelection', { count: '1' }) })).toBeTruthy();
-  });
-
-  it('says on the toggle that a folded filter is in force', () => {
-    renderList(true);
-
-    expect(screen.getByRole('button', { name: i18n.t('requests.toolsActive', { active: '1' }) })).toBeTruthy();
+    expect(screen.getByText('30 tok')).toBeTruthy();
   });
 });

@@ -11,7 +11,7 @@ import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
 
 const Harness = ({ keyId }: { keyId: string }) => {
-  const subscription = useDumpSubscription(keyId, [record(`${keyId}-1`)]);
+  const subscription = useDumpSubscription({ keyId, keyIds: [] }, [record(`${keyId}-1`)]);
   return (
     <section aria-label="Requests">
       {subscription.error ? <p>{subscription.error}</p> : null}

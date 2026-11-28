@@ -9,6 +9,15 @@ import type { DumpMetadata } from '@floway-dev/gateway/browser';
 
 const PAGE_LIMIT = 100;
 
+// Which log the panel is showing: one key's, or every dump-enabled key's
+// merged newest-first stream. `keyIds` is content, not identity: a changed set
+// reopens the stream because the server derives its subscriptions from the
+// keys the account owns at connect time.
+export interface DumpScope {
+  keyId: string | null;
+  keyIds: readonly string[];
+}
+
 export interface DumpSubscription {
   records: DumpMetadata[];
   hasOlder: boolean;
@@ -17,7 +26,12 @@ export interface DumpSubscription {
   loadOlder: () => Promise<void>;
 }
 
-export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMetadata[], q = '', failures = false): DumpSubscription => {
+export const useDumpSubscription = (
+  scope: DumpScope,
+  initialRecords: DumpMetadata[],
+  q = '',
+  failures = false,
+): DumpSubscription => {
   const { t } = useTranslation();
   const [records, setRecords] = useState(initialRecords);
   const [hasOlder, setHasOlder] = useState(true);
@@ -49,12 +63,17 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   // eslint-disable-next-line react-hooks/refs -- Carrying the newest render's translation to an effect that must not list it as a dependency.
   disconnectedRef.current = t('requests.streamDisconnected');
 
+  const keyId = scope.keyId;
+  const allKeyIds = keyId === null ? scope.keyIds : [];
+  // Filters belong to the scope too: switching them must discard the previous
+  // page during render, not paint old rows under the new filter until the
+  // reconnect's snapshot lands.
+  const scopeToken = JSON.stringify([keyId, allKeyIds, q, failures]);
   // Discarding during render rather than in the effect keeps the component from
   // ever painting one key's records under another key's heading.
-  const scope = JSON.stringify([keyId, q, failures]);
-  const [subscribedKeyId, setSubscribedKeyId] = useState(scope);
-  if (subscribedKeyId !== scope) {
-    setSubscribedKeyId(scope);
+  const [subscribedScope, setSubscribedScope] = useState(scopeToken);
+  if (subscribedScope !== scopeToken) {
+    setSubscribedScope(scopeToken);
     setRecords(initialRecords);
     setError(null);
     setHasOlder(true);
@@ -62,13 +81,17 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
     generationRef.current += 1;
   }
 
+  const allKeyIdsToken = JSON.stringify(allKeyIds);
   useEffect(() => {
     seenRef.current = new Set(initialRecordsRef.current.map(record => record.id));
-    if (!keyId) return;
+    if (keyId === null && allKeyIdsToken === '[]') return;
 
     const token = getSessionToken();
     if (!token) throw new Error('Authenticated dump subscription has no session token');
-    const source = new EventSource(`/api/dump/keys/${encodeURIComponent(keyId)}/stream?session=${encodeURIComponent(token)}&q=${encodeURIComponent(q)}&failures=${failures}`);
+    const query = `?session=${encodeURIComponent(token)}&q=${encodeURIComponent(q)}&failures=${failures}`;
+    const source = new EventSource(keyId === null
+      ? `/api/dump/stream${query}`
+      : `/api/dump/keys/${encodeURIComponent(keyId)}/stream${query}`);
 
     source.addEventListener('snapshot', raw => {
       const snapshot = (JSON.parse((raw as MessageEvent).data) as { records: DumpMetadata[] }).records;
@@ -109,20 +132,25 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
       olderRequestRef.current?.abort();
       source.close();
     };
-  }, [keyId, q, failures]);
+  }, [allKeyIdsToken, failures, keyId, q]);
 
   const loadOlder = useCallback(async () => {
     const oldest = records.at(-1);
     const generation = generationRef.current;
-    if (!keyId || !oldest || loadingOlderRef.current === generation || !hasOlder) return;
+    if (keyId === null && allKeyIdsToken === '[]') return;
+    if (!oldest || loadingOlderRef.current === generation || !hasOlder) return;
     loadingOlderRef.current = generation;
     const request = new AbortController();
     olderRequestRef.current = request;
     try {
-      const result = await callApi(() => api.api.dump.keys[':keyId'].records.$get({
-        param: { keyId },
-        query: { before: oldest.id, limit: String(PAGE_LIMIT), q, failures: failures ? 'true' : 'false' },
-      }, { init: { signal: request.signal } }));
+      const result = keyId === null
+        ? await callApi(() => api.api.dump.records.$get({
+            query: { before: oldest.id, limit: String(PAGE_LIMIT), q, failures: failures ? 'true' : 'false' },
+          }, { init: { signal: request.signal } }))
+        : await callApi(() => api.api.dump.keys[':keyId'].records.$get({
+            param: { keyId },
+            query: { before: oldest.id, limit: String(PAGE_LIMIT), q, failures: failures ? 'true' : 'false' },
+          }, { init: { signal: request.signal } }));
       if (generation !== generationRef.current) return;
       if (result.error) {
         setError(result.error.message);
@@ -139,7 +167,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
     } finally {
       if (loadingOlderRef.current === generation) loadingOlderRef.current = null;
     }
-  }, [failures, hasOlder, keyId, q, records]);
+  }, [allKeyIdsToken, failures, hasOlder, keyId, q, records]);
 
   const dismissError = useCallback(() => setError(null), []);
 

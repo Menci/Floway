@@ -8,11 +8,12 @@ import { api, callApi } from '../../api/client';
 import type { ControlPlaneGroup } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
-import { HUE_RAIL_GRADIENT, pickDistinctHue } from '../../lib/hue';
+import { HUE_RAIL_GRADIENT } from '../../lib/hue';
 import { DialogShell } from '../ui/dialog-shell';
 import { Input } from '../ui/fluent-form-controls';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { useOutcomeToasts } from '../ui/outcome-toast';
+import { pickIdentityHue } from '../ui/status-badge';
 import { useDiscardGuard } from '../ui/use-discard-guard';
 
 const { Button, ColorSlider, DialogActions, DialogTitle, Field } = fluentComponents;
@@ -31,7 +32,7 @@ export function GroupDialog({ group, groups, onOpenChange, onSaved, open }: {
   const [error, setError] = useState<string | null>(null);
   const { control, handleSubmit, formState: { errors } } = useForm<GroupForm>({
     resolver: zodResolver(z.object({ name: z.string().trim().min(1).max(64), hue: z.number().int().min(0).max(359) })),
-    defaultValues: { name: group?.name ?? '', hue: group?.hue ?? pickDistinctHue(groups.map(candidate => candidate.hue)) },
+    defaultValues: { name: group?.name ?? '', hue: group?.hue ?? pickIdentityHue(groups.map(candidate => candidate.hue)) },
   });
   const values = useWatch({ control }) as GroupForm;
   const close = useCallback(() => onOpenChange(false), [onOpenChange]);

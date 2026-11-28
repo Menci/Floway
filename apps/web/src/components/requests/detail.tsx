@@ -6,6 +6,7 @@ import { EventList } from './events';
 import { downloadRecords } from './export';
 import { errorLabel, requestSeverity } from './format';
 import { isSensitiveHeader, REDACTED_HEADER_VALUE, redactHeaderPairs, redactHeaderValue } from './header-redact';
+import { RequestKeyLabel } from './key-label';
 import { collectKindFromTargetApi, detectCollectKind, type CollectedStream } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -150,6 +151,9 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
           </span>
         </Tooltip>
       )}
+      {/* Spelled out with its suffix: on a phone the details cover the list,
+          whose row was the only other place naming the key. */}
+      <RequestKeyLabel apiKey={record.meta.key} className="min-w-0" withSuffix />
       <Button size="small" appearance="subtle" icon={diagnostics.length ? <WarningRegular /> : <InfoRegular />} onClick={() => setDetailsOpen(true)}>
         {diagnostics.length ? t('requests.diagnostics', { count: String(diagnostics.length) }) : t('requests.metadata')}
       </Button>

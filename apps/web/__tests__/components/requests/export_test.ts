@@ -8,7 +8,7 @@ const SECRET = 'Bearer client-secret-token-1234567890abcd';
 const MASK = redactHeaderValue(SECRET);
 
 const record = (id: string): DumpRecord => ({
-  meta: { id, method: 'POST', path: '/v1/chat/completions', startedAt: 0, completedAt: 1000, status: 200, upstream: null, model: 'm', inputTokens: null, outputTokens: null, requestBytes: 0, responseBytes: 0, durationMs: 1000, error: null },
+  meta: { id, method: 'POST', path: '/v1/chat/completions', startedAt: 0, completedAt: 1000, status: 200, key: { id: 'key-a', name: 'Key A', suffix: 'key-a' }, upstream: null, model: 'm', inputTokens: null, outputTokens: null, requestBytes: 0, responseBytes: 0, durationMs: 1000, error: null },
   request: { method: 'POST', path: '/v1/chat/completions', headers: [['authorization', SECRET], ['content-type', 'application/json']], body: { encoding: 'utf8', data: '中文 request' } },
   response: { status: 200, headers: [['set-cookie', SECRET]], body: { type: 'none' }, upstream: { status: 200, headers: [['api-key', SECRET]], body: { type: 'none' } } },
   capture: { exchanges: [{ upstreamId: 'u', request: { url: 'https://upstream.test', method: 'POST', headers: [['x-api-key', SECRET]], body: { encoding: 'utf8', data: '{"upstream":"translated request"}' } }, response: { status: 200, headers: [['x-goog-api-key', SECRET]], body: { encoding: 'utf8', data: 'data: {broken\n' }, complete: true, error: null }, error: null }], response: { body: { encoding: 'base64', data: '/4A=' }, complete: false, error: 'socket reset' } },

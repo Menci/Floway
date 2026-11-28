@@ -40,7 +40,7 @@ function EventRow({ index, style, ariaAttributes, events, collapsed, toggle, wra
       language={event.parseError || event.text === '[DONE]' ? 'plain' : 'json'}
       header={<div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
         <Button appearance="subtle" size="small" icon={closed ? <ChevronRightRegular /> : <ChevronDownRegular />} aria-expanded={!closed} onClick={() => toggle(event.index)}>{label}</Button>
-        <Text size={100} className="font-mono text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text>
+        <Text size={100} className="font-mono mono-size-100 text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text>
         {event.parseError && <Text size={100}>{t('requests.eventParseError')}</Text>}
       </div>}
     />

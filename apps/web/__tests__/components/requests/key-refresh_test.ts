@@ -23,6 +23,7 @@ describe('request key refresh', () => {
     const onNavigate = vi.fn();
     const onUpdate = vi.fn();
     const refresh = refreshRequestKeys({
+      allKeys: false,
       currentKeys: [key('key-a')],
       load: () => response,
       onNavigate,
@@ -37,5 +38,22 @@ describe('request key refresh', () => {
 
     expect(onNavigate).not.toHaveBeenCalled();
     expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it('keeps the merged view when the key set changes under it', async () => {
+    const onNavigate = vi.fn();
+    const onUpdate = vi.fn();
+    await refreshRequestKeys({
+      allKeys: true,
+      currentKeys: [key('key-a')],
+      load: async () => ({ data: [key('key-b')] }),
+      onNavigate,
+      onUpdate,
+      selectedKeyId: null,
+      signal: new AbortController().signal,
+    });
+
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(onUpdate).toHaveBeenCalledWith([key('key-b')], null);
   });
 });
