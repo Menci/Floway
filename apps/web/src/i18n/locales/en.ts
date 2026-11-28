@@ -1659,6 +1659,42 @@ const en = {
           cachedRate: 'Cached Rate',
           cacheCreation: 'Cache Write',
         },
+        heatmap: {
+          title: 'Token calendar',
+          description: 'Every token Floway has recorded, one square per day. The more a day used, the darker its square. The filters above do not apply here.',
+          periods: {
+            label: 'Period',
+            recent: 'Last year',
+          },
+          summary: {
+            recent: '{{tokens}} tokens in the last year',
+            year: '{{tokens}} tokens in {{year}}',
+          },
+          records: {
+            total: 'Total tokens',
+            since: 'Since {{date}}',
+            activeDays: 'Active days',
+            currentStreak: 'Current streak',
+            longestStreak: 'Longest streak',
+            peakDay: 'Busiest day',
+            topModel: 'Top model',
+            share: '{{share}} of all tokens',
+            days_one: '{{count, number}} day',
+            days_other: '{{count, number}} days',
+            none: 'None yet',
+          },
+          legend: {
+            less: 'Less',
+            more: 'More',
+          },
+          day: {
+            tokens: '{{tokens}} tokens',
+            requests_one: '{{count, number}} request',
+            requests_other: '{{count, number}} requests',
+            topModel: 'Mostly {{model}}',
+            none: 'No usage',
+          },
+        },
       },
       performance: {
         title: 'Performance',

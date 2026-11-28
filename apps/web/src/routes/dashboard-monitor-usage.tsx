@@ -24,6 +24,7 @@ import { UsageChartSection } from '../components/usage/chart-section';
 import { createUsageOverviewLoader, loadUsagePageData, type UsageOverviewLoader } from '../components/usage/data';
 import { usageDimensions } from '../components/usage/dimensions';
 import { UsageGrouping } from '../components/usage/grouping';
+import { UsageHeatmapSection } from '../components/usage/heatmap/section';
 import { buildSearchChart } from '../components/usage/plot';
 import { TokenUsageCharts } from '../components/usage/token-charts';
 import type { UsageGroupBy, UsageMetric, UsageRange } from '../components/usage/types';
@@ -171,6 +172,8 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
       title={t('monitoring.usage.title')}
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
+
+    <UsageHeatmapSection refreshedAt={loadedAt} />
 
     <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
       <div className="flex items-end gap-3 min-w-0 flex-wrap">

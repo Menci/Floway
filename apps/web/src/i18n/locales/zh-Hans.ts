@@ -1639,6 +1639,40 @@ const zhHansCN = {
           cachedRate: '缓存比例',
           cacheCreation: '缓存写入',
         },
+        heatmap: {
+          title: 'Token 日历',
+          description: 'Floway 记录的全部 token，每天一格，当天用得越多颜色越深。不受上面筛选的影响。',
+          periods: {
+            label: '时间段',
+            recent: '最近一年',
+          },
+          summary: {
+            recent: '最近一年共 {{tokens}} token',
+            year: '{{year}} 年共 {{tokens}} token',
+          },
+          records: {
+            total: '累计 token',
+            since: '{{date}}起',
+            activeDays: '活跃天数',
+            currentStreak: '当前连续',
+            longestStreak: '最长连续',
+            peakDay: '单日最高',
+            topModel: '最常用模型',
+            share: '占全部 token 的 {{share}}',
+            days_other: '{{count, number}} 天',
+            none: '暂无',
+          },
+          legend: {
+            less: '少',
+            more: '多',
+          },
+          day: {
+            tokens: '{{tokens}} token',
+            requests_other: '{{count, number}} 次请求',
+            topModel: '主要用 {{model}}',
+            none: '没有用量',
+          },
+        },
       },
       performance: {
         title: '性能',

@@ -129,7 +129,8 @@ describe('usage dimension controls', () => {
     const requestedGroups: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
-      if (url.pathname === '/api/token-usage/overview') {
+      // The Token calendar reads its own history from the first day of 1970.
+      if (url.pathname === '/api/token-usage/overview' && !url.searchParams.get('start')?.startsWith('1970-01-01')) {
         overviewRequests += 1;
         const groupBy = url.searchParams.get('group_by') ?? 'model';
         requestedGroups.push(groupBy);
